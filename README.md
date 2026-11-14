@@ -132,11 +132,13 @@ Un **projet** réunit son dossier sur le Mac, son ou ses dépôts GitHub, son pr
 ````markdown
 ```projet
 nom: Studio
-dépôts: MTthoas/Studio
+dépôts: MTthoas/Studio (app), MTthoas/studio-site (site), MTthoas/studio-api (api)
 linear: Studio
 site: https://studio.exemple.com
 ```
 ````
+
+**Plusieurs dépôts** : un projet peut réunir l'app, son site, son API… Chaque dépôt a un **rôle** (`app`, `site`, `api`, `mobile`, `docs`, `infra`, `lib`, `autre`), écrit entre parenthèses ou deviné de son nom (`…-site`, `…-api`, `…-ios`). Le premier est le principal. La vue d'ensemble montre une carte par dépôt (rôle, CI de la branche principale, PR ouvertes, dernière version) ; on y ajoute un dépôt, change son rôle, le passe en principal ou le retire. Le flux et les PR sont affichés pour chaque dépôt, et la publication d'un agent vise le dépôt du dossier choisi sur le Mac.
 
 Une note ou une tâche y appartient avec le tag `#projet/studio` — posé par le bouton **Projet** de l'éditeur, le menu d'une tâche, ou en créant depuis la page du projet. Chaque projet a ses onglets, aussi listés dans la barre latérale :
 
@@ -384,7 +386,7 @@ Sers le dossier `dist/` produit par `npm run build` (ou le contenu de `Studio-we
 
 ### Site vitrine
 
-Le dossier `site/` contient la page de présentation de Studio : trois fichiers statiques (`index.html`, `site.css`, `site.js`), sans build, sans police ni script extérieur, avec sa propre politique de sécurité (aucune requête sortante). `npm run site` le sert en local ; dans l'app Mac, l'onglet **Site** du projet le lance d'un clic.
+Le dossier `site/` contient la page de présentation de Studio : des fichiers statiques, sans build, sans bibliothèque ni script extérieur, avec sa propre politique de sécurité (aucune requête sortante). Les polices sont servies depuis le dossier lui-même (`site/fonts/`, avec leur licence). `npm run site` le sert en local ; dans l'app Mac, l'onglet **Site** du projet le lance d'un clic.
 
 Il est publié sur **GitHub Pages** ([mtthoas.github.io/Studio](https://mtthoas.github.io/Studio/)) par [`.github/workflows/pages.yml`](.github/workflows/pages.yml) : chaque push sur `main` qui touche `site/` envoie le dossier tel quel (ou à la main : Actions → Site → Run workflow). À faire une seule fois dans le dépôt : Settings → Pages → Source « GitHub Actions ». Tous les chemins sont relatifs, le site fonctionne donc aussi dans un sous-dossier ou sur un autre hébergement statique.
 

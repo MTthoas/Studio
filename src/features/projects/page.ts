@@ -8,9 +8,9 @@ import * as registry from '../../plugins/registry.ts';
 import * as todo from '../tasks.ts';
 import * as model from './model.ts';
 import { esc, plain } from '../../lib/markdown.ts';
-import { $, icon, modal, need, rel, target, toast, errMsg } from '../../ui/kit.ts';
+import { $, icon, menu, modal, need, rel, target, toast, errMsg, confirmBox } from '../../ui/kit.ts';
 import type { AppShell, Note } from '../../types.ts';
-import type { Project } from './model.ts';
+import type { Project, Repo, Role } from './model.ts';
 import * as flux from './flux.ts';
 import * as sessions from './sessions.ts';
 import * as review from './review.ts';
@@ -49,7 +49,8 @@ function folderHTML(p: Project, f: Folder | null): string {
   if (!f) return `<p class="pj-folder muted">${icon('folder')}Lecture du dossier…</p>`;
   if (!f.path) return `<div class="pj-folder">${icon('folder')}<span>Aucun dossier choisi sur ce Mac.</span><button class="btn btn-primary" data-pj="pick">Choisir le dossier</button></div>`;
   const git = f.git ? `<span class="pj-git">${icon('pr')}${esc(f.branch ?? '?')}${f.changes ? ` · <b>${f.changes} modif.</b>` : ' · à jour'}${f.ahead ? ` · ↑${f.ahead}` : ''}${f.behind ? ` · ↓${f.behind}` : ''}</span>` : '<span class="pj-git muted">pas un dépôt Git</span>';
-  const hint = f.remote && !p.repos.includes(f.remote) ? `<button class="link-btn" data-pj="link-repo" data-repo="${esc(f.remote)}">Associer ${esc(f.remote)}</button>` : '';
+  const own = model.repoNamed(p, f.remote);
+  const hint = own ? model.roleTag(own.role, 'sm') : f.remote ? `<button class="link-btn" data-pj="link-repo" data-repo="${esc(f.remote)}">Associer ${esc(f.remote)}</button>` : '';
   return `<div class="pj-folder">${icon('folder')}<code title="${esc(f.path)}">${esc(f.path.replace(/^\/Users\/[^/]+/, '~'))}</code>${git}${hint}
     <span class="pj-open"><button class="btn" data-pj="vscode">${icon('code')}VS Code</button><button class="btn" data-pj="finder">${icon('folder')}Finder</button><button class="btn" data-pj="terminal">${icon('terminal')}Terminal</button><button class="icon-btn" data-pj="pick" title="Changer de dossier" aria-label="Changer de dossier">${icon('more')}</button></span></div>`;
 }
@@ -58,12 +59,13 @@ function folderHTML(p: Project, f: Folder | null): string {
 function listHTML(): string {
   const all = model.projects();
   if (!all.length) return `<div class="pj-empty"><h2>Un projet réunit tout ce qui le concerne</h2>
-    <p>Son dossier sur ton Mac, son dépôt GitHub et ses PR, ses tickets Linear, ses tâches et ses notes. Tu y ouvres VS Code en un clic, et tu peux bientôt y confier une tâche à Claude Code.</p>
+    <p>Son dossier sur ton Mac, ses dépôts GitHub (l’app, son site, son API…) et leurs PR, ses tickets Linear, ses tâches et ses notes. Tu y ouvres VS Code en un clic, et tu peux bientôt y confier une tâche à Claude Code.</p>
     <button class="btn btn-primary" data-pj="new">${icon('plus')}Créer un projet</button></div>`;
   return `<div class="pj-grid">${all.map(p => {
     const t = todo.ofProject(p.id), notes = model.notesOf(p).length - 1;
     return `<button class="pj-card" data-pj-open="${esc(p.id)}" style="--c:var(--c-${p.hue})"><span class="pj-dot"></span><strong>${esc(p.name)}</strong>
-      <span class="pj-sub">${p.repos.length ? `${icon('github')}${esc(p.repos[0] ?? '')}${p.repos.length > 1 ? ` +${p.repos.length - 1}` : ''}` : 'Pas de dépôt'}${p.linear ? ` · ${icon('linear')}${esc(p.linear)}` : ''}</span>
+      <span class="pj-sub">${p.stack.length ? `${icon('github')}${esc(p.stack[0]?.name ?? '')}` : 'Pas de dépôt'}${p.linear ? ` · ${icon('linear')}${esc(p.linear)}` : ''}</span>
+      ${p.stack.length ? `<span class="pj-roles">${p.stack.map(r => model.roleTag(r.role, 'sm')).join('')}</span>` : ''}
       <span class="pj-stats"><b>${t.openCount}</b> tâche${t.openCount > 1 ? 's' : ''}${t.doing.length ? ` · ${t.doing.length} en cours` : ''} · <b>${notes}</b> note${notes > 1 ? 's' : ''}</span></button>`;
   }).join('')}<button class="pj-card pj-new" data-pj="new">${icon('plus')}<strong>Nouveau projet</strong></button></div>`;
 }
@@ -114,6 +116,7 @@ function tabBody(p: Project, tab: string): string {
   const notes = model.notesOf(p).length - 1;
   return `${folderBox}
     ${bridge.where() ? `<section class="pj-quick">${sessions.composerHTML(p, { compact: true })}<div data-ov="agents"></div></section>` : ''}
+    ${section('repos', p.stack.length > 1 ? `Dépôts · ${p.stack.length}` : 'Dépôts', 'github', reposHTML(p), 'pj-stack')}
     <div class="pj-dash">
       ${chartCard('code', 'Activité du code', 'code', 'commits')}
       ${chartCard('sessions', 'Claude Code', 'terminal', 'tokens')}
@@ -121,7 +124,7 @@ function tabBody(p: Project, tab: string): string {
       ${chartCard('tasks', 'Avancement des tâches', 'check', 'tasks', tasksChart(p))}
     </div>
     <div class="pj-ovs">
-      ${card('code', 'Pull requests', 'github', p.repos.length ? 'Lecture des PR…' : 'Aucun dépôt associé')}
+      ${card('code', 'Pull requests', 'pr', p.repos.length ? 'Lecture des PR…' : 'Aucun dépôt associé')}
       ${card('site', 'Site', 'link', p.site ? esc(p.site.replace(/^https:\/\//, '')) : 'Ajouter le site du projet')}
       ${card('notes', 'Notes', 'notes', `<b>${notes}</b> note${notes > 1 ? 's' : ''}`)}</div>${panelsHTML(p, 'overview')}`;
 }
@@ -224,7 +227,7 @@ async function agentsStrip(root: HTMLElement, p: Project): Promise<void> {
 function detailHTML(p: Project, tab: string): string {
   return `<div class="pj-head" style="--c:var(--c-${p.hue})"><button class="lv-back" data-pj-open="">${icon('back')}Projets</button>
       <div class="pj-title"><span class="pj-dot"></span><h1>${esc(p.name)}</h1><button class="btn pj-note" data-pj="edit">${icon('notes')}Note du projet</button><button class="btn pj-note" data-pj="claude" title="Conversation bornée à ce projet : Claude ne voit que ses données">${icon('sparkle')}Claude</button></div>
-      <div class="pj-links" data-k="${esc(`${p.repos.join(',')}|${p.site ?? ''}|${p.linear ?? ''}`)}">${p.repos.map(r => `<a class="lv-chip" href="https://github.com/${esc(r)}" target="_blank" rel="noopener">${icon('github')}${esc(r)}</a>`).join('')}${p.linear ? `<span class="lv-chip">${icon('linear')}${esc(p.linear)}</span>` : ''}${p.site ? `<a class="lv-chip" href="${esc(p.site)}" target="_blank" rel="noopener">${icon('link')}${esc(p.site.replace(/^https:\/\//, ''))}</a>` : ''}<span class="lv-chip">#${esc(p.tag)}</span></div>
+      <div class="pj-links" data-k="${esc(`${model.formatRepos(p.stack)}|${p.site ?? ''}|${p.linear ?? ''}`)}">${p.stack.map(r => `<a class="lv-chip pj-chip-repo" href="https://github.com/${esc(r.name)}" target="_blank" rel="noopener" title="${esc(`${model.ROLES[r.role].label} · ${r.name}`)}">${model.roleTag(r.role, 'sm')}${esc(r.name.split('/')[1] ?? r.name)}</a>`).join('')}${p.linear ? `<span class="lv-chip">${icon('linear')}${esc(p.linear)}</span>` : ''}${p.site ? `<a class="lv-chip" href="${esc(p.site)}" target="_blank" rel="noopener">${icon('link')}${esc(p.site.replace(/^https:\/\//, ''))}</a>` : ''}<span class="lv-chip">#${esc(p.tag)}</span></div>
       <nav class="lv-tabs pj-tabs">${TABS.map(([k, l]) => `<button data-pj-tab="${k}" class="${k === tab ? 'sel' : ''}">${esc(l)}</button>`).join('')}</nav></div>
     <div class="pj-body" data-tab="${tab}">${tabBody(p, tab)}</div>`;
 }
@@ -261,40 +264,134 @@ async function checkSite(root: HTMLElement, p: Project): Promise<void> {
 }
 
 async function overview(root: HTMLElement, p: Project, f: Folder | null): Promise<void> {
-  const repo = p.repos[0];
-  if (repo && github.connected()) {
-    github.project(repo).then(({ pulls }) => {
+  if (p.repos.length && github.connected()) {
+    Promise.allSettled(p.repos.map(r => github.project(r))).then(res => {
+      const ok = res.flatMap(x => x.status === 'fulfilled' ? [x.value] : []);
+      if (!ok.length) { fill(root, '[data-ov="code"]', 'GitHub ne répond pas'); return; }
+      const pulls = ok.flatMap(x => x.pulls);
       const failing = pulls.filter(x => x.ci === 'failure').length, ready = pulls.filter(x => x.review === 'approved' && x.ci === 'success').length;
-      fill(root, '[data-ov="code"]', `<b>${pulls.length}</b> PR ouverte${pulls.length > 1 ? 's' : ''}${failing ? ` · <span class="err">${failing} CI en échec</span>` : ''}${ready ? ` · <span class="ok">${ready} prête${ready > 1 ? 's' : ''}</span>` : ''}${f?.branch ? ` · sur <code>${esc(f.branch)}</code>` : ''}`);
+      fill(root, '[data-ov="code"]', `<b>${pulls.length}</b> PR ouverte${pulls.length > 1 ? 's' : ''}${p.repos.length > 1 ? ` sur ${p.repos.length} dépôts` : ''}${failing ? ` · <span class="err">${failing} CI en échec</span>` : ''}${ready ? ` · <span class="ok">${ready} prête${ready > 1 ? 's' : ''}</span>` : ''}${f?.branch ? ` · sur <code>${esc(f.branch)}</code>` : ''}`);
     }).catch(() => fill(root, '[data-ov="code"]', 'GitHub ne répond pas'));
   }
+  void repoStates(root, p, f);
   if (p.site && native.available()) {
     const r = await native.call('project', 'site', { url: p.site }, 20000);
     fill(root, '[data-ov="site"]', `${esc(p.site.replace(/^https:\/\//, ''))} · ${r.up ? `<span class="ok">en ligne</span> · ${String(r.ms)} ms` : '<span class="err">ne répond pas</span>'}`);
   }
 }
 
+// ---------- Dépôts du projet (app, site, API…) ----------
+/** Une carte par dépôt : son rôle, son nom, puis son état GitHub (CI, PR, version) rempli par `repoStates`. */
+function reposHTML(p: Project): string {
+  const cards = p.stack.map((r, i) => {
+    const [owner, name] = r.name.split('/');
+    return `<div class="pj-rp" style="--c:var(--c-${model.ROLES[r.role].hue})" data-rp="${esc(r.name)}">
+      <header>${model.roleTag(r.role)}${i === 0 && p.stack.length > 1 ? '<em class="pj-badge">principal</em>' : ''}<span class="pj-rp-here" data-rp-here hidden>${icon('folder')}ce Mac</span>
+        <button class="icon-btn" data-pj="repo-menu" data-repo="${esc(r.name)}" title="Rôle, ordre, retirer" aria-label="Options du dépôt ${esc(r.name)}">${icon('more')}</button></header>
+      <a class="pj-rp-name" href="https://github.com/${esc(r.name)}" target="_blank" rel="noopener"><span>${esc(owner ?? '')}/</span>${esc(name ?? '')}</a>
+      <p class="pj-rp-st" data-rp-st>${github.connected() ? '<span class="pj-skel sm"></span>' : '<span class="muted">Connecte GitHub pour voir la CI et les PR</span>'}</p></div>`;
+  }).join('');
+  return `<div class="pj-rps">${cards}<button class="pj-rp pj-rp-add" data-pj="repo-add">${icon('plus')}<strong>${p.stack.length ? 'Ajouter un dépôt' : 'Associer un dépôt GitHub'}</strong><span>${ROLE_HINT}</span></button></div>`;
+}
+const ROLE_HINT = 'App · Site · API · Mobile · Docs…';
+const CI_TXT: Record<string, [string, string]> = { success: ['green', 'CI verte'], failure: ['red', 'CI en échec'], pending: ['amber', 'CI en cours'], none: ['gray', 'pas de CI'] };
+async function repoStates(root: HTMLElement, p: Project, f: Folder | null): Promise<void> {
+  const here = model.repoNamed(p, f?.remote);
+  if (here) { const b = $(`[data-rp="${CSS.escape(here.name)}"] [data-rp-here]`, root); if (b) b.hidden = false; }
+  if (!github.connected()) return;
+  await Promise.all(p.stack.map(async r => {
+    const box = $(`[data-rp="${CSS.escape(r.name)}"] [data-rp-st]`, root); if (!box) return;
+    try {
+      const [fl, pr] = await Promise.all([github.flow(r.name), github.project(r.name)]);
+      const [hueCi, ci] = CI_TXT[fl.baseCi] ?? ['gray', ''], rel0 = fl.releases[fl.releases.length - 1] ?? fl.releases[0];
+      box.innerHTML = `<span class="pj-rp-ci" style="--c:var(--c-${hueCi})"><i></i>${ci}</span><span><b>${pr.pulls.length}</b> PR</span>${rel0 ? `<span class="pj-rp-tag">${esc(rel0.tag)}</span>` : ''}<span class="muted">${esc(rel(Date.parse(pr.info.pushed_at)))}</span>`;
+    } catch (e) { box.innerHTML = `<span class="err">${esc(errMsg(e))}</span>`; }
+  }));
+}
+/** Choix d'un rôle en pastilles (boutons radio), pour les fenêtres d'ajout et de création. */
+const rolePicker = (name: string, cur: Role) => `<div class="pj-rolepick" role="radiogroup" aria-label="Rôle du dépôt">${model.ROLE_ORDER.map(k => `<label style="--c:var(--c-${model.ROLES[k].hue})" title="${esc(model.ROLES[k].hint)}"><input type="radio" name="${name}" value="${k}"${k === cur ? ' checked' : ''}><span>${icon(model.ROLES[k].icon)}${model.ROLES[k].label}</span></label>`).join('')}</div>`;
+const cleanRepo = (v: string) => v.trim().replace(/^https:\/\/github\.com\//, '').replace(/\.git$/, '').replace(/\/$/, '');
+function fillRepoList(node: ParentNode): void {
+  if (github.connected()) github.myRepos().then(rs => { const d = $('#pj-repos', node); if (d) d.innerHTML = rs.map(r => `<option value="${esc(r)}">`).join(''); }).catch(() => {});
+}
+/** Le rôle suit le nom tapé (…-site, …-api) tant que la personne n'en a pas choisi un. */
+function autoRole(input: HTMLInputElement, scope: ParentNode, radio: string, main: () => boolean): void {
+  let touched = false;
+  scope.addEventListener('change', e => { if ((e.target as HTMLInputElement).name === radio) touched = true; });
+  input.addEventListener('input', () => {
+    if (touched) return;
+    const role = model.guessRole(cleanRepo(input.value), main());
+    const r = scope.querySelector<HTMLInputElement>(`input[name="${radio}"][value="${role}"]`); if (r) r.checked = true;
+  });
+}
+function addRepoDialog(p: Project): void {
+  const m = modal({ title: `Ajouter un dépôt à ${p.name}`, cls: 'pj-create', html: `<form>
+    <label class="pj-field"><span>Dépôt GitHub</span><input class="field" name="repo" placeholder="propriétaire/dépôt" list="pj-repos" autocomplete="off" required autofocus><datalist id="pj-repos"></datalist></label>
+    <div class="pj-field"><span>Son rôle dans le projet</span>${rolePicker('role', p.stack.length ? 'autre' : 'app')}</div>
+    <p class="lock-err" role="alert"></p>
+    <div class="modal-actions"><button type="button" class="btn" data-x>Annuler</button><button class="btn btn-primary">${icon('plus')}Ajouter</button></div></form>` });
+  need('[data-x]', m.node).onclick = m.close;
+  fillRepoList(m.node);
+  const form = need<HTMLFormElement>('form', m.node), input = need<HTMLInputElement>('[name=repo]', form);
+  autoRole(input, form, 'role', () => !p.stack.length);
+  form.onsubmit = async e => {
+    e.preventDefault();
+    const name = cleanRepo(input.value), role = (new FormData(form).get('role') as Role | null) ?? 'autre', err = need('.lock-err', m.node);
+    if (!/^[\w.-]+\/[\w.-]+$/.test(name)) { err.textContent = 'Le dépôt s’écrit « propriétaire/nom ».'; return; }
+    if (model.repoNamed(p, name)) { err.textContent = 'Ce dépôt fait déjà partie du projet.'; return; }
+    try { await model.setRepos(p, [...p.stack, { name, role }]); m.close(); toast(`${name} ajouté · ${model.ROLES[role].label}`); }
+    catch (x) { err.textContent = errMsg(x); }
+  };
+}
+function repoMenu(p: Project, anchor: Element, name: string): void {
+  const i = p.stack.findIndex(r => r.name === name), cur = p.stack[i]; if (!cur) return;
+  const save = (list: Repo[], msg: string) => model.setRepos(p, list).then(() => toast(msg)).catch(e => toast(errMsg(e)));
+  menu(anchor, [{ label: 'Rôle du dépôt' },
+    ...model.ROLE_ORDER.map(k => ({ label: model.ROLES[k].label, icon: model.ROLES[k].icon, hint: model.ROLES[k].hint, checked: cur.role === k,
+      run: () => save(p.stack.map(r => r.name === name ? { ...r, role: k } : r), `${name} · ${model.ROLES[k].label}`) })),
+    '-',
+    ...(i > 0 ? [{ label: 'En faire le dépôt principal', icon: 'pin', run: () => save([cur, ...p.stack.filter(r => r.name !== name)], `${name} est le dépôt principal`) }] : []),
+    { label: 'Ouvrir sur GitHub', icon: 'github', run: () => window.open(`https://github.com/${name}`, '_blank', 'noopener') },
+    { label: 'Retirer du projet', icon: 'trash', danger: true, run: async () => {
+      if (await confirmBox({ title: `Retirer ${name} ?`, text: 'Le dépôt n’est pas touché sur GitHub : il ne fait simplement plus partie de ce projet.', ok: 'Retirer', danger: true })) void save(p.stack.filter(r => r.name !== name), `${name} retiré du projet`);
+    } }]);
+}
+
 // ---------- Création ----------
 export async function createDialog(): Promise<void> {
   const m = modal({ title: 'Nouveau projet', cls: 'pj-create', html: `<form>
     <label class="pj-field"><span>Nom</span><input class="field" name="name" placeholder="Ex. Studio" required autofocus></label>
-    <label class="pj-field"><span>Dépôt GitHub <em>facultatif</em></span><input class="field" name="repo" placeholder="propriétaire/dépôt" list="pj-repos" autocomplete="off"><datalist id="pj-repos"></datalist></label>
+    <div class="pj-field"><span>Dépôts GitHub <em>facultatif · l’app, son site, son API…</em></span><div class="pj-newrepos"></div><datalist id="pj-repos"></datalist>
+      <button type="button" class="link-btn pj-addrow" data-row>${icon('plus')}Un autre dépôt</button></div>
     <label class="pj-field"><span>Projet Linear <em>facultatif</em></span><input class="field" name="linear" placeholder="Nom du projet dans Linear" list="pj-linear" autocomplete="off"><datalist id="pj-linear"></datalist></label>
     <label class="pj-field"><span>En une phrase <em>facultatif</em></span><input class="field" name="desc" placeholder="Ce que ce projet doit accomplir"></label>
     ${native.available() ? '<p class="modal-hint">Tu choisiras ensuite son dossier sur ce Mac.</p>' : ''}
     <p class="lock-err" role="alert"></p>
     <div class="modal-actions"><button type="button" class="btn" data-x>Annuler</button><button class="btn btn-primary">Créer le projet</button></div></form>` });
   need('[data-x]', m.node).onclick = m.close;
-  if (github.connected()) github.myRepos().then(rs => { const d = $('#pj-repos', m.node); if (d) d.innerHTML = rs.map(r => `<option value="${esc(r)}">`).join(''); }).catch(() => {});
+  fillRepoList(m.node);
+  const rows = need('.pj-newrepos', m.node);
+  let n = 0;
+  const addRow = (): void => {
+    const k = n++, first = !rows.children.length;
+    rows.insertAdjacentHTML('beforeend', `<div class="pj-newrepo" data-k="${k}"><input class="field" name="repo${k}" placeholder="${first ? 'propriétaire/app' : 'propriétaire/site, propriétaire/api…'}" list="pj-repos" autocomplete="off">${rolePicker(`role${k}`, first ? 'app' : 'autre')}</div>`);
+    const row = rows.lastElementChild as HTMLElement;
+    autoRole(need<HTMLInputElement>('input.field', row), row, `role${k}`, () => rows.firstElementChild === row);
+    if (!first) need<HTMLInputElement>('input.field', row).focus();
+  };
+  addRow();
+  need('[data-row]', m.node).onclick = addRow;
   if (linear.connected()) linear.projects().then(ps => { const d = $('#pj-linear', m.node); if (d) d.innerHTML = ps.map(x => `<option value="${esc(x.name)}">`).join(''); }).catch(() => {});
   need('form', m.node).onsubmit = async e => {
     e.preventDefault();
     const f = target(e) as HTMLFormElement, val = (n: string) => (f.elements.namedItem(n) as HTMLInputElement | null)?.value.trim() ?? '';
-    const name = val('name'), repo = val('repo').replace(/^https:\/\/github\.com\//, '').replace(/\.git$/, '');
-    if (repo && !/^[\w.-]+\/[\w.-]+$/.test(repo)) { need('.lock-err', m.node).textContent = 'Le dépôt s’écrit « propriétaire/nom ».'; return; }
+    const name = val('name'), data = new FormData(f);
+    const repos: Repo[] = [...rows.querySelectorAll<HTMLElement>('.pj-newrepo')].map(r => ({ name: cleanRepo(val(`repo${r.dataset.k ?? ''}`)), role: (data.get(`role${r.dataset.k ?? ''}`) as Role | null) ?? 'autre' })).filter(r => r.name);
+    const bad = repos.find(r => !/^[\w.-]+\/[\w.-]+$/.test(r.name));
+    if (bad) { need('.lock-err', m.node).textContent = `« ${bad.name} » : un dépôt s’écrit « propriétaire/nom ».`; return; }
     if (model.projects().some(p => p.slug === model.slugify(name))) { need('.lock-err', m.node).textContent = 'Un projet porte déjà ce nom.'; return; }
     try {
-      const p = await model.createProject({ name, repos: repo ? [repo] : [], linear: val('linear') || null, description: val('desc') });
+      const p = await model.createProject({ name, repos, linear: val('linear') || null, description: val('desc') });
       m.close();
       if (native.available()) { const r = await native.call('project', 'pick', { project: p.id }, 600000); if (r.ok) folders.delete(p.id); }
       await go(p.id);
@@ -344,7 +441,7 @@ export function mount(main: HTMLElement): void {
   const p = model.byId(app.viewState().project), tab = curTab();
   if (p) sessions.preload(p);
   main.innerHTML = `<header class="toolbar">${app.tbLeft()}${trailHTML()}<div class="tb-side tb-right">${p ? '' : `<button class="btn btn-ghost" data-pj="new">${icon('plus')}<span>Nouveau projet</span></button>`}</div></header>
-    <div class="todo pj"><div class="todo-in pj-in">${p ? detailHTML(p, tab) : `<div class="td-head"><h1>Projets</h1><p class="td-sub">Un projet réunit son dossier, son dépôt, ses PR, ses tickets, ses tâches et ses notes.</p></div><div class="pj-list">${listHTML()}</div>`}</div></div>`;
+    <div class="todo pj"><div class="todo-in pj-in">${p ? detailHTML(p, tab) : `<div class="td-head"><h1>Projets</h1><p class="td-sub">Un projet réunit son dossier, ses dépôts, ses PR, ses tickets, ses tâches et ses notes.</p></div><div class="pj-list">${listHTML()}</div>`}</div></div>`;
   const root = need('.pj', main);
   $('.toolbar [data-pj=new]', main)?.addEventListener('click', () => void createDialog());
   // Écouté sur la barre d'outils : le fil d'Ariane est redessiné quand la conversation change de nom.
@@ -409,7 +506,9 @@ export function mount(main: HTMLElement): void {
     if (act === 'new-note') { const n = await store.createNote({ title: '', body: `\n\n#${p.tag}` }); app.openNote(n.id); }
     if (act === 'pick') { const r = await native.call('project', 'pick', { project: p.id }, 600000); if (r.ok) { folders.delete(p.id); void hydrate(root, p, tab); } }
     if (act === 'vscode' || act === 'finder' || act === 'terminal') { const r = await native.call('project', 'open', { project: p.id, app: act }, 15000); if (!r.ok) toast(r.message ?? 'Impossible d’ouvrir.'); }
-    if (act === 'link-repo' && b.dataset.repo) { await model.setField(p, 'dépôts', [...p.repos, b.dataset.repo].join(', ')); toast(`${b.dataset.repo} associé au projet`); }
+    if (act === 'link-repo' && b.dataset.repo) { const role = model.guessRole(b.dataset.repo, !p.stack.length); await model.setRepos(p, [...p.stack, { name: b.dataset.repo, role }]); toast(`${b.dataset.repo} associé au projet · ${model.ROLES[role].label}`); }
+    if (act === 'repo-add') addRepoDialog(p);
+    if (act === 'repo-menu' && b.dataset.repo) repoMenu(p, b, b.dataset.repo);
     if (act === 'review-working') await review.review(p, 'working');
     if (act === 'review-branch') await review.review(p, 'branch');
     if (act === 'site-check') await checkSite(root, p);
@@ -425,6 +524,6 @@ export function refresh(): void {
   if (tasks) tasks.innerHTML = taskRows(p);
   if (notes) notes.innerHTML = noteRows(p);
   // Le bloc ```projet a changé (site, dépôts) : on redessine l'en-tête et l'onglet.
-  const head = $('.pj-links', root), want = `${p.repos.join(',')}|${p.site ?? ''}|${p.linear ?? ''}`;
+  const head = $('.pj-links', root), want = `${model.formatRepos(p.stack)}|${p.site ?? ''}|${p.linear ?? ''}`;
   if (head && head.dataset.k !== want) mount(need('#main'));
 }

@@ -82,6 +82,6 @@ export async function eventIn(s: Scope, e: AppEvent): Promise<boolean> {
 export function describe(s: Scope): string {
   const p = s.project;
   if (!p) return 'Périmètre : Général. Tes outils ne voient que les notes et les tâches qui n’appartiennent à aucun projet, et les dépôts GitHub qu’aucun projet ne déclare. Linear n’est pas accessible ici : pour un projet, l’utilisateur ouvre la conversation dans ce projet. N’invente rien sur ce que tu ne vois pas.';
-  const bits = ['ses notes', 'ses tâches', ...(p.repos.length ? [`ses dépôts GitHub (${p.repos.join(', ')})`] : []), ...(hasLinear(s) ? [`son projet Linear « ${p.linear ?? ''} »`] : [])];
+  const bits = ['ses notes', 'ses tâches', ...(p.repos.length ? [`ses dépôts GitHub (${p.stack.map(r => `${r.name} : ${model.ROLES[r.role].label}`).join(', ')})`] : []), ...(hasLinear(s) ? [`son projet Linear « ${p.linear ?? ''} »`] : [])];
   return `Périmètre : projet « ${p.name} ». Tes outils ne voient que ${bits.join(', ')}. Rien d’autre n’est accessible ; n’invente rien sur le reste.`;
 }
