@@ -5,6 +5,7 @@ import * as github from '../../integrations/github/api.ts';
 import * as native from '../../core/native.ts';
 import { esc } from '../../lib/markdown.ts';
 import { icon, rel, errMsg, avatar } from '../../ui/kit.ts';
+import * as model from './model.ts';
 import type { Project } from './model.ts';
 
 interface LocalBranch { name: string; date: string; upstream: string; ahead: number; behind: number }
@@ -34,14 +35,14 @@ export async function render(p: Project): Promise<string> {
   if (!p.repos.length) return '<p class="hm-empty">Associe un dépôt GitHub au projet (onglet Code ou note du projet) pour suivre son flux.</p>';
   if (!github.connected()) return `<p class="hm-empty">Connecte GitHub pour suivre le flux des branches. <button class="link-btn" data-open-conn="github">Connecter</button></p>`;
   const locals: LocalBranch[] = native.available() ? (((await native.call('project', 'branches', { project: p.id }, 20000)).branches as LocalBranch[] | undefined) ?? []) : [];
-  const out = await Promise.all(p.repos.map(async (repo, i) => {
+  const out = await Promise.all(p.stack.map(async ({ name: repo, role }, i) => {
     try {
       const f = await github.flow(repo);
       const byName = new Map(locals.map(b => [b.name, b]));
       const items = [...f.items];
       if (i === 0) for (const b of locals) if (b.name !== f.base && !items.some(x => x.branch === b.name)) items.push({ branch: b.name, stage: 'branche', updated: b.date, ci: 'none', review: 'none' });
       const visible = items.filter(x => x.stage !== 'fermee');
-      return `<div class="fx-repo"><div class="fx-head"><strong>${icon('github')}${esc(f.repo)}</strong>
+      return `<div class="fx-repo"><div class="fx-head">${model.roleTag(role)}<strong>${icon('github')}${esc(f.repo)}</strong>
           <span class="fx-base"><code>${esc(f.base)}</code><i class="pj-ci" style="--c:var(--c-${CI[f.baseCi][0]})"></i>${CI[f.baseCi][1]}</span>
           ${f.releases.length ? `<span class="fx-rels">${f.releases.slice(0, 3).map(r => `<a class="pj-badge approved" href="${esc(r.url)}" target="_blank" rel="noopener" title="${esc(new Date(r.at).toLocaleString('fr-FR'))}">${esc(r.tag)}</a>`).join('')}</span>` : ''}</div>
         <div class="kb fx-board">${COLS.map(([key, label, tone, stages]) => {

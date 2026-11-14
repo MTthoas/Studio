@@ -132,11 +132,13 @@ Un **projet** réunit son dossier sur le Mac, son ou ses dépôts GitHub, son pr
 ````markdown
 ```projet
 nom: Studio
-dépôts: MTthoas/Studio
+dépôts: MTthoas/Studio (app), MTthoas/studio-site (site), MTthoas/studio-api (api)
 linear: Studio
 site: https://studio.exemple.com
 ```
 ````
+
+**Plusieurs dépôts** : un projet peut réunir l'app, son site, son API… Chaque dépôt a un **rôle** (`app`, `site`, `api`, `mobile`, `docs`, `infra`, `lib`, `autre`), écrit entre parenthèses ou deviné de son nom (`…-site`, `…-api`, `…-ios`). Le premier est le principal. La vue d'ensemble montre une carte par dépôt (rôle, CI de la branche principale, PR ouvertes, dernière version) ; on y ajoute un dépôt, change son rôle, le passe en principal ou le retire. Le flux et les PR sont affichés pour chaque dépôt, et la publication d'un agent vise le dépôt du dossier choisi sur le Mac.
 
 Une note ou une tâche y appartient avec le tag `#projet/studio` — posé par le bouton **Projet** de l'éditeur, le menu d'une tâche, ou en créant depuis la page du projet. Chaque projet a ses onglets, aussi listés dans la barre latérale :
 
