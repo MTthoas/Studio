@@ -384,7 +384,7 @@ Sers le dossier `dist/` produit par `npm run build` (ou le contenu de `Studio-we
 
 ### Site vitrine
 
-Le dossier `site/` contient la page de présentation de Studio : trois fichiers statiques (`index.html`, `site.css`, `site.js`), sans build, sans police ni script extérieur, avec sa propre politique de sécurité (aucune requête sortante). `npm run site` le sert en local ; dans l'app Mac, l'onglet **Site** du projet le lance d'un clic.
+Le dossier `site/` contient la page de présentation de Studio : des fichiers statiques, sans build, sans bibliothèque ni script extérieur, avec sa propre politique de sécurité (aucune requête sortante). Les polices sont servies depuis le dossier lui-même (`site/fonts/`, avec leur licence). `npm run site` le sert en local ; dans l'app Mac, l'onglet **Site** du projet le lance d'un clic.
 
 Il est publié sur **GitHub Pages** ([mtthoas.github.io/Studio](https://mtthoas.github.io/Studio/)) par [`.github/workflows/pages.yml`](.github/workflows/pages.yml) : chaque push sur `main` qui touche `site/` envoie le dossier tel quel (ou à la main : Actions → Site → Run workflow). À faire une seule fois dans le dépôt : Settings → Pages → Source « GitHub Actions ». Tous les chemins sont relatifs, le site fonctionne donc aussi dans un sous-dossier ou sur un autre hébergement statique.
 
