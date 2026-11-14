@@ -813,9 +813,17 @@ const compareURL = (repo: string, base: string, branch: string, title: string, b
   `https://github.com/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(branch)}?quick_pull=1&title=${encodeURIComponent(title)}&body=${encodeURIComponent(body.slice(0, 3500))}`;
 const prBody = (run: AgentRun | undefined, detail: string) => `${detail ? `${detail}\n\n` : ''}${run?.result ? `${withoutCommitLine(run.result)}\n\n` : ''}---\nPréparé par Claude Code depuis Studio.`;
 
+/** Dépôt GitHub du dossier où travaillent les agents : son remote origin s'il fait partie du projet, sinon le principal. */
+async function workRepo(p: Project): Promise<string | undefined> {
+  if (p.repos.length > 1 && native.available()) {
+    try { const r = await native.call('project', 'info', { project: p.id }, 10000); const hit = model.repoNamed(p, typeof r.remote === 'string' ? r.remote : null); if (hit) return hit.name; } catch { /* le principal */ }
+  }
+  return p.repos[0];
+}
+
 async function publish(p: Project, wt: string, root: HTMLElement): Promise<void> {
   // La première demande faite dans cette copie (les suivantes sont souvent « continue », « résous le conflit »…).
-  const mine = runs.filter(r => r.worktree === wt), run = mine[mine.length - 1], repo = p.repos[0];
+  const mine = runs.filter(r => r.worktree === wt), run = mine[mine.length - 1], repo = await workRepo(p);
   const canPR = !!repo && github.connected();
   const m = modal({ cls: 'ag-pub', title: 'Publier le travail de l’agent', html: `
     <div class="pub-type"><span>Type</span><div class="ag-seg" role="radiogroup" aria-label="Type de changement">${KINDS.map(([k, l]) => `<label title="${esc(l)}"><input type="radio" name="ctype" value="${k}"><span>${k}</span></label>`).join('')}</div></div>
@@ -934,7 +942,7 @@ async function publish(p: Project, wt: string, root: HTMLElement): Promise<void>
 
 /** Copie déjà poussée : ouvre la page GitHub de création de sa PR, déjà remplie. */
 async function openPR(p: Project, w: Worktree): Promise<void> {
-  const repo = p.repos[0]; if (!repo) { toast('Associe un dépôt GitHub au projet.'); return; }
+  const repo = await workRepo(p); if (!repo) { toast('Associe un dépôt GitHub au projet.'); return; }
   let base = 'main';
   try { if (github.connected()) base = (await github.project(repo)).info.default_branch; } catch { /* main par défaut */ }
   // Titre de la PR : celui du commit publié, à défaut le message de l'agent, à défaut le nom de la branche. Jamais la consigne.

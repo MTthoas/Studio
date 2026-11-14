@@ -8,6 +8,7 @@ import * as linear from '../integrations/linear/api.ts';
 import { issueRow } from '../integrations/linear/render.ts';
 import { esc } from '../lib/markdown.ts';
 import { icon, rel, errMsg, avatar } from '../ui/kit.ts';
+import { roleTag } from '../features/projects/model.ts';
 
 const CI: Record<github.CiState, [string, string]> = { success: ['green', 'CI verte'], failure: ['red', 'CI en échec'], pending: ['amber', 'CI en cours'], none: ['gray', 'Pas de CI'] };
 const REVIEW: Record<github.ReviewState, string> = { approved: 'approuvée', changes: 'modifications demandées', pending: 'revue demandée', none: '' };
@@ -25,11 +26,11 @@ export function registerBuiltins(): void {
       when: p => p.repos.length > 0,
       async render(p) {
         if (!github.connected()) return `<p class="nf-empty">Connecte GitHub pour voir les PR, la CI et l’activité. <button class="link-btn" data-open-conn="github">Connecter</button></p>`;
-        const parts = await Promise.all(p.repos.map(async repo => {
+        const parts = await Promise.all(p.stack.map(async ({ name: repo, role }) => {
           try {
             const { info, pulls } = await github.project(repo);
             const act = github.activityOf(repo, 5);
-            return `<div class="pj-repo"><div class="pj-repo-h"><a href="${esc(info.html_url)}" target="_blank" rel="noopener">${icon('github')}${esc(info.full_name)}</a><em>${esc(info.default_branch)} · poussé ${esc(rel(Date.parse(info.pushed_at)))}</em></div>
+            return `<div class="pj-repo"><div class="pj-repo-h">${roleTag(role)}<a href="${esc(info.html_url)}" target="_blank" rel="noopener">${icon('github')}${esc(info.full_name)}</a><em>${esc(info.default_branch)} · poussé ${esc(rel(Date.parse(info.pushed_at)))}</em></div>
               ${pulls.length ? pulls.map(pr => `<a class="pj-pr" href="${esc(pr.url)}" target="_blank" rel="noopener"><i class="pj-ci" style="--c:var(--c-${CI[pr.ci][0]})" title="${CI[pr.ci][1]}"></i><span class="pj-num">#${pr.number}</span><span class="pj-prt">${esc(pr.title)}</span>${pr.draft ? '<em class="pj-badge">brouillon</em>' : ''}${REVIEW[pr.review] ? `<em class="pj-badge ${pr.review}">${REVIEW[pr.review]}</em>` : ''}${avatar(pr.author)}</a>`).join('') : '<p class="nf-empty">Aucune PR ouverte.</p>'}
               ${act.length ? `<div class="pj-act">${act.map(({ e, d }) => `<span>${esc(e.actor?.login ?? '')} ${esc(d.verb)} <strong>${esc(d.what)}</strong> · ${esc(rel(Date.parse(e.created_at)))}</span>`).join('')}</div>` : ''}</div>`;
           } catch (e) { return `<p class="nf-empty">${esc(repo)} : ${esc(errMsg(e))}</p>`; }
