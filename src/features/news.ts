@@ -38,6 +38,10 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'agent-stages', date: '2026-11-14', icon: 'pr', hue: 'blue',
+    title: 'Vois d’un coup d’œil où en sont tes agents',
+    text: 'Le panneau Claude Code range le travail des agents par étape : au travail, à publier, PR ouverte, fusionné. Chaque étape a sa couleur, jusque dans la liste des sessions et la barre latérale ; ce qui est livré s’efface.',
+    points: ['Au travail', 'À publier', 'PR ouverte', 'Fusionné'] },
   { id: 'agent-permissions', date: '2026-11-14', mac: true, icon: 'terminal', hue: 'amber',
     title: 'Choisis ce que tes agents peuvent lancer',
     text: 'Réglages → Autorisations des agents : la liste des commandes permises quand tu coches « Commandes » (cargo test, npm ci…), l’accès au web, et les dossiers ajoutés au PATH. Une réponse dans la discussion garde maintenant les commandes du tour précédent.',
