@@ -196,7 +196,7 @@ Ces réglages restent sur le Mac. Un appareil lié ne peut ni les lire ni les mo
 
 ### Serveurs et pilotage à distance
 
-**Serveur** (VPS, VM) : relie un hôte SSH (alias de `~/.ssh/config` ou `utilisateur@hôte`) et le dossier du projet sur ce serveur. Studio affiche son état (charge, mémoire, disque, dépôt, Claude Code), ouvre un terminal SSH, et y lance des agents Claude Code avec les mêmes garde-fous. Connexion par clé uniquement (`BatchMode`), au choix :
+**Serveur** (VPS, VM) : relie un hôte SSH (alias de `~/.ssh/config` ou `utilisateur@hôte`), l'utilisateur au besoin (champ **Utilisateur**, prioritaire sur le `User` de `~/.ssh/config`) et le dossier du projet sur ce serveur. Studio affiche son état (charge, mémoire, disque, dépôt, Claude Code), ouvre un terminal SSH, et y lance des agents Claude Code avec les mêmes garde-fous. Connexion par clé uniquement (`BatchMode`), au choix :
 
 - **ta configuration SSH** (`~/.ssh/config`, agent SSH), dont Studio ne voit rien ;
 - **une clé gardée par Studio**, créée dans l'app (Ed25519) ou importée d'un fichier : la clé privée est chiffrée dans le trousseau macOS de ce Mac (jamais synchronisée), ne passe jamais par la page ni par le disque en clair, et n'est chargée que dans un agent SSH privé à Studio, le temps que l'app est ouverte. Elle seule est proposée au serveur. Studio affiche la commande qui installe sa clé publique sur le serveur. Après chaque reconstruction de l'app, macOS redemande une fois l'accès à la clé.

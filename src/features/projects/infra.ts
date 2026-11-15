@@ -11,7 +11,7 @@ import type { Project } from './model.ts';
 
 export interface SshKey { id: string; name: string; type: string; fingerprint: string; public: string; created: number; projects?: string[] }
 type Ext = 'docker' | 'kube';
-export interface ServerConf { configured?: boolean; host?: string; path?: string; port?: number; key?: SshKey; ext?: Ext[]; hostKey?: 'unknown' | 'changed'; denied?: boolean }
+export interface ServerConf { configured?: boolean; host?: string; /** Utilisateur fixé dans Studio (vide : celui de ~/.ssh/config). */ user?: string; /** utilisateur@hôte, à afficher. */ dest?: string; path?: string; port?: number; key?: SshKey; ext?: Ext[]; hostKey?: 'unknown' | 'changed'; denied?: boolean }
 
 const EXTS: Record<Ext, { label: string; icon: string; hint: string }> = {
   docker: { label: 'Docker', icon: 'container', hint: 'Conteneurs, Compose, ressources, journaux ; démarrer, arrêter, redémarrer.' },
@@ -40,10 +40,15 @@ function keyPanel(k: SshKey | undefined): string {
     <div class="sv-pub-a"><button type="button" class="btn" data-sx="copy-install" data-key="${esc(k.id)}">${icon('copy')}Copier la commande</button><button type="button" class="btn btn-ghost" data-sx="copy-pub" data-key="${esc(k.id)}">${icon('copy')}Clé publique seule</button></div></div>`;
 }
 
-function formHTML(hosts: { alias: string; hostname: string }[], cur?: ServerConf): string {
+type SshHost = { alias: string; hostname: string; user?: string };
+/** Indication du champ Utilisateur : le `User` de l'alias choisi, sinon un exemple. */
+const userHint = (hosts: SshHost[], host: string): string => { const u = hosts.find(h => h.alias === host)?.user; return u ? `${u} (d’après ~/.ssh/config)` : 'root, ubuntu, deploy…'; };
+
+function formHTML(hosts: SshHost[], cur?: ServerConf): string {
   const ext = new Set(cur?.ext ?? []), key = cur?.key?.id ?? '';
-  return `<form class="sv-form"><div class="ag-empty sv-intro">${icon('server')}<h3>${cur?.configured ? 'Modifier le serveur' : 'Relie un serveur à ce projet'}</h3><p>Un VPS ou une VM où tourne le projet ou ses agents. Studio s’y connecte en SSH depuis ce Mac, par clé uniquement : jamais de mot de passe.</p></div>
-    <div class="sv-row"><label class="pj-field"><span>Hôte SSH</span><input class="field" name="host" list="sv-hosts" placeholder="vps-prod ou deploy@203.0.113.10" value="${esc(cur?.host ?? '')}" required autocomplete="off" spellcheck="false"><datalist id="sv-hosts">${hosts.map(h => `<option value="${esc(h.alias)}">${esc(h.hostname)}</option>`).join('')}</datalist></label>
+  return `<form class="sv-form"><div class="ag-empty sv-intro">${icon('server')}<h3>${cur?.configured ? 'Modifier le serveur' : 'Relie un serveur à ce projet'}</h3><p>Un VPS ou une VM où tourne le projet ou ses agents. Studio s’y connecte en SSH depuis ce Mac, par clé uniquement : jamais de mot de passe. L’utilisateur choisi ici passe avant celui de <code>~/.ssh/config</code>.</p></div>
+    <div class="sv-row"><label class="pj-field"><span>Hôte SSH</span><input class="field" name="host" list="sv-hosts" placeholder="vps-prod ou deploy@203.0.113.10" value="${esc(cur?.host ?? '')}" required autocomplete="off" spellcheck="false"><datalist id="sv-hosts">${hosts.map(h => `<option value="${esc(h.alias)}">${esc(h.user ? `${h.user}@${h.hostname}` : h.hostname)}</option>`).join('')}</datalist></label>
+      <label class="pj-field sv-user"><span>Utilisateur</span><input class="field" name="user" placeholder="${esc(userHint(hosts, cur?.host ?? ''))}" value="${esc(cur?.user ?? '')}" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
       <label class="pj-field sv-port"><span>Port</span><input class="field" name="port" inputmode="numeric" placeholder="22" value="${cur?.port ? String(cur.port) : ''}" autocomplete="off"></label></div>
     <label class="pj-field"><span>Dossier du projet sur le serveur</span><input class="field" name="path" placeholder="/srv/studio ou ~/studio" value="${esc(cur?.path ?? '')}" required autocomplete="off" spellcheck="false"></label>
     <div class="pj-field"><span>Clé SSH</span><div class="sv-keyrow"><select class="field" name="key"><option value="">Ma configuration SSH (~/.ssh, agent SSH)</option>${keys.map(k => `<option value="${esc(k.id)}"${k.id === key ? ' selected' : ''}>${esc(k.name)} · ${esc(k.type)}</option>`).join('')}</select>
@@ -64,8 +69,11 @@ async function loadKeys(): Promise<void> {
 export async function openForm(box: HTMLElement, p: Project, cur?: ServerConf): Promise<void> {
   const [h] = await Promise.all([call('hosts', p, {}, 10000), loadKeys()]);
   if (!box.isConnected) return;
-  box.innerHTML = formHTML((h.hosts as { alias: string; hostname: string }[]) ?? [], cur);
+  const hosts = (h.hosts as SshHost[] | undefined) ?? [];
+  box.innerHTML = formHTML(hosts, cur);
   const f = need<HTMLFormElement>('.sv-form', box), sel = need<HTMLSelectElement>('[name=key]', f);
+  const hostIn = need<HTMLInputElement>('[name=host]', f), userIn = need<HTMLInputElement>('[name=user]', f);
+  hostIn.addEventListener('input', () => { userIn.placeholder = userHint(hosts, hostIn.value.trim()); });
   sel.addEventListener('change', () => { need('.sv-keyinfo', f).innerHTML = keyPanel(keys.find(k => k.id === sel.value)); });
 }
 
@@ -73,7 +81,11 @@ export async function openForm(box: HTMLElement, p: Project, cur?: ServerConf): 
 export async function submit(f: HTMLFormElement, p: Project): Promise<boolean> {
   const v = (n: string) => need<HTMLInputElement>(`[name=${n}]`, f).value.trim();
   const ext = $$<HTMLInputElement>('[name=ext]:checked', f).map(i => i.value);
-  const r = await call('set', p, { host: v('host'), path: v('path'), port: v('port'), key: v('key'), ext }, 10000);
+  // « deploy@vps » tapé dans l'hôte, champ Utilisateur vide : on range chaque morceau à sa place.
+  let host = v('host'), user = v('user');
+  const at = host.lastIndexOf('@');
+  if (at > 0 && !user) { user = host.slice(0, at); host = host.slice(at + 1); }
+  const r = await call('set', p, { host, user, path: v('path'), port: v('port'), key: v('key'), ext }, 10000);
   if (!r.ok) { toast(r.message ?? 'Configuration refusée.'); return false; }
   toast('Serveur relié au projet');
   return true;
@@ -121,15 +133,17 @@ function keysDialog(form: HTMLElement | null): void {
 
 /** Ligne « par quelle clé » sous l'hôte. */
 export const viaHTML = (st: ServerConf): string =>
-  `<span class="sv-via">${st.port ? `port ${st.port} · ` : ''}${st.key ? `${icon('key')}clé Studio « ${esc(st.key.name)} »` : 'configuration SSH du Mac'}</span>`;
+  `<span class="sv-via">${st.user ? `utilisateur ${esc(st.user)} · ` : ''}${st.port ? `port ${st.port} · ` : ''}${st.key ? `${icon('key')}clé Studio « ${esc(st.key.name)} »` : 'configuration SSH du Mac'}</span>`;
 
 /** Aide quand le serveur ne répond pas : empreinte à vérifier, clé à installer, ou rappel de la configuration. */
 export function offlineHTML(st: ServerConf): string {
   if (st.hostKey === 'changed') return `<p class="modal-hint warn">${icon('shield')}L’empreinte de ce serveur ne correspond plus à celle enregistrée dans <code>~/.ssh/known_hosts</code>. Ce peut être une réinstallation… ou une interception. Studio refuse de s’y connecter : vérifie l’empreinte auprès de ton hébergeur, puis retire l’ancienne ligne (<code>ssh-keygen -R ${esc(st.host ?? '')}</code>).</p>`;
   if (st.hostKey === 'unknown') return `<div class="sv-trust"><p>${icon('shield')}Studio ne connaît pas encore l’empreinte de ce serveur. Vérifie-la (console de ton hébergeur, ou <code>ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub</code> sur le serveur) avant de lui faire confiance.</p><button class="btn btn-primary" data-sx="hostkeys">${icon('eye')}Voir l’empreinte du serveur</button></div>`;
-  if (st.denied && st.key) return `<p class="modal-hint">Le serveur refuse la clé « ${esc(st.key.name)} » : installe sa clé publique pour l’utilisateur SSH.</p>${keyPanel(st.key)}`;
+  const who = st.user ? `l’utilisateur <code>${esc(st.user)}</code>` : 'l’utilisateur SSH';
+  if (st.denied && st.key) return `<p class="modal-hint">Le serveur refuse la clé « ${esc(st.key.name)} » pour ${who} : installe sa clé publique pour cet utilisateur, ou change d’utilisateur (Modifier).</p>${keyPanel(st.key)}`;
+  if (st.denied) return `<p class="modal-hint">Le serveur refuse tes clés pour ${who}. Vérifie que <code>ssh ${esc(st.dest ?? st.host ?? '')}</code> fonctionne dans le Terminal : sinon, la bonne clé n’est pas dans <code>~/.ssh/authorized_keys</code> de cet utilisateur, ou ce n’est pas le bon utilisateur (Modifier → Utilisateur).</p>`;
   if (st.key) return `<p class="modal-hint">Vérifie l’hôte, le port et que le serveur accepte SSH.</p>`;
-  return `<p class="modal-hint">Vérifie que <code>ssh ${esc(st.host ?? '')}</code> fonctionne dans le Terminal sans mot de passe (clé chargée dans l’agent SSH), ou choisis une clé gardée par Studio (Modifier).</p>`;
+  return `<p class="modal-hint">Vérifie que <code>ssh ${esc(st.dest ?? st.host ?? '')}</code> fonctionne dans le Terminal sans mot de passe (clé chargée dans l’agent SSH), ou choisis une clé gardée par Studio (Modifier).</p>`;
 }
 
 async function trust(p: Project, reload: () => void): Promise<void> {

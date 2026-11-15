@@ -136,7 +136,7 @@ interface ServerStatus extends infra.ServerConf { online?: boolean; ms?: number;
 const level = (pct: number) => pct >= 90 ? 'red' : pct >= 75 ? 'amber' : 'green';
 function serverHTML(st: ServerStatus): string {
   const local = bridge.local();
-  const head = `<div class="sv-head"><span class="pj-site-dot ${st.online ? 'up' : 'down'}"></span><div><strong>${esc(st.host ?? '')}</strong><code>${esc(st.path ?? '')}</code>${infra.viaHTML(st)}</div>
+  const head = `<div class="sv-head"><span class="pj-site-dot ${st.online ? 'up' : 'down'}"></span><div><strong>${esc(st.dest ?? st.host ?? '')}</strong><code>${esc(st.path ?? '')}</code>${infra.viaHTML(st)}</div>
     <span class="sv-state">${st.online ? `En ligne · ${st.ms} ms` : 'Injoignable'}</span>
     <span class="sv-act">${local ? `<button class="btn" data-sv="terminal">${icon('terminal')}Terminal SSH</button>` : ''}<button class="btn" data-sv="refresh">${icon('refresh')}Actualiser</button>${local ? `<button class="icon-btn" data-sv="edit" title="Modifier" aria-label="Modifier le serveur">${icon('pencil')}</button>` : ''}</span></div>`;
   if (!st.online) return head + `<p class="sv-err">${icon('shield')}${esc(st.error || 'La connexion SSH a échoué.')}</p>${local ? infra.offlineHTML(st) : ''}`;
