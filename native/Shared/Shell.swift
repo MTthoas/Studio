@@ -142,6 +142,8 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
                 switch op {
                 case "start": r = Sites.shared.start(pid, rel: rel)
                 case "stop": r = Sites.shared.stop(pid)
+                case "build": r = Sites.shared.build(pid, rel: rel, script: body["script"] as? String ?? "", name: body["name"] as? String ?? "")
+                case "build-stop": r = Sites.shared.stopBuild(pid)
                 default: r = Sites.shared.state(pid)
                 }
                 r["id"] = id; self.answer(r)

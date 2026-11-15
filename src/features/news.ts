@@ -53,6 +53,17 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'site-build', date: '2026-11-16', icon: 'bolt', hue: 'amber', mac: true,
+    title: 'Builds notifiés',
+    lead: 'Lance le build du projet depuis l’onglet Site : une notification t’avertit dès qu’il se termine.',
+    bits: [
+      ['bolt', 'Variantes', '`build`, `build:prod`, `build-staging`… lues dans le `package.json`'],
+      ['check', 'Notification', 'réussite ou échec, avec la durée et le code de sortie'],
+      ['terminal', 'Sortie en direct', 'le journal du build, à côté du site qui tourne'],
+    ],
+    where: ['Projets', 'un projet', 'Site'],
+    visual: { kind: 'stack', rows: [[['build', 'green', 'check'], 'réussi en 42 s'], [['build:prod', 'amber', 'bolt'], 'en cours…'], [['build:staging', 'red', 'bolt'], 'en échec · code 1']] },
+    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
   { id: 'agent-voice', date: '2026-11-16', icon: 'mic', hue: 'violet',
     title: 'Parle à Claude Code',
     lead: 'Dicte une consigne ou une réponse à un agent : ta voix s’écrit dans le champ, tu relis, tu envoies.',
