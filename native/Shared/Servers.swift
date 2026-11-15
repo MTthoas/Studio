@@ -48,6 +48,30 @@ final class Servers {
     /// Chemin distant : « ~/x » reste interprété par le shell distant, le reste est protégé.
     static func qPath(_ p: String) -> String { p == "~" ? "~" : p.hasPrefix("~/") ? "~/" + q(String(p.dropFirst(2))) : q(p) }
 
+    // MARK: Plusieurs serveurs par projet
+    // Le premier serveur d'un projet est rangé sous l'identifiant du projet (comme avant), les suivants sous
+    // « projet~serveur ». Cette clé (`ref`) sert partout où l'on désignait le serveur par le projet : config, status,
+    // terminal, extensions, monitoring ; un appel sans `server` vise donc toujours le premier.
+
+    static func validServerId(_ s: String) -> Bool { !s.isEmpty && s.count <= 24 && s.allSatisfy { $0.isASCII && ($0.isLowercase || $0.isNumber) } }
+    /// Clé de rangement du serveur `server` du projet ("" ou invalide : le premier).
+    static func ref(_ pid: String, _ server: String) -> String { validServerId(server) ? pid + "~" + server : pid }
+    /// Projet d'une clé de rangement.
+    static func project(of ref: String) -> String { String(ref.split(separator: "~", maxSplits: 1).first ?? "") }
+    private func ids(_ pid: String) -> [String] {
+        all.keys.filter { $0.hasPrefix(pid + "~") }.map { String($0.dropFirst(pid.count + 1)) }.filter(Self.validServerId).sorted()
+    }
+
+    /// Serveurs du projet, le premier en tête puis par ordre d'ajout.
+    func list(_ pid: String) -> [String: Any] {
+        let refs = (all[pid] == nil ? [] : [("", pid)]) + ids(pid).map { ($0, Self.ref(pid, $0)) }
+        let out: [[String: Any]] = refs.compactMap { id, r in
+            guard let c = config(r) else { return nil }
+            return ["id": id, "name": all[r]?["name"] ?? "", "host": c.host, "dest": c.dest, "path": c.path]
+        }
+        return ["ok": true, "servers": out]
+    }
+
     func config(_ pid: String) -> Server? {
         guard let c = all[pid], let h = c["host"], let p = c["path"], Self.validHost(h), Self.validPath(p) else { return nil }
         let port = Int(c["port"] ?? "") ?? 0, key = c["key"] ?? ""
@@ -59,7 +83,7 @@ final class Servers {
     /// Projets dont le serveur utilise chaque clé de Studio.
     func keyUsage() -> [String: [String]] {
         var out: [String: [String]] = [:]
-        for (pid, c) in all { if let k = c["key"], !k.isEmpty { out[k, default: []].append(pid) } }
+        for (r, c) in all { if let k = c["key"], !k.isEmpty { let pid = Self.project(of: r); if !(out[k] ?? []).contains(pid) { out[k, default: []].append(pid) } } }
         return out
     }
 
@@ -85,21 +109,58 @@ final class Servers {
         return ["ok": true, "hosts": out]
     }
 
-    func set(_ pid: String, host: String, user: String = "", path: String, port: String, key: String, ext: [String]) -> [String: Any] {
-        guard !pid.isEmpty, pid.count <= 64 else { return ["ok": false, "message": "Projet invalide."] }
-        guard Self.validHost(host) else { return ["ok": false, "message": "Hôte invalide : un alias de ~/.ssh/config ou utilisateur@hôte."] }
+    /// Champs du formulaire validés, sans rien enregistrer : sert à `set` et au test de connexion.
+    func draft(host: String, user: String = "", path: String, port: String, key: String) -> Result<Server, SSHKeys.Failure> {
+        guard Self.validHost(host) else { return .failure(.init("Hôte invalide : un alias de ~/.ssh/config ou utilisateur@hôte.")) }
         let u = user.trimmingCharacters(in: .whitespaces)
-        guard u.isEmpty || Self.validUser(u) else { return ["ok": false, "message": "Utilisateur invalide : minuscules, chiffres, _ . - (ex. root, ubuntu, deploy)."] }
-        guard u.isEmpty || !host.contains("@") else { return ["ok": false, "message": "L’utilisateur est indiqué deux fois : retire « utilisateur@ » de l’hôte."] }
-        guard Self.validPath(path) else { return ["ok": false, "message": "Chemin invalide : absolu (/srv/app) ou depuis ~ (~/app), sans espace ni caractère spécial."] }
+        guard u.isEmpty || Self.validUser(u) else { return .failure(.init("Utilisateur invalide : minuscules, chiffres, _ . - (ex. root, ubuntu, deploy).")) }
+        guard u.isEmpty || !host.contains("@") else { return .failure(.init("L’utilisateur est indiqué deux fois : retire « utilisateur@ » de l’hôte.")) }
+        guard Self.validPath(path) else { return .failure(.init("Chemin invalide : absolu (/srv/app) ou depuis ~ (~/app), sans espace ni caractère spécial.")) }
         let p = port.trimmingCharacters(in: .whitespaces)
-        guard p.isEmpty || (Int(p).map { (1...65535).contains($0) } ?? false) else { return ["ok": false, "message": "Port invalide : un nombre entre 1 et 65535, ou vide pour le port habituel."] }
-        guard key.isEmpty || (SSHKeys.validId(key) && SSHKeys.shared.exists(key)) else { return ["ok": false, "message": "Clé SSH inconnue."] }
-        let e = Self.extensions.filter(ext.contains)
-        var a = all; a[pid] = ["host": host, "user": u, "path": path, "port": p, "key": key, "ext": e.joined(separator: ",")]; all = a
-        return ["ok": true, "host": host, "user": u, "path": path]
+        guard p.isEmpty || (Int(p).map { (1...65535).contains($0) } ?? false) else { return .failure(.init("Port invalide : un nombre entre 1 et 65535, ou vide pour le port habituel.")) }
+        guard key.isEmpty || (SSHKeys.validId(key) && SSHKeys.shared.exists(key)) else { return .failure(.init("Clé SSH inconnue.")) }
+        return .success(Server(host: host, path: path, port: Int(p) ?? 0, key: key, ext: [], user: u))
     }
-    func forget(_ pid: String) { var a = all; a.removeValue(forKey: pid); all = a }
+
+    /// Enregistre un serveur du projet. `server` : "" pour le premier, "new" pour en ajouter un, sinon l'identifiant d'un serveur existant.
+    func set(_ pid: String, server: String = "", name: String = "", host: String, user: String = "", path: String, port: String, key: String, ext: [String]) -> [String: Any] {
+        guard !pid.isEmpty, pid.count <= 64, !pid.contains("~") else { return ["ok": false, "message": "Projet invalide."] }
+        let c: Server
+        switch draft(host: host, user: user, path: path, port: port, key: key) {
+        case .failure(let f): return ["ok": false, "message": f.message]
+        case .success(let s): c = s
+        }
+        let label = String(name.trimmingCharacters(in: .whitespacesAndNewlines).filter { !$0.isNewline && $0.unicodeScalars.allSatisfy { !CharacterSet.controlCharacters.contains($0) } }.prefix(40))
+        var id = server
+        if id == "new" { id = all[pid] == nil ? "" : String(Int(Date().timeIntervalSince1970 * 1000), radix: 36) }
+        else if !id.isEmpty && (!Self.validServerId(id) || all[Self.ref(pid, id)] == nil) { return ["ok": false, "message": "Serveur introuvable."] }
+        let e = Self.extensions.filter(ext.contains)
+        var a = all; a[Self.ref(pid, id)] = ["name": label, "host": c.host, "user": c.user, "path": c.path, "port": c.port > 0 ? String(c.port) : "", "key": c.key, "ext": e.joined(separator: ",")]; all = a
+        return ["ok": true, "server": id, "host": c.host, "user": c.user, "path": c.path]
+    }
+    /// Retire un serveur (clé de rangement). Retirer le premier fait passer le suivant en tête.
+    func forget(_ ref: String) {
+        var a = all; a.removeValue(forKey: ref)
+        if !ref.contains("~"), let next = ids(ref).first { a[ref] = a.removeValue(forKey: Self.ref(ref, next)) }
+        all = a
+    }
+
+    /// Test de connexion d'un serveur pas encore enregistré : joignable, empreinte, clé acceptée, dossier, Git, Claude Code.
+    func test(_ c: Server) -> [String: Any] {
+        let r = run(c, "echo @OK; cd \(Self.qPath(c.path)) 2>/dev/null && echo @DIR; command -v git >/dev/null 2>&1 && echo @GIT; command -v claude >/dev/null 2>&1 && echo @CLAUDE; uname -sr", timeout: 20)
+        var out: [String: Any] = ["ok": true, "dest": c.dest, "ms": r.ms]
+        guard !r.keyError, r.out.contains("@OK") else {
+            out["online"] = false
+            out["error"] = String(r.out.split(separator: "\n").last ?? "Connexion refusée").prefix(200)
+            if let h = Self.hostKeyProblem(r.out) { out["hostKey"] = h }
+            if r.out.contains("Permission denied") { out["denied"] = true }
+            return out
+        }
+        out["online"] = true
+        out["dir"] = r.out.contains("@DIR"); out["git"] = r.out.contains("@GIT"); out["claude"] = r.out.contains("@CLAUDE")
+        out["os"] = r.out.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.last { !$0.isEmpty && !$0.hasPrefix("@") } ?? ""
+        return out
+    }
 
     /// Lancement de /usr/bin/ssh vers ce serveur : arguments (avec `command`, déjà protégée) et environnement.
     /// Avec une clé de Studio, la charge au besoin dans l'agent de Studio et ne propose qu'elle ;
@@ -177,7 +238,7 @@ final class Servers {
         let dir = Self.qPath(c.path)
         let cmd = "uptime; echo @@; df -hP \(dir) 2>/dev/null | tail -1; echo @@; (free -m 2>/dev/null | sed -n 2p) || true; echo @@; nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null; echo @@; cd \(dir) 2>/dev/null && git status -sb 2>/dev/null | head -1; echo @@; (command -v claude >/dev/null 2>&1 && claude --version 2>/dev/null | head -1) || true; echo @@; uname -sr"
         let r = run(c, cmd)
-        var base: [String: Any] = ["ok": true, "configured": true, "host": c.host, "user": c.user, "dest": c.dest, "path": c.path, "port": c.port, "ext": c.ext, "ms": r.ms]
+        var base: [String: Any] = ["ok": true, "configured": true, "name": all[pid]?["name"] ?? "", "host": c.host, "user": c.user, "dest": c.dest, "path": c.path, "port": c.port, "ext": c.ext, "ms": r.ms]
         if !c.key.isEmpty, let k = SSHKeys.shared.info(c.key) { base["key"] = k }
         guard r.status == 0 || r.out.contains("@@") else {
             base["online"] = false
@@ -267,6 +328,9 @@ final class Servers {
 
     func hostKeys(_ pid: String) -> [String: Any] {
         guard let c = config(pid) else { return ["ok": false, "message": "Aucun serveur configuré."] }
+        return hostKeys(c)
+    }
+    func hostKeys(_ c: Server) -> [String: Any] {
         guard let s = scan(c) else { return ["ok": false, "message": "Le serveur n’a pas donné son empreinte (injoignable, ou port SSH différent ?)."] }
         return ["ok": true, "keys": s.prints]
     }
@@ -274,6 +338,9 @@ final class Servers {
     /// Ajoute l'empreinte du serveur à known_hosts, seulement si c'est exactement celle que l'utilisateur a confirmée.
     func trust(_ pid: String, confirmed: [String]) -> [String: Any] {
         guard let c = config(pid) else { return ["ok": false, "message": "Aucun serveur configuré."] }
+        return trust(c, confirmed: confirmed)
+    }
+    func trust(_ c: Server, confirmed: [String]) -> [String: Any] {
         guard let s = scan(c) else { return ["ok": false, "message": "Le serveur n’a pas donné son empreinte."] }
         guard Set(s.prints.compactMap { $0["fingerprint"] }) == Set(confirmed) else {
             return ["ok": false, "message": "L’empreinte du serveur a changé depuis que tu l’as vue : rien n’a été enregistré."]

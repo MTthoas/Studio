@@ -228,7 +228,10 @@ final class Agents {
     func start(project pid: String, body: [String: Any], done: @escaping ([String: Any]) -> Void) {
         let folders = ProjectFolders.shared
         let onServer = body["machine"] as? String == "server"
-        let server = onServer ? Servers.shared.config(pid) : nil
+        // Plusieurs serveurs par projet : celui choisi (`server`), ou, pour une reprise, celui de la session d'origine.
+        let resumeId = body["session"] as? String ?? ""
+        let previous: Servers.Server? = onServer && !resumeId.isEmpty ? { lock.lock(); defer { lock.unlock() }; return runs.values.first { $0.session == resumeId && $0.machine == "server" && $0.project == pid }?.server }() : nil
+        let server = onServer ? previous ?? Servers.shared.config(Servers.ref(pid, body["server"] as? String ?? "")) : nil
         if onServer && server == nil { return done(["ok": false, "message": "Aucun serveur configuré pour ce projet (onglet Serveur)."]) }
         guard let dir = onServer ? server?.path : folders.path(pid) else { return done(["ok": false, "message": "Choisis d'abord le dossier du projet sur ce Mac."]) }
         let bin = onServer ? "/usr/bin/ssh" : (ClaudeCode.shared.binary() ?? "")

@@ -55,6 +55,11 @@ final class Monitors {
         lock.lock(); defer { lock.unlock() }
         probes[pid]?.process?.terminate(); probes.removeValue(forKey: pid)
     }
+    /// Arrête le suivi de tous les serveurs du projet (clés `pid` et `pid~serveur`, voir Servers.ref).
+    func stopAll(_ pid: String) {
+        lock.lock(); defer { lock.unlock() }
+        for (k, p) in probes where Servers.project(of: k) == pid { p.process?.terminate(); probes.removeValue(forKey: k) }
+    }
 
     private func armWatchdog() {
         guard watchdog == nil else { return }

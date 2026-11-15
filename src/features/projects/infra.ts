@@ -11,17 +11,32 @@ import type { Project } from './model.ts';
 
 export interface SshKey { id: string; name: string; type: string; fingerprint: string; public: string; created: number; projects?: string[] }
 type Ext = 'docker' | 'kube';
-export interface ServerConf { configured?: boolean; host?: string; /** Utilisateur fixé dans Studio (vide : celui de ~/.ssh/config). */ user?: string; /** utilisateur@hôte, à afficher. */ dest?: string; path?: string; port?: number; key?: SshKey; ext?: Ext[]; hostKey?: 'unknown' | 'changed'; denied?: boolean; error?: string }
+export interface ServerConf { configured?: boolean; /** Nom donné dans Studio (Production, Préproduction…), vide : l'hôte. */ name?: string; host?: string; /** Utilisateur fixé dans Studio (vide : celui de ~/.ssh/config). */ user?: string; /** utilisateur@hôte, à afficher. */ dest?: string; path?: string; port?: number; key?: SshKey; ext?: Ext[]; hostKey?: 'unknown' | 'changed'; denied?: boolean; error?: string }
 
 const EXTS: Record<Ext, { label: string; icon: string; hint: string }> = {
   docker: { label: 'Docker', icon: 'container', hint: 'Conteneurs, Compose, ressources, journaux ; démarrer, arrêter, redémarrer.' },
   kube: { label: 'Kubernetes', icon: 'kube', hint: 'Nœuds, déploiements et pods (kubectl, k3s ou microk8s) ; journaux, redémarrage.' },
 };
 
+// Un projet peut avoir plusieurs serveurs : `chosen[projet]` est celui affiché ("" : le premier), envoyé à chaque appel.
+export interface ServerItem { id: string; name: string; host: string; dest: string; path: string }
+const chosen: Record<string, string> = {};
+/** Choisit le serveur affiché du projet (et visé par les appels de ce module). */
+export function use(p: Project, id: string): void { chosen[p.id] = id; }
+export const current = (p: Project): string => chosen[p.id] ?? '';
+
 const call = (op: string, p: Project | null, extra: Record<string, unknown> = {}, timeout = 30000) =>
-  native.call('agent', 'server', { project: p?.id ?? '', op, ...extra }, timeout);
+  native.call('agent', 'server', { project: p?.id ?? '', op, server: p ? current(p) : '', ...extra }, timeout);
 const read = (op: string, p: Project, extra: Record<string, unknown> = {}, timeout = 45000) =>
-  bridge.call('agent', 'server', { project: p.id, op, ...extra }, timeout);
+  bridge.call('agent', 'server', { project: p.id, op, server: current(p), ...extra }, timeout);
+
+/** Serveurs du projet. Un Mac d'avant la liste répond par l'état du premier : on en fait une liste d'un. */
+export async function list(p: Project): Promise<{ ok: boolean; message?: string; servers: ServerItem[] }> {
+  const r = await bridge.call('agent', 'server', { project: p.id, op: 'list' }, 15000);
+  if (!r.ok) return { ok: false, message: r.message, servers: [] };
+  if (Array.isArray(r.servers)) return { ok: true, servers: r.servers as ServerItem[] };
+  return { ok: true, servers: r.configured ? [{ id: '', name: '', host: String(r.host ?? ''), dest: String(r.dest ?? r.host ?? ''), path: String(r.path ?? '') }] : [] };
+}
 
 async function copy(text: string, what: string): Promise<void> {
   try { await navigator.clipboard.writeText(text); toast(`${what} copiée`); } catch { toast('Copie impossible : sélectionne le texte'); }
@@ -44,9 +59,12 @@ type SshHost = { alias: string; hostname: string; user?: string };
 /** Indication du champ Utilisateur : le `User` de l'alias choisi, sinon un exemple. */
 const userHint = (hosts: SshHost[], host: string): string => { const u = hosts.find(h => h.alias === host)?.user; return u ? `${u} (d’après ~/.ssh/config)` : 'root, ubuntu, deploy…'; };
 
-function formHTML(hosts: SshHost[], cur?: ServerConf): string {
+/** `adding` : un serveur de plus pour un projet qui en a déjà (le formulaire peut alors être annulé). */
+function formHTML(hosts: SshHost[], cur: ServerConf | undefined, adding: boolean, sid: string): string {
   const ext = new Set(cur?.ext ?? []), key = cur?.key?.id ?? '';
-  return `<form class="sv-form"><div class="ag-empty sv-intro">${icon('server')}<h3>${cur?.configured ? 'Modifier le serveur' : 'Relie un serveur à ce projet'}</h3><p>Un VPS ou une VM où tourne le projet ou ses agents. Studio s’y connecte en SSH depuis ce Mac, par clé uniquement : jamais de mot de passe. L’utilisateur choisi ici passe avant celui de <code>~/.ssh/config</code>.</p></div>
+  const title = cur?.configured ? `Modifier ${cur.name ? `« ${esc(cur.name)} »` : 'le serveur'}` : adding ? 'Ajouter un serveur' : 'Relie un serveur à ce projet';
+  return `<form class="sv-form"><input type="hidden" name="server" value="${cur?.configured ? esc(sid) : 'new'}"><div class="ag-empty sv-intro">${icon('server')}<h3>${title}</h3><p>Un VPS ou une VM où tourne le projet ou ses agents (production, préproduction…). Studio s’y connecte en SSH depuis ce Mac, par clé uniquement : jamais de mot de passe. L’utilisateur choisi ici passe avant celui de <code>~/.ssh/config</code>.</p></div>
+    <label class="pj-field"><span>Nom</span><input class="field" name="name" placeholder="Production, Préproduction… (facultatif : l’hôte sinon)" value="${esc(cur?.name ?? '')}" maxlength="40" autocomplete="off"></label>
     <div class="sv-row"><label class="pj-field"><span>Hôte SSH</span><input class="field" name="host" list="sv-hosts" placeholder="vps-prod ou 203.0.113.10 (adresse IP, pas le nom de l’invite)" value="${esc(cur?.host ?? '')}" required autocomplete="off" spellcheck="false"><datalist id="sv-hosts">${hosts.map(h => `<option value="${esc(h.alias)}">${esc(h.user ? `${h.user}@${h.hostname}` : h.hostname)}</option>`).join('')}</datalist></label>
       <label class="pj-field sv-user"><span>Utilisateur</span><input class="field" name="user" placeholder="${esc(userHint(hosts, cur?.host ?? ''))}" value="${esc(cur?.user ?? '')}" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
       <label class="pj-field sv-port"><span>Port</span><input class="field" name="port" inputmode="numeric" placeholder="22" value="${cur?.port ? String(cur.port) : ''}" autocomplete="off"></label></div>
@@ -57,7 +75,37 @@ function formHTML(hosts: SshHost[], cur?: ServerConf): string {
       <p class="modal-hint">${icon('lock')}Une clé gardée par Studio est chiffrée dans le trousseau de ce Mac, ne quitte jamais l’app et n’est montrée qu’au serveur (elle seule) ; macOS peut te demander d’en autoriser l’accès.</p></div>
     <div class="pj-field"><span>Extensions</span><div class="sv-exts">${(Object.keys(EXTS) as Ext[]).map(e => `<label class="sv-extopt"><input type="checkbox" name="ext" value="${e}"${ext.has(e) ? ' checked' : ''}><span class="sv-ext-ic">${icon(EXTS[e].icon)}</span><span><b>${EXTS[e].label}</b><em>${EXTS[e].hint}</em></span></label>`).join('')}</div></div>
     <p class="modal-hint">${icon('shield')}Les commandes envoyées sont fixes : état du serveur, extensions activées, et Claude Code avec les mêmes garde-fous que sur le Mac.</p>
-    <div class="modal-actions">${cur?.configured ? '<button type="button" class="btn" data-sv="cancel">Annuler</button>' : ''}<button class="btn btn-primary">${icon('check')}Enregistrer</button></div></form>`;
+    <div class="sv-test" aria-live="polite"></div>
+    <div class="modal-actions">${cur?.configured ? `<button type="button" class="btn btn-ghost sv-forget" data-sx="forget">${icon('trash')}Retirer ce serveur</button>` : ''}${cur?.configured || adding ? '<button type="button" class="btn" data-sv="cancel">Annuler</button>' : ''}<button type="button" class="btn" data-sx="test">${icon('refresh')}Tester la connexion</button><button class="btn btn-primary">${icon('check')}Enregistrer</button></div></form>`;
+}
+
+/** Champs de connexion du formulaire ; « deploy@vps » tapé dans l'hôte, champ Utilisateur vide : chaque morceau à sa place. */
+function fields(f: HTMLElement): { host: string; user: string; path: string; port: string; key: string } {
+  const v = (n: string) => need<HTMLInputElement>(`[name=${n}]`, f).value.trim();
+  let host = v('host'), user = v('user');
+  const at = host.lastIndexOf('@');
+  if (at > 0 && !user) { user = host.slice(0, at); host = host.slice(at + 1); }
+  return { host, user, path: v('path'), port: v('port'), key: v('key') };
+}
+
+/** Résultat du test de connexion, sous le formulaire. */
+function testHTML(r: native.Reply, d: ServerConf): string {
+  if (!r.ok) return `<p class="sv-err">${icon('shield')}${esc(r.message ?? 'Test impossible.')}</p>`;
+  if (!r.online) return `<p class="sv-err">${icon('shield')}Connexion impossible : ${esc(String(r.error || 'la connexion SSH a échoué.'))}</p>${offlineHTML({ ...d, dest: String(r.dest ?? d.host), hostKey: r.hostKey as ServerConf['hostKey'], denied: !!r.denied, error: String(r.error ?? '') })}`;
+  const item = (ok: boolean, yes: string, no: string) => `<li class="${ok ? 'ok' : 'warn'}">${icon(ok ? 'check' : 'shield')}${ok ? yes : no}</li>`;
+  return `<div class="sv-test-ok"><p>${icon('check')}<strong>Connexion réussie</strong> · ${esc(String(r.dest ?? ''))} · ${Number(r.ms) || 0} ms${r.os ? ` · ${esc(String(r.os))}` : ''}</p>
+    <ul>${item(!!r.dir, `Dossier <code>${esc(d.path ?? '')}</code> trouvé`, `Dossier <code>${esc(d.path ?? '')}</code> introuvable : crée-le ou corrige le chemin`)}${item(!!r.git, 'Git installé', 'Git introuvable')}${item(!!r.claude, 'Claude Code installé', 'Claude Code absent (facultatif, pour lancer des agents sur le serveur)')}</ul></div>`;
+}
+
+async function test(f: HTMLFormElement, p: Project): Promise<void> {
+  const out = need('.sv-test', f), d = fields(f);
+  if (!d.host || !d.path) { out.innerHTML = `<p class="sv-err">${icon('shield')}Indique au moins l’hôte et le dossier du projet.</p>`; return; }
+  const btn = need<HTMLButtonElement>('[data-sx=test]', f), label = btn.innerHTML;
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Test…'; out.innerHTML = '';
+  const r = await call('test', p, d, 30000);
+  btn.disabled = false; btn.innerHTML = label;
+  if (!f.isConnected) return;
+  out.innerHTML = testHTML(r, { ...d, port: Number(d.port) || undefined, key: keys.find(k => k.id === d.key) });
 }
 
 async function loadKeys(): Promise<void> {
@@ -66,11 +114,11 @@ async function loadKeys(): Promise<void> {
 }
 
 /** Affiche le formulaire du serveur (nouveau ou à modifier) dans `box`. */
-export async function openForm(box: HTMLElement, p: Project, cur?: ServerConf): Promise<void> {
+export async function openForm(box: HTMLElement, p: Project, cur?: ServerConf, adding = false): Promise<void> {
   const [h] = await Promise.all([call('hosts', p, {}, 10000), loadKeys()]);
   if (!box.isConnected) return;
   const hosts = (h.hosts as SshHost[] | undefined) ?? [];
-  box.innerHTML = formHTML(hosts, cur);
+  box.innerHTML = formHTML(hosts, cur, adding, current(p));
   const f = need<HTMLFormElement>('.sv-form', box), sel = need<HTMLSelectElement>('[name=key]', f);
   const hostIn = need<HTMLInputElement>('[name=host]', f), userIn = need<HTMLInputElement>('[name=user]', f);
   hostIn.addEventListener('input', () => { userIn.placeholder = userHint(hosts, hostIn.value.trim()); });
@@ -81,13 +129,11 @@ export async function openForm(box: HTMLElement, p: Project, cur?: ServerConf): 
 export async function submit(f: HTMLFormElement, p: Project): Promise<boolean> {
   const v = (n: string) => need<HTMLInputElement>(`[name=${n}]`, f).value.trim();
   const ext = $$<HTMLInputElement>('[name=ext]:checked', f).map(i => i.value);
-  // « deploy@vps » tapé dans l'hôte, champ Utilisateur vide : on range chaque morceau à sa place.
-  let host = v('host'), user = v('user');
-  const at = host.lastIndexOf('@');
-  if (at > 0 && !user) { user = host.slice(0, at); host = host.slice(at + 1); }
-  const r = await call('set', p, { host, user, path: v('path'), port: v('port'), key: v('key'), ext }, 10000);
+  const adding = v('server') === 'new';
+  const r = await call('set', p, { ...fields(f), server: v('server'), name: v('name'), ext }, 10000);
   if (!r.ok) { toast(r.message ?? 'Configuration refusée.'); return false; }
-  toast('Serveur relié au projet');
+  if (typeof r.server === 'string') use(p, r.server);
+  toast(adding ? 'Serveur ajouté au projet' : 'Serveur enregistré');
   return true;
 }
 
@@ -148,8 +194,9 @@ export function offlineHTML(st: ServerConf): string {
   return `<p class="modal-hint">Vérifie que <code>ssh ${esc(st.dest ?? st.host ?? '')}</code> fonctionne dans le Terminal sans mot de passe (clé chargée dans l’agent SSH), ou choisis une clé gardée par Studio (Modifier).</p>`;
 }
 
-async function trust(p: Project, reload: () => void): Promise<void> {
-  const r = await call('hostkeys', p, {}, 30000);
+/** `draft` : champs d'un formulaire pas encore enregistré (empreinte vue pendant le test de connexion). */
+async function trust(p: Project, reload: () => void, draft: Record<string, unknown> = {}): Promise<void> {
+  const r = await call('hostkeys', p, draft, 30000);
   if (!r.ok) { toast(r.message ?? 'Empreinte illisible.'); return; }
   const list = (r.keys as { fingerprint: string; type: string }[]) ?? [];
   const m = modal({ title: 'Empreinte du serveur', cls: 'sv-trustm', html: `<p class="modal-text">Compare avec l’empreinte affichée par ton hébergeur ou sur le serveur. Si elle est identique, Studio l’ajoute à <code>~/.ssh/known_hosts</code> ; une empreinte qui changerait ensuite serait refusée.</p>
@@ -158,7 +205,7 @@ async function trust(p: Project, reload: () => void): Promise<void> {
   need('[data-x]', m.node).onclick = () => m.close();
   need('[data-ok]', m.node).onclick = async () => {
     m.close();
-    const t = await call('trust', p, { fingerprints: list.map(k => k.fingerprint) }, 30000);
+    const t = await call('trust', p, { ...draft, fingerprints: list.map(k => k.fingerprint) }, 30000);
     if (!t.ok) { toast(t.message ?? 'Impossible d’enregistrer l’empreinte.'); return; }
     toast('Empreinte enregistrée'); reload();
   };
@@ -285,7 +332,16 @@ export async function click(t: HTMLElement, p: Project, reload: () => void): Pro
     toast(r.existing ? 'Cette clé était déjà dans Studio' : 'Clé importée et chiffrée dans le trousseau'); await refreshSelect(form, (r.key as SshKey).id); return true;
   }
   if (act === 'keys') { await loadKeys(); keysDialog(form); return true; }
-  if (act === 'hostkeys') { await trust(p, reload); return true; }
+  if (act === 'test' && form) { await test(form as HTMLFormElement, p); return true; }
+  // Pendant le test : l'empreinte est celle du serveur saisi, et la confiance relance le test plutôt que la page.
+  if (act === 'hostkeys') { if (form) await trust(p, () => void test(form as HTMLFormElement, p), fields(form)); else await trust(p, reload); return true; }
+  if (act === 'forget') {
+    const name = need<HTMLInputElement>('[name=name]', form ?? document).value.trim() || need<HTMLInputElement>('[name=host]', form ?? document).value.trim();
+    if (!await confirmBox({ title: `Retirer le serveur « ${name} » ?`, text: 'Studio oublie sa connexion pour ce projet. Rien n’est touché sur le serveur, et la clé SSH reste dans le trousseau.', ok: 'Retirer', danger: true })) return true;
+    const r = await call('forget', p, {}, 10000);
+    if (!r.ok) { toast(r.message ?? 'Impossible de retirer le serveur.'); return true; }
+    use(p, ''); toast('Serveur retiré'); reload(); return true;
+  }
   const sec = b.closest<HTMLElement>('.sv-ext'), ext = sec?.dataset.ext as Ext | undefined;
   if (!sec || !ext) return true;
   if (act === 'ext-refresh') { need('.sv-ext-b', sec).innerHTML = '<div class="pj-skel"></div>'; void loadExt(sec, p); return true; }

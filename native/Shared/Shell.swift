@@ -217,37 +217,43 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
         case "commits": bg { folders.commits(pid, days: body["days"] as? Int ?? 30) }
         case "run": send(Agents.shared.detail(body["run"] as? String ?? ""))
         case "server":
+            // Un projet peut avoir plusieurs serveurs : `server` désigne lequel ("" : le premier). `sref` est sa clé de rangement.
+            let sid = body["server"] as? String ?? "", sref = Servers.ref(pid, sid)
+            // Formulaire pas encore enregistré (test de connexion, empreinte) : le serveur vient des champs envoyés.
+            let draft = { Servers.shared.draft(host: body["host"] as? String ?? "", user: body["user"] as? String ?? "", path: body["path"] as? String ?? "", port: body["port"] as? String ?? "", key: body["key"] as? String ?? "") }
             switch body["op"] as? String ?? "" {
             case "hosts": bg { Servers.shared.hosts() }
-            case "set": bg { Servers.shared.set(pid, host: body["host"] as? String ?? "", user: body["user"] as? String ?? "", path: body["path"] as? String ?? "", port: body["port"] as? String ?? "",
+            case "list": send(Servers.shared.list(pid))
+            case "set": bg { Servers.shared.set(pid, server: sid, name: body["name"] as? String ?? "", host: body["host"] as? String ?? "", user: body["user"] as? String ?? "", path: body["path"] as? String ?? "", port: body["port"] as? String ?? "",
                                                 key: body["key"] as? String ?? "", ext: body["ext"] as? [String] ?? []) }
-            case "forget": Servers.shared.forget(pid); Monitors.shared.stop(pid); send(["ok": true])
-            case "terminal": bg { Servers.shared.terminal(pid) }
+            case "test": bg { switch draft() { case .failure(let f): return ["ok": false, "message": f.message]; case .success(let c): return Servers.shared.test(c) } }
+            case "forget": Servers.shared.forget(sref); Monitors.shared.stopAll(pid); send(["ok": true])
+            case "terminal": bg { Servers.shared.terminal(sref) }
             // Empreinte du serveur : lue (ssh-keyscan), puis ajoutée à known_hosts seulement si c'est celle que l'utilisateur a confirmée.
-            case "hostkeys": bg { Servers.shared.hostKeys(pid) }
-            case "trust": bg { Servers.shared.trust(pid, confirmed: body["fingerprints"] as? [String] ?? []) }
+            case "hostkeys": bg { if body["host"] != nil { switch draft() { case .failure(let f): return ["ok": false, "message": f.message]; case .success(let c): return Servers.shared.hostKeys(c) } }; return Servers.shared.hostKeys(sref) }
+            case "trust": bg { if body["host"] != nil { switch draft() { case .failure(let f): return ["ok": false, "message": f.message]; case .success(let c): return Servers.shared.trust(c, confirmed: body["fingerprints"] as? [String] ?? []) } }; return Servers.shared.trust(sref, confirmed: body["fingerprints"] as? [String] ?? []) }
             // Clés SSH gardées par Studio (SSHKeys.swift) : la clé privée ne traverse jamais le pont.
             case "keys": bg { SSHKeys.shared.list() }
             case "key-new": bg { SSHKeys.shared.generate(name: body["name"] as? String ?? "") }
             case "key-import": SSHKeys.shared.pick(name: body["name"] as? String ?? "", done: send)
             case "key-delete": bg { SSHKeys.shared.delete(body["key"] as? String ?? "") }
             // Extensions du serveur (ServerExtensions.swift) : état, journaux, actions nommées.
-            case "ext": bg { ServerExtensions.shared.read(pid, ext: body["ext"] as? String ?? "") }
-            case "ext-logs": bg { ServerExtensions.shared.logs(pid, ext: body["ext"] as? String ?? "", name: body["name"] as? String ?? "", ns: body["ns"] as? String ?? "") }
-            case "ext-act": bg { ServerExtensions.shared.act(pid, ext: body["ext"] as? String ?? "", action: body["action"] as? String ?? "", name: body["name"] as? String ?? "", ns: body["ns"] as? String ?? "") }
+            case "ext": bg { ServerExtensions.shared.read(sref, ext: body["ext"] as? String ?? "") }
+            case "ext-logs": bg { ServerExtensions.shared.logs(sref, ext: body["ext"] as? String ?? "", name: body["name"] as? String ?? "", ns: body["ns"] as? String ?? "") }
+            case "ext-act": bg { ServerExtensions.shared.act(sref, ext: body["ext"] as? String ?? "", action: body["action"] as? String ?? "", name: body["name"] as? String ?? "", ns: body["ns"] as? String ?? "") }
             // Monitoring en direct (Monitor.swift) et terminal intégré (Terminals.swift).
-            case "monitor": bg { Monitors.shared.poll(pid, since: body["since"] as? Double ?? 0) }
+            case "monitor": bg { Monitors.shared.poll(sref, since: body["since"] as? Double ?? 0) }
             case "term-open":
                 Terminals.shared.emit = { [weak self] payload in
                     guard let data = try? JSONSerialization.data(withJSONObject: payload), let json = String(data: data, encoding: .utf8) else { return }
                     DispatchQueue.main.async { self?.web?.evaluateJavaScript("window.carnet && window.carnet.term && window.carnet.term(\(json))", completionHandler: nil) }
                 }
-                bg { Terminals.shared.open(pid, cols: body["cols"] as? Int ?? 80, rows: body["rows"] as? Int ?? 24) }
+                bg { Terminals.shared.open(sref, cols: body["cols"] as? Int ?? 80, rows: body["rows"] as? Int ?? 24) }
             case "term-write": send(Terminals.shared.input(body["term"] as? String ?? "", body["data"] as? String ?? ""))
             case "term-resize": send(Terminals.shared.resize(body["term"] as? String ?? "", cols: body["cols"] as? Int ?? 80, rows: body["rows"] as? Int ?? 24))
             case "term-close": send(Terminals.shared.stop(body["term"] as? String ?? ""))
-            case "term-list": send(Terminals.shared.list(pid))
-            default: bg { Servers.shared.status(pid) }
+            case "term-list": send(Terminals.shared.list(sref))
+            default: bg { Servers.shared.status(sref) }
             }
         case "daily":
             guard let dir = folders.path(pid) else { send(["ok": true, "tokens": [:], "sessions": [:]]); return }
