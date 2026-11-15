@@ -14,6 +14,7 @@ import * as store from '../../core/store.ts';
 import * as model from './model.ts';
 import * as saved from './drafts.ts';
 import * as permissions from '../permissions.ts';
+import * as voice from '../voice.ts';
 import { menu } from '../../ui/kit.ts';
 import type { Project } from './model.ts';
 
@@ -386,7 +387,7 @@ export function composerHTML(p: Project, { session = '', compact = false, machin
   // Chaque formulaire a son brouillon : un par conversation, un pour la nouvelle consigne, un pour celle de l'aperçu, un pour le serveur.
   const key = `${p.id}|${session ? `s:${session}` : machine === 'server' ? 'server' : compact ? 'quick' : 'new'}`, d = saved.draft(key);
   if (session) return `<form class="ag-compose ag-continue" data-draft="${esc(key)}" data-session="${esc(session)}"${machine ? ` data-machine="${esc(machine)}"` : ''}><textarea name="prompt" rows="2" placeholder="Réponds à Claude : précise, corrige, tranche, demande la suite…" aria-label="Répondre dans la session">${esc(d?.text ?? '')}</textarea>
-    <div class="ag-opts"><span class="ag-hint" data-hint>${HINT_IDLE}</span>${tuneHTML(saved.ofSession(session) ?? { model: '', effort: '' })}<button type="button" class="btn btn-danger ag-stop" data-ag="stop" hidden>${icon('stop')}Arrêter</button><button class="btn btn-primary">${SEND_IDLE}</button></div>${lims}</form>`;
+    <div class="ag-opts"><span class="ag-hint" data-hint>${HINT_IDLE}</span>${tuneHTML(saved.ofSession(session) ?? { model: '', effort: '' })}${voice.micHTML('Répondre à voix haute')}<button type="button" class="btn btn-danger ag-stop" data-ag="stop" hidden>${icon('stop')}Arrêter</button><button class="btn btn-primary">${SEND_IDLE}</button></div>${lims}</form>`;
   const pre = pending?.project === p.id ? pending : null; if (pre && !compact) pending = null;
   // Une note ou une tâche confiée à Claude s'ajoute au brouillon en cours, sans l'effacer.
   const hand = pre && !compact ? pre : null;
@@ -403,7 +404,7 @@ export function composerHTML(p: Project, { session = '', compact = false, machin
       <select class="field" name="machine" aria-label="Où travailler"${machine === 'server' ? '' : ' hidden'}><option value="mac">Sur le Mac</option>${machine === 'server' ? '<option value="server" selected>Sur le serveur</option>' : ''}</select>
       ${tuneHTML(saved.defaults())}
       <span class="ag-hint" data-hint>${read ? HINT_READ : HINT_EDIT}</span>
-      <button class="btn btn-primary">${icon('play')}Lancer<kbd>⌘↩</kbd></button></div>${lims}</form>`;
+      ${voice.micHTML('Dicter la consigne')}<button class="btn btn-primary">${icon('play')}Lancer<kbd>⌘↩</kbd></button></div>${lims}</form>`;
 }
 
 /** Branche les formulaires de consigne présents dans `root` (lancement, reprise, raccourci ⌘↩). */
@@ -428,6 +429,8 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
   });
   root.addEventListener('click', e => {
     const t = e.target as HTMLElement, f = t.closest<HTMLFormElement>('.ag-compose'); if (!f) return;
+    const mic = t.closest<HTMLElement>('[data-vc-mic]');
+    if (mic) { voice.dictate(need<HTMLTextAreaElement>('textarea', f), mic, () => keepDraft(f)); return; }
     const lim = t.closest<HTMLElement>('[data-ag-lim]');
     if (lim) { void limitsAction(lim.dataset.agLim ?? ''); return; }
     const ids = () => (f.dataset.notes || '').split(',').filter(Boolean);
@@ -445,6 +448,7 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     const f = (e.target as HTMLElement).closest<HTMLFormElement>('.ag-compose'); if (!f) return;
     e.preventDefault(); e.stopPropagation();
     if (f.querySelector<HTMLButtonElement>('button.btn-primary')?.disabled) return; // envoi déjà parti
+    if (f.querySelector('.vc-mic.live')) voice.cancel(); // sinon la dictée réécrirait le champ vidé après l'envoi
     const ta = need<HTMLTextAreaElement>('textarea', f), noteIds = (f.dataset.notes || '').split(',').filter(Boolean);
     if (!ta.value.trim() && !noteIds.length) { ta.focus(); return; }
     const built = withNotes(ta.value.trim(), noteIds), prompt = built.text;

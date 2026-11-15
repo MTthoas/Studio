@@ -1852,6 +1852,12 @@ button.lv-chip:hover, .lv-chip.sel { color: var(--text); background: var(--btn);
 .ag-opts .ag-stop[hidden] { display: none; }
 .ag-opts .ag-stop + .btn-primary { margin-left: 0; }
 .ag-opts .btn-primary:disabled { opacity: .45; cursor: default; }
+/* Dictée d'une consigne (voice.dictate) : le bouton pulse tant que le micro écoute. */
+.ag-opts .vc-mic { margin-left: auto; flex: none; width: 32px; height: 32px; color: var(--text-3); }
+.ag-opts .vc-mic ~ .btn-primary { margin-left: 0; }
+.vc-mic:hover { color: var(--text); }
+.vc-mic.live { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); animation: vc-pulse 1.2s ease-in-out infinite; }
+.vc-mic.busy { animation: none; opacity: .6; }
 .modal.ag-pub { max-width: 560px; }
 .pub-type { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; color: var(--text-2); font-size: var(--t-1); font-weight: 500; }
 .pub-type .ag-seg { flex-wrap: wrap; }
