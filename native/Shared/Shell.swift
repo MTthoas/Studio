@@ -258,6 +258,8 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
             case "ext-act": bg { ServerExtensions.shared.act(sref, ext: body["ext"] as? String ?? "", action: body["action"] as? String ?? "", name: body["name"] as? String ?? "", ns: body["ns"] as? String ?? "") }
             // Monitoring en direct (Monitor.swift) et terminal intégré (Terminals.swift).
             case "monitor": bg { Monitors.shared.poll(sref, since: body["since"] as? Double ?? 0) }
+            // Fiche de la machine (emplacement, puissance, capacités) ; `geo` : localisation par ipinfo.io, sur demande.
+            case "specs": bg { Servers.shared.specs(sref, geo: body["geo"] as? Bool == true) }
             case "term-open":
                 Terminals.shared.emit = { [weak self] payload in
                     guard let data = try? JSONSerialization.data(withJSONObject: payload), let json = String(data: data, encoding: .utf8) else { return }

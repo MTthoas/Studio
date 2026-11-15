@@ -16,6 +16,7 @@ import * as sessions from './sessions.ts';
 import * as review from './review.ts';
 import * as site from './site.ts';
 import * as infra from './infra.ts';
+import * as specs from './specs.ts';
 import * as chart from '../../ui/chart.ts';
 import * as bridge from '../../integrations/remote.ts';
 import { shareable } from '../../integrations/ai.ts';
@@ -158,6 +159,7 @@ function serverHTML(st: ServerStatus, sid = ''): string {
     <dl class="sv-facts"><div><dt>Dépôt</dt><dd>${st.git ? `<code>${esc(st.git.replace(/^## /, ''))}</code>` : 'pas un dépôt Git'}</dd></div>
       <div><dt>Claude Code</dt><dd>${st.claude ? esc(st.claude) : '<span class="warn">non installé</span>'}</dd></div>
       <div><dt>Système</dt><dd>${esc(st.os ?? '')}${st.uptime ? ` · allumé depuis ${esc(st.uptime)}` : ''}</dd></div></dl>
+    ${specs.html()}
     ${infra.extsHTML(st)}
     ${st.claude ? `<h3 class="ss-h">Lancer un agent sur ce serveur <span>dans une copie isolée du dépôt distant</span></h3>${sessions.composerHTML(model.byId(app.viewState().project) as Project, { machine: 'server', server: sid })}` : `<p class="modal-hint">Installe Claude Code sur le serveur (<code>curl -fsSL https://claude.ai/install.sh | bash</code>) et connecte-le (<code>claude</code> puis <code>/login</code>) pour y lancer des agents.</p>`}`;
 }
@@ -185,7 +187,7 @@ async function server(root: HTMLElement, p: Project): Promise<void> {
   if (!st.ok) { box.innerHTML = `${tabs}<p class="hm-empty">${esc(st.message ?? 'Lecture impossible.')}</p>`; return; }
   box.innerHTML = tabs + serverHTML(st, sid);
   box.dataset.st = JSON.stringify(st);
-  if (st.online) infra.loadExts(box, p);
+  if (st.online) { infra.loadExts(box, p); void specs.load(box, p); }
   sessions.bindComposer(box, p, r => { sessions.select(r.session || null, p.id); void go(p.id, 'sessions'); });
 }
 
@@ -555,6 +557,7 @@ export function mount(main: HTMLElement): void {
     if (tb && p) { await app.setView({ type: 'projets', project: p.id, tab: tb.dataset.pjTab ?? 'overview' }); return; }
     const ccNote = t.closest('[data-pj-cc-note]'), ccTask = t.closest('[data-pj-cc-task]');
     if ((ccNote || ccTask) && p) { await toClaude(p, ccNote ? { notes: [ccNote.dataset.pjCcNote ?? ''] } : { prompt: ccTask?.dataset.pjCcTask ?? '' }); return; }
+    if (p && t.closest('.sv-box') && specs.click(t, p)) return;
     if (p && t.closest('.sv-box') && await infra.click(t, p, () => { const box = $('.sv-box', root); if (box) box.innerHTML = '<div class="pj-skel"></div>'; void server(root, p); })) return;
     const pick = t.closest('[data-sv-pick]');
     if (pick && p) {

@@ -2092,6 +2092,23 @@ button.lv-chip:hover, .lv-chip.sel { color: var(--text); background: var(--btn);
 .sv-nodes { display: flex; flex-wrap: wrap; gap: 6px; }
 .sv-node { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); font-size: var(--t-1); }
 .sv-node em { font-style: normal; color: var(--text-3); }
+/* Fiche « Machine » : emplacement, puissance, capacités (specs.ts) */
+.sv-hw-b { display: flex; flex-direction: column; gap: 10px; }
+.sv-hw-loc { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); }
+.sv-hw-loc > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sv-hw-loc strong { font-size: var(--t-2); font-weight: 600; }
+.sv-hw-loc em { font-style: normal; color: var(--text-3); font-size: var(--t-1); }
+.sv-hw-flag { font-size: 30px; line-height: 1; flex: none; }
+.sv-hw-flag .ic { width: 24px; height: 24px; color: var(--text-3); }
+.sv-hw-ip { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.sv-hw-ip code { font: 12px var(--mono); color: var(--text-2); }
+.sv-hw-ip .btn { height: 28px; }
+.sv-hw-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.sv-hw-grid em { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-hw .sv-node .ic { width: 13px; height: 13px; color: var(--text-3); }
+.sv-hw .sv-node code { font: 12px var(--mono); }
+.sv-hw-m { width: 120px; }
+@media (max-width: 760px) { .sv-hw-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .sv-hw-loc { flex-wrap: wrap; } }
 .sv-sys summary { cursor: pointer; color: var(--text-3); font-size: var(--t-1); margin-top: 4px; }
 .modal.sv-logm { width: min(920px, 100%); }
 .sv-log { max-height: 60vh; min-height: 200px; }
