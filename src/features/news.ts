@@ -53,6 +53,17 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'chat-live-usage', date: '2026-11-15', icon: 'bolt', hue: 'orange',
+    title: 'Ton utilisation, en direct dans Claude',
+    lead: 'En haut des conversations Claude d’un projet : où en sont ton abonnement Claude et ta clé ChatGPT.',
+    bits: [
+      ['bolt', 'Abonnement Claude', 'part utilisée de la session de 5 h et de la semaine, avec l’heure de remise à zéro'],
+      ['terminal', 'Claude Code', 'tokens des 5 dernières heures et du jour, relus toutes les 30 s (app Mac)'],
+      ['plug', 'ChatGPT', 'tokens comptés à partir de l’enregistrement de la clé OpenAI'],
+    ],
+    where: ['Projets', 'un projet', 'Claude'],
+    visual: { kind: 'stack', rows: [[['Session 5 h', 'orange', 'bolt'], '42 % utilisés · réinit. dans 2 h 10'], [['Semaine', 'amber', 'bolt'], '18 % utilisés'], [['ChatGPT', 'green', 'plug'], '12,4 k tokens depuis la connexion']] },
+    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
   { id: 'github-actions', date: '2026-11-15', icon: 'bolt', hue: 'green',
     title: 'GitHub Actions, et GitHub plus rapide',
     lead: 'L’état de chaque workflow dans l’onglet Flux, et beaucoup moins d’attente sur les projets.',
