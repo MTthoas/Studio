@@ -275,18 +275,26 @@ input[type="radio"] { accent-color: var(--text); margin: 0; }
 .crumb > button:hover { color: var(--text); }
 .crumb > .ic { flex: none; }
 .crumb-cur { color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
-/* Le chat agrippé au filet du bas de la barre d'outils (44 px, fil d'Ariane centré) : balancement lent, queue, somme. */
-.crumb { position: relative; }
-.crumb-cat { position: absolute; left: calc(100% + 8px); top: calc(50% + 19px); z-index: 5; pointer-events: none; color: var(--text-3); line-height: 0; }
+/* Le chat assis sur le filet du bas de la barre d'outils, au bord droit (la barre lui réserve sa place) :
+   respiration, clignement, queue, tête qui se tourne, oreille qui frémit. Coordonnées en unités du viewBox (0 0 32 32). */
+.toolbar { position: relative; }
+.toolbar:has(.crumb-cat) { padding-right: 44px; }
+.crumb-cat { position: absolute; right: 10px; bottom: 0; pointer-events: none; color: var(--text-3); line-height: 0; }
 .crumb-cat svg { display: block; overflow: visible; fill: currentColor; }
-.cat-body { transform-origin: 15px 2px; animation: cat-sway 7s ease-in-out infinite alternate; }
-.cat-tail { transform-origin: 19.5px 31px; animation: cat-tail 3.2s ease-in-out infinite alternate; }
-.cat-eyes { stroke: var(--bg); }
-.cat-z { font: 600 6px/1 var(--font, sans-serif); fill: var(--text-3); opacity: 0; animation: cat-z 6s ease-out infinite 2s; }
-@keyframes cat-sway { from { transform: rotate(-5deg); } to { transform: rotate(5deg); } }
-@keyframes cat-tail { from { transform: rotate(-12deg); } to { transform: rotate(14deg); } }
-@keyframes cat-z { 0% { opacity: 0; transform: translate(0, 0); } 15% { opacity: .9; } 60%, 100% { opacity: 0; transform: translate(5px, -7px); } }
-@media (max-width: 520px) { .crumb-cat { display: none; } }
+.cat-body { transform-origin: 16px 32px; animation: cat-breath 3.4s ease-in-out infinite; }
+.cat-tail { transform-origin: 21px 30.6px; animation: cat-tail 2.8s ease-in-out infinite alternate; }
+.cat-head { transform-origin: 16px 17px; animation: cat-look 13s ease-in-out infinite; }
+.cat-ear-r { transform-origin: 20.5px 10px; animation: cat-ear 9s ease-in-out infinite 1.5s; }
+.cat-eyes { fill: var(--bg); transform-box: fill-box; transform-origin: center; animation: cat-blink 5.5s infinite; }
+.cat-nose { fill: var(--bg); opacity: .55; }
+.cat-whisk { fill: none; stroke: currentColor; stroke-width: .55; stroke-linecap: round; opacity: .8; }
+@keyframes cat-breath { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.015, 1.035); } }
+@keyframes cat-tail { from { transform: rotate(-10deg); } to { transform: rotate(16deg); } }
+@keyframes cat-look { 0%, 30%, 100% { transform: rotate(0); } 36%, 52% { transform: rotate(-9deg) translateX(-.4px); } 58%, 64% { transform: rotate(0); } 70%, 80% { transform: rotate(7deg); } 86% { transform: rotate(0); } }
+@keyframes cat-ear { 0%, 88%, 100% { transform: rotate(0); } 90% { transform: rotate(-16deg); } 92% { transform: rotate(4deg); } 94% { transform: rotate(-10deg); } 96% { transform: rotate(0); } }
+@keyframes cat-blink { 0%, 90%, 96%, 100% { transform: scaleY(1); } 93% { transform: scaleY(.1); } }
+@media (prefers-reduced-motion: reduce) { .crumb-cat * { animation: none !important; } }
+@media (max-width: 520px) { .crumb-cat { display: none; } .toolbar:has(.crumb-cat) { padding-right: 8px; } }
 .seg { display: flex; padding: 2px; border-radius: 7px; border: 1px solid var(--border); }
 .seg button { width: 28px; height: 22px; display: grid; place-items: center; border-radius: 4px; color: var(--text-3); }
 .seg button:hover { color: var(--text); }
@@ -1778,11 +1786,10 @@ button.lv-chip:hover, .lv-chip.sel { color: var(--text); background: var(--btn);
 .ag-hint .ic { flex: none; width: 13px; height: 13px; }
 /* Micro, Arrêter et Envoyer restent groupés à droite, même quand la barre passe à la ligne. */
 .ag-go { flex: none; margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
-.ag-opts .ag-send { flex: none; height: 32px; padding: 0 6px 0 11px; gap: 7px; border-radius: 8px; background: var(--accent); color: #fff; }
-.ag-opts .ag-send:hover { background: var(--accent-hover); }
-.ag-opts .ag-send:active { background: color-mix(in srgb, var(--accent) 85%, #000); }
-.ag-opts .ag-send:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 2px; }
-.ag-opts kbd { margin: 0; padding: 3px 5px; border: 0; border-radius: 5px; min-width: 0; background: rgba(255, 255, 255, .18); color: inherit; font: 500 11px/1 var(--mono); }
+/* Envoyer : le bouton principal de l'app (`.btn-primary`, couleur du texte sur le fond), pas de vermillon. */
+.ag-opts .ag-send { flex: none; height: 32px; padding: 0 6px 0 11px; gap: 7px; border-radius: 6px; }
+.ag-opts .ag-send:focus-visible { outline: 2px solid color-mix(in srgb, var(--text) 30%, transparent); outline-offset: 2px; }
+.ag-opts kbd { margin: 0; padding: 3px 5px; border: 0; border-radius: 4px; min-width: 0; background: color-mix(in srgb, var(--bg) 16%, transparent); color: inherit; font: 500 11px/1 var(--mono); }
 /* Pied de la consigne : ce qu'il reste de l'abonnement Claude */
 .ag-lims { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; min-height: 36px; padding: 6px 8px 6px 14px; border-top: 1px solid var(--border); color: var(--text-3); font-size: var(--t-1); }
 .ag-lims:empty { display: none; }
