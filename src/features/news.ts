@@ -53,6 +53,17 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'servers-many', date: '2026-11-16', icon: 'server', hue: 'blue', mac: true,
+    title: 'Plusieurs serveurs par projet',
+    lead: 'Relie la production, la préproduction et les autres au même projet, et teste la connexion avant d’enregistrer.',
+    bits: [
+      ['server', 'Un onglet par serveur', 'chacun avec son nom, sa clé, ses extensions et ses agents'],
+      ['refresh', 'Tester la connexion', 'SSH, empreinte, clé acceptée, dossier, Git et Claude Code'],
+      ['terminal', 'Agents', 'choisis le serveur où lancer la consigne'],
+    ],
+    where: ['Projets', 'un projet', 'Serveur'],
+    visual: { kind: 'stack', rows: [[['Production', 'green', 'check'], 'en ligne · 38 ms'], [['Préproduction', 'amber', 'server'], 'dossier introuvable'], [['Ajouter un serveur', 'blue', 'plus'], 'test avant d’enregistrer']] },
+    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
   { id: 'site-build', date: '2026-11-16', icon: 'bolt', hue: 'amber', mac: true,
     title: 'Builds notifiés',
     lead: 'Lance le build du projet depuis l’onglet Site : une notification t’avertit dès qu’il se termine.',

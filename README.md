@@ -204,6 +204,8 @@ Ces réglages restent sur le Mac. Un appareil lié ne peut ni les lire ni les mo
 
 Un serveur jamais vu n'est accepté qu'après confirmation de son empreinte, ajoutée alors à `~/.ssh/known_hosts` ; une empreinte changée est refusée.
 
+**Plusieurs serveurs par projet** (production, préproduction…) : chacun a son nom, sa connexion, ses extensions et son onglet ; **Ajouter un serveur** en relie un de plus, et le choix de machine d'une consigne propose chacun d'eux. **Tester la connexion**, dans le formulaire, essaie les champs saisis avant d'enregistrer : connexion SSH, empreinte (à confirmer sur place), clé acceptée, dossier du projet, Git et Claude Code.
+
 **Extensions du serveur**, à cocher une par une : **Docker** (conteneurs, projets Compose, processeur et mémoire, journaux ; démarrer, arrêter, redémarrer) et **Kubernetes** (`kubectl`, `k3s` ou `microk8s` : nœuds, déploiements, pods, journaux ; redémarrage d'un déploiement, suppression d'un pod). Chaque action demande confirmation. Depuis un appareil lié, on ne fait que lire leur état.
 
 Les commandes distantes sont fixes et protégées, et la configuration reste dans l'app Mac.

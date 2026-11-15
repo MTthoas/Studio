@@ -263,7 +263,7 @@ class Session {
     delete params.type; delete params.action; delete params.id;
     // Serveur : lecture seule à distance (état, monitoring, état des extensions). Jamais de terminal, de configuration,
     // de clé SSH, de journal ni d'action sur Docker ou Kubernetes.
-    if (key === 'agent.server' && !['status', 'monitor', 'ext'].includes(String(params.op ?? 'status'))) return deny('Le serveur se configure, se pilote et son terminal s’ouvre depuis le Mac.');
+    if (key === 'agent.server' && !['status', 'list', 'monitor', 'ext'].includes(String(params.op ?? 'status'))) return deny('Le serveur se configure, se pilote et son terminal s’ouvre depuis le Mac.');
     // Limites de l'abonnement : lecture seule des pourcentages. Les activer, les couper ou forcer une relecture se fait sur le Mac.
     if (key === 'claude.limits') params.op = '';
     if (key === 'agent.start') {

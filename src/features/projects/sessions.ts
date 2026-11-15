@@ -383,7 +383,8 @@ function keepDraft(f: HTMLFormElement): void {
     mode: f.querySelector<HTMLInputElement>('[name=mode]:checked')?.value ?? 'edit', tests: !!f.querySelector<HTMLInputElement>('[name=tests]')?.checked });
 }
 
-export function composerHTML(p: Project, { session = '', compact = false, machine = '' } = {}): string {
+/** `server` : identifiant du serveur du projet visé quand `machine` vaut 'server' ("" : le premier). */
+export function composerHTML(p: Project, { session = '', compact = false, machine = '', server = '' } = {}): string {
   // Un agent lancé sur un serveur utilise la connexion Claude du serveur, pas l'abonnement lu sur le Mac.
   const lims = machine === 'server' ? '' : `<div class="ag-lims" aria-label="Utilisation de l’abonnement Claude">${limsHTML()}</div>`;
   // Chaque formulaire a son brouillon : un par conversation, un pour la nouvelle consigne, un pour celle de l'aperçu, un pour le serveur.
@@ -403,7 +404,7 @@ export function composerHTML(p: Project, { session = '', compact = false, machin
     <div class="ag-opts">
       <div class="ag-seg" role="radiogroup" aria-label="Mode"><label><input type="radio" name="mode" value="edit"${read ? '' : ' checked'}><span>${icon('pencil')}Modifier</span></label><label><input type="radio" name="mode" value="read"${read ? ' checked' : ''}><span>${icon('search')}Analyser</span></label></div>
       ${bridge.local() && machine !== 'server' ? `<label class="ag-check" title="Autorise les commandes réglées dans Réglages → Autorisations (par défaut npm test et npm run …) : le code du projet peut alors s’exécuter"><input type="checkbox" name="tests"${tests ? ' checked' : ''}${read && !inRead ? ' disabled' : ''}>Commandes</label>` : ''}
-      <select class="field" name="machine" aria-label="Où travailler"${machine === 'server' ? '' : ' hidden'}><option value="mac">Sur le Mac</option>${machine === 'server' ? '<option value="server" selected>Sur le serveur</option>' : ''}</select>
+      <select class="field" name="machine" aria-label="Où travailler"${machine === 'server' ? '' : ' hidden'}><option value="mac">Sur le Mac</option>${machine === 'server' ? `<option value="${server ? `server:${esc(server)}` : 'server'}" selected>Sur le serveur</option>` : ''}</select>
       ${tuneHTML(saved.defaults())}
       <span class="ag-hint" data-hint>${read ? HINT_READ : HINT_EDIT}</span>
       <span class="ag-go">${voice.micHTML('Dicter la consigne')}<button class="btn btn-primary ag-send">${icon('play')}Lancer<kbd>⌘↩</kbd></button></span></div>${lims}</form>`;
@@ -462,7 +463,7 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     if (picked.model === OTHER) picked.model = '';
     const body: Record<string, unknown> = { project: p.id, prompt, ...picked };
     if (f.dataset.session) { body.session = f.dataset.session; if (f.dataset.machine) body.machine = f.dataset.machine; }
-    else { body.mode = f.querySelector<HTMLInputElement>('[name=mode]:checked')?.value ?? 'edit'; body.tests = !!val('tests')?.checked; const mc = val('machine'); if (mc && !mc.hidden) body.machine = mc.value; }
+    else { body.mode = f.querySelector<HTMLInputElement>('[name=mode]:checked')?.value ?? 'edit'; body.tests = !!val('tests')?.checked; const mc = val('machine'); if (mc && !mc.hidden) { const [m, s] = mc.value.split(':'); body.machine = m; if (s) body.server = s; } }
     btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Envoi…';
     const r = await bridge.call('agent', 'start', body, 60000);
     btn.disabled = false; btn.innerHTML = label; delete f.dataset.busy;
@@ -1121,7 +1122,8 @@ async function paintOnce(box: HTMLElement, p: Project): Promise<void> {
   if (unnamed) void nameSession(p, unnamed);
 }
 
-let serverLabel = '';
+/** Options « Sur <serveur> » du choix de machine, une par serveur du projet (remplies par `mount`). */
+let serverOpts = '';
 function shell(box: HTMLElement, p: Project): void {
   const selRun = selected ? runs.find(r => r.session === selected) : undefined;
   box.innerHTML = (remote ? `<p class="ag-remote">${icon('devices')}Piloté à distance sur <strong>${esc(remote)}</strong> · relecture et publication depuis le Mac</p>` : '') + (selected && sub
@@ -1131,7 +1133,7 @@ function shell(box: HTMLElement, p: Project): void {
     ? `<button class="lv-back" data-ss="">${icon('back')}Toutes les sessions</button><div class="ag-zone"><p class="hm-empty">Chargement…</p></div>${composerHTML(p, { session: selected, machine: selRun?.machine === 'server' ? 'server' : '' })}`
     : `${composerHTML(p)}<div class="ag-zone"><p class="hm-empty">Chargement…</p></div>`);
   const mc = $<HTMLSelectElement>('select[name=machine]', box);
-  if (mc && serverLabel && !selected) { mc.insertAdjacentHTML('beforeend', `<option value="server">Sur ${esc(serverLabel)}</option>`); mc.hidden = false; }
+  if (mc && serverOpts && !selected) { mc.insertAdjacentHTML('beforeend', serverOpts); mc.hidden = false; }
 }
 
 /** Ouvre une conversation dans l'onglet affiché (`null` : retour à la liste). */
@@ -1307,10 +1309,14 @@ export function mount(box: HTMLElement, p: Project, folder: string | null): void
   restoreTrees(p.id); treesSoon = false;
   shell(box, p);
   void loadPulls(p);
-  void bridge.call('agent', 'server', { project: p.id, op: 'status' }, 25000).then(r => {
-    serverLabel = r.ok && r.configured ? String(r.host) : '';
+  // Une option par serveur du projet (`server:<id>`, le premier sans identifiant). Un Mac d'avant la liste répond à `list` par l'état du premier.
+  serverOpts = '';
+  void bridge.call('agent', 'server', { project: p.id, op: 'list' }, 25000).then(r => {
+    const list = Array.isArray(r.servers) ? r.servers as { id: string; name: string; dest: string }[] : r.ok && r.configured ? [{ id: '', name: '', dest: String(r.host) }] : [];
+    serverOpts = list.map(s => `<option value="${s.id ? `server:${esc(s.id)}` : 'server'}">Sur ${esc(s.name || s.dest)}</option>`).join('');
     const mc = $<HTMLSelectElement>('.ag-compose:not(.ag-continue) select[name=machine]', box);
-    if (mc && serverLabel && !mc.querySelector('[value=server]')) { mc.insertAdjacentHTML('beforeend', `<option value="server">Sur ${esc(serverLabel)}</option>`); mc.hidden = false; }
+    if (!mc || !serverOpts || mc.querySelector('[value^=server]')) return;
+    mc.insertAdjacentHTML('beforeend', serverOpts); mc.hidden = false;
   });
   bindComposer(box, p, r => { open(r.session || selected); });
   box.onclick = async e => {

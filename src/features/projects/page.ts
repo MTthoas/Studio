@@ -134,9 +134,9 @@ function tabBody(p: Project, tab: string): string {
 // Connexion, clés SSH, empreinte et extensions (Docker, Kubernetes) : voir infra.ts.
 interface ServerStatus extends infra.ServerConf { online?: boolean; ms?: number; error?: string; load?: number[]; cpus?: number; uptime?: string; disk?: { size: string; used: string; free: string; pct: number }; mem?: { total: number; used: number }; git?: string; claude?: string; os?: string }
 const level = (pct: number) => pct >= 90 ? 'red' : pct >= 75 ? 'amber' : 'green';
-function serverHTML(st: ServerStatus): string {
+function serverHTML(st: ServerStatus, sid = ''): string {
   const local = bridge.local();
-  const head = `<div class="sv-head"><span class="pj-site-dot ${st.online ? 'up' : 'down'}"></span><div><strong>${esc(st.dest ?? st.host ?? '')}</strong><code>${esc(st.path ?? '')}</code>${infra.viaHTML(st)}</div>
+  const head = `<div class="sv-head"><span class="pj-site-dot ${st.online ? 'up' : 'down'}"></span><div><strong>${esc(st.name || st.dest || st.host || '')}</strong>${st.name ? `<span class="sv-dest">${esc(st.dest ?? st.host ?? '')}</span>` : ''}<code>${esc(st.path ?? '')}</code>${infra.viaHTML(st)}</div>
     <span class="sv-state">${st.online ? `En ligne · ${st.ms} ms` : 'Injoignable'}</span>
     <span class="sv-act">${local ? `<button class="btn" data-sv="terminal">${icon('terminal')}Terminal SSH</button>` : ''}<button class="btn" data-sv="refresh">${icon('refresh')}Actualiser</button>${local ? `<button class="icon-btn" data-sv="edit" title="Modifier" aria-label="Modifier le serveur">${icon('pencil')}</button>` : ''}</span></div>`;
   if (!st.online) return head + `<p class="sv-err">${icon('shield')}${esc(st.error || 'La connexion SSH a échoué.')}</p>${local ? infra.offlineHTML(st) : ''}`;
@@ -152,19 +152,31 @@ function serverHTML(st: ServerStatus): string {
       <div><dt>Claude Code</dt><dd>${st.claude ? esc(st.claude) : '<span class="warn">non installé</span>'}</dd></div>
       <div><dt>Système</dt><dd>${esc(st.os ?? '')}${st.uptime ? ` · allumé depuis ${esc(st.uptime)}` : ''}</dd></div></dl>
     ${infra.extsHTML(st)}
-    ${st.claude ? `<h3 class="ss-h">Lancer un agent sur ce serveur <span>dans une copie isolée du dépôt distant</span></h3>${sessions.composerHTML(model.byId(app.viewState().project) as Project, { machine: 'server' })}` : `<p class="modal-hint">Installe Claude Code sur le serveur (<code>curl -fsSL https://claude.ai/install.sh | bash</code>) et connecte-le (<code>claude</code> puis <code>/login</code>) pour y lancer des agents.</p>`}`;
+    ${st.claude ? `<h3 class="ss-h">Lancer un agent sur ce serveur <span>dans une copie isolée du dépôt distant</span></h3>${sessions.composerHTML(model.byId(app.viewState().project) as Project, { machine: 'server', server: sid })}` : `<p class="modal-hint">Installe Claude Code sur le serveur (<code>curl -fsSL https://claude.ai/install.sh | bash</code>) et connecte-le (<code>claude</code> puis <code>/login</code>) pour y lancer des agents.</p>`}`;
+}
+/** Choix du serveur quand le projet en a plusieurs, et bouton d'ajout (sur le Mac). */
+function serverTabs(list: infra.ServerItem[], cur: string): string {
+  if (list.length < 2 && !bridge.local()) return '';
+  return `<div class="sv-pick" role="tablist" aria-label="Serveurs du projet">${list.map(s => `<button class="sv-pick-b${s.id === cur ? ' on' : ''}" role="tab" aria-selected="${s.id === cur}" data-sv-pick="${esc(s.id)}" title="${esc(s.dest)}">${icon('server')}${esc(s.name || s.dest)}</button>`).join('')}${bridge.local() ? `<button class="sv-pick-b sv-pick-add" data-sv="add">${icon('plus')}Ajouter un serveur</button>` : ''}</div>`;
 }
 async function server(root: HTMLElement, p: Project): Promise<void> {
   const box = $('.sv-box', root); if (!box) return;
   if (!bridge.where()) { box.innerHTML = `<div class="ag-empty">${icon('server')}<h3>Le serveur se pilote depuis le Mac</h3><p>Ouvre ce projet dans l’app Studio pour Mac, ou lie cet appareil au Mac pour suivre le serveur d’ici.</p></div>`; return; }
-  const st = (await bridge.call('agent', 'server', { project: p.id, op: 'status' }, 30000)) as ServerStatus & { ok: boolean; message?: string };
+  // Plusieurs serveurs par projet : on garde le dernier choisi pour chaque projet, sinon le premier.
+  const ls = await infra.list(p);
   if (!box.isConnected) return;
-  if (!st.ok) { box.innerHTML = `<p class="hm-empty">${esc(st.message ?? 'Lecture impossible.')}</p>`; return; }
-  if (!st.configured) {
+  if (!ls.ok) { box.innerHTML = `<p class="hm-empty">${esc(ls.message ?? 'Lecture impossible.')}</p>`; return; }
+  if (!ls.servers.length) {
     if (!bridge.local()) { box.innerHTML = `<div class="ag-empty">${icon('server')}<h3>Aucun serveur relié</h3><p>Relie le serveur du projet depuis le Mac (onglet Serveur).</p></div>`; return; }
-    await infra.openForm(box, p); return;
+    infra.use(p, ''); await infra.openForm(box, p); return;
   }
-  box.innerHTML = serverHTML(st);
+  const want = infra.current(p), sid = ls.servers.some(s => s.id === want) ? want : ls.servers[0].id;
+  infra.use(p, sid);
+  const st = (await bridge.call('agent', 'server', { project: p.id, op: 'status', server: sid }, 30000)) as ServerStatus & { ok: boolean; message?: string };
+  if (!box.isConnected || infra.current(p) !== sid) return;
+  const tabs = serverTabs(ls.servers, sid);
+  if (!st.ok) { box.innerHTML = `${tabs}<p class="hm-empty">${esc(st.message ?? 'Lecture impossible.')}</p>`; return; }
+  box.innerHTML = tabs + serverHTML(st, sid);
   box.dataset.st = JSON.stringify(st);
   if (st.online) infra.loadExts(box, p);
   sessions.bindComposer(box, p, r => { sessions.select(r.session || null, p.id); void go(p.id, 'sessions'); });
@@ -506,11 +518,18 @@ export function mount(main: HTMLElement): void {
     const ccNote = t.closest('[data-pj-cc-note]'), ccTask = t.closest('[data-pj-cc-task]');
     if ((ccNote || ccTask) && p) { await toClaude(p, ccNote ? { notes: [ccNote.dataset.pjCcNote ?? ''] } : { prompt: ccTask?.dataset.pjCcTask ?? '' }); return; }
     if (p && t.closest('.sv-box') && await infra.click(t, p, () => { const box = $('.sv-box', root); if (box) box.innerHTML = '<div class="pj-skel"></div>'; void server(root, p); })) return;
+    const pick = t.closest('[data-sv-pick]');
+    if (pick && p) {
+      const id = pick.dataset.svPick ?? '';
+      if (id !== infra.current(p)) { infra.use(p, id); const box = $('.sv-box', root); if (box) box.innerHTML = '<div class="pj-skel"></div>'; void server(root, p); }
+      return;
+    }
     const sv = t.closest('[data-sv]');
     if (sv && p) {
       const act = sv.dataset.sv, box = $('.sv-box', root);
       if (act === 'refresh') { if (box) box.innerHTML = '<div class="pj-skel"></div>'; void server(root, p); }
-      if (act === 'terminal') { const r = await native.call('agent', 'server', { project: p.id, op: 'terminal' }, 10000); if (!r.ok) toast(r.message ?? 'Impossible.'); }
+      if (act === 'terminal') { const r = await native.call('agent', 'server', { project: p.id, op: 'terminal', server: infra.current(p) }, 10000); if (!r.ok) toast(r.message ?? 'Impossible.'); }
+      if (act === 'add' && box) await infra.openForm(box, p, undefined, true);
       if (act === 'edit' && box) await infra.openForm(box, p, JSON.parse(box.dataset.st || '{}') as ServerStatus);
       if (act === 'cancel') void server(root, p);
       return;
