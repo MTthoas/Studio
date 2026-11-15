@@ -297,6 +297,47 @@ final class Agents {
                 cwd = path
             }
         }
+        // Autres dépôts du projet (site, API…) : en mode « modifier », une copie sœur dans chacun, du même nom et partant
+        // aussi de la dernière version de sa branche principale ; en mode « analyser », leur dossier. L'agent les reçoit
+        // par --add-dir et sait lequel est lequel ; publier pousse la même branche dans chaque dépôt modifié.
+        if let r = body["repos"] { folders.rememberRepos(pid, r) }
+        var extraDirs: [String] = [], repoNote = ""
+        if !onServer {
+            let others = folders.otherRepos(pid)
+            let name = cwd.range(of: "/.claude/worktrees/").map { String(cwd[$0.upperBound...]) } ?? ""
+            var lines: [String] = [], failed: [String] = others.missing.map(\.name)
+            for o in others.found {
+                var target = o.dir
+                if mode == "edit" && !name.isEmpty {
+                    let wt = o.dir + "/.claude/worktrees/" + name
+                    var isDir: ObjCBool = false
+                    if FileManager.default.fileExists(atPath: wt, isDirectory: &isDir) && isDir.boolValue { target = wt }
+                    else if resume.isEmpty {
+                        let made = folders.createWorktree(o.dir, name: name)
+                        guard let p = made.path else { failed.append(o.repo.name); continue }
+                        target = p
+                    } else {
+                        let made = folders.restoreWorktree(o.dir, name: name, branch: folders.currentBranch(cwd) ?? "")
+                        guard made.branch != nil else { failed.append(o.repo.name); continue }
+                        target = wt
+                    }
+                }
+                extraDirs.append(target)
+                lines.append("- \(o.repo.name)\(o.repo.role.isEmpty ? "" : " (\(o.repo.role))") : \(target)")
+            }
+            if !lines.isEmpty || !failed.isEmpty {
+                let here = folders.remote(dir).map { " (dépôt \($0))" } ?? ""
+                var note = "Ce projet a plusieurs dépôts GitHub. Ton dossier de travail\(here) est \(cwd)."
+                if !lines.isEmpty {
+                    note += mode == "edit"
+                        ? " Les autres dépôts du projet te sont ouverts, chacun dans sa propre copie isolée, avec les mêmes règles (pas de commit : Studio publie une branche et une pull request dans chaque dépôt que tu modifies). Travaille dans celui que la demande concerne, avec des chemins absolus :\n"
+                        : " Les autres dépôts du projet te sont ouverts en lecture :\n"
+                    note += lines.joined(separator: "\n")
+                }
+                if !failed.isEmpty { note += "\nIntrouvables sur ce Mac (aucun clone à côté du dossier du projet, ou copie impossible) : \(failed.joined(separator: ", ")). Si la demande les concerne, dis-le : l'utilisateur peut les cloner depuis l'onglet du projet." }
+                repoNote = note
+            }
+        }
         // Modèle, effort et commandes : ceux de la demande. Une reprise qui n'en précise pas (réponse dans la discussion,
         // messages en attente, orchestrateur) garde ceux du dernier tour de la discussion, tant que Studio s'en souvient.
         var model = body["model"] as? String, effort = body["effort"] as? String, asked = body["tests"] as? Bool
@@ -318,7 +359,8 @@ final class Agents {
         let effortOK = Self.efforts.contains(useEffort)
         if modelOK { args += ["--model", useModel] }
         if effortOK { args += ["--effort", useEffort] }
-        let added = AgentTuning.prompt(mode: mode, tests: tests)
+        if !extraDirs.isEmpty { args += ["--add-dir"] + extraDirs }
+        let added = [AgentTuning.prompt(mode: mode, tests: tests), repoNote].filter { !$0.isEmpty }.joined(separator: "\n\n")
         if !added.isEmpty { args += ["--append-system-prompt", added] }
         args += ["--allowedTools"] + AgentPermissions.allowed(tools: tools, commands: tests)
 
@@ -384,6 +426,7 @@ final class Agents {
                 if !wt.isEmpty && wt.contains("/.claude/worktrees/")
                     && !Orchestrator.shared.busy(project: run.project, worktree: name) && !self.busy(project: run.project, worktree: name) {
                     ProjectFolders.shared.recycleIfDelivered(wt, fetch: true)
+                    for s in ProjectFolders.shared.sisterCopies(run.project, name) { ProjectFolders.shared.recycleIfDelivered(s.wt, fetch: true) }
                 }
                 self.flushQueues()
             }

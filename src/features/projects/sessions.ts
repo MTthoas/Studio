@@ -32,9 +32,14 @@ interface Worktree {
   history?: { branch: string; subject: string; merged: boolean }[];
   /** Dernière PR de la branche sur GitHub, si on la connaît (ajoutée par la page, voir `withPulls`). */
   pr?: github.BranchPull;
+  /** Copies sœurs du même nom dans les autres dépôts du projet (site, API…), créées pour le même agent. */
+  sisters?: Sister[];
 }
+interface Sister { repo: string; branch: string; head?: string; changes: number; ahead: number; pushed: boolean; upToDate?: boolean; merged?: boolean; conflicts?: string[] }
 /** Tâche de l'orchestrateur (Orchestrator.swift) : publication ou mise à jour d'une copie. */
-interface Job { job: string; kind: 'publish' | 'sync'; worktree: string; status: 'running' | 'done' | 'error' | 'blocked'; step: string; log: string[]; conflicts: string[]; branch: string; message: string }
+interface Job { job: string; kind: 'publish' | 'sync'; worktree: string; status: 'running' | 'done' | 'error' | 'blocked'; step: string; log: string[]; conflicts: string[]; branch: string; message: string; /** Une branche par dépôt modifié (absent avec une app Mac ancienne). */ pushed?: { repo: string; branch: string }[] }
+/** La copie a du travail à publier (changements en cours, ou commits ni poussés ni fusionnés). */
+const hasWork = (c: Pick<Worktree, 'changes' | 'ahead' | 'merged' | 'upToDate'>) => c.changes > 0 || (c.ahead > 0 && !c.merged && !c.upToDate);
 
 let selected: string | null = null, timer: ReturnType<typeof setInterval> | undefined, tick = 0;
 /** Message secondaire : écrit pendant que l'agent travaillait, remis à la fin de son tour (voir Agents.swift). */
@@ -461,7 +466,8 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     // Modèle et effort : envoyés aussi quand on répond, pour que la conversation garde (ou change) les siens.
     const picked: saved.Choice = { model: val('model')?.value ?? '', effort: val('effort')?.value ?? '' };
     if (picked.model === OTHER) picked.model = '';
-    const body: Record<string, unknown> = { project: p.id, prompt, ...picked };
+    // Tous les dépôts du projet : le Mac ouvre à l'agent ceux dont il trouve un clone (copie sœur dans chacun).
+    const body: Record<string, unknown> = { project: p.id, prompt, ...picked, repos: p.stack };
     if (f.dataset.session) { body.session = f.dataset.session; if (f.dataset.machine) body.machine = f.dataset.machine; }
     else { body.mode = f.querySelector<HTMLInputElement>('[name=mode]:checked')?.value ?? 'edit'; body.tests = !!val('tests')?.checked; const mc = val('machine'); if (mc && !mc.hidden) { const [m, s] = mc.value.split(':'); body.machine = m; if (s) body.server = s; } }
     btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Envoi…';
@@ -506,9 +512,11 @@ const STAGES: Record<Stage, { c: string; ic: string; l: string; g: string; d: st
 };
 function stageOf(w: Worktree): Stage {
   if (runs.some(r => r.worktree === w.name && live(r))) return 'work';
-  if (w.changes > 0 || (w.ahead > 0 && !w.merged && !w.upToDate)) return 'review';
-  if (w.merged) return 'merged';
-  if (w.pushed) return 'pr';
+  // Les copies sœurs comptent comme la copie : du travail dans un seul dépôt suffit à la rendre « à publier ».
+  const sis = w.sisters ?? [];
+  if (hasWork(w) || sis.some(hasWork)) return 'review';
+  if ((w.pushed && !w.merged) || sis.some(s => s.pushed && !s.merged)) return 'pr';
+  if (w.merged || sis.some(s => s.merged)) return 'merged';
   // Copie repartie sur une nouvelle branche après une livraison : elle garde l'état de sa dernière branche.
   const last = w.history?.[0];
   return last ? (last.merged ? 'merged' : 'pr') : 'idle';
@@ -547,12 +555,15 @@ function treeRow(w: Worktree, list: Session[], badge = false): string {
   const conflicts = w.conflicts?.length ? `<span class="err"> · conflits : ${esc(w.conflicts.join(', '))}</span>` : '';
   const state = busy ? ` · <span class="spin"></span>${esc(job.step)}` : job?.status === 'error' || job?.status === 'blocked' ? `<span class="err"> · ${esc(job.step)}</span>` : conflicts;
   // Ce qui est déjà poussé ou fusionné n'est plus proposé : « Publier » ne sert qu'à du travail nouveau.
-  const pending = w.pushed && !w.merged, fresh = w.changes > 0 || (w.ahead > 0 && !w.merged && !w.upToDate);
+  const pending = w.pushed && !w.merged, fresh = hasWork(w) || (w.sisters ?? []).some(hasWork);
   const where = pending && !w.upToDate && fresh ? ' · déjà poussée une fois, changements à republier' : '';
   // Avec retard sur la branche principale, une copie fusionnée ou sans travail n'a rien à « mettre à jour » de visible.
   const canSync = !!w.behind && !busy && (w.changes > 0 || pending);
   const hist = w.history?.length ? `<span class="ag-hist">${w.history.map(h => `<span class="ag-hist-b${h.merged ? ' ok' : ''}" title="${esc(h.subject || h.branch)}">${icon(h.merged ? 'check' : 'pr')}<code>${esc(h.branch)}</code>${h.merged ? 'fusionnée' : 'PR en attente'}</span>`).join('')}</span>` : '';
-  return `<div class="ag-tree st-${st}" style="${stageVar(st)}"><span class="ag-tree-main"><span class="ag-tree-title">${badge ? stageBadge(st) : ''}<b title="${esc(w.branch || w.name)}">${esc(treeTitle(w, list))}</b></span>${w.branch && !w.branch.startsWith('worktree-') ? `<code>${esc(w.branch)}</code>` : ''}${w.subject && !badge && (w.ahead > 0 || w.pushed) ? `<strong>${esc(w.subject)}</strong>` : ''}<em>${w.changes ? `${w.changes} fichier${w.changes > 1 ? 's' : ''} modifié${w.changes > 1 ? 's' : ''}` : 'aucun changement en attente'}${w.ahead && !w.merged ? ` · ${w.ahead} commit${w.ahead > 1 ? 's' : ''}` : ''}${where}${w.behind && !w.merged && (w.changes || pending) ? ` · ${w.behind} commit${w.behind > 1 ? 's' : ''} de retard sur la branche principale` : ''}${state}</em>${hist}</span>
+  // Copies sœurs (autres dépôts du projet) : une pastille par dépôt, avec ce qui l'attend.
+  const sisState = (s: Sister) => s.conflicts?.length ? 'conflits' : s.changes ? `${s.changes} fichier${s.changes > 1 ? 's' : ''} modifié${s.changes > 1 ? 's' : ''}` : hasWork(s) ? `${s.ahead} commit${s.ahead > 1 ? 's' : ''}` : s.merged ? 'fusionnée' : s.pushed ? 'PR en attente' : 'sans changement';
+  const sis = w.sisters?.length ? `<span class="ag-hist">${w.sisters.map(s => `<span class="ag-hist-b${s.merged && !hasWork(s) ? ' ok' : ''}" title="Copie de ${esc(s.repo)}${s.branch ? ` · ${esc(s.branch)}` : ''}">${icon('folder')}<code>${esc(s.repo.split('/')[1] ?? s.repo)}</code>${esc(sisState(s))}</span>`).join('')}</span>` : '';
+  return `<div class="ag-tree st-${st}" style="${stageVar(st)}"><span class="ag-tree-main"><span class="ag-tree-title">${badge ? stageBadge(st) : ''}<b title="${esc(w.branch || w.name)}">${esc(treeTitle(w, list))}</b></span>${w.branch && !w.branch.startsWith('worktree-') ? `<code>${esc(w.branch)}</code>` : ''}${w.subject && !badge && (w.ahead > 0 || w.pushed) ? `<strong>${esc(w.subject)}</strong>` : ''}<em>${w.changes ? `${w.changes} fichier${w.changes > 1 ? 's' : ''} modifié${w.changes > 1 ? 's' : ''}` : 'aucun changement en attente'}${w.ahead && !w.merged ? ` · ${w.ahead} commit${w.ahead > 1 ? 's' : ''}` : ''}${where}${w.behind && !w.merged && (w.changes || pending) ? ` · ${w.behind} commit${w.behind > 1 ? 's' : ''} de retard sur la branche principale` : ''}${state}</em>${sis}${hist}</span>
     <span class="ag-tree-act">${remote ? '<em class="ag-onmac">sur le Mac</em>' : `${canSync ? `<button class="btn" data-ag="sync" data-wt="${esc(w.name)}" title="Remettre la copie sur la dernière version de la branche principale ; l'agent résout les conflits éventuels">${icon('refresh')}Mettre à jour</button>` : ''}<button class="btn" data-ag="review" data-wt="${esc(w.name)}">${icon('sparkle')}Revue</button><button class="btn" data-ag="vscode" data-wt="${esc(w.name)}">${icon('code')}VS Code</button><button class="btn" data-ag="push" data-wt="${esc(w.name)}"${fresh && !busy ? '' : ' disabled'} title="${fresh ? 'Publier le nouveau travail de l’agent' : w.merged ? 'Déjà fusionné : rien de nouveau à publier' : pending ? 'Déjà poussé : rien de nouveau à publier' : 'Rien à publier'}">${icon('upload')}Publier</button>${pending ? `<button class="btn" data-ag="pr" data-wt="${esc(w.name)}" title="Ouvrir la page de la pull request sur GitHub">${icon('github')}PR${w.pr?.state === 'open' ? ` #${w.pr.number}` : ''}</button>` : ''}${pending && !w.changes && !busy ? `<button class="btn" data-ag="newbranch" data-wt="${esc(w.name)}" title="Garder cette branche pour sa PR et repartir de la dernière version de la branche principale, sur une nouvelle branche, dans la même discussion">${icon('plus')}Nouvelle branche</button>` : ''}<button class="icon-btn" data-ag="discard" data-wt="${esc(w.name)}" title="Supprimer la copie" aria-label="Supprimer la copie">${icon('trash')}</button>`}</span></div>`;
 }
 
@@ -832,12 +843,15 @@ async function publish(p: Project, wt: string, root: HTMLElement): Promise<void>
   // La première demande faite dans cette copie (les suivantes sont souvent « continue », « résous le conflit »…).
   const mine = runs.filter(r => r.worktree === wt), run = mine[mine.length - 1], repo = await workRepo(p);
   const canPR = !!repo && github.connected();
+  // Dépôts où le travail sera publié : celui des agents et chaque copie sœur qui a du travail (même branche partout).
+  const t0 = trees.find(t => t.name === wt), sisWork = (t0?.sisters ?? []).filter(hasWork).map(s => s.repo);
+  const targets = [...(!t0 || hasWork(t0) || !sisWork.length ? [repo ?? ''] : []), ...sisWork].filter(Boolean);
   const m = modal({ cls: 'ag-pub', title: 'Publier le travail de l’agent', html: `
     <div class="pub-type"><span>Type</span><div class="ag-seg" role="radiogroup" aria-label="Type de changement">${KINDS.map(([k, l]) => `<label title="${esc(l)}"><input type="radio" name="ctype" value="${k}"><span>${k}</span></label>`).join('')}</div></div>
     <label class="pj-field"><span class="ag-msg-h">Message de commit<em class="ag-sug" hidden>${icon('sparkle')}proposé par l’IA</em></span><textarea class="field ag-msg" name="msg" rows="3" spellcheck="false" required></textarea></label>
     <div class="ag-sug-row"><span class="ag-sug-st"><span class="spin"></span>Lecture des changements…</span><button type="button" class="link-btn" data-resug hidden>${icon('refresh')}Reproposer</button></div>
     <label class="pj-field"><span>Branche</span><input class="field ag-branch" name="branch" spellcheck="false" autocomplete="off" required></label>
-    ${repo ? `<label class="cx-check"><input type="checkbox" name="pr" checked> Ouvrir une pull request sur <strong>${esc(repo)}</strong></label>
+    ${repo ? `<label class="cx-check"><input type="checkbox" name="pr" checked> ${targets.length > 1 ? `Ouvrir une pull request dans chaque dépôt : ${targets.map(x => `<strong>${esc(x)}</strong>`).join(', ')}` : `Ouvrir une pull request sur <strong>${esc(targets[0] ?? repo)}</strong>`}</label>
     <label class="pj-field"><span>Titre de la PR</span><input class="field" name="title"></label>` : '<p class="modal-hint">Associe un dépôt GitHub au projet pour ouvrir une pull request.</p>'}
     <p class="modal-hint">${icon('shield')}Studio remet d’abord la copie sur la dernière version de la branche principale (l’agent résout les conflits s’il y en a), puis fait un seul commit avec ce message et pousse la branche avec tes identifiants Git habituels. Ton dossier de travail n’est pas touché.</p>
     <div class="rv-status"></div>
@@ -924,31 +938,45 @@ async function publish(p: Project, wt: string, root: HTMLElement): Promise<void>
       go.disabled = false; go.innerHTML = `${icon('upload')}Réessayer`; return;
     }
     if (j.status !== 'done') { go.disabled = false; return; }
-    const branch = j.branch;
+    // Une branche par dépôt modifié (copies sœurs) ; une app Mac ancienne ne donne que celle du dépôt des agents.
+    const pushed = (j.pushed?.length ? j.pushed : j.branch ? [{ repo: '', branch: j.branch }] : []).map(x => ({ repo: x.repo || repo || '', branch: x.branch }));
     // Rien n'a été poussé : le travail était déjà fusionné dans la branche principale.
-    if (!branch) { m.close(); toast(j.step); return; }
-    if (!wantPR || !repo) { m.close(); toast(`Branche ${branch} poussée`); return; }
-    st.insertAdjacentHTML('beforeend', '<p class="rv-status"><span class="spin"></span>Ouverture de la pull request…</p>');
-    let base = 'main';
-    try {
-      if (!canPR) throw new Error('GitHub n’est pas connecté dans Studio');
-      base = (await github.project(repo)).info.default_branch;
-      const pr = await github.createPull(repo, { head: branch, base, title: prTitle, body: prBody(run, detail) });
-      m.close(); toast(`PR #${pr.number} ouverte`); window.open(pr.html_url, '_blank', 'noopener');
-    } catch (e) {
-      const why = errMsg(e).replace(/\.$/, ''), status = e instanceof github.GitHubError ? e.status : 0, exists = /already exists/i.test(why);
-      if (exists) { m.close(); toast('Branche poussée : sa pull request est à jour.'); return; }
-      // Le push vient de réussir (identifiants Git du Mac) : un 404 ici veut dire que le jeton de Studio ne voit pas ce dépôt.
-      const perm = status === 403 || status === 404 || /not accessible/i.test(why);
-      const text = status === 404 ? `Le dépôt ${repo} existe (la branche vient d’y être poussée), mais ton jeton GitHub n’y a pas accès : un jeton à accès précis ne voit que les dépôts choisis à sa création. Ajoute ${repo} dans « Repository access » du jeton sur GitHub (avec « Pull requests : lecture et écriture »), ou remplace-le dans Réglages → GitHub.`
-        : status === 403 ? `Ton jeton GitHub voit ${repo} mais n’a pas le droit d’y ouvrir une pull request (permission « Pull requests : lecture et écriture »).`
-        : `La pull request n’a pas pu être ouverte d’ici : ${why}.`;
-      st.innerHTML = `<div class="ag-prfail"><p>${icon('check')}Branche <code>${esc(branch)}</code> poussée sur GitHub.</p>
-        <p class="err">${esc(text)}</p>
-        <div class="ag-prfail-act"><a class="btn btn-primary" href="${esc(compareURL(repo, base, branch, prTitle, prBody(run, detail)))}" target="_blank" rel="noopener">${icon('github')}Ouvrir la PR sur GitHub</a>${perm || !canPR ? '<button class="btn" data-open-conn="github">Régler le jeton</button>' : ''}</div></div>`;
-      go.hidden = true; need('[data-x]', m.node).textContent = 'Fermer';
-      st.querySelector('a.btn-primary')?.addEventListener('click', () => setTimeout(m.close, 300));
+    if (!pushed.length) { m.close(); toast(j.step); return; }
+    const names = pushed.map(x => x.repo).filter(Boolean);
+    if (!wantPR || !names.length) { m.close(); toast(`Branche ${pushed[0]!.branch} poussée${names.length > 1 ? ` dans ${names.join(', ')}` : ''}`); return; }
+    st.insertAdjacentHTML('beforeend', `<p class="rv-status"><span class="spin"></span>Ouverture de ${names.length > 1 ? `${names.length} pull requests` : 'la pull request'}…</p>`);
+    // Les PR de plusieurs dépôts se citent entre elles : elles se relisent et se fusionnent ensemble.
+    const linked = (me: string) => names.length > 1 ? `\n\nVa avec : ${names.filter(n => n !== me).map(n => `${n}@${pushed.find(x => x.repo === n)?.branch ?? ''}`).join(', ')}` : '';
+    const opened: { repo: string; number: number; url: string }[] = [], failed: string[] = [];
+    let perm = !canPR;
+    for (const { repo: r, branch } of pushed) {
+      if (!r) continue;
+      let base = 'main';
+      const bodyFor = prBody(run, detail + linked(r));
+      try {
+        if (!canPR) throw new Error('GitHub n’est pas connecté dans Studio');
+        base = (await github.project(r)).info.default_branch;
+        const pr = await github.createPull(r, { head: branch, base, title: prTitle, body: bodyFor });
+        opened.push({ repo: r, number: pr.number, url: pr.html_url });
+      } catch (e) {
+        const why = errMsg(e).replace(/\.$/, ''), status = e instanceof github.GitHubError ? e.status : 0;
+        if (/already exists/i.test(why)) continue; // branche déjà proposée : sa PR vient d'être mise à jour
+        // Le push vient de réussir (identifiants Git du Mac) : un 404 ici veut dire que le jeton de Studio ne voit pas ce dépôt.
+        if (status === 403 || status === 404 || /not accessible/i.test(why)) perm = true;
+        const text = status === 404 ? `Le dépôt ${r} existe (la branche vient d’y être poussée), mais ton jeton GitHub n’y a pas accès : un jeton à accès précis ne voit que les dépôts choisis à sa création. Ajoute ${r} dans « Repository access » du jeton sur GitHub (avec « Pull requests : lecture et écriture »), ou remplace-le dans Réglages → GitHub.`
+          : status === 403 ? `Ton jeton GitHub voit ${r} mais n’a pas le droit d’y ouvrir une pull request (permission « Pull requests : lecture et écriture »).`
+          : `La pull request de ${r} n’a pas pu être ouverte d’ici : ${why}.`;
+        failed.push(`<p>${icon('check')}Branche <code>${esc(branch)}</code> poussée sur ${esc(r)}.</p><p class="err">${esc(text)}</p><div class="ag-prfail-act"><a class="btn btn-primary" href="${esc(compareURL(r, base, branch, prTitle, bodyFor))}" target="_blank" rel="noopener">${icon('github')}Ouvrir la PR de ${esc(r.split('/')[1] ?? r)} sur GitHub</a></div>`);
+      }
     }
+    if (!failed.length) {
+      m.close();
+      toast(opened.length ? opened.map(o => `PR #${o.number}${names.length > 1 ? ` (${o.repo.split('/')[1] ?? o.repo})` : ''}`).join(', ') + (opened.length > 1 ? ' ouvertes' : ' ouverte') : 'Branche poussée : sa pull request est à jour.');
+      for (const o of opened) window.open(o.url, '_blank', 'noopener');
+      return;
+    }
+    st.innerHTML = `<div class="ag-prfail">${opened.map(o => `<p>${icon('check')}<a href="${esc(o.url)}" target="_blank" rel="noopener">PR #${o.number}</a> ouverte sur ${esc(o.repo)}.</p>`).join('')}${failed.join('')}${perm ? '<div class="ag-prfail-act"><button class="btn" data-open-conn="github">Régler le jeton</button></div>' : ''}</div>`;
+    go.hidden = true; need('[data-x]', m.node).textContent = 'Fermer';
   };
 }
 
@@ -1346,7 +1374,7 @@ export function mount(box: HTMLElement, p: Project, folder: string | null): void
       // Reprise sans nouveau texte : le Mac joint tous les messages en attente de la discussion.
       const run = runs.find(r => r.session === selected);
       b.setAttribute('disabled', '');
-      const r = await bridge.call('agent', 'start', { project: p.id, session: selected, prompt: '', ...(run?.machine === 'server' ? { machine: 'server' } : {}) }, 60000);
+      const r = await bridge.call('agent', 'start', { project: p.id, session: selected, prompt: '', repos: p.stack, ...(run?.machine === 'server' ? { machine: 'server' } : {}) }, 60000);
       toast(r.ok ? 'Messages transmis à Claude' : r.message ?? 'Envoi impossible.');
       void paint(box, p); return;
     }

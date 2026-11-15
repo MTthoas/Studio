@@ -261,6 +261,8 @@ class Session {
     this.calls.push(now);
     const params: Record<string, unknown> = { ...msg.params };
     delete params.type; delete params.action; delete params.id;
+    // Les dépôts ouverts à un agent sont ceux que le Mac connaît pour ce projet : jamais une liste venue d'ailleurs.
+    delete params.repos;
     // Serveur : lecture seule à distance (état, monitoring, état des extensions). Jamais de terminal, de configuration,
     // de clé SSH, de journal ni d'action sur Docker ou Kubernetes.
     if (key === 'agent.server' && !['status', 'list', 'monitor', 'ext'].includes(String(params.op ?? 'status'))) return deny('Le serveur se configure, se pilote et son terminal s’ouvre depuis le Mac.');

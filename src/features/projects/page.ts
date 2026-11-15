@@ -327,6 +327,7 @@ function reposHTML(p: Project): string {
       <header>${model.roleTag(r.role)}${i === 0 && p.stack.length > 1 ? '<em class="pj-badge">principal</em>' : ''}<span class="pj-rp-here" data-rp-here hidden>${icon('folder')}ce Mac</span>
         <button class="icon-btn" data-pj="repo-menu" data-repo="${esc(r.name)}" title="Rôle, ordre, retirer" aria-label="Options du dépôt ${esc(r.name)}">${icon('more')}</button></header>
       <a class="pj-rp-name" href="https://github.com/${esc(r.name)}" target="_blank" rel="noopener"><span>${esc(owner ?? '')}/</span>${esc(name ?? '')}</a>
+      <p class="pj-rp-st" data-rp-local hidden></p>
       <p class="pj-rp-st" data-rp-st>${github.connected() ? '<span class="pj-skel sm"></span>' : '<span class="muted">Connecte GitHub pour voir la CI et les PR</span>'}</p></div>`;
   }).join('');
   return `<div class="pj-rps">${cards}<button class="pj-rp pj-rp-add" data-pj="repo-add">${icon('plus')}<strong>${p.stack.length ? 'Ajouter un dépôt' : 'Associer un dépôt GitHub'}</strong><span>${ROLE_HINT}</span></button></div>`;
@@ -336,6 +337,7 @@ const CI_TXT: Record<string, [string, string]> = { success: ['green', 'CI verte'
 async function repoStates(root: HTMLElement, p: Project, f: Folder | null): Promise<void> {
   const here = model.repoNamed(p, f?.remote);
   if (here) { const b = $(`[data-rp="${CSS.escape(here.name)}"] [data-rp-here]`, root); if (b) b.hidden = false; }
+  if (f && p.stack.length > 1) void localRepos(root, p);
   if (!github.connected()) return;
   await Promise.all(p.stack.map(async r => {
     const box = $(`[data-rp="${CSS.escape(r.name)}"] [data-rp-st]`, root); if (!box) return;
@@ -345,6 +347,31 @@ async function repoStates(root: HTMLElement, p: Project, f: Folder | null): Prom
       box.innerHTML = `<span class="pj-rp-ci" style="--c:var(--c-${hueCi})"><i></i>${ci}</span><span><b>${pr.pulls.length}</b> PR</span>${rel0 ? `<span class="pj-rp-tag">${esc(rel0.tag)}</span>` : ''}<span class="muted">${esc(rel(Date.parse(pr.info.pushed_at)))}</span>`;
     } catch (e) { box.innerHTML = `<span class="err">${esc(errMsg(e))}</span>`; }
   }));
+}
+/** Le dossier de chaque dépôt sur ce Mac, affiché sur sa carte et modifiable. Le Mac retrouve seul les clones rangés à côté
+ *  du dossier du projet ; pour les autres, un clic les clone au même endroit (ou désigne un dossier). Les agents travaillent
+ *  dans tous ceux qui ont un dossier. Le dépôt du dossier du projet se change avec `pick`, les autres avec `repo-pick`. */
+async function localRepos(root: HTMLElement, p: Project): Promise<void> {
+  if (!native.available() || document.documentElement.dataset.native !== 'mac') return;
+  const r = await native.call('project', 'repos', { project: p.id, repos: p.stack }, 30000);
+  if (!r.ok || !Array.isArray(r.repos)) return;
+  for (const x of r.repos as { name: string; path: string | null; main?: boolean }[]) {
+    const card = $(`[data-rp="${CSS.escape(model.repoNamed(p, x.name)?.name ?? x.name)}"]`, root); if (!card) continue;
+    const badge = $('[data-rp-here]', card), box = $('[data-rp-local]', card);
+    if (x.path) {
+      if (badge) { badge.hidden = false; badge.title = x.path; }
+      if (box) {
+        box.hidden = false;
+        const change = x.main ? `data-pj="pick"` : `data-pj="repo-pick" data-repo="${esc(x.name)}"`;
+        box.innerHTML = `<span class="muted" title="${esc(x.path)}">${icon('folder')}${esc(x.path)}${x.main ? ' · dossier du projet' : ''}</span><button class="link-btn" ${change}>Changer</button>`;
+      }
+      continue;
+    }
+    if (box) {
+      box.hidden = false;
+      box.innerHTML = `<span class="muted">Pas sur ce Mac : les agents ne le voient pas.</span><button class="link-btn" data-pj="repo-clone" data-repo="${esc(x.name)}">${icon('download')}Cloner</button><button class="link-btn" data-pj="repo-pick" data-repo="${esc(x.name)}">${icon('folder')}Choisir son dossier</button>`;
+    }
+  }
 }
 /** Choix d'un rôle en pastilles (boutons radio), pour les fenêtres d'ajout et de création. */
 const rolePicker = (name: string, cur: Role) => `<div class="pj-rolepick" role="radiogroup" aria-label="Rôle du dépôt">${model.ROLE_ORDER.map(k => `<label style="--c:var(--c-${model.ROLES[k].hue})" title="${esc(model.ROLES[k].hint)}"><input type="radio" name="${name}" value="${k}"${k === cur ? ' checked' : ''}><span>${icon(model.ROLES[k].icon)}${model.ROLES[k].label}</span></label>`).join('')}</div>`;
@@ -556,6 +583,14 @@ export function mount(main: HTMLElement): void {
     if (act === 'link-repo' && b.dataset.repo) { const role = model.guessRole(b.dataset.repo, !p.stack.length); await model.setRepos(p, [...p.stack, { name: b.dataset.repo, role }]); toast(`${b.dataset.repo} associé au projet · ${model.ROLES[role].label}`); }
     if (act === 'repo-add') addRepoDialog(p);
     if (act === 'repo-menu' && b.dataset.repo) repoMenu(p, b, b.dataset.repo);
+    if ((act === 'repo-clone' || act === 'repo-pick') && b.dataset.repo) {
+      const repo = b.dataset.repo, box = b.closest<HTMLElement>('[data-rp-local]');
+      if (act === 'repo-clone' && box) box.innerHTML = `<span class="spin"></span>Clonage de ${esc(repo)} à côté du dossier du projet…`;
+      const r = await native.call('project', act, { project: p.id, repo }, act === 'repo-clone' ? 620000 : 600000);
+      if (r.ok) toast(act === 'repo-clone' ? `${repo} cloné${typeof r.path === 'string' ? ` dans ${r.path}` : ''} : les agents y travaillent aussi` : `${repo} retrouvé sur ce Mac`);
+      else if (!r.cancelled) toast(r.message ?? 'Impossible.');
+      void localRepos(root, p);
+    }
     if (act === 'review-working') await review.review(p, 'working');
     if (act === 'review-branch') await review.review(p, 'branch');
     if (act === 'site-check') await checkSite(root, p);

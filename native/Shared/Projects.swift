@@ -34,11 +34,164 @@ final class ProjectFolders {
         panel.begin { r in
             guard r == .OK, let url = panel.url else { return done(nil) }
             var f = self.folders; f[id] = url.path; self.folders = f
+            self.forgetMemo(id)
             done(url.path)
         }
     }
 
-    func forget(_ id: String) { var f = folders; f.removeValue(forKey: id); folders = f }
+    func forget(_ id: String) { var f = folders; f.removeValue(forKey: id); folders = f; forgetMemo(id) }
+
+    // MARK: Plusieurs dépôts par projet
+    // Le dossier choisi est celui d'un dépôt (souvent le principal). Les autres dépôts du projet sont retrouvés seuls
+    // d'après leur remote GitHub, dans le dossier parent de celui-ci (là où on range ses clones), ou choisis, ou clonés.
+    // La page n'envoie que des noms « propriétaire/dépôt » : jamais de chemin.
+
+    struct Repo { let name: String; let role: String }
+    private let reposKey = "studio.projectRepos", repoFoldersKey = "studio.repoFolders"
+    static func validRepo(_ r: String) -> Bool {
+        r.count <= 140 && r.range(of: #"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"#, options: .regularExpression) != nil && !r.contains("..")
+    }
+    /// Dépôts du projet, tels que la page les a donnés la dernière fois (gardés pour les reprises de l'orchestrateur).
+    func repos(_ id: String) -> [Repo] {
+        let all = UserDefaults.standard.dictionary(forKey: reposKey) as? [String: [[String: String]]] ?? [:]
+        return (all[id] ?? []).compactMap { d in d["name"].flatMap { Self.validRepo($0) ? Repo(name: $0, role: d["role"] ?? "") : nil } }
+    }
+    /// Accepte `["a/b", …]` ou `[{ name, role }, …]`.
+    func rememberRepos(_ id: String, _ raw: Any?) {
+        guard valid(id), let list = raw as? [Any] else { return }
+        let clean: [[String: String]] = list.prefix(12).compactMap { x in
+            if let s = x as? String { return Self.validRepo(s) ? ["name": s, "role": ""] : nil }
+            guard let d = x as? [String: Any], let n = d["name"] as? String, Self.validRepo(n) else { return nil }
+            let role = String((d["role"] as? String ?? "").filter { $0.isLetter }.prefix(20))
+            return ["name": n, "role": role]
+        }
+        var all = UserDefaults.standard.dictionary(forKey: reposKey) as? [String: [[String: String]]] ?? [:]
+        if all[id] == clean { return }
+        all[id] = clean; UserDefaults.standard.set(all, forKey: reposKey)
+        forgetMemo(id)
+    }
+    private var repoFolders: [String: [String: String]] {
+        get { UserDefaults.standard.dictionary(forKey: repoFoldersKey) as? [String: [String: String]] ?? [:] }
+        set { UserDefaults.standard.set(newValue, forKey: repoFoldersKey) }
+    }
+    private func storeRepoFolder(_ id: String, _ repo: String, _ path: String?) {
+        var all = repoFolders, mine = all[id] ?? [:]
+        mine[repo.lowercased()] = path; all[id] = mine; repoFolders = all
+        forgetMemo(id)
+    }
+    /// Dépôt GitHub (« propriétaire/nom ») du remote origin d'un dossier.
+    func remote(_ dir: String) -> String? {
+        guard let url = git(["remote", "get-url", "origin"], in: dir)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              let m = url.range(of: #"github\.com[:/]([\w.-]+/[\w.-]+?)(\.git)?$"#, options: .regularExpression) else { return nil }
+        return String(url[m]).replacingOccurrences(of: #"^github\.com[:/]"#, with: "", options: .regularExpression).replacingOccurrences(of: ".git", with: "")
+    }
+    private func isRepoOf(_ dir: String, _ repo: String) -> Bool { remote(dir)?.lowercased() == repo.lowercased() }
+    /// Dossier où chercher (et cloner) les autres dépôts : le parent du dossier du projet.
+    private func shelf(_ id: String) -> String? { path(id).map { ($0 as NSString).deletingLastPathComponent } }
+
+    /// Dossier local d'un dépôt du projet : le dossier du projet s'il en est le clone, celui retenu avant,
+    /// sinon un clone trouvé à côté (même nom d'abord, puis tout dossier voisin dont le remote correspond).
+    func repoPath(_ id: String, _ repo: String) -> String? {
+        guard Self.validRepo(repo), let main = path(id) else { return nil }
+        if isRepoOf(main, repo) { return main }
+        let fm = FileManager.default
+        if let p = repoFolders[id]?[repo.lowercased()], fm.fileExists(atPath: p + "/.git"), isRepoOf(p, repo) { return p }
+        guard let parent = shelf(id) else { return nil }
+        let short = String(repo.split(separator: "/").last ?? "")
+        let all = ((try? fm.contentsOfDirectory(atPath: parent)) ?? []).filter { !$0.hasPrefix(".") }.prefix(300)
+        let same = all.filter { $0.lowercased() == short.lowercased() }
+        for n in same + all.filter({ $0.lowercased() != short.lowercased() }) {
+            let p = parent + "/" + n
+            guard p != main, fm.fileExists(atPath: p + "/.git"), isRepoOf(p, repo) else { continue }
+            storeRepoFolder(id, repo, p); return p
+        }
+        return nil
+    }
+    /// Autres dépôts du projet (hors celui du dossier du projet), trouvés sur ce Mac ou non.
+    /// Gardé 30 s : la liste des copies est relue souvent, et chercher un dépôt absent parcourt tout le dossier parent.
+    func otherRepos(_ id: String) -> (found: [(repo: Repo, dir: String)], missing: [Repo]) {
+        memoLock.lock()
+        if let m = memo[id], Date().timeIntervalSince(m.at) < 30 { memoLock.unlock(); return (m.found, m.missing) }
+        memoLock.unlock()
+        guard let main = path(id) else { return ([], []) }
+        var found: [(repo: Repo, dir: String)] = [], missing: [Repo] = []
+        for r in repos(id) where !isRepoOf(main, r.name) {
+            if let d = repoPath(id, r.name), d != main, !found.contains(where: { $0.dir == d }) { found.append((r, d)) } else { missing.append(r) }
+        }
+        memoLock.lock(); memo[id] = (Date(), found, missing); memoLock.unlock()
+        return (found, missing)
+    }
+    private var memo: [String: (at: Date, found: [(repo: Repo, dir: String)], missing: [Repo])] = [:]
+    private let memoLock = NSLock()
+    private func forgetMemo(_ id: String) { memoLock.lock(); memo[id] = nil; memoLock.unlock() }
+    /// État de chaque dépôt sur ce Mac, pour la page du projet.
+    func repoList(_ id: String) -> [String: Any] {
+        guard let main = path(id) else { return ["ok": true, "repos": [], "folder": false] }
+        let others = otherRepos(id), tilde = { (p: String) in p.replacingOccurrences(of: NSHomeDirectory(), with: "~") }
+        var list: [[String: Any]] = []
+        if let r = remote(main) { list.append(["name": r, "path": tilde(main), "main": true]) }
+        list += others.found.map { f -> [String: Any] in ["name": f.repo.name, "path": tilde(f.dir), "main": false] }
+        list += others.missing.map { r -> [String: Any] in ["name": r.name, "path": NSNull(), "main": false] }
+        return ["ok": true, "repos": list, "folder": true]
+    }
+    func pickRepo(_ id: String, repo: String, done: @escaping ([String: Any]) -> Void) {
+        guard valid(id), Self.validRepo(repo) else { return done(["ok": false, "message": "Dépôt invalide."]) }
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false
+        panel.prompt = "Choisir ce dossier"
+        panel.message = "Clone de \(repo) sur ce Mac"
+        if let s = shelf(id) { panel.directoryURL = URL(fileURLWithPath: s) }
+        panel.begin { r in
+            guard r == .OK, let url = panel.url else { return done(["ok": false, "cancelled": true]) }
+            DispatchQueue.global(qos: .userInitiated).async {
+                guard self.isRepoOf(url.path, repo) else { return done(["ok": false, "message": "Ce dossier n'est pas un clone de \(repo) (remote origin différent)."]) }
+                self.storeRepoFolder(id, repo, url.path); done(["ok": true])
+            }
+        }
+    }
+    /// Clone un dépôt du projet à côté du dossier du projet, avec les identifiants Git habituels de l'utilisateur.
+    func cloneRepo(_ id: String, repo: String) -> [String: Any] {
+        guard Self.validRepo(repo), let parent = shelf(id) else { return ["ok": false, "message": "Choisis d'abord le dossier du projet sur ce Mac."] }
+        if let p = repoPath(id, repo) { return ["ok": true, "path": p] }
+        let short = String(repo.split(separator: "/").last ?? "depot")
+        var dest = parent + "/" + short, n = 2
+        while FileManager.default.fileExists(atPath: dest) { dest = parent + "/" + short + "-\(n)"; n += 1 }
+        let r = gitRun(["clone", "-q", "https://github.com/\(repo).git", dest], in: parent, timeout: 600)
+        guard r.ok else {
+            let why = Self.gitError(r.err)
+            return ["ok": false, "message": "Clonage impossible" + (why.isEmpty ? "." : " : \(why)") + " Dans le Terminal, « git clone https://github.com/\(repo).git » enregistre tes identifiants une fois pour toutes."]
+        }
+        storeRepoFolder(id, repo, dest)
+        return ["ok": true, "path": dest.replacingOccurrences(of: NSHomeDirectory(), with: "~")]
+    }
+    /// Copies sœurs d'une copie isolée : même nom, dans les autres dépôts du projet.
+    func sisterCopies(_ id: String, _ name: String) -> [(repo: Repo, dir: String, wt: String)] {
+        guard Self.validWorktree(name) else { return [] }
+        var isDir: ObjCBool = false
+        return otherRepos(id).found.compactMap { f -> (repo: Repo, dir: String, wt: String)? in
+            let wt = f.dir + "/.claude/worktrees/" + name
+            return FileManager.default.fileExists(atPath: wt, isDirectory: &isDir) && isDir.boolValue ? (f.repo, f.dir, wt) : nil
+        }
+    }
+    /// État d'une copie sœur, pour la page (mêmes champs que les copies du dépôt principal, sans l'historique).
+    func copyState(_ wt: String) -> [String: Any] {
+        let base = baseRef(wt, fetch: false), branch = currentBranch(wt) ?? ""
+        let status = git(["status", "--porcelain"], in: wt) ?? ""
+        let counts = git(["rev-list", "--left-right", "--count", "\(base)...HEAD"], in: wt)?.split(whereSeparator: { $0 == "\t" || $0 == " " || $0 == "\n" }).compactMap { Int($0) } ?? []
+        let published = wasPublished(wt, branch: branch, base: base)
+        let head = git(["rev-parse", "HEAD"], in: wt)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let up = published ? (git(["rev-parse", "-q", "--verify", "@{upstream}"], in: wt)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "") : ""
+        return ["branch": branch, "head": head, "changes": status.split(separator: "\n").count, "ahead": counts.count > 1 ? counts[1] : 0,
+                "pushed": published, "upToDate": published && !up.isEmpty && up == head, "merged": published && delivered(wt, rev: "HEAD", base: base),
+                "conflicts": status.isEmpty ? [] : conflictFiles(wt)]
+    }
+    /// A-t-elle du travail à publier ? Des changements en cours, ou des commits pas encore livrés.
+    func hasWork(_ wt: String) -> Bool {
+        if !(git(["status", "--porcelain"], in: wt) ?? "").isEmpty { return true }
+        let base = baseRef(wt, fetch: false)
+        let ahead = Int(git(["rev-list", "--count", "\(base)..HEAD"], in: wt)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "0") ?? 0
+        return ahead > 0 && !delivered(wt, rev: "HEAD", base: base)
+    }
 
     /// Git de l'utilisateur : celui de Homebrew s'il existe (même configuration et mêmes identifiants que dans
     /// le Terminal), sinon celui d'Apple. Emplacements fixes, jamais le PATH.
@@ -154,6 +307,19 @@ final class ProjectFolders {
         var r: [String: Any] = ["ok": true, "base": "HEAD", "stat": stat, "patch": patch, "untracked": untracked, "truncated": patch.utf8.count >= 400_000]
         // Copie d'agent : les derniers messages de commit du dépôt, pour proposer un message dans le même style.
         if worktree != nil { r["log"] = git(["log", "-10", "--format=%s"], in: dir) ?? "" }
+        // Copies sœurs (autres dépôts du projet) : leurs changements comptent aussi pour le message de commit.
+        if let name = worktree {
+            var s = stat, pt = patch, un = untracked
+            for c in sisterCopies(id, name) {
+                _ = git(["add", "--intent-to-add", "-A"], in: c.wt, timeout: 15)
+                let st = git(["diff", "--stat", "HEAD"], in: c.wt, timeout: 15) ?? ""
+                if st.isEmpty { continue }
+                s += "\n[\(c.repo.name)]\n" + st
+                pt += (git(["diff", "--unified=3", "HEAD"], in: c.wt, timeout: 15) ?? "")
+                un += (git(["ls-files", "--others", "--exclude-standard"], in: c.wt) ?? "")
+            }
+            r["stat"] = s; r["patch"] = pt; r["untracked"] = un; r["truncated"] = pt.utf8.count >= 400_000
+        }
         return r
     }
 
@@ -207,6 +373,8 @@ final class ProjectFolders {
         // qu'une PR vient d'être fusionnée), on relit d'abord, pour remettre la copie sur la branche principale.
         var fetching = false
         if fresh { fetchIfStale(dir, every: 0) } else { fetching = fetchIfStale(dir, background: true) }
+        // Les autres dépôts du projet : relus en arrière-plan, la page redemande tant que ce n'est pas fini.
+        for o in otherRepos(id).found where fetchIfStale(o.dir, background: true) { fetching = true }
         let raw = git(["worktree", "list", "--porcelain"], in: dir) ?? ""
         let base = baseRef(dir, fetch: false)
         var found: [(path: String, name: String, branch: String)] = []
@@ -229,6 +397,9 @@ final class ProjectFolders {
                 recycled.append(["worktree": f.name, "branch": old])
                 found[i].branch = currentBranch(f.path) ?? f.branch
             }
+            for s in sisterCopies(id, f.name) {
+                if let old = recycleIfDelivered(s.wt, fetch: false) { recycled.append(["worktree": f.name, "branch": "\(s.repo.name) · \(old)"]) }
+            }
         }
         // Chaque copie est examinée en parallèle (plusieurs commandes git par copie : en série, l'écran ralentissait).
         var rows = [[String: Any]?](repeating: nil, count: found.count); let rowsLock = NSLock()
@@ -246,10 +417,12 @@ final class ProjectFolders {
             let merged = published && delivered(wtPath, rev: "HEAD", base: base)
             // Titre du commit de la copie (pour le titre de sa PR) : seulement si elle a ses propres commits.
             let subject = ahead > 0 ? (git(["log", "-1", "--format=%s"], in: wtPath)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "") : ""
-            let row: [String: Any] = ["name": name, "branch": branch, "head": head, "changes": changes, "behind": counts.first ?? 0, "ahead": ahead,
+            var row: [String: Any] = ["name": name, "branch": branch, "head": head, "changes": changes, "behind": counts.first ?? 0, "ahead": ahead,
                                       "pushed": published, "upToDate": published && !remote.isEmpty && remote == head, "merged": merged,
                                       "conflicts": status.isEmpty ? [] : conflictFiles(wtPath), "subject": subject,
                                       "history": history(dir, name: name, base: base)]
+            let sisters = sisterCopies(id, name)
+            if !sisters.isEmpty { row["sisters"] = sisters.map { s -> [String: Any] in var c = copyState(s.wt); c["repo"] = s.repo.name; return c } }
             rowsLock.lock(); rows[i] = row; rowsLock.unlock()
         }
         let out = rows.compactMap { $0 }
@@ -490,6 +663,10 @@ final class ProjectFolders {
 
     func commitPush(_ id: String, name: String, message: String, branch wanted: String = "") -> [String: Any] {
         guard let wt = worktreeDir(id, name) else { return ["ok": false, "message": "Copie introuvable."] }
+        return commitPush(at: wt, message: message, branch: wanted)
+    }
+    /// Même chose pour une copie désignée par son chemin (copie sœur d'un autre dépôt du projet).
+    func commitPush(at wt: String, message: String, branch wanted: String = "") -> [String: Any] {
         if !wanted.isEmpty && !Self.validBranch(wanted) { return ["ok": false, "message": "Nom de branche invalide : minuscules, chiffres, - _ . / (ex. feat/export-pdf)."] }
         let msg = String(message.trimmingCharacters(in: .whitespacesAndNewlines).prefix(2000))
         let left = conflictFiles(wt)
@@ -523,6 +700,11 @@ final class ProjectFolders {
     /// Supprime une copie isolée et sa branche locale (la branche poussée sur GitHub reste).
     func removeWorktree(_ id: String, name: String) -> [String: Any] {
         guard let dir = path(id), let wt = worktreeDir(id, name) else { return ["ok": false, "message": "Copie introuvable."] }
+        // Ses copies sœurs, dans les autres dépôts du projet, partent avec elle.
+        for s in sisterCopies(id, name) { _ = removeCopy(dir: s.dir, wt: s.wt, name: name) }
+        return removeCopy(dir: dir, wt: wt, name: name)
+    }
+    private func removeCopy(dir: String, wt: String, name: String) -> [String: Any] {
         let branch = git(["rev-parse", "--abbrev-ref", "HEAD"], in: wt)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         _ = git(["worktree", "unlock", wt], in: dir)
         guard git(["worktree", "remove", "--force", wt], in: dir, timeout: 30) != nil else { return ["ok": false, "message": "Suppression impossible."] }
@@ -564,10 +746,7 @@ final class ProjectFolders {
             }
             r["changes"] = lines.dropFirst().filter { !$0.isEmpty }.count
         }
-        if let url = git(["remote", "get-url", "origin"], in: dir)?.trimmingCharacters(in: .whitespacesAndNewlines),
-           let m = url.range(of: #"github\.com[:/]([\w.-]+/[\w.-]+?)(\.git)?$"#, options: .regularExpression) {
-            r["remote"] = String(url[m]).replacingOccurrences(of: #"^github\.com[:/]"#, with: "", options: .regularExpression).replacingOccurrences(of: ".git", with: "")
-        }
+        if let rem = remote(dir) { r["remote"] = rem }
         return r
     }
 
