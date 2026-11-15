@@ -217,7 +217,7 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
         case "server":
             switch body["op"] as? String ?? "" {
             case "hosts": bg { Servers.shared.hosts() }
-            case "set": bg { Servers.shared.set(pid, host: body["host"] as? String ?? "", path: body["path"] as? String ?? "", port: body["port"] as? String ?? "",
+            case "set": bg { Servers.shared.set(pid, host: body["host"] as? String ?? "", user: body["user"] as? String ?? "", path: body["path"] as? String ?? "", port: body["port"] as? String ?? "",
                                                 key: body["key"] as? String ?? "", ext: body["ext"] as? [String] ?? []) }
             case "forget": Servers.shared.forget(pid); Monitors.shared.stop(pid); send(["ok": true])
             case "terminal": bg { Servers.shared.terminal(pid) }

@@ -27,10 +27,18 @@ final class Servers {
 
     struct Server: Equatable {
         let host: String, path: String, port: Int, key: String, ext: [String]
+        /// Utilisateur SSH choisi dans Studio (passé par -l, prioritaire sur le `User` de ~/.ssh/config) ; vide : celui de la config.
+        var user: String = ""
+        /// Ce qui s'affiche et sert d'adresse ssh:// : utilisateur@hôte quand l'utilisateur est fixé.
+        var dest: String { user.isEmpty ? host : user + "@" + host }
     }
 
     static func validHost(_ h: String) -> Bool {
         !h.isEmpty && h.count <= 120 && h.first != "-" && h.allSatisfy { ($0.isASCII && ($0.isLetter || $0.isNumber)) || "._-@".contains($0) }
+    }
+    /// Nom d'utilisateur Unix : minuscules, chiffres, « _ », « . », « - », sans commencer par « - ».
+    static func validUser(_ u: String) -> Bool {
+        !u.isEmpty && u.count <= 32 && u.first != "-" && u.allSatisfy { ($0.isASCII && ($0.isLowercase || $0.isNumber)) || "._-".contains($0) }
     }
     static func validPath(_ p: String) -> Bool {
         !p.isEmpty && p.count <= 300 && (p.hasPrefix("/") || p.hasPrefix("~")) && !p.contains("..") && p.allSatisfy { ($0.isASCII && ($0.isLetter || $0.isNumber)) || "/._~-".contains($0) }
@@ -44,7 +52,8 @@ final class Servers {
         guard let c = all[pid], let h = c["host"], let p = c["path"], Self.validHost(h), Self.validPath(p) else { return nil }
         let port = Int(c["port"] ?? "") ?? 0, key = c["key"] ?? ""
         return Server(host: h, path: p, port: (1...65535).contains(port) ? port : 0, key: SSHKeys.validId(key) ? key : "",
-                      ext: (c["ext"] ?? "").split(separator: ",").map(String.init).filter(Self.extensions.contains))
+                      ext: (c["ext"] ?? "").split(separator: ",").map(String.init).filter(Self.extensions.contains),
+                      user: Self.validUser(c["user"] ?? "") && !h.contains("@") ? c["user"] ?? "" : "")
     }
 
     /// Projets dont le serveur utilise chaque clé de Studio.
@@ -59,7 +68,7 @@ final class Servers {
         let file = NSHomeDirectory() + "/.ssh/config"
         let text = (try? String(contentsOfFile: file, encoding: .utf8)) ?? ""
         var out: [[String: String]] = [], cur: [String] = []
-        var names: [String: String] = [:]
+        var names: [String: String] = [:], users: [String: String] = [:]
         for raw in text.split(separator: "\n") {
             let line = raw.trimmingCharacters(in: .whitespaces)
             let parts = line.split(maxSplits: 1, whereSeparator: { $0 == " " || $0 == "\t" || $0 == "=" }).map { String($0).trimmingCharacters(in: .whitespaces) }
@@ -68,23 +77,27 @@ final class Servers {
             case "host": cur = parts[1].split(separator: " ").map(String.init).filter { !$0.contains("*") && !$0.contains("?") && Self.validHost($0) }
                 cur.forEach { names[$0] = "" }
             case "hostname": cur.forEach { names[$0] = parts[1] }
+            case "user": cur.forEach { users[$0] = parts[1] }
             default: break
             }
         }
-        for (k, v) in names.sorted(by: { $0.key < $1.key }) { out.append(["alias": k, "hostname": v]) }
+        for (k, v) in names.sorted(by: { $0.key < $1.key }) { out.append(["alias": k, "hostname": v, "user": users[k] ?? ""]) }
         return ["ok": true, "hosts": out]
     }
 
-    func set(_ pid: String, host: String, path: String, port: String, key: String, ext: [String]) -> [String: Any] {
+    func set(_ pid: String, host: String, user: String = "", path: String, port: String, key: String, ext: [String]) -> [String: Any] {
         guard !pid.isEmpty, pid.count <= 64 else { return ["ok": false, "message": "Projet invalide."] }
         guard Self.validHost(host) else { return ["ok": false, "message": "Hôte invalide : un alias de ~/.ssh/config ou utilisateur@hôte."] }
+        let u = user.trimmingCharacters(in: .whitespaces)
+        guard u.isEmpty || Self.validUser(u) else { return ["ok": false, "message": "Utilisateur invalide : minuscules, chiffres, _ . - (ex. root, ubuntu, deploy)."] }
+        guard u.isEmpty || !host.contains("@") else { return ["ok": false, "message": "L’utilisateur est indiqué deux fois : retire « utilisateur@ » de l’hôte."] }
         guard Self.validPath(path) else { return ["ok": false, "message": "Chemin invalide : absolu (/srv/app) ou depuis ~ (~/app), sans espace ni caractère spécial."] }
         let p = port.trimmingCharacters(in: .whitespaces)
         guard p.isEmpty || (Int(p).map { (1...65535).contains($0) } ?? false) else { return ["ok": false, "message": "Port invalide : un nombre entre 1 et 65535, ou vide pour le port habituel."] }
         guard key.isEmpty || (SSHKeys.validId(key) && SSHKeys.shared.exists(key)) else { return ["ok": false, "message": "Clé SSH inconnue."] }
         let e = Self.extensions.filter(ext.contains)
-        var a = all; a[pid] = ["host": host, "path": path, "port": p, "key": key, "ext": e.joined(separator: ",")]; all = a
-        return ["ok": true, "host": host, "path": path]
+        var a = all; a[pid] = ["host": host, "user": u, "path": path, "port": p, "key": key, "ext": e.joined(separator: ",")]; all = a
+        return ["ok": true, "host": host, "user": u, "path": path]
     }
     func forget(_ pid: String) { var a = all; a.removeValue(forKey: pid); all = a }
 
@@ -94,6 +107,7 @@ final class Servers {
     func launch(_ c: Server, _ command: String, tty: Bool = false, env base: [String: String]) -> (args: [String], env: [String: String], error: String?) {
         var args = [tty ? "-tt" : "-T", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=30"]
         if c.port > 0 { args += ["-p", String(c.port)] }
+        if !c.user.isEmpty { args += ["-l", c.user] }
         var env = base
         if !c.key.isEmpty {
             switch SSHKeys.shared.prepare(c.key) {
@@ -163,7 +177,7 @@ final class Servers {
         let dir = Self.qPath(c.path)
         let cmd = "uptime; echo @@; df -hP \(dir) 2>/dev/null | tail -1; echo @@; (free -m 2>/dev/null | sed -n 2p) || true; echo @@; nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null; echo @@; cd \(dir) 2>/dev/null && git status -sb 2>/dev/null | head -1; echo @@; (command -v claude >/dev/null 2>&1 && claude --version 2>/dev/null | head -1) || true; echo @@; uname -sr"
         let r = run(c, cmd)
-        var base: [String: Any] = ["ok": true, "configured": true, "host": c.host, "path": c.path, "port": c.port, "ext": c.ext, "ms": r.ms]
+        var base: [String: Any] = ["ok": true, "configured": true, "host": c.host, "user": c.user, "dest": c.dest, "path": c.path, "port": c.port, "ext": c.ext, "ms": r.ms]
         if !c.key.isEmpty, let k = SSHKeys.shared.info(c.key) { base["key"] = k }
         guard r.status == 0 || r.out.contains("@@") else {
             base["online"] = false
@@ -198,7 +212,7 @@ final class Servers {
     func terminal(_ pid: String) -> [String: Any] {
         guard let c = config(pid) else { return ["ok": false, "message": "Aucun serveur configuré."] }
         if c.key.isEmpty {
-            guard let url = URL(string: "ssh://" + c.host + (c.port > 0 ? ":\(c.port)" : "")) else { return ["ok": false, "message": "Hôte invalide."] }
+            guard let url = URL(string: "ssh://" + c.dest + (c.port > 0 ? ":\(c.port)" : "")) else { return ["ok": false, "message": "Hôte invalide."] }
             NSWorkspace.shared.open(url)
             return ["ok": true]
         }

@@ -1893,6 +1893,7 @@ button.lv-chip:hover, .lv-chip.sel { color: var(--text); background: var(--btn);
 .sv-row { display: flex; gap: 10px; }
 .sv-row > .pj-field:first-child { flex: 1; min-width: 0; }
 .sv-port { width: 90px; }
+.sv-user { width: 150px; }
 .sv-keyrow { display: flex; gap: 6px; align-items: center; }
 .sv-keyrow select { flex: 1; min-width: 0; }
 .sv-keyrow .btn { height: 32px; flex: none; }

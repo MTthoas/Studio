@@ -66,7 +66,7 @@ final class Terminals {
             s.source = src
             src.resume()
             sessions[id] = s
-            return ["ok": true, "term": id, "host": c.host, "path": c.path]
+            return ["ok": true, "term": id, "host": c.dest, "path": c.path]
         }
     }
 

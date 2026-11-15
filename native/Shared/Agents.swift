@@ -328,7 +328,7 @@ final class Agents {
         var sshSock: String?
         if let server {
             // Sur le serveur : modèle de commande fixe, chaque argument protégé, Claude Code cherché aux emplacements usuels.
-            run.machine = "server"; run.host = server.host; run.server = server
+            run.machine = "server"; run.host = server.dest; run.server = server
             var prep = ""
             if !newWorktree.isEmpty {
                 // Même règle que sur le Mac : copie isolée partant de la dernière version de la branche principale distante.
