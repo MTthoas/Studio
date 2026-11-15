@@ -44,6 +44,7 @@ Mémoire du dépôt pour les agents : à lire **en premier**, avant toute recher
 - **Journal** : `src/features/journal.ts` (rendu `dayPage`, `promptRow`, `sessionBlock`) ; ses styles sont les classes `jr-*` en fin de `css/app.css`. Les classes `hm-*` sont partagées avec l'Accueil : ne les retouche pas pour le seul journal.
 - **Tags des notes** : jamais stockés, recalculés depuis le texte par `analyze` (`src/lib/markdown.ts`, via `store.meta`) ; la règle est `TAG_RE` + `notTag`, partagée par le rendu (`inline`). La capture rapide (`parseCapture`, `src/app.ts`) a sa propre expression.
 - **Voix** : `native/Shared/Dictation.swift` (Mac et iPhone, transcription sur l'appareil seulement), pont `type: "voice"` dans `Shell.swift`, retour par `window.carnet.voice` → `onNative` de `src/features/voice.ts`. Une seule dictée à la fois (`session`) : `record` en fait une note, `dictate(champ, bouton)` écrit dans un champ (bouton `micHTML`, utilisé par les formulaires d'agents de `sessions.ts`). Hors app native, `available()` est faux et le bouton n'est pas rendu.
+- **Fil d'Ariane** : `crumb` dans `src/app.ts`, rendu par toutes les vues (passé aux pages via `app.crumb`) ; il porte le chat décoratif `CAT` (SVG, styles `.crumb-cat` près de `.crumb` dans `css/app.css`).
 - **Icônes** : table en tête de `src/ui/kit.ts` (`icon('nom')`).
 - **Commande `studio`** : `bin/studio` (sh POSIX), qui appelle `native/build-mac.sh`, lequel appelle `native/copy-web.sh` (build web puis copie dans l'app).
 
