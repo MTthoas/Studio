@@ -36,6 +36,25 @@ export const active = (): boolean => vault.isOpen() && connected();
 // une réponse de moins de `REUSE` est resservie telle quelle, et au-delà la requête est conditionnelle
 // (`If-None-Match`) : un 304 de GitHub est rapide, léger et ne compte pas dans la limite de requêtes.
 // Les données rendues sont partagées : ne jamais les modifier en place.
+/** Refus de GitHub, avec son code : les appelants peuvent distinguer « hors de portée du jeton » (404) d'un manque de droit (403). */
+export class GitHubError extends Error {
+  constructor(message: string, readonly status: number, readonly repo = '') { super(message); }
+}
+const repoOf = (path: string): string => /^\/repos\/([^/?]+\/[^/?]+)/.exec(path)?.[1] ?? '';
+/** Message précis pour une réponse en erreur. GitHub répond 404, et non 403, pour un dépôt que le jeton ne voit pas
+ *  (il ne dit pas qu'un dépôt privé existe) : c'est le cas d'un jeton à accès précis créé pour d'autres dépôts. */
+async function refusal(r: Response, repo: string, need = 'Contents : lecture'): Promise<GitHubError> {
+  const j = await r.json().catch(() => ({})) as { message?: string; errors?: { message?: string }[] };
+  const said = j.errors?.[0]?.message || j.message || '';
+  const limited = r.status === 429 || (r.status === 403 && (r.headers.get('x-ratelimit-remaining') === '0' || /rate limit/i.test(said)));
+  const msg = r.status === 401 ? 'Jeton GitHub refusé ou expiré : remplace-le dans Réglages → GitHub.'
+    : limited ? 'GitHub limite les requêtes pour l’instant : réessaie dans quelques minutes.'
+    : r.status === 404 && repo ? `Ton jeton GitHub n’a pas accès au dépôt ${repo} (ou ce dépôt n’existe pas sous ce nom). Un jeton à accès précis ne voit que les dépôts choisis à sa création : ajoute ${repo} dans « Repository access » du jeton sur GitHub, ou remplace le jeton dans Réglages → GitHub.`
+    : r.status === 403 ? `Ton jeton GitHub n’a pas le droit nécessaire${repo ? ` sur ${repo}` : ''} (permission « ${need} »)${said ? ` — GitHub : ${said}` : ''}.`
+    : said ? `GitHub a répondu ${r.status} : ${said}` : `GitHub a répondu ${r.status}`;
+  return new GitHubError(msg, r.status, repo);
+}
+
 const REUSE = 20e3, CACHE_MAX = 400;
 const cache = new Map<string, { at: number; etag: string; data: unknown }>(), inflight = new Map<string, Promise<unknown>>();
 export function api<T>(path: string, token: string | null = vault.secret('github'), { maxAge = REUSE } = {}): Promise<T> {
@@ -48,9 +67,7 @@ export function api<T>(path: string, token: string | null = vault.secret('github
     if (hit?.etag) headers['If-None-Match'] = hit.etag;
     const r = await fetch(API + path, { headers, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' });
     if (r.status === 304 && hit) { hit.at = Date.now(); return hit.data; }
-    if (r.status === 401) throw new Error('jeton refusé ou expiré');
-    if (r.status === 403 || r.status === 429) throw new Error('limite de requêtes atteinte, réessaie plus tard');
-    if (!r.ok) throw new Error(`GitHub a répondu ${r.status}`);
+    if (!r.ok) throw await refusal(r, repoOf(path));
     const data: unknown = await r.json();
     cache.delete(key); cache.set(key, { at: Date.now(), etag: r.headers.get('ETag') ?? '', data });
     if (cache.size > CACHE_MAX) { const old = cache.keys().next().value; if (old !== undefined) cache.delete(old); }
@@ -76,8 +93,9 @@ export async function createPull(repo: string, pr: { head: string; base: string;
   if (!REPO_RE.test(repo)) throw new Error(`Dépôt invalide : ${repo}`);
   const token = vault.secret('github'); if (!token) throw new Error('GitHub n’est pas connecté (Réglages → GitHub).');
   const r = await fetch(`${API}/repos/${repo}/pulls`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' }, body: JSON.stringify(pr), credentials: 'omit', referrerPolicy: 'no-referrer' });
-  const j = await r.json().catch(() => ({})) as { number?: number; html_url?: string; message?: string; errors?: { message?: string }[] };
-  if (!r.ok || !j.number || !j.html_url) throw new Error(j.errors?.[0]?.message || j.message || `GitHub a répondu ${r.status}`);
+  if (!r.ok) throw await refusal(r, repo, 'Pull requests : lecture et écriture');
+  const j = await r.json().catch(() => ({})) as { number?: number; html_url?: string };
+  if (!j.number || !j.html_url) throw new GitHubError('GitHub n’a pas renvoyé la pull request créée.', r.status, repo);
   flowCache.delete(repo); repoCache.delete(repo); forget(repo);
   return { number: j.number, html_url: j.html_url };
 }
