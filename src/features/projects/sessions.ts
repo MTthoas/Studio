@@ -562,7 +562,7 @@ function listHTML(list: Session[]): string {
   return `${running.length || trees.length ? flow : ''}
     ${running.length ? `<h3 class="ss-h"><span class="ss-h-dot" style="${stageVar('work')}"></span>Au travail <span>${running.length} agent${running.length > 1 ? 's' : ''} en cours</span></h3><div class="ag-runs">${running.map(runCard).join('')}</div>` : ''}
     ${recent.length ? `<h3 class="ss-h">Terminés récemment <span>lancés depuis Studio</span>${recent.length > 1 ? `<button class="link-btn ss-h-act" data-ag="hide-runs">Retirer les terminés</button>` : ''}</h3><div class="ag-runs">${recent.map(runCard).join('')}</div>` : ''}
-    ${trees.length ? `<h3 class="ss-h">Copies des agents <span>travail isolé de ton dossier, rangé par étape</span></h3><div class="ag-groups">${groups}</div>` : ''}
+    ${trees.length ? `<h3 class="ss-h">Copies des agents <span>travail isolé de ton dossier, rangé par étape</span>${!remote && trees.some(treeIdle) ? `<button class="link-btn ss-h-act" data-ag="clean-trees" title="Supprimer plusieurs copies d’un coup">Faire le ménage</button>` : ''}</h3><div class="ag-groups">${groups}</div>` : ''}
     <h3 class="ss-h">Sessions <span>tout ce que Claude Code a fait dans ce projet</span>${canClean ? `<button class="link-btn ss-h-act" data-ag="clean" title="Supprimer plusieurs conversations terminées d’un coup">Faire le ménage</button>` : ''}</h3>
     <div class="ss-totals"><div><strong>${list.length}</strong><span>session${list.length > 1 ? 's' : ''}</span></div><div><strong>${usage.fmt(tot.output)}</strong><span>tokens écrits</span></div><div><strong>${usage.fmt(tot.input)}</strong><span>tokens lus</span></div><div><strong>${usage.fmt(tot.cacheRead)}</strong><span>relus du cache</span></div></div>
     <div class="ss-list">${list.map(s => {
@@ -905,7 +905,7 @@ async function publish(p: Project, wt: string, root: HTMLElement): Promise<void>
     const wanted = branchIn.value.trim();
     if (!/^[a-z0-9][a-z0-9._/-]{0,89}$/.test(wanted) || wanted.includes('..') || wanted.endsWith('/')) { st.innerHTML = '<p class="rv-status err">Nom de branche invalide : minuscules, chiffres, - _ . / (ex. feat/export-pdf).</p>'; branchIn.focus(); return; }
     go.disabled = true; st.innerHTML = '<p class="rv-status"><span class="spin"></span>Démarrage…</p>';
-    const started = await native.call('agent', 'publish', { project: p.id, worktree: wt, message, branch: wanted }, 30000);
+    const started = await native.call('agent', 'publish', { project: p.id, worktree: wt, message, branch: wanted, author: await github.author() }, 30000);
     if (!started.ok) { st.innerHTML = `<p class="rv-status err">${esc(started.message ?? 'Échec.')}</p>`; go.disabled = false; return; }
     void refreshTrees(p).then(() => paint(root, p));
     const j = await follow(String(started.job));
@@ -1133,6 +1133,71 @@ function cleanUp(p: Project): void {
   };
 }
 
+/** Copie qu'on peut supprimer sans interrompre personne : aucun agent ni aucune publication n'y travaille. */
+const treeIdle = (w: Worktree): boolean => !runs.some(r => r.worktree === w.name && live(r)) && !jobs.some(j => j.worktree === w.name && j.status === 'running');
+
+/** Ménage des copies : en choisir plusieurs d'un coup (fusionnées et sans changement d'abord), et au besoin leurs conversations. */
+function cleanTrees(p: Project): void {
+  const list = trees.filter(treeIdle);
+  if (!list.length) { toast('Aucune copie au repos à supprimer.'); return; }
+  const sessions = known.get(p.id)?.list ?? [];
+  const order = (w: Worktree) => STAGE_ORDER.indexOf(stageOf(w));
+  const rows = [...list].sort((a, b) => order(b) - order(a)).map(w => {
+    const st = stageOf(w), risky = w.changes > 0 || (w.ahead > 0 && !w.merged && !w.pushed);
+    return `<label class="ss-pick"><input type="checkbox" value="${esc(w.name)}" data-st="${st}"${risky ? ' data-risky' : ''}><span>${esc(treeTitle(w, sessions))}${risky ? ' <em class="err">· travail non publié</em>' : ''}</span>${stageBadge(st)}</label>`;
+  }).join('');
+  const m = modal({ title: 'Faire le ménage dans les copies', cls: 'ss-clean', html: `
+    <p class="modal-text">Coche les copies à supprimer. Celles où un agent ou une publication travaille encore ne sont pas proposées.</p>
+    <div class="ss-pick-bar"><button type="button" class="link-btn" data-pick="done">Fusionnées et sans changement</button><button type="button" class="link-btn" data-pick="all">Tout cocher</button><button type="button" class="link-btn" data-pick="none">Tout décocher</button></div>
+    <div class="ss-picks">${rows}</div>
+    <label class="ss-pick"><input type="checkbox" data-with-sessions><span>Supprimer aussi leurs conversations (journaux à la corbeille du Mac)</span></label>
+    <p class="modal-hint">${icon('shield')}Les changements non publiés des copies cochées sont perdus. Les branches déjà poussées sur GitHub restent en place.</p>
+    <div class="rv-status"></div>
+    <div class="modal-actions"><button class="btn" data-x>Annuler</button><button class="btn btn-danger" data-go disabled>Supprimer</button></div>` });
+  const boxes = Array.from(m.node.querySelectorAll<HTMLInputElement>('.ss-picks input')), go = need<HTMLButtonElement>('[data-go]', m.node), st = need('.rv-status', m.node);
+  const withSessions = need<HTMLInputElement>('[data-with-sessions]', m.node);
+  const picked = () => boxes.filter(b => b.checked && b.isConnected).map(b => b.value);
+  let working = false;
+  const sync = () => {
+    const ids = picked(), risky = boxes.some(b => b.checked && b.dataset.risky !== undefined);
+    go.disabled = working || !ids.length;
+    go.textContent = ids.length ? `Supprimer (${ids.length})` : 'Supprimer';
+    if (!working) st.innerHTML = risky ? `<span class="err">Certaines copies cochées ont du travail non publié : il sera perdu.</span>` : '';
+  };
+  m.node.addEventListener('change', sync);
+  m.node.querySelectorAll<HTMLElement>('[data-pick]').forEach(b => { b.onclick = () => {
+    if (working) return;
+    const how = b.dataset.pick;
+    for (const x of boxes) x.checked = how === 'all' || (how === 'done' && (x.dataset.st === 'merged' || x.dataset.st === 'idle'));
+    sync();
+  }; });
+  need('[data-x]', m.node).onclick = m.close;
+  go.onclick = async () => {
+    const names = picked(); if (!names.length || working) return;
+    working = true; sync(); boxes.forEach(b => { b.disabled = true; }); withSessions.disabled = true;
+    let done = 0, why = '';
+    for (const name of names) {
+      st.innerHTML = `<span class="spin"></span>Suppression ${done + 1} sur ${names.length}…`;
+      const r = await native.call('agent', 'discard', { project: p.id, worktree: name }, 30000);
+      if (!r.ok) { why = r.message ?? 'Suppression impossible.'; continue; }
+      if (withSessions.checked) for (const s of sessions.filter(x => x.worktree === name && idle(x))) { const err = await dropSession(p, s.id); if (err) why = err; }
+      if (selected && sessions.some(s => s.id === selected && s.worktree === name)) { selected = null; sub = null; }
+      done++;
+      m.node.querySelector(`.ss-picks input[value="${name}"]`)?.closest('.ss-pick')?.remove();
+    }
+    const failed = names.length - done;
+    await refreshTrees(p);
+    notify(); if (cur?.box.isConnected) { if (!selected) shell(cur.box, cur.p); void paint(cur.box, cur.p); }
+    if (done) toast(`${done} copie${done > 1 ? 's' : ''} supprimée${done > 1 ? 's' : ''}${failed ? ` · ${failed} en échec` : ''}`);
+    if (!failed && !why) { m.close(); return; }
+    working = false;
+    for (const b of boxes) b.disabled = false;
+    withSessions.disabled = false;
+    st.innerHTML = `<span class="err">${esc(why)}</span>`;
+    go.disabled = !picked().length;
+  };
+}
+
 /** Dessine l'onglet et le garde à jour toutes les 3 secondes tant qu'il est affiché. */
 export function mount(box: HTMLElement, p: Project, folder: string | null): void {
   clearInterval(timer); folderPath = folder; tick = 0;
@@ -1185,6 +1250,7 @@ export function mount(box: HTMLElement, p: Project, folder: string | null): void
     }
     if (b.dataset.ag === 'delete') { const sid = b.dataset.session || selected; if (sid) await removeSession(p, sid); return; }
     if (b.dataset.ag === 'clean') { cleanUp(p); return; }
+    if (b.dataset.ag === 'clean-trees') { cleanTrees(p); return; }
     if (b.dataset.ag === 'hide-run' || b.dataset.ag === 'hide-runs') {
       hideRuns(b.dataset.ag === 'hide-run' ? [b.dataset.run ?? ''].filter(Boolean) : runs.filter(r => !live(r)).map(r => r.run));
       again = painting; void paint(box, p); return;
@@ -1193,7 +1259,7 @@ export function mount(box: HTMLElement, p: Project, folder: string | null): void
     if (b.dataset.ag === 'vscode') { const r = await native.call('project', 'open', { project: p.id, app: 'vscode', worktree: wt }, 15000); if (!r.ok) toast(r.message ?? 'Impossible d’ouvrir.'); }
     if (b.dataset.ag === 'push') await publish(p, wt, box);
     if (b.dataset.ag === 'sync') {
-      const r = await native.call('agent', 'sync', { project: p.id, worktree: wt }, 30000);
+      const r = await native.call('agent', 'sync', { project: p.id, worktree: wt, author: await github.author() }, 30000);
       toast(r.ok ? 'Mise à jour de la copie lancée' : r.message ?? 'Impossible.');
       await refreshTrees(p); void paint(box, p);
     }
