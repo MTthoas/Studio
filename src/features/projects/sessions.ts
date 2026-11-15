@@ -935,10 +935,15 @@ async function publish(p: Project, wt: string, root: HTMLElement): Promise<void>
       const pr = await github.createPull(repo, { head: branch, base, title: prTitle, body: prBody(run, detail) });
       m.close(); toast(`PR #${pr.number} ouverte`); window.open(pr.html_url, '_blank', 'noopener');
     } catch (e) {
-      const why = errMsg(e), perm = /not accessible|403|permission/i.test(why), exists = /already exists/i.test(why);
+      const why = errMsg(e).replace(/\.$/, ''), status = e instanceof github.GitHubError ? e.status : 0, exists = /already exists/i.test(why);
       if (exists) { m.close(); toast('Branche poussée : sa pull request est à jour.'); return; }
+      // Le push vient de réussir (identifiants Git du Mac) : un 404 ici veut dire que le jeton de Studio ne voit pas ce dépôt.
+      const perm = status === 403 || status === 404 || /not accessible/i.test(why);
+      const text = status === 404 ? `Le dépôt ${repo} existe (la branche vient d’y être poussée), mais ton jeton GitHub n’y a pas accès : un jeton à accès précis ne voit que les dépôts choisis à sa création. Ajoute ${repo} dans « Repository access » du jeton sur GitHub (avec « Pull requests : lecture et écriture »), ou remplace-le dans Réglages → GitHub.`
+        : status === 403 ? `Ton jeton GitHub voit ${repo} mais n’a pas le droit d’y ouvrir une pull request (permission « Pull requests : lecture et écriture »).`
+        : `La pull request n’a pas pu être ouverte d’ici : ${why}.`;
       st.innerHTML = `<div class="ag-prfail"><p>${icon('check')}Branche <code>${esc(branch)}</code> poussée sur GitHub.</p>
-        <p class="err">${perm ? 'Ton jeton GitHub n’a pas le droit d’ouvrir une pull request (permission « Pull requests : lecture et écriture »).' : `La pull request n’a pas pu être ouverte d’ici : ${esc(why)}.`}</p>
+        <p class="err">${esc(text)}</p>
         <div class="ag-prfail-act"><a class="btn btn-primary" href="${esc(compareURL(repo, base, branch, prTitle, prBody(run, detail)))}" target="_blank" rel="noopener">${icon('github')}Ouvrir la PR sur GitHub</a>${perm || !canPR ? '<button class="btn" data-open-conn="github">Régler le jeton</button>' : ''}</div></div>`;
       go.hidden = true; need('[data-x]', m.node).textContent = 'Fermer';
       st.querySelector('a.btn-primary')?.addEventListener('click', () => setTimeout(m.close, 300));

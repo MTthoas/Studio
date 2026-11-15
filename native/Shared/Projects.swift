@@ -117,6 +117,14 @@ final class ProjectFolders {
         if e.contains("Please tell me who you are") || e.contains("unable to auto-detect email") || e.contains("empty ident name") {
             return "Git ne sait pas qui tu es : connecte ton compte dans Réglages → GitHub, ou lance une fois dans le Terminal « git config --global user.email ton@adresse » et « git config --global user.name \"Ton nom\" »."
         }
+        // GitHub répond « not found » (et non « accès refusé ») quand les identifiants ne voient pas le dépôt :
+        // jeton à accès précis créé pour d'autres dépôts, ou autre compte enregistré dans le trousseau.
+        if e.contains("Repository not found") || e.range(of: #"repository '[^']*' not found"#, options: .regularExpression) != nil {
+            let repo = e.range(of: #"github\.com[/:]([^/'\s]+/[^/'\s]+?)(\.git)?/?'"#, options: .regularExpression)
+                .map { String(e[$0]).replacingOccurrences(of: #"^github\.com[/:]|(\.git)?/?'$"#, with: "", options: .regularExpression) }
+            let name = repo.map { " \($0)" } ?? ""
+            return "Les identifiants Git de ce Mac n'ont pas accès au dépôt\(name) (ou il n'existe pas sous ce nom). Un jeton à accès précis ne voit que les dépôts choisis à sa création : ajoute ce dépôt dans « Repository access » du jeton sur GitHub (droit « Contents : lecture et écriture »), ou enregistre un jeton qui y a accès avec « git push » dans le Terminal."
+        }
         let lines = e.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty && !$0.hasPrefix("hint:") }
         let line = lines.last(where: { $0.hasPrefix("fatal:") || $0.hasPrefix("error:") || $0.contains("denied") || $0.contains("rejected") }) ?? lines.last ?? ""
         return String(line.replacingOccurrences(of: #"https://[^@\s]+@"#, with: "https://", options: .regularExpression).prefix(300))
