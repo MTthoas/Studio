@@ -147,7 +147,7 @@ Une note ou une tâche y appartient avec le tag `#projet/studio` — posé par l
 | **Vue d'ensemble** | Une carte par onglet, des graphiques (commits par jour, tokens Claude Code par jour, santé de la CI, avancement des tâches), une barre de consigne rapide et les agents en cours |
 | **Claude Code** | Les agents et les sessions menées dans le dossier, en direct : ce qu'elles font, fichiers modifiés, tokens consommés. Chaque conversation porte un nom court qui la résume (rédigé par l'IA branchée dans Studio, remis à jour quand elle avance), apparaît dans la barre latérale et le fil d'Ariane, et peut être arrêtée ou supprimée (son journal part à la corbeille du Mac). Sous la consigne, ce qu'il reste de ton abonnement Claude en pourcentage (session de 5 heures, semaine) et le délai avant réinitialisation |
 | **Code** | Dossier local, branches locales (avance / retard), PR et activité, **revue IA** des changements en cours ou de la branche ; ouverture dans VS Code, le Finder ou le Terminal |
-| **Flux** | Le parcours de chaque branche façon gitflow : en cours → PR ouverte → prête à fusionner → fusionnée → publiée (Release), avec CI et revues |
+| **Flux** | Le parcours de chaque branche façon gitflow : en cours → PR ouverte → prête à fusionner → fusionnée → publiée (Release), avec CI et revues ; au-dessus, l'état de chaque workflow GitHub Actions (dernière exécution, branche, durée, précédentes), relu toutes les 30 s tant qu'une exécution tourne |
 | **Serveur** | L'état du VPS ou de la VM du projet, joint en SSH, et ses agents |
 | **Tâches · Notes** | Ce qui est tagué `#projet/<nom>` |
 | **Site** | Le site du projet : lancé **en local** depuis le Mac (adresse, pages vues, requêtes), et vérifié **en ligne** (code, temps de réponse) |

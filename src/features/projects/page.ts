@@ -262,7 +262,7 @@ async function hydrate(root: HTMLElement, p: Project, tab: string): Promise<void
     void Promise.resolve().then(() => x.render(p)).then(html => fill(root, `[data-sec="${CSS.escape(x.id)}"] .pj-sec-body`, html))
       .catch(e => fill(root, `[data-sec="${CSS.escape(x.id)}"] .pj-sec-body`, `<p class="nf-empty">${esc(errMsg(e))}</p>`));
   }
-  if (tab === 'flux') void flux.render(p).then(h => fill(root, '.pj-flux', h)).catch(e => fill(root, '.pj-flux', `<p class="nf-empty">${esc(errMsg(e))}</p>`));
+  if (tab === 'flux') { const box = $('.pj-flux', root); if (box) { void flux.mount(box, p); chart.bindTips(root); } }
   const f = await folderOf(p);
   fill(root, '.pj-folder-box', folderHTML(p, f));
   if (tab === 'sessions') { const box = $('.ss-box', root); if (box) sessions.mount(box, p, f?.path ?? null); }

@@ -5,6 +5,7 @@ import * as github from '../../integrations/github/api.ts';
 import * as native from '../../core/native.ts';
 import { esc } from '../../lib/markdown.ts';
 import { icon, rel, errMsg, avatar } from '../../ui/kit.ts';
+import * as chart from '../../ui/chart.ts';
 import * as model from './model.ts';
 import type { Project } from './model.ts';
 
@@ -31,13 +32,46 @@ function card(it: github.FlowItem, local?: LocalBranch): string {
       ${it.pr?.author ? avatar(it.pr.author) : ''}<time>${esc(when)}</time></footer></article>`;
 }
 
-export async function render(p: Project): Promise<string> {
-  if (!p.repos.length) return '<p class="hm-empty">Associe un dépôt GitHub au projet (onglet Code ou note du projet) pour suivre son flux.</p>';
-  if (!github.connected()) return `<p class="hm-empty">Connecte GitHub pour suivre le flux des branches. <button class="link-btn" data-open-conn="github">Connecter</button></p>`;
+// ---------- GitHub Actions : un workflow par ligne, sa dernière exécution et la bande des précédentes ----------
+const RUN_ST: Record<string, [string, string]> = { success: ['green', 'réussie'], failure: ['red', 'en échec'], cancelled: ['gray', 'annulée'], skipped: ['gray', 'ignorée'], timed_out: ['red', 'délai dépassé'], action_required: ['amber', 'à valider'], neutral: ['gray', 'neutre'], startup_failure: ['red', 'échec au démarrage'], stale: ['gray', 'périmée'] };
+const EVENT: Record<string, string> = { push: 'push', pull_request: 'PR', pull_request_target: 'PR', schedule: 'planifiée', workflow_dispatch: 'manuelle', release: 'release', merge_group: 'file de fusion' };
+const runLabel = (a: github.ActionRun): [string, string] => a.status === 'in_progress' ? ['amber', 'en cours'] : a.status !== 'completed' ? ['amber', 'en attente'] : RUN_ST[a.conclusion ?? ''] ?? ['gray', a.conclusion ?? 'terminée'];
+const took = (s: number | null) => s === null ? '' : s < 60 ? `${s} s` : `${Math.floor(s / 60)} min${s % 60 ? ` ${String(s % 60).padStart(2, '0')}` : ''}`;
+function actionsHTML(f: github.Flow): string {
+  if (!f.actions.length) return '';
+  return `<div class="fx-acts"><header class="fx-acts-head">${icon('bolt')}<span>Actions</span><em class="kb-count">${f.actions.length}</em><a class="link-btn" href="https://github.com/${esc(f.repo)}/actions" target="_blank" rel="noopener">Tout voir sur GitHub</a></header>
+    ${f.actions.map(w => {
+      const [hue, txt] = runLabel(w.last), live = w.last.state === 'pending', d = took(w.last.seconds);
+      return `<div class="fx-act${live ? ' live' : ''}" style="--c:var(--c-${hue})"><i class="pj-ci"></i>
+        <a class="fx-act-name" href="${esc(w.last.url)}" target="_blank" rel="noopener" title="${esc(w.last.title)}">${esc(w.name)}</a>
+        <span class="fx-act-st">${txt}</span><code title="Branche">${esc(w.last.branch)}</code><span class="fx-act-ev">${EVENT[w.last.event] ? `<em class="pj-badge">${EVENT[w.last.event]}</em>` : ''}</span>
+        ${chart.strip(w.runs)}<time>${esc(rel(Date.parse(w.last.at)))}${d ? ` · ${d}` : ''}</time></div>`;
+    }).join('')}</div>`;
+}
+
+/** Rend le flux dans `box`, puis le relit toutes les 30 s tant qu'une exécution est en cours et que l'onglet est affiché. */
+export async function mount(box: HTMLElement, p: Project): Promise<void> {
+  for (let fresh = false; ; fresh = true) {
+    let live = false;
+    try { const r = await render(p, fresh); box.innerHTML = r.html; live = r.live; }
+    catch (e) { box.innerHTML = `<p class="nf-empty">${esc(errMsg(e))}</p>`; return; }
+    if (!live) return;
+    await new Promise(ok => setTimeout(ok, 30e3));
+    if (!box.isConnected) return;
+    if (document.hidden) await new Promise<void>(ok => document.addEventListener('visibilitychange', () => ok(), { once: true }));
+    if (!box.isConnected) return;
+  }
+}
+
+async function render(p: Project, fresh: boolean): Promise<{ html: string; live: boolean }> {
+  if (!p.repos.length) return { html: '<p class="hm-empty">Associe un dépôt GitHub au projet (onglet Code ou note du projet) pour suivre son flux.</p>', live: false };
+  if (!github.connected()) return { html: `<p class="hm-empty">Connecte GitHub pour suivre le flux des branches. <button class="link-btn" data-open-conn="github">Connecter</button></p>`, live: false };
   const locals: LocalBranch[] = native.available() ? (((await native.call('project', 'branches', { project: p.id }, 20000)).branches as LocalBranch[] | undefined) ?? []) : [];
+  let live = false;
   const out = await Promise.all(p.stack.map(async ({ name: repo, role }, i) => {
     try {
-      const f = await github.flow(repo);
+      const f = await github.flow(repo, { fresh });
+      if (f.actions.some(w => w.last.state === 'pending')) live = true;
       const byName = new Map(locals.map(b => [b.name, b]));
       const items = [...f.items];
       if (i === 0) for (const b of locals) if (b.name !== f.base && !items.some(x => x.branch === b.name)) items.push({ branch: b.name, stage: 'branche', updated: b.date, ci: 'none', review: 'none' });
@@ -45,6 +79,7 @@ export async function render(p: Project): Promise<string> {
       return `<div class="fx-repo"><div class="fx-head">${model.roleTag(role)}<strong>${icon('github')}${esc(f.repo)}</strong>
           <span class="fx-base"><code>${esc(f.base)}</code><i class="pj-ci" style="--c:var(--c-${CI[f.baseCi][0]})"></i>${CI[f.baseCi][1]}</span>
           ${f.releases.length ? `<span class="fx-rels">${f.releases.slice(0, 3).map(r => `<a class="pj-badge approved" href="${esc(r.url)}" target="_blank" rel="noopener" title="${esc(new Date(r.at).toLocaleString('fr-FR'))}">${esc(r.tag)}</a>`).join('')}</span>` : ''}</div>
+        ${actionsHTML(f)}
         <div class="kb fx-board">${COLS.map(([key, label, tone, stages]) => {
           const cards = visible.filter(x => stages.includes(x.stage)).slice(0, key === 'merged' || key === 'released' ? 6 : 30);
           return `<section class="kb-col" data-col="${key}"><header class="kb-head"><i class="kb-dot" style="--c:var(--c-${tone})"></i><span>${label}</span><em class="kb-count">${cards.length}</em></header>
@@ -52,5 +87,5 @@ export async function render(p: Project): Promise<string> {
         }).join('')}</div></div>`;
     } catch (e) { return `<p class="nf-empty">${esc(repo)} : ${esc(errMsg(e))}</p>`; }
   }));
-  return `<p class="fx-legend">${icon('pr')}Branche de travail → PR (CI verte, revue) → fusion dans la branche principale → Release publiée automatiquement.</p>${out.join('')}`;
+  return { html: `<p class="fx-legend">${icon('pr')}Branche de travail → PR (CI verte, revue) → fusion dans la branche principale → Release publiée automatiquement.</p>${out.join('')}`, live };
 }
