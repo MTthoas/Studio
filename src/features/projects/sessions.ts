@@ -24,12 +24,14 @@ interface Quota { status?: string; resetsAt?: number; rateLimitType?: string; is
 interface Action { at: string; kind: string; text: string }
 export interface AgentRun { machine?: string; host?: string; run: string; mode: string; prompt: string; status: string; session: string; worktree: string; started: string; finished: string; result: string; lastText: string; turns: number; denials: string[]; quota?: Quota | null }
 interface Worktree {
-  name: string; branch: string; changes: number; ahead: number; behind?: number; pushed: boolean; conflicts?: string[];
+  name: string; branch: string; /** Commit de la copie (absent avec une app Mac ancienne). */ head?: string; changes: number; ahead: number; behind?: number; pushed: boolean; conflicts?: string[];
   /** Titre du dernier commit de la copie, si elle en a un. */ subject?: string;
   /** La branche distante est exactement la copie : rien de nouveau à pousser. */ upToDate?: boolean;
   /** Le travail poussé est déjà fusionné dans la branche principale. */ merged?: boolean;
   /** Branches déjà livrées par cette copie (une discussion peut en livrer plusieurs), les plus récentes d'abord. */
   history?: { branch: string; subject: string; merged: boolean }[];
+  /** Dernière PR de la branche sur GitHub, si on la connaît (ajoutée par la page, voir `withPulls`). */
+  pr?: github.BranchPull;
 }
 /** Tâche de l'orchestrateur (Orchestrator.swift) : publication ou mise à jour d'une copie. */
 interface Job { job: string; kind: 'publish' | 'sync'; worktree: string; status: 'running' | 'done' | 'error' | 'blocked'; step: string; log: string[]; conflicts: string[]; branch: string; message: string }
@@ -550,7 +552,7 @@ function treeRow(w: Worktree, list: Session[], badge = false): string {
   const canSync = !!w.behind && !busy && (w.changes > 0 || pending);
   const hist = w.history?.length ? `<span class="ag-hist">${w.history.map(h => `<span class="ag-hist-b${h.merged ? ' ok' : ''}" title="${esc(h.subject || h.branch)}">${icon(h.merged ? 'check' : 'pr')}<code>${esc(h.branch)}</code>${h.merged ? 'fusionnée' : 'PR en attente'}</span>`).join('')}</span>` : '';
   return `<div class="ag-tree st-${st}" style="${stageVar(st)}"><span class="ag-tree-main"><span class="ag-tree-title">${badge ? stageBadge(st) : ''}<b title="${esc(w.branch || w.name)}">${esc(treeTitle(w, list))}</b></span>${w.branch && !w.branch.startsWith('worktree-') ? `<code>${esc(w.branch)}</code>` : ''}${w.subject && !badge && (w.ahead > 0 || w.pushed) ? `<strong>${esc(w.subject)}</strong>` : ''}<em>${w.changes ? `${w.changes} fichier${w.changes > 1 ? 's' : ''} modifié${w.changes > 1 ? 's' : ''}` : 'aucun changement en attente'}${w.ahead && !w.merged ? ` · ${w.ahead} commit${w.ahead > 1 ? 's' : ''}` : ''}${where}${w.behind && !w.merged && (w.changes || pending) ? ` · ${w.behind} commit${w.behind > 1 ? 's' : ''} de retard sur la branche principale` : ''}${state}</em>${hist}</span>
-    <span class="ag-tree-act">${remote ? '<em class="ag-onmac">sur le Mac</em>' : `${canSync ? `<button class="btn" data-ag="sync" data-wt="${esc(w.name)}" title="Remettre la copie sur la dernière version de la branche principale ; l'agent résout les conflits éventuels">${icon('refresh')}Mettre à jour</button>` : ''}<button class="btn" data-ag="review" data-wt="${esc(w.name)}">${icon('sparkle')}Revue</button><button class="btn" data-ag="vscode" data-wt="${esc(w.name)}">${icon('code')}VS Code</button><button class="btn" data-ag="push" data-wt="${esc(w.name)}"${fresh && !busy ? '' : ' disabled'} title="${fresh ? 'Publier le nouveau travail de l’agent' : w.merged ? 'Déjà fusionné : rien de nouveau à publier' : pending ? 'Déjà poussé : rien de nouveau à publier' : 'Rien à publier'}">${icon('upload')}Publier</button>${pending ? `<button class="btn" data-ag="pr" data-wt="${esc(w.name)}" title="Ouvrir la page de la pull request sur GitHub">${icon('github')}PR</button>` : ''}${pending && !w.changes && !busy ? `<button class="btn" data-ag="newbranch" data-wt="${esc(w.name)}" title="Garder cette branche pour sa PR et repartir de la dernière version de la branche principale, sur une nouvelle branche, dans la même discussion">${icon('plus')}Nouvelle branche</button>` : ''}<button class="icon-btn" data-ag="discard" data-wt="${esc(w.name)}" title="Supprimer la copie" aria-label="Supprimer la copie">${icon('trash')}</button>`}</span></div>`;
+    <span class="ag-tree-act">${remote ? '<em class="ag-onmac">sur le Mac</em>' : `${canSync ? `<button class="btn" data-ag="sync" data-wt="${esc(w.name)}" title="Remettre la copie sur la dernière version de la branche principale ; l'agent résout les conflits éventuels">${icon('refresh')}Mettre à jour</button>` : ''}<button class="btn" data-ag="review" data-wt="${esc(w.name)}">${icon('sparkle')}Revue</button><button class="btn" data-ag="vscode" data-wt="${esc(w.name)}">${icon('code')}VS Code</button><button class="btn" data-ag="push" data-wt="${esc(w.name)}"${fresh && !busy ? '' : ' disabled'} title="${fresh ? 'Publier le nouveau travail de l’agent' : w.merged ? 'Déjà fusionné : rien de nouveau à publier' : pending ? 'Déjà poussé : rien de nouveau à publier' : 'Rien à publier'}">${icon('upload')}Publier</button>${pending ? `<button class="btn" data-ag="pr" data-wt="${esc(w.name)}" title="Ouvrir la page de la pull request sur GitHub">${icon('github')}PR${w.pr?.state === 'open' ? ` #${w.pr.number}` : ''}</button>` : ''}${pending && !w.changes && !busy ? `<button class="btn" data-ag="newbranch" data-wt="${esc(w.name)}" title="Garder cette branche pour sa PR et repartir de la dernière version de la branche principale, sur une nouvelle branche, dans la même discussion">${icon('plus')}Nouvelle branche</button>` : ''}<button class="icon-btn" data-ag="discard" data-wt="${esc(w.name)}" title="Supprimer la copie" aria-label="Supprimer la copie">${icon('trash')}</button>`}</span></div>`;
 }
 
 function listHTML(list: Session[]): string {
@@ -946,6 +948,7 @@ async function publish(p: Project, wt: string, root: HTMLElement): Promise<void>
 
 /** Copie déjà poussée : ouvre la page GitHub de création de sa PR, déjà remplie. */
 async function openPR(p: Project, w: Worktree): Promise<void> {
+  if (w.pr?.state === 'open') { window.open(w.pr.url, '_blank', 'noopener'); return; } // déjà ouverte : on y va
   const repo = await workRepo(p); if (!repo) { toast('Associe un dépôt GitHub au projet.'); return; }
   let base = 'main';
   try { if (github.connected()) base = (await github.project(repo)).info.default_branch; } catch { /* main par défaut */ }
@@ -955,13 +958,89 @@ async function openPR(p: Project, w: Worktree): Promise<void> {
   window.open(compareURL(repo, base, w.branch, t, prBody(run, '')), '_blank', 'noopener');
 }
 
+// ---------- État des copies : le Mac (git) et GitHub (PR) ----------
+/** Copies telles que le Mac les décrit ; `trees` y ajoute ce que GitHub sait des PR (`withPulls`). */
+let rawTrees: Worktree[] = [];
+/** Dernière PR de chaque branche du dépôt des agents, lue sur GitHub dès l'arrivée sur l'onglet : une fusion s'y voit
+ *  tout de suite, sans attendre que le Mac relise le dépôt distant. */
+let pulls = new Map<string, github.BranchPull>(), pullsFor = '';
+/** Branches que GitHub dit fusionnées sans que le Mac le sache encore : on lui a déjà demandé de relire le dépôt distant. */
+const freshAsked = new Set<string>();
+/** Le Mac relit le dépôt distant en arrière-plan : on redemande l'état des copies au tour suivant. */
+let treesSoon = false, treesBusy = false;
+/** Dernier état connu des copies et des PR, par projet : affiché dès l'ouverture, avant la réponse du Mac. */
+const TREES = 'studio.cc.trees';
+const treeCache = ((): Record<string, { trees: Worktree[]; pulls: github.BranchPull[] }> => {
+  try { const v = JSON.parse(localStorage.getItem(TREES) || '{}') as unknown; return v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, { trees: Worktree[]; pulls: github.BranchPull[] }> : {}; } catch { return {}; }
+})();
+function saveTrees(pid: string): void {
+  delete treeCache[pid];
+  treeCache[pid] = { trees: rawTrees, pulls: pid === pullsFor ? [...pulls.values()].filter(x => rawTrees.some(w => w.branch === x.branch || w.history?.some(h => h.branch === x.branch))) : [] };
+  const keep = Object.fromEntries(Object.entries(treeCache).slice(-8));
+  try { localStorage.setItem(TREES, JSON.stringify(keep)); } catch { /* stockage plein */ }
+}
+/** La PR de cette branche est fusionnée sur GitHub, et c'est bien ce que contient la copie (pas de commit local en plus). */
+function ghMerged(w: Worktree): boolean {
+  const pr = w.branch ? pulls.get(w.branch) : undefined;
+  return pr?.state === 'merged' && (w.head ? pr.sha === w.head : w.changes === 0);
+}
+/** Copies du Mac complétées par GitHub (nouveaux objets : les réponses du Mac restent intactes). */
+function withPulls(list: Worktree[]): Worktree[] {
+  return list.map(w => {
+    const merged = !!w.merged || (w.pushed && ghMerged(w));
+    const history = w.history?.map(h => h.merged || pulls.get(h.branch)?.state !== 'merged' ? h : { ...h, merged: true });
+    return { ...w, merged, ...(history ? { history } : {}), pr: w.branch ? pulls.get(w.branch) : undefined };
+  });
+}
+function setTrees(pid: string, list: Worktree[]): void {
+  rawTrees = list; treesFor = pid; trees = withPulls(list);
+}
+/** Montre tout de suite le dernier état connu d'un projet dont les copies n'ont pas encore été lues. */
+function restoreTrees(pid: string): void {
+  if (treesFor === pid) return;
+  const c = treeCache[pid];
+  pulls = new Map((c?.pulls ?? []).map(x => [x.branch, x])); pullsFor = c ? pid : '';
+  treesRead = false; setTrees(pid, Array.isArray(c?.trees) ? c.trees : []);
+}
+
 async function refreshTrees(p: Project): Promise<void> {
-  const [r, j] = await Promise.all([bridge.call('agent', 'worktrees', { project: p.id }, 30000), bridge.call('agent', 'jobs', { project: p.id }, 10000)]);
-  trees = r.ok ? (r.worktrees as Worktree[]) : []; treesRead = r.ok; treesFor = p.id;
+  const fresh = rawTrees.some(w => w.pushed && !w.merged && ghMerged(w) && !freshAsked.has(w.branch));
+  if (fresh) for (const w of rawTrees) if (ghMerged(w)) freshAsked.add(w.branch);
+  const [r, j] = await Promise.all([bridge.call('agent', 'worktrees', { project: p.id, ...(fresh ? { fresh: true } : {}) }, 30000), bridge.call('agent', 'jobs', { project: p.id }, 10000)]);
+  if (r.ok) { setTrees(p.id, r.worktrees as Worktree[]); saveTrees(p.id); } else if (treesFor !== p.id) setTrees(p.id, []);
+  treesRead = r.ok; treesSoon = r.fetching === true;
   jobs = j.ok ? (j.jobs as Job[]) : [];
   notify(); // la barre latérale teinte chaque conversation selon l'état de sa copie
   // Copies dont la branche vient d'être fusionnée : elles repartent de la branche principale, on le dit une fois.
   for (const x of (r.recycled as { worktree: string; branch: string }[] | undefined) ?? []) toast(`${x.branch} est fusionnée : la copie repart de la branche principale, sur une nouvelle branche`);
+}
+/** Lit sur GitHub l'état des PR des branches des agents (une requête, revalidée par ETag). */
+async function loadPulls(p: Project): Promise<void> {
+  if (!github.active()) return;
+  try {
+    const repo = await workRepo(p); if (!repo) return;
+    const got = await github.branchPulls(repo, { fresh: true });
+    if (cur?.p.id !== p.id) return;
+    pulls = got; pullsFor = p.id;
+    if (treesFor === p.id) { trees = withPulls(rawTrees); saveTrees(p.id); }
+    notify(); repaintList();
+    // Une PR vient d'être fusionnée : le Mac relit le dépôt distant tout de suite pour remettre la copie à jour.
+    if (rawTrees.some(w => w.pushed && !w.merged && ghMerged(w) && !freshAsked.has(w.branch))) void treesInBackground(p);
+  } catch { /* hors ligne, jeton refusé : l'état vient du Mac seul */ }
+}
+/** Relit les copies sans bloquer l'affichage, puis redessine la liste. */
+async function treesInBackground(p: Project): Promise<void> {
+  if (treesBusy) return;
+  treesBusy = true;
+  try { await refreshTrees(p); } finally { treesBusy = false; }
+  if (selected) calm = ''; // le fil montre l'étape de sa copie : relu au prochain tour
+  repaintList();
+}
+/** Redessine la liste affichée (sauf si une lecture est en cours : elle la dessinera à sa fin). */
+function repaintList(): void {
+  if (!cur || painting || selected || !cur.box.isConnected) return;
+  const zone = $('.ag-zone', cur.box), list = known.get(cur.p.id)?.list;
+  if (zone && list && !$('.ag-zone > .hm-empty', cur.box)) zone.innerHTML = listHTML(list);
 }
 
 // ---------- Montage ----------
@@ -978,12 +1057,20 @@ async function paint(box: HTMLElement, p: Project): Promise<void> {
 async function paintOnce(box: HTMLElement, p: Project): Promise<void> {
   const zone = $('.ag-zone', box); if (!zone || !box.isConnected) { clearInterval(timer); return; }
   void loadLimits(); paintLimits(); // le bandeau de l'abonnement suit son propre rythme (une lecture par minute)
+  // Liste : la lecture des journaux (la plus lente) part en même temps que celle des agents, et la liste gardée de la
+  // dernière fois s'affiche tout de suite.
+  const listing = selected ? null : loadList(p);
+  const cached = known.get(p.id);
+  if (!selected && cached?.list.length && $('.ag-zone > .hm-empty', box)) zone.innerHTML = listHTML(cached.list);
   const wasLive = new Set(runs.filter(live).map(r => r.run));
   const l = await bridge.call('agent', 'list', { project: p.id }, 10000); runs = l.ok ? (l.runs as AgentRun[]) : runs;
   if (l.ok) queued = (l.queued as Queued[] | undefined) ?? [];
   // Fin d'une discussion avec un agent : l'état de sa copie (poussée, fusionnée…) est relu tout de suite.
   const ended = runs.some(r => wasLive.has(r.run) && !live(r));
-  if (tick++ % 4 === 0 || ended || (tick % 2 === 0 && jobs.some(j => j.status === 'running'))) await refreshTrees(p);
+  // Relue sans être attendue (git status, fusions… sur chaque copie) : la liste ne l'attend plus pour s'afficher.
+  if (tick % 4 === 0 || ended || treesSoon || (tick % 2 === 0 && jobs.some(j => j.status === 'running'))) void treesInBackground(p);
+  if (tick > 0 && tick % 10 === 0) void loadPulls(p); // les PR, toutes les 30 s (304 de GitHub si rien n'a bougé)
+  tick++;
   const sel = selected, sb = sub;
   if (sel) {
     syncStop(box);
@@ -1020,10 +1107,7 @@ async function paintOnce(box: HTMLElement, p: Project): Promise<void> {
     calm = d.live || queued.some(q => q.session === sel) || (subsOf.get(sel) ?? []).some(x => x.live) ? '' : feedId;
     return;
   }
-  // Première lecture : la liste gardée de la dernière fois s'affiche pendant que le Mac relit les journaux.
-  const cached = known.get(p.id);
-  if (cached && !cached.at && cached.list.length && $('.ag-zone > .hm-empty', box)) zone.innerHTML = listHTML(cached.list);
-  const list = await loadList(p) ?? [];
+  const list = await (listing ?? loadList(p)) ?? cached?.list ?? [];
   if (!box.isConnected || selected) return;
   paintLimits();
   zone.innerHTML = listHTML(list);
@@ -1214,7 +1298,10 @@ export function mount(box: HTMLElement, p: Project, folder: string | null): void
   remote = at.kind === 'remote' ? at.name : '';
   if (remote && !folder) { void bridge.call('project', 'info', { project: p.id }, 15000).then(r => mount(box, p, typeof r.path === 'string' ? r.path : '')); box.innerHTML = '<p class="hm-empty">Connexion au Mac…</p>'; return; }
   if (!folder) { box.innerHTML = `<div class="ag-empty">${icon('folder')}<h3>Choisis le dossier du projet</h3><p>Claude Code travaille dans le dépôt du projet sur ce Mac, toujours dans une copie isolée quand il modifie quelque chose.</p><button class="btn btn-primary" data-pj="pick">Choisir le dossier</button></div>`; return; }
+  // État des copies : le dernier connu s'affiche aussitôt ; GitHub dit tout de suite quelles PR sont fusionnées.
+  restoreTrees(p.id); treesSoon = false;
   shell(box, p);
+  void loadPulls(p);
   void bridge.call('agent', 'server', { project: p.id, op: 'status' }, 25000).then(r => {
     serverLabel = r.ok && r.configured ? String(r.host) : '';
     const mc = $<HTMLSelectElement>('.ag-compose:not(.ag-continue) select[name=machine]', box);
