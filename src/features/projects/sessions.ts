@@ -387,7 +387,7 @@ export function composerHTML(p: Project, { session = '', compact = false, machin
   // Chaque formulaire a son brouillon : un par conversation, un pour la nouvelle consigne, un pour celle de l'aperçu, un pour le serveur.
   const key = `${p.id}|${session ? `s:${session}` : machine === 'server' ? 'server' : compact ? 'quick' : 'new'}`, d = saved.draft(key);
   if (session) return `<form class="ag-compose ag-continue" data-draft="${esc(key)}" data-session="${esc(session)}"${machine ? ` data-machine="${esc(machine)}"` : ''}><textarea name="prompt" rows="2" placeholder="Réponds à Claude : précise, corrige, tranche, demande la suite…" aria-label="Répondre dans la session">${esc(d?.text ?? '')}</textarea>
-    <div class="ag-opts"><span class="ag-hint" data-hint>${HINT_IDLE}</span>${tuneHTML(saved.ofSession(session) ?? { model: '', effort: '' })}${voice.micHTML('Répondre à voix haute')}<button type="button" class="btn btn-danger ag-stop" data-ag="stop" hidden>${icon('stop')}Arrêter</button><button class="btn btn-primary">${SEND_IDLE}</button></div>${lims}</form>`;
+    <div class="ag-opts"><span class="ag-hint" data-hint>${HINT_IDLE}</span>${tuneHTML(saved.ofSession(session) ?? { model: '', effort: '' })}<span class="ag-go">${voice.micHTML('Répondre à voix haute')}<button type="button" class="btn btn-danger ag-stop" data-ag="stop" hidden>${icon('stop')}Arrêter</button><button class="btn btn-primary ag-send">${SEND_IDLE}</button></span></div>${lims}</form>`;
   const pre = pending?.project === p.id ? pending : null; if (pre && !compact) pending = null;
   // Une note ou une tâche confiée à Claude s'ajoute au brouillon en cours, sans l'effacer.
   const hand = pre && !compact ? pre : null;
@@ -404,7 +404,7 @@ export function composerHTML(p: Project, { session = '', compact = false, machin
       <select class="field" name="machine" aria-label="Où travailler"${machine === 'server' ? '' : ' hidden'}><option value="mac">Sur le Mac</option>${machine === 'server' ? '<option value="server" selected>Sur le serveur</option>' : ''}</select>
       ${tuneHTML(saved.defaults())}
       <span class="ag-hint" data-hint>${read ? HINT_READ : HINT_EDIT}</span>
-      ${voice.micHTML('Dicter la consigne')}<button class="btn btn-primary">${icon('play')}Lancer<kbd>⌘↩</kbd></button></div>${lims}</form>`;
+      <span class="ag-go">${voice.micHTML('Dicter la consigne')}<button class="btn btn-primary ag-send">${icon('play')}Lancer<kbd>⌘↩</kbd></button></span></div>${lims}</form>`;
 }
 
 /** Branche les formulaires de consigne présents dans `root` (lancement, reprise, raccourci ⌘↩). */

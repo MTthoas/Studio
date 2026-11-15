@@ -1775,8 +1775,13 @@ button.lv-chip:hover, .lv-chip.sel { color: var(--text); background: var(--btn);
 .ag-opts select.field { width: auto; max-width: 200px; height: 30px; margin: 0; padding: 0 28px 0 10px; font-size: var(--t-1); text-overflow: ellipsis; }
 .ag-hint { flex: 1; min-width: 160px; display: inline-flex; align-items: center; gap: 6px; color: var(--text-3); font-size: var(--t-1); }
 .ag-hint .ic { flex: none; width: 13px; height: 13px; }
-.ag-opts .btn-primary { margin-left: auto; height: 32px; }
-.ag-opts kbd { margin-left: 6px; padding: 0 4px; border-radius: 4px; background: color-mix(in srgb, currentColor 14%, transparent); font: 11px var(--mono); }
+/* Micro, Arrêter et Envoyer restent groupés à droite, même quand la barre passe à la ligne. */
+.ag-go { flex: none; margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+.ag-opts .ag-send { flex: none; height: 32px; padding: 0 6px 0 11px; gap: 7px; border-radius: 8px; background: var(--accent); color: #fff; }
+.ag-opts .ag-send:hover { background: var(--accent-hover); }
+.ag-opts .ag-send:active { background: color-mix(in srgb, var(--accent) 85%, #000); }
+.ag-opts .ag-send:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 2px; }
+.ag-opts kbd { margin: 0; padding: 3px 5px; border: 0; border-radius: 5px; min-width: 0; background: rgba(255, 255, 255, .18); color: inherit; font: 500 11px/1 var(--mono); }
 /* Pied de la consigne : ce qu'il reste de l'abonnement Claude */
 .ag-lims { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 18px; min-height: 36px; padding: 6px 8px 6px 14px; border-top: 1px solid var(--border); color: var(--text-3); font-size: var(--t-1); }
 .ag-lims:empty { display: none; }
@@ -1862,11 +1867,9 @@ button.lv-chip:hover, .lv-chip.sel { color: var(--text); background: var(--btn);
 .ss-dhead .icon-btn:hover { color: var(--danger); }
 .ag-opts .ag-stop { height: 32px; }
 .ag-opts .ag-stop[hidden] { display: none; }
-.ag-opts .ag-stop + .btn-primary { margin-left: 0; }
-.ag-opts .btn-primary:disabled { opacity: .45; cursor: default; }
+.ag-opts .ag-send:disabled { opacity: .45; cursor: default; }
 /* Dictée d'une consigne (voice.dictate) : le bouton pulse tant que le micro écoute. */
-.ag-opts .vc-mic { margin-left: auto; flex: none; width: 32px; height: 32px; color: var(--text-3); }
-.ag-opts .vc-mic ~ .btn-primary { margin-left: 0; }
+.ag-opts .vc-mic { flex: none; width: 32px; height: 32px; border-radius: 8px; color: var(--text-3); }
 .vc-mic:hover { color: var(--text); }
 .vc-mic.live { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); animation: vc-pulse 1.2s ease-in-out infinite; }
 .vc-mic.busy { animation: none; opacity: .6; }
@@ -1875,7 +1878,6 @@ button.lv-chip:hover, .lv-chip.sel { color: var(--text); background: var(--btn);
 .pub-type .ag-seg { flex-wrap: wrap; }
 .pub-type .ag-seg label { position: relative; }
 .pub-type .ag-seg span { font-family: var(--mono); }
-.ag-opts kbd { border: 0; color: inherit; min-width: 0; }
 .ag-compose + .ag-zone { margin-top: 16px; }
 .cx-remote { display: flex; align-items: center; gap: 7px; margin-top: 6px; color: var(--text-2); font-size: var(--t-1); }
 .ag-remote { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; padding: 8px 12px; border-radius: 8px; background: color-mix(in srgb, var(--c-blue) 8%, var(--bg)); border: 1px solid color-mix(in srgb, var(--c-blue) 25%, var(--border)); color: var(--text-2); font-size: var(--t-1); }
