@@ -275,6 +275,18 @@ input[type="radio"] { accent-color: var(--text); margin: 0; }
 .crumb > button:hover { color: var(--text); }
 .crumb > .ic { flex: none; }
 .crumb-cur { color: var(--text); font-weight: 500; overflow: hidden; text-overflow: ellipsis; }
+/* Le chat agrippé au filet du bas de la barre d'outils (44 px, fil d'Ariane centré) : balancement lent, queue, somme. */
+.crumb { position: relative; }
+.crumb-cat { position: absolute; left: calc(100% + 8px); top: calc(50% + 19px); z-index: 5; pointer-events: none; color: var(--text-3); line-height: 0; }
+.crumb-cat svg { display: block; overflow: visible; fill: currentColor; }
+.cat-body { transform-origin: 15px 2px; animation: cat-sway 7s ease-in-out infinite alternate; }
+.cat-tail { transform-origin: 19.5px 31px; animation: cat-tail 3.2s ease-in-out infinite alternate; }
+.cat-eyes { stroke: var(--bg); }
+.cat-z { font: 600 6px/1 var(--font, sans-serif); fill: var(--text-3); opacity: 0; animation: cat-z 6s ease-out infinite 2s; }
+@keyframes cat-sway { from { transform: rotate(-5deg); } to { transform: rotate(5deg); } }
+@keyframes cat-tail { from { transform: rotate(-12deg); } to { transform: rotate(14deg); } }
+@keyframes cat-z { 0% { opacity: 0; transform: translate(0, 0); } 15% { opacity: .9; } 60%, 100% { opacity: 0; transform: translate(5px, -7px); } }
+@media (max-width: 520px) { .crumb-cat { display: none; } }
 .seg { display: flex; padding: 2px; border-radius: 7px; border: 1px solid var(--border); }
 .seg button { width: 28px; height: 22px; display: grid; place-items: center; border-radius: 4px; color: var(--text-3); }
 .seg button:hover { color: var(--text); }

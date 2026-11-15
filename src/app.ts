@@ -276,8 +276,17 @@ const tbLeft = () => `<div class="tb-side">${WIDE.has(ui.view.type) ? '' : tb('b
 // sans attributs, le niveau n'est pas cliquable), par exemple Projets › Mon projet › Claude Code.
 const crumb = (cur: string, trail: [string, string][] = []) => {
   const v = ui.view, parent = v.type === 'tag' ? '#' + v.tag : VIEWS[v.type]?.label, sep = icon('chevronRight');
-  return `<div class="crumb">${parent && !WIDE.has(v.type) ? `<span>${esc(parent)}</span>${sep}` : ''}${trail.map(([l, a]) => (a ? `<button ${a}>${esc(l)}</button>` : `<span>${esc(l)}</span>`) + sep).join('')}<span class="crumb-cur">${esc(cur)}</span></div>`;
+  return `<div class="crumb">${parent && !WIDE.has(v.type) ? `<span>${esc(parent)}</span>${sep}` : ''}${trail.map(([l, a]) => (a ? `<button ${a}>${esc(l)}</button>` : `<span>${esc(l)}</span>`) + sep).join('')}<span class="crumb-cur">${esc(cur)}</span>${CAT}</div>`;
 };
+// Le petit chat qui pend au bord de la barre d'outils, au bout du fil d'Ariane : il se balance, remue la queue, somnole (styles `.crumb-cat`).
+const CAT = `<span class="crumb-cat" aria-hidden="true"><svg viewBox="0 0 30 40" width="24" height="32">
+<g class="cat-body"><path d="M11 3 12 12M19 3 18 12" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"/>
+<ellipse cx="11" cy="2.2" rx="2.7" ry="2"/><ellipse cx="19" cy="2.2" rx="2.7" ry="2"/>
+<path class="cat-tail" d="M19.5 31C26 33 28 26 25 21" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+<ellipse cx="15" cy="27" rx="6" ry="8"/><ellipse cx="12" cy="35" rx="2" ry="2.8"/><ellipse cx="18" cy="35" rx="2" ry="2.8"/>
+<path d="M8.4 13 8.6 6.6 12.6 10.2ZM21.6 13 21.4 6.6 17.4 10.2Z"/><ellipse cx="15" cy="15" rx="7" ry="6"/>
+<path class="cat-eyes" d="M10.9 15.4q1.3 1.1 2.6 0M16.5 15.4q1.3 1.1 2.6 0" fill="none" stroke-width="1" stroke-linecap="round"/></g>
+<text class="cat-z" x="23" y="9">z</text></svg></span>`;
 
 function renderMain() {
   const main = need('#main');
