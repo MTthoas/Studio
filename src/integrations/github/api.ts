@@ -59,7 +59,21 @@ export async function createPull(repo: string, pr: { head: string; base: string;
   flowCache.delete(repo);
   return { number: j.number, html_url: j.html_url };
 }
-export const viewer = (token?: string): Promise<{ login: string }> => api('/user', token ?? vault.secret('github'));
+export const viewer = (token?: string): Promise<{ login: string; id: number; name?: string | null }> => api('/user', token ?? vault.secret('github'));
+
+/** Identité Git du compte connecté, pour les commits des copies quand Git n'en a pas (voir `fallbackIdentity`
+ *  dans Projects.swift). Adresse « noreply » de GitHub : le commit est rattaché au compte sans exposer d'adresse. */
+let authorCache: { name: string; email: string } | null = null;
+export async function author(): Promise<{ name: string; email: string } | undefined> {
+  if (authorCache) return authorCache;
+  if (!vault.secret('github')) return undefined;
+  try {
+    const v = await viewer();
+    if (!v.login || !v.id) return undefined;
+    authorCache = { name: (v.name || '').trim() || v.login, email: `${v.id}+${v.login}@users.noreply.github.com` };
+    return authorCache;
+  } catch { return undefined; }
+}
 
 // ---------- Événements -> phrases ----------
 const ACTION: Record<string, string> = { opened: 'a ouvert', closed: 'a fermé', reopened: 'a rouvert', merged: 'a fusionné', created: 'a créé', published: 'a publié', edited: 'a modifié', submitted: 'a relu', started: 'a mis une étoile à', labeled: 'a étiqueté', assigned: 'a assigné', synchronize: 'a mis à jour' };

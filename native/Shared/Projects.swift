@@ -56,6 +56,7 @@ final class ProjectFolders {
         // les échecs « index.lock exists » quand l'orchestrateur écrit dans une copie pendant le rafraîchissement de l'écran.
         var env = ["GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0", "LC_ALL": "C", "PATH": "\(binDir):/usr/bin:/bin", "HOME": NSHomeDirectory()]
         if let sock = ProcessInfo.processInfo.environment["SSH_AUTH_SOCK"] { env["SSH_AUTH_SOCK"] = sock }
+        if let a = args.first, Self.writers.contains(a) { for (k, v) in fallbackIdentity(dir) { env[k] = v } }
         p.environment = env
         let out = Pipe(), err = Pipe(); p.standardOutput = out; p.standardError = err
         var data = Data(), edata = Data(); let lock = NSLock(); let reading = DispatchGroup()
@@ -86,8 +87,36 @@ final class ProjectFolders {
         let r = gitRun(args, in: dir, timeout: timeout, maxBytes: maxBytes)
         return r.ok ? r.out : nil
     }
+    /// Commandes Git qui écrivent un commit (et ont donc besoin d'une identité).
+    static let writers: Set<String> = ["commit", "stash", "merge", "cherry-pick", "rebase", "revert", "am"]
+    private static let authorKey = "studio.git.author"
+
+    /// Identité GitHub envoyée par la page (compte connecté dans Réglages → GitHub), gardée pour l'orchestrateur.
+    func rememberAuthor(_ raw: Any?) {
+        guard let a = raw as? [String: Any], let name = (a["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              let email = (a["email"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !name.isEmpty, name.count <= 100, email.count <= 200, email.range(of: #"^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$"#, options: .regularExpression) != nil,
+              !name.contains("<"), !name.contains(">"), !name.contains("\n") else { return }
+        UserDefaults.standard.set(["name": name, "email": email], forKey: Self.authorKey)
+    }
+
+    /// Sans `user.email` configuré, Git invente une adresse à partir du nom de la machine (« toi@localhost… ») :
+    /// le commit échoue, ou n'est pas rattaché au compte GitHub. On prend alors l'identité GitHub connue.
+    private func fallbackIdentity(_ dir: String) -> [String: String] {
+        guard let a = UserDefaults.standard.dictionary(forKey: Self.authorKey) as? [String: String],
+              let name = a["name"], let email = a["email"] else { return [:] }
+        let has = { (k: String) in !(self.git(["config", "--get", k], in: dir) ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        if has("user.email") { return [:] }
+        var env = ["GIT_AUTHOR_EMAIL": email, "GIT_COMMITTER_EMAIL": email]
+        if !has("user.name") { env["GIT_AUTHOR_NAME"] = name; env["GIT_COMMITTER_NAME"] = name }
+        return env
+    }
+
     /// Dernière ligne utile d'un message d'erreur Git (sans adresse contenant des identifiants).
     static func gitError(_ e: String) -> String {
+        if e.contains("Please tell me who you are") || e.contains("unable to auto-detect email") || e.contains("empty ident name") {
+            return "Git ne sait pas qui tu es : connecte ton compte dans Réglages → GitHub, ou lance une fois dans le Terminal « git config --global user.email ton@adresse » et « git config --global user.name \"Ton nom\" »."
+        }
         let lines = e.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty && !$0.hasPrefix("hint:") }
         let line = lines.last(where: { $0.hasPrefix("fatal:") || $0.hasPrefix("error:") || $0.contains("denied") || $0.contains("rejected") }) ?? lines.last ?? ""
         return String(line.replacingOccurrences(of: #"https://[^@\s]+@"#, with: "https://", options: .regularExpression).prefix(300))
