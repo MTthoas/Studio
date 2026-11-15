@@ -4,7 +4,7 @@
 import * as github from '../../integrations/github/api.ts';
 import * as native from '../../core/native.ts';
 import { esc } from '../../lib/markdown.ts';
-import { icon, rel, errMsg, avatar } from '../../ui/kit.ts';
+import { icon, rel, errMsg, avatar, toast } from '../../ui/kit.ts';
 import * as chart from '../../ui/chart.ts';
 import * as model from './model.ts';
 import type { Project } from './model.ts';
@@ -37,6 +37,9 @@ const RUN_ST: Record<string, [string, string]> = { success: ['green', 'réussie'
 const EVENT: Record<string, string> = { push: 'push', pull_request: 'PR', pull_request_target: 'PR', schedule: 'planifiée', workflow_dispatch: 'manuelle', release: 'release', merge_group: 'file de fusion' };
 const runLabel = (a: github.ActionRun): [string, string] => a.status === 'in_progress' ? ['amber', 'en cours'] : a.status !== 'completed' ? ['amber', 'en attente'] : RUN_ST[a.conclusion ?? ''] ?? ['gray', a.conclusion ?? 'terminée'];
 const took = (s: number | null) => s === null ? '' : s < 60 ? `${s} s` : `${Math.floor(s / 60)} min${s % 60 ? ` ${String(s % 60).padStart(2, '0')}` : ''}`;
+// Relançable : une exécution terminée sans succès (échec, annulée, délai dépassé…).
+const FAILED_JOBS = new Set(['failure', 'timed_out', 'startup_failure']);
+const canRerun = (a: github.ActionRun) => a.status === 'completed' && a.id > 0 && !['success', 'skipped', 'neutral'].includes(a.conclusion ?? '');
 function actionsHTML(f: github.Flow): string {
   if (!f.actions.length) return '';
   return `<div class="fx-acts"><header class="fx-acts-head">${icon('bolt')}<span>Actions</span><em class="kb-count">${f.actions.length}</em><a class="link-btn" href="https://github.com/${esc(f.repo)}/actions" target="_blank" rel="noopener">Tout voir sur GitHub</a></header>
@@ -45,19 +48,35 @@ function actionsHTML(f: github.Flow): string {
       return `<div class="fx-act${live ? ' live' : ''}" style="--c:var(--c-${hue})"><i class="pj-ci"></i>
         <a class="fx-act-name" href="${esc(w.last.url)}" target="_blank" rel="noopener" title="${esc(w.last.title)}">${esc(w.name)}</a>
         <span class="fx-act-st">${txt}</span><code title="Branche">${esc(w.last.branch)}</code><span class="fx-act-ev">${EVENT[w.last.event] ? `<em class="pj-badge">${EVENT[w.last.event]}</em>` : ''}</span>
-        ${chart.strip(w.runs)}<time>${esc(rel(Date.parse(w.last.at)))}${d ? ` · ${d}` : ''}</time></div>`;
+        ${chart.strip(w.runs)}<time>${esc(rel(Date.parse(w.last.at)))}${d ? ` · ${d}` : ''}</time>
+        ${canRerun(w.last) ? `<button class="btn btn-ghost fx-rerun" data-fx-rerun="${w.last.id}" data-repo="${esc(f.repo)}" data-failed="${FAILED_JOBS.has(w.last.conclusion ?? '') ? '1' : ''}" title="${FAILED_JOBS.has(w.last.conclusion ?? '') ? 'Relancer les jobs en échec' : 'Relancer l’exécution'} (même commit)">${icon('refresh')}Relancer</button>` : '<span></span>'}</div>`;
     }).join('')}</div>`;
 }
 
-/** Rend le flux dans `box`, puis le relit toutes les 30 s tant qu'une exécution est en cours et que l'onglet est affiché. */
-export async function mount(box: HTMLElement, p: Project): Promise<void> {
-  for (let fresh = false; ; fresh = true) {
+/** Rend le flux dans `box`, puis le relit toutes les 30 s tant qu'une exécution est en cours et que l'onglet est affiché.
+ *  Chaque appel remplace le précédent (`gen`) : après une relance, une seule boucle de suivi tourne. */
+const gen = new WeakMap<HTMLElement, number>(), bound = new WeakSet<HTMLElement>();
+export async function mount(box: HTMLElement, p: Project, fresh = false): Promise<void> {
+  const me = (gen.get(box) ?? 0) + 1; gen.set(box, me);
+  if (!bound.has(box)) {
+    bound.add(box);
+    box.addEventListener('click', e => {
+      const b = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-fx-rerun]'); if (!b || b.disabled) return;
+      b.disabled = true;
+      github.rerun(b.dataset.repo ?? '', Number(b.dataset.fxRerun), { failedOnly: b.dataset.failed === '1' })
+        // GitHub met un instant à repasser l'exécution « en attente » : relue trop tôt, elle paraîtrait encore terminée.
+        .then(() => { toast('Exécution relancée'); return new Promise(ok => setTimeout(ok, 2500)); })
+        .then(() => box.isConnected ? mount(box, p, true) : undefined)
+        .catch(err => { b.disabled = false; toast(errMsg(err)); });
+    });
+  }
+  for (; ; fresh = true) {
     let live = false;
-    try { const r = await render(p, fresh); box.innerHTML = r.html; live = r.live; }
-    catch (e) { box.innerHTML = `<p class="nf-empty">${esc(errMsg(e))}</p>`; return; }
+    try { const r = await render(p, fresh); if (gen.get(box) !== me) return; box.innerHTML = r.html; live = r.live; }
+    catch (e) { if (gen.get(box) === me) box.innerHTML = `<p class="nf-empty">${esc(errMsg(e))}</p>`; return; }
     if (!live) return;
     await new Promise(ok => setTimeout(ok, 30e3));
-    if (!box.isConnected) return;
+    if (!box.isConnected || gen.get(box) !== me) return;
     if (document.hidden) await new Promise<void>(ok => document.addEventListener('visibilitychange', () => ok(), { once: true }));
     if (!box.isConnected) return;
   }
