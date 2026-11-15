@@ -278,15 +278,17 @@ const crumb = (cur: string, trail: [string, string][] = []) => {
   const v = ui.view, parent = v.type === 'tag' ? '#' + v.tag : VIEWS[v.type]?.label, sep = icon('chevronRight');
   return `<div class="crumb">${parent && !WIDE.has(v.type) ? `<span>${esc(parent)}</span>${sep}` : ''}${trail.map(([l, a]) => (a ? `<button ${a}>${esc(l)}</button>` : `<span>${esc(l)}</span>`) + sep).join('')}<span class="crumb-cur">${esc(cur)}</span>${CAT}</div>`;
 };
-// Le petit chat qui pend au bord de la barre d'outils, au bout du fil d'Ariane : il se balance, remue la queue, somnole (styles `.crumb-cat`).
-const CAT = `<span class="crumb-cat" aria-hidden="true"><svg viewBox="0 0 30 40" width="24" height="32">
-<g class="cat-body"><path d="M11 3 12 12M19 3 18 12" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"/>
-<ellipse cx="11" cy="2.2" rx="2.7" ry="2"/><ellipse cx="19" cy="2.2" rx="2.7" ry="2"/>
-<path class="cat-tail" d="M19.5 31C26 33 28 26 25 21" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
-<ellipse cx="15" cy="27" rx="6" ry="8"/><ellipse cx="12" cy="35" rx="2" ry="2.8"/><ellipse cx="18" cy="35" rx="2" ry="2.8"/>
-<path d="M8.4 13 8.6 6.6 12.6 10.2ZM21.6 13 21.4 6.6 17.4 10.2Z"/><ellipse cx="15" cy="15" rx="7" ry="6"/>
-<path class="cat-eyes" d="M10.9 15.4q1.3 1.1 2.6 0M16.5 15.4q1.3 1.1 2.6 0" fill="none" stroke-width="1" stroke-linecap="round"/></g>
-<text class="cat-z" x="23" y="9">z</text></svg></span>`;
+// Le petit chat assis sur le filet du bas de la barre d'outils, à droite : il respire, cligne des yeux, remue la queue,
+// tourne la tête et dresse une oreille de temps en temps (styles `.crumb-cat`). Placé dans le fil d'Ariane pour être sur toutes les vues.
+const CAT = `<span class="crumb-cat" aria-hidden="true"><svg viewBox="0 0 32 32" width="26" height="26">
+<path class="cat-tail" d="M21 30.6c5.6.6 8.6-1.6 8.4-6-.1-2.6-1.6-4.3-3.4-5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+<g class="cat-body"><path d="M9 32c-1-6.4.6-11.6 4.6-14.6h4.8c4 3 5.6 8.2 4.6 14.6Z"/>
+<ellipse cx="13.4" cy="31" rx="2.4" ry="1.4"/><ellipse cx="18.6" cy="31" rx="2.4" ry="1.4"/>
+<g class="cat-head"><path class="cat-ear-l" d="M9.8 11.4 10.4 3.8 14.6 8.4Z"/><path class="cat-ear-r" d="M22.2 11.4 21.6 3.8 17.4 8.4Z"/>
+<ellipse cx="16" cy="12.6" rx="6.8" ry="5.8"/>
+<g class="cat-eyes"><ellipse cx="13.3" cy="12.2" rx=".95" ry="1.25"/><ellipse cx="18.7" cy="12.2" rx=".95" ry="1.25"/></g>
+<path class="cat-nose" d="M15.2 14.6h1.6L16 15.5Z"/>
+<path class="cat-whisk" d="M10 14.4 5.8 13.8M10 15.6 6 16.6M22 14.4 26.2 13.8M22 15.6 26 16.6"/></g></g></svg></span>`;
 
 function renderMain() {
   const main = need('#main');
