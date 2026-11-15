@@ -230,6 +230,8 @@ Un serveur jamais vu n'est accepté qu'après confirmation de son empreinte, ajo
 
 **Plusieurs serveurs par projet** (production, préproduction…) : chacun a son nom, sa connexion, ses extensions et son onglet ; **Ajouter un serveur** en relie un de plus, et le choix de machine d'une consigne propose chacun d'eux. **Tester la connexion**, dans le formulaire, essaie les champs saisis avant d'enregistrer : connexion SSH, empreinte (à confirmer sur place), clé acceptée, dossier du projet, Git et Claude Code.
 
+**Fiche Machine** : Studio lit le serveur comme on le ferait dans une console, sans rien y installer. Emplacement (ville, pays et région d'après les métadonnées de l'hébergeur : Hetzner, AWS, Google Cloud, Azure, DigitalOcean, Scaleway, Vultr, Oracle ; fuseau, adresse publique), puissance (vCPU, cœurs et modèle du processeur, fréquence, cache, mémoire et swap, disques SSD ou NVMe, débit de la carte réseau) et capacités (volumes et leur remplissage, virtualisation, jeux d'instructions, carte graphique, sudo, logiciels installés). **Localiser l'adresse IP** demande, sur un clic seulement, à ipinfo.io où se trouve l'adresse publique : la requête part du serveur.
+
 **Extensions du serveur**, à cocher une par une : **Docker** (conteneurs, projets Compose, processeur et mémoire, journaux ; démarrer, arrêter, redémarrer) et **Kubernetes** (`kubectl`, `k3s` ou `microk8s` : nœuds, déploiements, pods, journaux ; redémarrage d'un déploiement, suppression d'un pod). Chaque action demande confirmation. Depuis un appareil lié, on ne fait que lire leur état.
 
 Les commandes distantes sont fixes et protégées, et la configuration reste dans l'app Mac.

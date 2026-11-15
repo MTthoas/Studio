@@ -267,6 +267,139 @@ final class Servers {
         return base
     }
 
+    // MARK: Fiche de la machine
+
+    /// Lecture d'une fiche « machine » : tout ce qu'on apprendrait dans une console (Linux surtout), sans rien installer.
+    /// Lancé par `sh -c` pour ne pas dépendre du shell de connexion ; `$1` = 1 demande la localisation par ipinfo.io,
+    /// faite depuis le serveur et seulement sur demande de l'utilisateur. Les métadonnées de l'hébergeur (adresse
+    /// locale 169.254…, jamais Internet) ne sont interrogées que si la DMI désigne cet hébergeur.
+    private static let specScript = #"""
+    export LC_ALL=C PATH="$PATH:/usr/sbin:/sbin"
+    kv() { printf '%s=%s\n' "$1" "$(printf '%s' "$2" | tr '\n\t' '  ' | cut -c1-300)"; }
+    rd() { head -n 1 "$1" 2>/dev/null; }
+    get() { command -v curl >/dev/null 2>&1 && curl -fsS -m 2 "$@" 2>/dev/null; }
+    kv hostname "$(hostname 2>/dev/null || cat /etc/hostname 2>/dev/null)"
+    kv fqdn "$(hostname -f 2>/dev/null)"
+    kv distro "$(sed -n 's/^PRETTY_NAME=//p' /etc/os-release 2>/dev/null | tr -d '"')"
+    kv kernel "$(uname -sr)"
+    kv arch "$(uname -m)"
+    kv virt "$(systemd-detect-virt 2>/dev/null)"
+    kv vendor "$(rd /sys/class/dmi/id/sys_vendor)"
+    kv product "$(rd /sys/class/dmi/id/product_name)"
+    kv threads "$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null)"
+    kv cpuinfo "$(grep -m1 -E '^(model name|Hardware|Processor|cpu model)' /proc/cpuinfo 2>/dev/null | cut -d: -f2-)"
+    kv mhz "$(grep -m1 '^cpu MHz' /proc/cpuinfo 2>/dev/null | cut -d: -f2-)"
+    kv flags "$(grep -m1 -E '^(flags|Features)' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | tr ' ' '\n' | grep -xE 'aes|avx|avx2|avx512f|sha_ni|vmx|svm|asimd|sve|sse4_2' | sort -u | tr '\n' ' ')"
+    kv memtotal "$(sed -n 's/^MemTotal: *\([0-9]*\).*/\1/p' /proc/meminfo 2>/dev/null)"
+    kv swaptotal "$(sed -n 's/^SwapTotal: *\([0-9]*\).*/\1/p' /proc/meminfo 2>/dev/null)"
+    kv tz "$(timedatectl show -p Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null || readlink /etc/localtime 2>/dev/null | sed 's|.*zoneinfo/||')"
+    kv offset "$(date +%z)"
+    kv uptime "$(cut -d' ' -f1 /proc/uptime 2>/dev/null)"
+    kv user "$(id -un 2>/dev/null)"
+    kv sudo "$(sudo -n true 2>/dev/null && echo yes)"
+    kv nofile "$(ulimit -n 2>/dev/null)"
+    kv tools "$(for t in docker podman kubectl k3s nginx caddy apache2 httpd node bun deno python3 go java php ruby git psql mysql redis-server pm2 systemctl ufw; do command -v $t >/dev/null 2>&1 && printf '%s ' $t; done)"
+    dev=$(ip route show default 2>/dev/null | awk '{for(i=1;i<NF;i++) if($i=="dev"){print $(i+1); exit}}')
+    kv iface "$dev"
+    [ -n "$dev" ] && kv speed "$(rd /sys/class/net/$dev/speed)"
+    case "$(rd /sys/class/dmi/id/sys_vendor) $(rd /sys/class/dmi/id/chassis_asset_tag) $(rd /sys/class/dmi/id/product_name)" in
+      *Hetzner*) m=http://169.254.169.254/hetzner/v1/metadata; kv m_zone "$(get $m/availability-zone)"; kv m_region "$(get $m/region)"; kv m_ip "$(get $m/public-ipv4)";;
+      *Amazon*) t=$(get -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' http://169.254.169.254/latest/api/token); m=http://169.254.169.254/latest/meta-data; h="X-aws-ec2-metadata-token: $t"
+        kv m_region "$(get -H "$h" $m/placement/region)"; kv m_zone "$(get -H "$h" $m/placement/availability-zone)"; kv m_type "$(get -H "$h" $m/instance-type)"; kv m_ip "$(get -H "$h" $m/public-ipv4)";;
+      *Google*) h='Metadata-Flavor: Google'; m=http://metadata.google.internal/computeMetadata/v1/instance
+        kv m_zone "$(get -H "$h" $m/zone | sed 's|.*/||')"; kv m_type "$(get -H "$h" $m/machine-type | sed 's|.*/||')"; kv m_ip "$(get -H "$h" $m/network-interfaces/0/access-configs/0/external-ip)";;
+      *Microsoft*) h='Metadata: true'; m=http://169.254.169.254/metadata/instance/compute; v='api-version=2021-02-01&format=text'
+        kv m_region "$(get -H "$h" "$m/location?$v")"; kv m_zone "$(get -H "$h" "$m/zone?$v")"; kv m_type "$(get -H "$h" "$m/vmSize?$v")";;
+      *DigitalOcean*) m=http://169.254.169.254/metadata/v1; kv m_region "$(get $m/region)"; kv m_ip "$(get $m/interfaces/public/0/ipv4/address)";;
+      *Scaleway*) c=$(get http://169.254.42.42/conf); kv m_zone "$(printf '%s\n' "$c" | sed -n 's/^ZONE=//p')"; kv m_type "$(printf '%s\n' "$c" | sed -n 's/^COMMERCIAL_TYPE=//p')"; kv m_ip "$(printf '%s\n' "$c" | sed -n 's/^PUBLIC_IP_ADDRESS=//p')";;
+      *Vultr*) m=http://169.254.169.254/v1; kv m_region "$(get $m/region/regioncode)"; kv m_ip "$(get $m/interfaces/0/ipv4/address)";;
+      *Oracle*) h='Authorization: Bearer Oracle'; m=http://169.254.169.254/opc/v2/instance; kv m_region "$(get -H "$h" $m/canonicalRegionName)"; kv m_zone "$(get -H "$h" $m/availabilityDomain)"; kv m_type "$(get -H "$h" $m/shape)";;
+    esac
+    echo @@cpu; lscpu 2>/dev/null
+    echo @@disks; lsblk -dbno NAME,SIZE,ROTA,TYPE,MODEL 2>/dev/null
+    echo @@fs; df -kPT 2>/dev/null | tail -n +2
+    echo @@ip; ip -o addr show scope global 2>/dev/null | awk '{print $2, $3, $4}'
+    echo @@gpu; nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || lspci 2>/dev/null | grep -iE 'vga|3d controller' | cut -d: -f3-
+    echo @@geo; [ "$1" = 1 ] && get -m 5 https://ipinfo.io/json
+    echo; echo @@end
+    """#
+
+    /// Fiche de la machine : emplacement, puissance, capacités. `geo` : localiser l'adresse IP publique (ipinfo.io).
+    func specs(_ pid: String, geo: Bool) -> [String: Any] {
+        guard let c = config(pid) else { return ["ok": false, "message": "Aucun serveur configuré."] }
+        let r = run(c, "sh -c " + Self.q(Self.specScript) + " specs " + (geo ? "1" : "0"), timeout: 45)
+        guard !r.keyError, r.out.contains("@@end") else {
+            return ["ok": false, "message": String(String(r.out.split(separator: "\n").last ?? "Lecture impossible.").prefix(200))]
+        }
+        var kv: [String: String] = [:], sec: [String: [String]] = [:], cur = ""
+        for line in r.out.split(separator: "\n", omittingEmptySubsequences: false).map(String.init) {
+            if line.hasPrefix("@@") { cur = String(line.dropFirst(2)); continue }
+            if cur.isEmpty, let eq = line.firstIndex(of: "=") { kv[String(line[..<eq])] = line[line.index(after: eq)...].trimmingCharacters(in: .whitespaces) }
+            else if !cur.isEmpty, !line.trimmingCharacters(in: .whitespaces).isEmpty { sec[cur, default: []].append(line) }
+        }
+        let v = { (k: String) in (kv[k] ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "'\" ")) }
+        let words = { (s: String) in s.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init) }
+        var out: [String: Any] = ["ok": true, "at": (Date().timeIntervalSince1970 * 1000).rounded()]
+
+        // Processeur : lscpu d'abord, /proc/cpuinfo sinon.
+        var cpu: [String: String] = [:]
+        for line in sec["cpu"] ?? [] { if let i = line.firstIndex(of: ":") { cpu[line[..<i].trimmingCharacters(in: .whitespaces)] = line[line.index(after: i)...].trimmingCharacters(in: .whitespaces) } }
+        let num = { (k: String) in Int(cpu[k] ?? "") }
+        let sockets = num("Socket(s)") ?? 1, perSocket = num("Core(s) per socket") ?? num("Core(s) per cluster")
+        let mhz = Double(cpu["CPU max MHz"] ?? "") ?? Double(v("mhz")) ?? 0
+        out["cpu"] = ["model": cpu["Model name"] ?? v("cpuinfo"), "threads": Int(v("threads")) ?? num("CPU(s)") ?? 0,
+                      "cores": perSocket.map { $0 * sockets } ?? 0, "sockets": sockets, "mhz": mhz.rounded(),
+                      "l2": cpu["L2 cache"] ?? cpu["L2"] ?? "", "l3": cpu["L3 cache"] ?? cpu["L3"] ?? "",
+                      "hypervisor": cpu["Hypervisor vendor"] ?? "", "vendor": cpu["Vendor ID"] ?? "",
+                      "flags": words(v("flags"))] as [String: Any]
+        out["mem"] = ["total": (Double(v("memtotal")) ?? 0) * 1024, "swap": (Double(v("swaptotal")) ?? 0) * 1024]
+
+        // Disques physiques (ou virtuels) : nom, taille, SSD, modèle.
+        out["disks"] = (sec["disks"] ?? []).compactMap { line -> [String: Any]? in
+            let w = words(line); guard w.count >= 4, w[3] == "disk" else { return nil }
+            return ["name": w[0], "size": Double(w[1]) ?? 0, "ssd": w[2] == "0", "model": w.dropFirst(4).joined(separator: " ")]
+        }
+        // Systèmes de fichiers réels (ni mémoire, ni conteneurs, ni images), un par périphérique.
+        let virtualFS: Set<String> = ["tmpfs", "devtmpfs", "overlay", "squashfs", "efivarfs", "proc", "sysfs", "devfs", "ramfs", "nsfs", "fuse.lxcfs", "shm", "udev", "none"]
+        var seen = Set<String>()
+        out["fs"] = (sec["fs"] ?? []).compactMap { line -> [String: Any]? in
+            let w = words(line); guard w.count >= 7, !virtualFS.contains(w[1]), !w[0].hasPrefix("/dev/loop"), seen.insert(w[0]).inserted else { return nil }
+            let size = (Double(w[2]) ?? 0) * 1024; guard size > 0 else { return nil }
+            return ["dev": w[0], "type": w[1], "size": size, "used": (Double(w[3]) ?? 0) * 1024, "free": (Double(w[4]) ?? 0) * 1024,
+                    "pct": Int(w[5].replacingOccurrences(of: "%", with: "")) ?? 0, "mount": w[6...].joined(separator: " ")]
+        }
+        // Adresses : publique ou privée.
+        let addrs: [[String: Any]] = (sec["ip"] ?? []).compactMap { line -> [String: Any]? in
+            let w = words(line); guard w.count >= 3 else { return nil }
+            let a = String(w[2].split(separator: "/").first ?? "")
+            return ["iface": w[0], "v6": w[1] == "inet6", "addr": a, "public": !Self.privateIP(a)]
+        }
+        out["net"] = ["iface": v("iface"), "speed": Int(v("speed")).flatMap { $0 > 0 ? $0 : nil } ?? 0, "addrs": addrs] as [String: Any]
+        out["gpu"] = (sec["gpu"] ?? []).map { $0.trimmingCharacters(in: .whitespaces) }
+
+        // Emplacement : métadonnées de l'hébergeur, puis ipinfo.io si demandé.
+        let pub = v("m_ip").isEmpty ? (addrs.first { $0["public"] as? Bool == true && $0["v6"] as? Bool == false }?["addr"] as? String ?? "") : v("m_ip")
+        var loc: [String: Any] = ["region": v("m_region"), "zone": v("m_zone"), "type": v("m_type"), "ip": pub, "tz": v("tz"), "offset": v("offset")]
+        if let json = (sec["geo"] ?? []).joined().data(using: .utf8), let g = try? JSONSerialization.jsonObject(with: json) as? [String: Any], g["bogon"] == nil {
+            loc["geo"] = ["ip", "city", "region", "country", "org", "loc", "timezone", "hostname"].reduce(into: [String: String]()) { $0[$1] = g[$1] as? String ?? "" }
+        } else if geo { loc["geoError"] = "ipinfo.io n’a pas répondu depuis le serveur (curl absent ou sortie bloquée)." }
+        out["location"] = loc
+
+        out["system"] = ["hostname": v("hostname"), "fqdn": v("fqdn"), "distro": v("distro"), "kernel": v("kernel"), "arch": v("arch"),
+                         "virt": v("virt") == "none" ? "" : v("virt"), "vendor": v("vendor"), "product": v("product"),
+                         "uptime": Double(v("uptime")) ?? 0, "user": v("user"), "sudo": v("sudo") == "yes",
+                         "nofile": v("nofile"), "tools": words(v("tools"))] as [String: Any]
+        return out
+    }
+
+    /// Adresse privée, locale ou partagée (pas joignable depuis Internet).
+    static func privateIP(_ a: String) -> Bool {
+        if a.contains(":") { let l = a.lowercased(); return l.hasPrefix("fc") || l.hasPrefix("fd") || l.hasPrefix("fe80") || l == "::1" }
+        let p = a.split(separator: ".").compactMap { Int($0) }; guard p.count == 4 else { return true }
+        return p[0] == 10 || p[0] == 127 || (p[0] == 172 && (16...31).contains(p[1])) || (p[0] == 192 && p[1] == 168)
+            || (p[0] == 169 && p[1] == 254) || (p[0] == 100 && (64...127).contains(p[1]))
+    }
+
     /// Ouvre un terminal SSH sur le serveur du projet, dans le Terminal de macOS : par une URL ssh:// avec la configuration
     /// de l'utilisateur ; avec une clé de Studio, par un petit script .command (sans rien de secret : la socket de l'agent
     /// et la clé publique) qui reprend les mêmes options.

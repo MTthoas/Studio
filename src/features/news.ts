@@ -53,6 +53,18 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'server-specs', date: '2026-11-16', icon: 'server', hue: 'teal', mac: true,
+    title: 'Ton serveur, de fond en comble',
+    lead: 'L’onglet Serveur lit la machine comme dans une console : où elle est, ce qu’elle a dans le ventre, ce qu’elle sait faire.',
+    bits: [
+      ['link', 'Emplacement', 'ville, pays et région de l’hébergeur, fuseau, adresse publique'],
+      ['bolt', 'Puissance', 'vCPU et modèle du processeur, mémoire, disques SSD ou NVMe, débit réseau'],
+      ['database', 'Capacités', 'volumes, virtualisation, sudo, logiciels installés (Docker, Node, nginx…)'],
+      ['eye', 'Localiser l’IP', 'sur demande, le serveur interroge ipinfo.io'],
+    ],
+    where: ['Projets', 'un projet', 'Serveur'],
+    visual: { kind: 'chips', chips: [['Paris, France', 'blue', 'link'], ['8 vCPU', 'orange', 'bolt'], ['32 Go', 'green', 'database'], ['NVMe', 'teal', 'server']] },
+    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
   { id: 'agent-live-pulse', date: '2026-11-16', icon: 'bolt', hue: 'orange', mac: true,
     title: 'Claude au travail, en direct',
     lead: 'Au-dessus du fil, tu vois Claude avancer seconde par seconde.',
