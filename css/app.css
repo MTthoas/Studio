@@ -1267,6 +1267,9 @@ button.lv-chip:hover, .lv-chip.sel { color: var(--text); background: var(--btn);
 .side-sub3 { height: 24px; gap: 8px; padding-left: 56px; font-weight: 400; font-size: var(--t-1); color: var(--text-2); }
 .side-sub3 .ss-live { width: 6px; height: 6px; }
 .side-sub3.sel { font-weight: 500; }
+/* Serveurs du projet, sous « Serveur » */
+.side-sub3 .ic { flex: none; width: 11px; height: 11px; color: var(--text-3); }
+.side-sub3.sel .ic { color: var(--c-orange); }
 /* État de la copie : à publier ressort, livré s'efface */
 .side-sub3 > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-stage { flex: none; padding: 0 5px; border-radius: 4px; font-size: 10px; line-height: 16px; font-weight: 500; font-style: normal; color: var(--c-orange); background: color-mix(in srgb, var(--c-orange) 14%, transparent); }

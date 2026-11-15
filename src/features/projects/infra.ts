@@ -22,8 +22,30 @@ const EXTS: Record<Ext, { label: string; icon: string; hint: string }> = {
 export interface ServerItem { id: string; name: string; host: string; dest: string; path: string }
 const chosen: Record<string, string> = {};
 /** Choisit le serveur affiché du projet (et visé par les appels de ce module). */
-export function use(p: Project, id: string): void { chosen[p.id] = id; }
+export function use(p: Project, id: string): void { if (chosen[p.id] === id) return; chosen[p.id] = id; changed(); }
 export const current = (p: Project): string => chosen[p.id] ?? '';
+
+// Dernière liste lue pour chaque projet : la barre latérale l'affiche sous « Serveur » sans attendre l'onglet.
+const known: Record<string, ServerItem[]> = {};
+const asked = new Set<string>();
+let listener: (() => void) | null = null;
+const changed = (): void => listener?.();
+/** Prévient quand la liste des serveurs d'un projet, ou celui qui est affiché, a changé. */
+export function onChange(fn: () => void): void { listener = fn; }
+/** Serveurs du projet pour la barre latérale ; la première demande les lit en arrière-plan, puis `onChange` prévient. */
+export function sideServers(pid: string): { id: string; name: string; dest: string; sel: boolean }[] {
+  const p = model.byId(pid);
+  if (!p) return [];
+  if (!asked.has(pid) && bridge.where()) { asked.add(pid); void list(p).catch(() => undefined); }
+  const all = known[pid] ?? [], want = current(p), cur = all.some(s => s.id === want) ? want : all[0]?.id;
+  return all.map(s => ({ id: s.id, name: s.name || s.dest || s.host, dest: s.dest, sel: s.id === cur }));
+}
+function remember(p: Project, servers: ServerItem[]): ServerItem[] {
+  const same = JSON.stringify(known[p.id] ?? []) === JSON.stringify(servers);
+  known[p.id] = servers; asked.add(p.id);
+  if (!same) changed();
+  return servers;
+}
 
 const call = (op: string, p: Project | null, extra: Record<string, unknown> = {}, timeout = 30000) =>
   native.call('agent', 'server', { project: p?.id ?? '', op, server: p ? current(p) : '', ...extra }, timeout);
@@ -34,8 +56,8 @@ const read = (op: string, p: Project, extra: Record<string, unknown> = {}, timeo
 export async function list(p: Project): Promise<{ ok: boolean; message?: string; servers: ServerItem[] }> {
   const r = await bridge.call('agent', 'server', { project: p.id, op: 'list' }, 15000);
   if (!r.ok) return { ok: false, message: r.message, servers: [] };
-  if (Array.isArray(r.servers)) return { ok: true, servers: r.servers as ServerItem[] };
-  return { ok: true, servers: r.configured ? [{ id: '', name: '', host: String(r.host ?? ''), dest: String(r.dest ?? r.host ?? ''), path: String(r.path ?? '') }] : [] };
+  if (Array.isArray(r.servers)) return { ok: true, servers: remember(p, r.servers as ServerItem[]) };
+  return { ok: true, servers: remember(p, r.configured ? [{ id: '', name: '', host: String(r.host ?? ''), dest: String(r.dest ?? r.host ?? ''), path: String(r.path ?? '') }] : []) };
 }
 
 async function copy(text: string, what: string): Promise<void> {
