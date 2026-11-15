@@ -81,6 +81,18 @@ export async function createPull(repo: string, pr: { head: string; base: string;
   flowCache.delete(repo); repoCache.delete(repo); forget(repo);
   return { number: j.number, html_url: j.html_url };
 }
+
+/** Relance une exécution GitHub Actions : seulement ses jobs en échec quand `failedOnly`, sinon toute l'exécution.
+ *  Même commit qu'à l'origine : pour construire le dernier commit d'une branche, il faut un nouveau push. */
+export async function rerun(repo: string, runId: number, { failedOnly = true } = {}): Promise<void> {
+  if (!REPO_RE.test(repo)) throw new Error(`Dépôt invalide : ${repo}`);
+  if (!Number.isSafeInteger(runId) || runId <= 0) throw new Error('Exécution inconnue.');
+  const token = vault.secret('github'); if (!token) throw new Error('GitHub n’est pas connecté (Réglages → GitHub).');
+  const r = await fetch(`${API}/repos/${repo}/actions/runs/${runId}/${failedOnly ? 'rerun-failed-jobs' : 'rerun'}`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' }, credentials: 'omit', referrerPolicy: 'no-referrer' });
+  if (r.status === 403 || r.status === 404) throw new Error('Le jeton GitHub ne peut pas relancer les workflows : donne-lui le droit Actions en lecture et écriture (Réglages → GitHub).');
+  if (!r.ok) { const j = await r.json().catch(() => ({})) as { message?: string }; throw new Error(j.message || `GitHub a répondu ${r.status}`); }
+  flowCache.delete(repo); forget(repo);
+}
 export const viewer = (token?: string): Promise<{ login: string; id: number; name?: string | null }> => api('/user', token ?? vault.secret('github'));
 
 /** Identité Git du compte connecté, pour les commits des copies quand Git n'en a pas (voir `fallbackIdentity`
@@ -215,9 +227,9 @@ export interface FlowItem {
 export interface Flow { repo: string; base: string; items: FlowItem[]; baseCi: CiState; releases: { tag: string; url: string; at: string }[]; /** Dernières exécutions de CI sur la branche principale, de la plus ancienne à la plus récente. */ history: { at: string; state: 'success' | 'failure' | 'pending'; label: string; url: string }[]; actions: Workflow[] }
 /** Un workflow GitHub Actions : sa dernière exécution (toutes branches) et ses précédentes, de la plus ancienne à la plus récente. */
 export interface Workflow { name: string; last: ActionRun; runs: { at: string; state: 'success' | 'failure' | 'pending'; label: string; url: string }[] }
-export interface ActionRun { state: CiState; status: string; conclusion: string | null; branch: string; title: string; event: string; at: string; url: string; seconds: number | null }
+export interface ActionRun { id: number; state: CiState; status: string; conclusion: string | null; branch: string; title: string; event: string; at: string; url: string; seconds: number | null }
 
-interface RawRun { head_branch: string; status: string; conclusion: string | null; created_at: string; updated_at?: string; run_started_at?: string; name: string; html_url?: string; display_title?: string; event?: string }
+interface RawRun { id: number; head_branch: string; status: string; conclusion: string | null; created_at: string; updated_at?: string; run_started_at?: string; name: string; html_url?: string; display_title?: string; event?: string }
 interface RawPullAll extends RawPull { state: 'open' | 'closed'; merged_at: string | null; closed_at: string | null; created_at: string }
 const runState = (r?: RawRun): CiState => !r ? 'none' : r.status !== 'completed' ? 'pending' : ['success', 'skipped', 'neutral'].includes(r.conclusion ?? '') ? 'success' : 'failure';
 const flowCache = new Map<string, { at: number; flow: Flow }>();
@@ -264,7 +276,7 @@ export async function flow(repo: string, { fresh = false } = {}): Promise<Flow> 
     const r = list[0] as RawRun, from = Date.parse(r.run_started_at ?? r.created_at), to = Date.parse(r.updated_at ?? '');
     return {
       name,
-      last: { state: runState(r), status: r.status, conclusion: r.conclusion, branch: r.head_branch, title: r.display_title || '', event: r.event ?? '', at: r.created_at, url: r.html_url ?? '', seconds: r.status === 'completed' && to >= from ? Math.round((to - from) / 1000) : null },
+      last: { id: r.id, state: runState(r), status: r.status, conclusion: r.conclusion, branch: r.head_branch, title: r.display_title || '', event: r.event ?? '', at: r.created_at, url: r.html_url ?? '', seconds: r.status === 'completed' && to >= from ? Math.round((to - from) / 1000) : null },
       runs: list.slice(0, 12).reverse().map(x => { const st = runState(x); return { at: x.created_at, state: st === 'none' ? 'pending' as const : st, label: `${x.display_title || x.name} · ${x.head_branch}`, url: x.html_url ?? '' }; }),
     };
   }).sort((a, b) => b.last.at.localeCompare(a.last.at));

@@ -55,13 +55,22 @@ final class SSHKeys {
         let blob = Self.str("ssh-ed25519") + Self.str(pk)
         // Section privée d'OpenSSH : deux mots de contrôle identiques, la clé (graine + publique), le commentaire, un bourrage 1, 2, 3…
         let check = Self.u32(UInt32.random(in: .min ... .max))
-        var priv = check + check + Self.str("ssh-ed25519") + Self.str(pk) + Self.str(sk.rawRepresentation + pk) + Self.str(Data(comment.utf8))
+        // Assemblé pas à pas : une seule longue chaîne de `+` dépasse le temps de vérification des types de Swift (CI).
+        var priv = Data()
+        priv.append(check); priv.append(check)
+        priv.append(Self.str("ssh-ed25519")); priv.append(Self.str(pk))
+        priv.append(Self.str(sk.rawRepresentation + pk)); priv.append(Self.str(Data(comment.utf8)))
         var pad: UInt8 = 1
         while priv.count % 8 != 0 { priv.append(pad); pad += 1 }
-        let body = Data("openssh-key-v1".utf8) + Data([0]) + Self.str("none") + Self.str("none") + Self.str(Data()) + Self.u32(1) + Self.str(blob) + Self.str(priv)
+        var body = Data("openssh-key-v1".utf8)
+        body.append(0)
+        body.append(Self.str("none")); body.append(Self.str("none")); body.append(Self.str(Data()))
+        body.append(Self.u32(1)); body.append(Self.str(blob)); body.append(Self.str(priv))
         // L'en-tête est assemblé en deux morceaux : écrit d'un bloc, `npm run verify` le prendrait pour une clé oubliée dans le dépôt.
         let label = "OPENSSH " + "PRIVATE KEY"
-        let pem = "-----BEGIN \(label)-----\n" + body.base64EncodedString(options: [.lineLength64Characters, .endLineWithLineFeed]) + "\n-----END \(label)-----\n"
+        let options: Data.Base64EncodingOptions = [.lineLength64Characters, .endLineWithLineFeed]
+        let encoded: String = body.base64EncodedString(options: options)
+        let pem = "-----BEGIN \(label)-----\n" + encoded + "\n-----END \(label)-----\n"
         priv.resetBytes(in: 0..<priv.count)
         return save(name: n, type: "ED25519", pub: "ssh-ed25519 " + blob.base64EncodedString() + " " + comment, secret: Data(pem.utf8))
     }

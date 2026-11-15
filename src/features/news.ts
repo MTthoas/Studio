@@ -59,6 +59,7 @@ const NEWS: Item[] = [
     bits: [
       ['bolt', 'Un workflow par ligne', 'dernière exécution, branche, déclencheur, durée et bande des précédentes'],
       ['refresh', 'Suivi en direct', 'relu toutes les 30 s tant qu’une exécution tourne'],
+      ['refresh', 'Relancer', 'une exécution en échec se relance d’un clic (droit Actions en écriture sur le jeton)'],
       ['check', 'Requêtes partagées', 'une même donnée n’est demandée qu’une fois, puis seulement revalidée'],
     ],
     where: ['Projets', 'un projet', 'Flux'],

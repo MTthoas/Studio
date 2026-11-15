@@ -1386,7 +1386,7 @@ button.lv-chip:hover, .lv-chip.sel { color: var(--text); background: var(--btn);
 .fx-acts-head { display: flex; align-items: center; gap: 7px; padding: 8px 11px; color: var(--text-2); font-weight: 500; }
 .fx-acts-head .ic { width: 13px; height: 13px; color: var(--text-3); }
 .fx-acts-head .link-btn { margin-left: auto; font-size: var(--t-1); font-weight: 400; color: var(--text-3); }
-.fx-act { display: grid; grid-template-columns: 8px minmax(120px, 1.2fr) auto minmax(0, 1fr) auto minmax(90px, 160px) auto; align-items: center; gap: 10px; padding: 7px 11px; border-top: 1px solid var(--border); }
+.fx-act { display: grid; grid-template-columns: 8px minmax(120px, 1.2fr) auto minmax(0, 1fr) auto minmax(90px, 160px) auto auto; align-items: center; gap: 10px; padding: 7px 11px; border-top: 1px solid var(--border); }
 .fx-act-name { color: var(--text); font-weight: 500; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fx-act-name:hover { text-decoration: underline; text-decoration-color: var(--border-2); text-underline-offset: 3px; }
 .fx-act-st { color: var(--c); white-space: nowrap; }
@@ -1396,7 +1396,9 @@ button.lv-chip:hover, .lv-chip.sel { color: var(--text); background: var(--btn);
 .fx-act.live .pj-ci { animation: fx-live 1.2s ease-in-out infinite; }
 @keyframes fx-live { 50% { opacity: .35; } }
 @media (prefers-reduced-motion: reduce) { .fx-act.live .pj-ci { animation: none; } }
-@media (max-width: 720px) { .fx-act { grid-template-columns: 8px 1fr auto auto; } .fx-act code, .fx-act-ev, .fx-act .ch-strip { display: none; } }
+.fx-rerun { padding: 2px 8px; font-size: var(--t-1); }
+.fx-rerun .ic { width: 12px; height: 12px; }
+@media (max-width: 720px) { .fx-act { grid-template-columns: 8px 1fr auto auto auto; } .fx-act code, .fx-act-ev, .fx-act .ch-strip { display: none; } }
 .fx-board { margin-top: 12px; grid-auto-columns: minmax(210px, 1fr); }
 .fx-card { display: flex; flex-direction: column; gap: 6px; padding: 10px 11px; border-radius: 8px; background: var(--bg); border: 1px solid var(--border); font-size: var(--t-2); }
 .fx-branch { display: flex; align-items: center; gap: 6px; min-width: 0; }
