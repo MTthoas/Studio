@@ -37,6 +37,36 @@ async function save(text: string): Promise<void> {
   toast('Note vocale enregistrée', { label: 'Ouvrir', run: () => app.openNote(n.id) });
 }
 
+/** Bouton micro d'une zone de saisie (voir `dictate`) ; vide hors de l'app native. */
+export const micHTML = (label: string): string => available()
+  ? `<button type="button" class="icon-btn vc-mic" data-vc-mic title="${label} (transcription sur l’appareil)" aria-label="${label}" aria-pressed="false">${icon('mic')}</button>` : '';
+
+/**
+ * Dictée dans un champ : la voix s'écrit à la suite du texte déjà là, au fil de la transcription.
+ * Un second clic sur le bouton termine ; quitter la page annule. `onText` suit chaque changement (brouillon).
+ */
+export function dictate(field: HTMLTextAreaElement | HTMLInputElement, btn: HTMLElement, onText?: () => void): void {
+  if (!available()) { toast('La dictée fonctionne dans l’app Studio (iPhone ou Mac) : la transcription s’y fait sur l’appareil.'); return; }
+  if (session) { if (btn.classList.contains('live')) { btn.classList.add('busy'); send('stop'); } return; }
+  const before = field.value.trimEnd(), sep = !before ? '' : before.includes('\n') ? '\n\n' : ' ';
+  const put = (t: string) => {
+    if (!field.isConnected) { send('cancel'); session = null; return; }
+    t = t.trim(); field.value = t ? before + sep + t : before; field.scrollTop = field.scrollHeight; onText?.();
+  };
+  const end = () => { session = null; btn.classList.remove('live', 'busy'); btn.setAttribute('aria-pressed', 'false'); };
+  btn.classList.add('live'); btn.setAttribute('aria-pressed', 'true');
+  session = {
+    status: () => {},
+    text: put,
+    done: async t => { put(t); end(); field.focus(); if (!t.trim()) toast('Rien n’a été entendu.'); },
+    close: end,
+  };
+  send('start');
+}
+
+/** Coupe la dictée en cours en gardant le texte déjà écrit (envoi du formulaire pendant qu'on parle). */
+export function cancel(): void { if (session) { send('cancel'); session.close(); } }
+
 export function record(): void {
   if (!available()) { toast('Les notes vocales fonctionnent dans l’app Studio (iPhone ou Mac) : la transcription s’y fait sur l’appareil.'); return; }
   if (session) return;

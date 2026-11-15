@@ -53,6 +53,17 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'agent-voice', date: '2026-11-16', icon: 'mic', hue: 'violet',
+    title: 'Parle à Claude Code',
+    lead: 'Dicte une consigne ou une réponse à un agent : ta voix s’écrit dans le champ, tu relis, tu envoies.',
+    bits: [
+      ['mic', 'Bouton micro', 'à côté de Lancer et d’Envoyer ; un second clic termine'],
+      ['pencil', 'À la suite', 'la dictée s’ajoute au texte déjà écrit et au brouillon'],
+      ['shield', 'Sur l’appareil', 'transcription hors ligne, rien ne part en ligne'],
+    ],
+    where: ['Projets', 'un projet', 'Claude Code'],
+    visual: { kind: 'flow', steps: [['Tu parles', 'violet', 'mic'], ['Texte dans le champ', 'blue', 'pencil'], ['⌘↩', 'green', 'play']] },
+    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
   { id: 'github-actions', date: '2026-11-15', icon: 'bolt', hue: 'green',
     title: 'GitHub Actions, et GitHub plus rapide',
     lead: 'L’état de chaque workflow dans l’onglet Flux, et beaucoup moins d’attente sur les projets.',
