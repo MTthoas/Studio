@@ -191,10 +191,14 @@ final class ProjectFolders {
     /// Copies isolées du projet : branche, changements, commits d'avance sur la branche principale,
     /// et ce qui a déjà été livré. Une copie dont le travail est fusionné dans la branche principale repart
     /// d'elle-même de sa dernière version, sur une nouvelle branche : Studio ne la propose plus à la publication.
-    func worktrees(_ id: String) -> [String: Any] {
+    func worktrees(_ id: String, fresh: Bool = false) -> [String: Any] {
         guard let dir = path(id) else { return ["ok": true, "worktrees": []] }
         // La fusion se passe sur GitHub : il faut relire le dépôt distant pour la voir (au plus toutes les 90 s).
-        fetchIfStale(dir)
+        // Sans `fresh`, la relecture se fait en arrière-plan : la réponse part tout de suite avec les références
+        // connues, et la page redemande dès qu'elle est finie (`fetching`). Avec `fresh` (la page sait par GitHub
+        // qu'une PR vient d'être fusionnée), on relit d'abord, pour remettre la copie sur la branche principale.
+        var fetching = false
+        if fresh { fetchIfStale(dir, every: 0) } else { fetching = fetchIfStale(dir, background: true) }
         let raw = git(["worktree", "list", "--porcelain"], in: dir) ?? ""
         let base = baseRef(dir, fetch: false)
         var found: [(path: String, name: String, branch: String)] = []
@@ -213,7 +217,7 @@ final class ProjectFolders {
         // (elles partagent la configuration du dépôt), jamais pendant qu'un agent ou une publication y travaille.
         var recycled: [[String: String]] = []
         for (i, f) in found.enumerated() where !Agents.shared.busy(project: id, worktree: f.name) && !Orchestrator.shared.busy(project: id, worktree: f.name) {
-            if let old = recycleIfDelivered(f.path, fetch: false) {
+            if let old = recycleIfDelivered(f.path, fetch: false, base: base) {
                 recycled.append(["worktree": f.name, "branch": old])
                 found[i].branch = currentBranch(f.path) ?? f.branch
             }
@@ -234,30 +238,39 @@ final class ProjectFolders {
             let merged = published && delivered(wtPath, rev: "HEAD", base: base)
             // Titre du commit de la copie (pour le titre de sa PR) : seulement si elle a ses propres commits.
             let subject = ahead > 0 ? (git(["log", "-1", "--format=%s"], in: wtPath)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "") : ""
-            let row: [String: Any] = ["name": name, "branch": branch, "changes": changes, "behind": counts.first ?? 0, "ahead": ahead,
+            let row: [String: Any] = ["name": name, "branch": branch, "head": head, "changes": changes, "behind": counts.first ?? 0, "ahead": ahead,
                                       "pushed": published, "upToDate": published && !remote.isEmpty && remote == head, "merged": merged,
                                       "conflicts": status.isEmpty ? [] : conflictFiles(wtPath), "subject": subject,
                                       "history": history(dir, name: name, base: base)]
             rowsLock.lock(); rows[i] = row; rowsLock.unlock()
         }
         let out = rows.compactMap { $0 }
-        return ["ok": true, "worktrees": out, "base": base, "recycled": recycled]
+        return ["ok": true, "worktrees": out, "base": base, "recycled": recycled, "fetching": fetching]
     }
 
     // MARK: Travail déjà livré, plusieurs branches par copie
 
-    private var lastFetch: [String: Date] = [:]
+    private var lastFetch: [String: Date] = [:], fetchingKeys = Set<String>()
     private let fetchLock = NSLock()
     /// Relit le dépôt distant si ça n'a pas été fait depuis `every` secondes (la liste des copies est relue souvent).
-    func fetchIfStale(_ dir: String, every: TimeInterval = 90) {
+    /// `background` : la relecture part sans être attendue ; renvoie vrai tant qu'elle n'est pas finie.
+    @discardableResult
+    func fetchIfStale(_ dir: String, every: TimeInterval = 90, background: Bool = false) -> Bool {
         // Une seule clé par dépôt : les copies partagent le même dossier .git.
         let common = git(["rev-parse", "--git-common-dir"], in: dir)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         let key = common.isEmpty ? dir : common.hasPrefix("/") ? common : dir + "/" + common
         fetchLock.lock()
         let due = lastFetch[key].map { Date().timeIntervalSince($0) >= every } ?? true
-        if due { lastFetch[key] = Date() }
+        if due { lastFetch[key] = Date(); fetchingKeys.insert(key) }
+        let running = fetchingKeys.contains(key)
         fetchLock.unlock()
-        if due { _ = gitRun(["fetch", "-q", "--prune", "origin"], in: dir, timeout: 15) }
+        guard due else { return running }
+        let run = { [self] in
+            _ = gitRun(["fetch", "-q", "--prune", "origin"], in: dir, timeout: 15)
+            fetchLock.lock(); fetchingKeys.remove(key); fetchLock.unlock()
+        }
+        if background { DispatchQueue.global(qos: .utility).async(execute: run); return true }
+        run(); return false
     }
 
     func currentBranch(_ wt: String) -> String? {
@@ -339,9 +352,9 @@ final class ProjectFolders {
     /// Le travail poussé de la copie est fusionné et rien n'est en cours : elle repart de la branche principale.
     /// Rien ne peut être perdu (copie propre, tout son travail commité est dans la branche principale).
     @discardableResult
-    func recycleIfDelivered(_ wt: String, fetch: Bool) -> String? {
+    func recycleIfDelivered(_ wt: String, fetch: Bool, base known: String? = nil) -> String? {
         if fetch { fetchIfStale(wt, every: 0) }
-        let base = baseRef(wt, fetch: false)
+        let base = known ?? baseRef(wt, fetch: false)
         guard base != "HEAD", let branch = currentBranch(wt), wasPublished(wt, branch: branch, base: base) else { return nil }
         guard let status = git(["status", "--porcelain", "--untracked-files=all"], in: wt), status.isEmpty else { return nil }
         guard delivered(wt, rev: "HEAD", base: base) else { return nil }

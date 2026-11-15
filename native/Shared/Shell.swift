@@ -196,7 +196,7 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
         case "permissions": send(AgentPermissions.apply(body))
         case "unqueue": send(Agents.shared.unqueue(project: pid, id: body["queued"] as? String ?? ""))
         case "stop": send(Agents.shared.stop(body["run"] as? String ?? ""))
-        case "worktrees": bg { folders.worktrees(pid) }
+        case "worktrees": bg { folders.worktrees(pid, fresh: body["fresh"] as? Bool == true) }
         case "pushcheck": bg { folders.pushCheck(pid) }
         case "push": folders.rememberAuthor(body["author"]); bg { folders.commitPush(pid, name: body["worktree"] as? String ?? "", message: body["message"] as? String ?? "", branch: body["branch"] as? String ?? "") }
         case "discard":

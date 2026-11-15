@@ -212,6 +212,17 @@ export async function project(repo: string, { fresh = false } = {}): Promise<{ i
   repoCache.set(repo, out);
   return out;
 }
+export interface BranchPull { number: number; url: string; branch: string; sha: string; state: 'open' | 'merged' | 'closed' }
+/** État de la dernière PR de chaque branche (ouverte, fusionnée, fermée), en une requête : pour les copies des agents.
+ *  `fresh` force la revalidation (304 si rien n'a bougé, gratuit pour la limite de requêtes). */
+export async function branchPulls(repo: string, { fresh = false } = {}): Promise<Map<string, BranchPull>> {
+  if (!REPO_RE.test(repo)) throw new Error(`Dépôt invalide : ${repo}`);
+  const raw = await api<RawPullAll[]>(`/repos/${repo}/pulls?state=all&per_page=60&sort=updated&direction=desc`, undefined, fresh ? { maxAge: 0 } : {});
+  const out = new Map<string, BranchPull>();
+  // Triées de la plus récente à la plus ancienne : la première PR vue pour une branche est la sienne.
+  for (const p of raw) if (!out.has(p.head.ref)) out.set(p.head.ref, { number: p.number, url: p.html_url, branch: p.head.ref, sha: p.head.sha, state: p.merged_at ? 'merged' : p.state === 'open' ? 'open' : 'closed' });
+  return out;
+}
 /** Activité récente d'un dépôt, déjà chargée par l'actualité GitHub. */
 export const activityOf = (repo: string, n = 8): { e: GhEvent; d: Described }[] => events.filter(e => e.repo?.name === repo).slice(0, n).map(e => ({ e, d: describe(e) }));
 /** Dépôts de l'utilisateur (pour choisir celui d'un projet). */
