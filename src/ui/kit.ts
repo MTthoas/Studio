@@ -26,6 +26,7 @@ const I: Record<string, string> = {
   inbox: '<path d="M3.5 13.5l3-8.5h11l3 8.5v5.5h-17z"/><path d="M3.5 13.5h5l1 2.5h5l1-2.5h5"/>',
   hourglass: '<path d="M7 3.5h10M7 20.5h10M8.5 3.5v3.5L12 12l3.5-5V3.5M8.5 20.5V17L12 12l3.5 5v3.5"/>',
   trash: '<path d="M4.5 7h15M10 11v6M14 11v6M6.5 7l1 13h9l1-13M9.5 7V4.5h5V7"/>',
+  activity: '<path d="M3.5 12.5h3.8l2.4-6.5 4.4 12 2.6-5.5h3.8"/>',
   graph: '<circle cx="6" cy="7" r="2.3"/><circle cx="18" cy="9" r="2.3"/><circle cx="11" cy="18" r="2.3"/><path d="M8.3 7.4l7.4 1.2M7 9.1l3 6.8M16.5 10.8l-4 5.4"/>',
   hash: '<path d="M5 9h14M5 15h14M10 4.5L8 19.5M16 4.5l-2 15"/>',
   compose: '<path d="M11.5 5H5v14h14v-6.5"/><path d="M18.3 3.7a1.9 1.9 0 012.7 2.7l-9 9-3.6.9.9-3.6z"/>',

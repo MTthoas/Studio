@@ -84,7 +84,7 @@ function noteRows(p: Project): string {
   return `${notes.length ? notes.map(n => `<div class="pj-row"><button class="w-row" data-open-note="${n.id}">${icon('notes')}<span>${esc(titleOf(n))}</span><em>${esc(rel(n.updated))}</em></button>${cc && shareable(n) ? `<button class="pj-cc" data-pj-cc-note="${n.id}" title="Confier cette note à Claude Code">${icon('terminal')}Claude Code</button>` : ''}</div>`).join('') : '<p class="hm-empty">Aucune note dans ce projet. Ajoute <code>#' + esc(p.tag) + '</code> à une note, ou crée-la d’ici.</p>'}
     <button class="hm-more" data-pj="new-note">${icon('plus')}Nouvelle note du projet</button>`;
 }
-const section = (id: string, title: string, ic: string, body: string, cls = '') => `<section class="pj-sec ${cls}" data-sec="${esc(id)}"><h2>${icon(ic)}${esc(title)}</h2><div class="pj-sec-body">${body}</div></section>`;
+const section = (id: string, title: string, ic: string, body: string, cls = '', meta = '') => `<section class="pj-sec ${cls}" data-sec="${esc(id)}"><h2>${icon(ic)}${esc(title)}${meta ? `<span class="pj-sec-meta">${meta}</span>` : ''}</h2><div class="pj-sec-body">${body}</div></section>`;
 
 /** Sous-menus d'un projet (aussi affichés dans la barre latérale). */
 export const TABS: [string, string, string][] = [
@@ -93,7 +93,7 @@ export const TABS: [string, string, string][] = [
 ];
 const curTab = (): string => { const t = app.viewState().tab; return t && TABS.some(x => x[0] === t) ? t : 'overview'; };
 const panelsHTML = (p: Project, tab: string) => registry.projectPanels(p, tab).map(x => section(x.id, x.title, x.icon, '<p class="nf-empty">Chargement…</p>', 'pj-panel')).join('');
-const card = (tab: string, title: string, ic: string, body: string) => `<button class="pj-ov" data-pj-tab="${tab}"><span class="pj-ov-h">${icon(ic)}${esc(title)}${icon('chevronRight')}</span><span class="pj-ov-b" data-ov="${tab}">${body}</span></button>`;
+const card = (tab: string, title: string, ic: string, hue: string, body: string) => `<button class="pj-ov" data-pj-tab="${tab}" style="--c:var(--c-${hue})"><span class="pj-ov-h"><span class="pj-ico">${icon(ic)}</span>${esc(title)}${icon('chevronRight')}</span><span class="pj-ov-b" data-ov="${tab}">${body}</span></button>`;
 
 function siteHTML(p: Project): string {
   if (!p.site) return `<p class="hm-empty">Aucun site associé à ce projet.</p><form class="td-add pj-site-form"><span class="td-plus">${icon('link')}</span><input type="url" placeholder="https://studio.exemple.com" aria-label="Adresse du site" required></form>`;
@@ -117,16 +117,16 @@ function tabBody(p: Project, tab: string): string {
   return `${folderBox}
     ${bridge.where() ? `<section class="pj-quick">${sessions.composerHTML(p, { compact: true })}<div data-ov="agents"></div></section>` : ''}
     ${section('repos', p.stack.length > 1 ? `Dépôts · ${p.stack.length}` : 'Dépôts', 'github', reposHTML(p), 'pj-stack')}
-    <div class="pj-dash">
-      ${chartCard('code', 'Activité du code', 'code', 'commits')}
-      ${chartCard('sessions', 'Claude Code', 'terminal', 'tokens')}
-      ${chartCard('flux', 'Santé de la CI', 'pr', 'ci')}
-      ${chartCard('tasks', 'Avancement des tâches', 'check', 'tasks', tasksChart(p))}
-    </div>
-    <div class="pj-ovs">
-      ${card('code', 'Pull requests', 'pr', p.repos.length ? 'Lecture des PR…' : 'Aucun dépôt associé')}
-      ${card('site', 'Site', 'link', p.site ? esc(p.site.replace(/^https:\/\//, '')) : 'Ajouter le site du projet')}
-      ${card('notes', 'Notes', 'notes', `<b>${notes}</b> note${notes > 1 ? 's' : ''}`)}</div>${panelsHTML(p, 'overview')}`;
+    ${section('activity', 'Activité', 'activity', `<div class="pj-dash">
+      ${chartCard('code', 'Commits', 'code', 'blue', 'commits', 'wide')}
+      ${chartCard('tasks', 'Tâches', 'check', 'green', 'tasks', '', tasksChart(p))}
+      ${chartCard('sessions', 'Claude Code', 'terminal', 'violet', 'tokens')}
+      ${chartCard('flux', 'Intégration continue', 'pr', 'teal', 'ci')}
+    </div>`, 'pj-act', '30 derniers jours')}
+    ${section('shortcuts', 'Raccourcis', 'bolt', `<div class="pj-ovs">
+      ${card('code', 'Pull requests', 'pr', 'blue', p.repos.length ? 'Lecture des PR…' : 'Aucun dépôt associé')}
+      ${card('site', 'Site', 'link', 'teal', p.site ? esc(p.site.replace(/^https:\/\//, '')) : 'Ajouter le site du projet')}
+      ${card('notes', 'Notes', 'notes', 'amber', `<b>${notes}</b> note${notes > 1 ? 's' : ''}`)}</div>`)}${panelsHTML(p, 'overview')}`;
 }
 
 // ---------- Serveur (VPS, VM) ----------
@@ -175,27 +175,46 @@ async function server(root: HTMLElement, p: Project): Promise<void> {
 }
 
 // ---------- Tableau de bord ----------
-const chartCard = (tab: string, title: string, ic: string, key: string, body = '<div class="pj-skel"></div>') =>
-  `<section class="pj-chart"><header><h3>${icon(ic)}${esc(title)}</h3><button class="pj-more" data-pj-tab="${tab}">Ouvrir${icon('chevronRight')}</button></header><div class="pj-chart-b" data-ch="${key}">${body}</div></section>`;
-const kpi = (n: string, label: string, extra = '') => `<p class="pj-kpi"><strong>${n}</strong><span>${label}</span>${extra}</p>`;
+const chartCard = (tab: string, title: string, ic: string, hue: string, key: string, cls = '', body = '<div class="pj-skel"></div>') =>
+  `<section class="pj-chart ${cls}" style="--c:var(--c-${hue})"><header><span class="pj-ico">${icon(ic)}</span><h3>${esc(title)}</h3><button class="pj-more" data-pj-tab="${tab}">Ouvrir${icon('chevronRight')}</button></header><div class="pj-chart-b" data-ch="${key}">${body}</div></section>`;
+/** Chiffre clé d'une carte : le nombre, ce qu'il compte, une tendance, puis une précision à droite. */
+const kpi = (n: string, label: string, extra = '', trend = '') => `<p class="pj-kpi"><strong>${n}</strong><span>${label}</span>${trend}${extra}</p>`;
 const muted = (t: string) => `<p class="pj-chart-empty">${t}</p>`;
 function tasksChart(p: Project): string {
   const c = todo.ofProject(p.id), done = c.doneAll.length, total = done + c.openCount;
   if (!total) return muted('Aucune tâche dans ce projet pour l’instant.');
-  return `${kpi(`${Math.round(done / total * 100)} %`, `${done} terminée${done > 1 ? 's' : ''} sur ${total}`)}${chart.meter(done, total)}
-    <dl class="pj-facts"><div><dt>Ouvertes</dt><dd>${c.openCount}</dd></div><div><dt>En cours</dt><dd>${c.doing.length}</dd></div><div><dt>En retard</dt><dd${c.late.length ? ' class="err"' : ''}>${c.late.length}</dd></div></dl>`;
+  const late = c.late.length, doing = c.doing.filter(t => !c.late.includes(t)).length, rest = Math.max(0, c.openCount - late - doing);
+  return `${kpi(`${Math.round(done / total * 100)} %`, 'terminées', `<em>${done} sur ${total}</em>`)}
+    ${chart.segments([{ label: 'Terminées', value: done, color: 'green' }, { label: 'En cours', value: doing, color: 'amber' }, { label: 'À faire', value: rest, color: 'gray' }, { label: 'En retard', value: late, color: 'red' }])}`;
 }
 const sum = (o: Record<string, number>) => Object.values(o).reduce((a, b) => a + b, 0);
 async function dashboard(root: HTMLElement, p: Project, f: Folder | null): Promise<void> {
-  const repo = p.repos[0];
-  // Activité : commits par jour (dépôt local sur le Mac, sinon GitHub).
+  const short = (name: string) => name.split('/')[1] ?? name;
+  // Commits par jour, empilés par dépôt (couleur de son rôle) : le dossier du Mac (toutes branches), les autres depuis GitHub.
   void (async () => {
-    let days: Record<string, number> | null = null, src = '';
-    if (f?.path || (!bridge.local() && bridge.where())) { const r = await bridge.call('agent', 'commits', { project: p.id, days: 30 }, 20000); if (r.ok && r.found !== false) { days = r.days as Record<string, number>; src = 'toutes branches'; } }
-    if (!days && repo && github.connected()) { try { days = await github.commitsPerDay(repo, 30); src = 'branche principale'; } catch { /* plus bas */ } }
-    if (!days) return fill(root, '[data-ch="commits"]', muted(repo ? 'Connecte GitHub ou choisis le dossier du projet pour voir son activité.' : 'Associe un dépôt ou choisis le dossier du projet.'));
-    const n = sum(days), pts = chart.lastDays(30, days);
-    fill(root, '[data-ch="commits"]', kpi(String(n), `commit${n > 1 ? 's' : ''} sur 30 jours`, `<em>${src}</em>`) + chart.bars(pts, { color: 'blue', unit: 'commit', summary: `${n} commits sur 30 jours` }));
+    const series: chart.Series[] = [];
+    let here: Repo | null = null, local = false;
+    if (f?.path || (!bridge.local() && bridge.where())) {
+      const r = await bridge.call('agent', 'commits', { project: p.id, days: 30 }, 20000);
+      if (r.ok && r.found !== false) {
+        local = true;
+        // Depuis un appareil lié, le remote du dossier n'est pas connu : le dossier du Mac est supposé être le dépôt principal.
+        here = model.repoNamed(p, f?.remote) ?? (f ? null : p.stack[0] ?? null);
+        series.push({ label: here ? short(here.name) : 'Dossier du Mac', color: here ? model.ROLES[here.role].hue : 'blue', points: chart.lastDays(30, r.days as Record<string, number>) });
+      }
+    }
+    if (github.connected()) {
+      const others = p.stack.filter(r => r.name !== here?.name);
+      const got = await Promise.allSettled(others.map(r => github.commitsPerDay(r.name, 30)));
+      others.forEach((r, i) => { const g = got[i]; if (g?.status === 'fulfilled') series.push({ label: short(r.name), color: model.ROLES[r.role].hue, points: chart.lastDays(30, g.value) }); });
+    }
+    if (!series.length) return fill(root, '[data-ch="commits"]', muted(p.repos.length ? 'Connecte GitHub ou choisis le dossier du projet pour voir son activité.' : 'Associe un dépôt ou choisis le dossier du projet.'));
+    const all = (series[0]?.points ?? []).map((pt, i) => ({ ...pt, value: series.reduce((a, s) => a + (s.points[i]?.value ?? 0), 0) }));
+    const n = all.reduce((a, x) => a + x.value, 0), [cur, prev] = chart.lastVsPrev(all);
+    const src = series.length > 1 ? `${series.length} dépôts` : local ? 'toutes branches' : 'branche principale';
+    const legend = series.length > 1 ? `<ul class="ch-legend">${series.map(s => `<li style="--c:var(--c-${s.color})"><i></i>${esc(s.label)}<b>${chart.fmt(s.points.reduce((a, x) => a + x.value, 0))}</b></li>`).join('')}</ul>` : '';
+    fill(root, '[data-ch="commits"]', kpi(chart.fmt(n), `commit${n > 1 ? 's' : ''}`, `<em>${src}</em>`, chart.trend(cur, prev))
+      + chart.stacked(series, { unit: 'commit', summary: `${n} commits sur 30 jours` }) + legend);
   })();
   // Claude Code : tokens écrits par jour.
   void (async () => {
@@ -203,18 +222,27 @@ async function dashboard(root: HTMLElement, p: Project, f: Folder | null): Promi
     if (bridge.local() && !f?.path) return fill(root, '[data-ch="tokens"]', muted('Choisis le dossier du projet pour suivre Claude Code.'));
     const r = await bridge.call('agent', 'daily', { project: p.id, days: 30 }, 30000);
     const tok = (r.tokens as Record<string, number>) ?? {}, n = sum(tok), ses = sum((r.sessions as Record<string, number>) ?? {});
-    fill(root, '[data-ch="tokens"]', n ? kpi(chart.fmt(n), `tokens écrits sur 30 jours`, `<em>${ses} session${ses > 1 ? 's' : ''}</em>`) + chart.bars(chart.lastDays(30, tok), { color: 'violet', unit: 'token', summary: `${n} tokens écrits par Claude Code sur 30 jours` }) : muted('Aucune session Claude Code ces 30 derniers jours.'));
+    if (!n) return fill(root, '[data-ch="tokens"]', muted('Aucune session Claude Code ces 30 derniers jours.'));
+    const pts = chart.lastDays(30, tok), [cur, prev] = chart.lastVsPrev(pts);
+    fill(root, '[data-ch="tokens"]', kpi(chart.fmt(n), 'tokens écrits', `<em>${ses} session${ses > 1 ? 's' : ''}</em>`, chart.trend(cur, prev))
+      + chart.stacked([{ label: 'Claude Code', color: 'violet', points: pts }], { unit: 'token', summary: `${n} tokens écrits par Claude Code sur 30 jours` }));
   })();
-  // CI : dernières exécutions sur la branche principale.
+  // CI : les dernières exécutions sur la branche principale, une ligne par dépôt.
   void (async () => {
-    if (!repo || !github.connected()) return fill(root, '[data-ch="ci"]', muted(repo ? 'Connecte GitHub pour suivre la CI.' : 'Associe un dépôt GitHub au projet.'));
-    try {
-      const fl = await github.flow(repo), h = fl.history, done = h.filter(x => x.state !== 'pending'), ok = done.filter(x => x.state === 'success').length;
-      if (!h.length) return fill(root, '[data-ch="ci"]', muted(`Aucune exécution de CI sur ${esc(fl.base)}.`));
-      const last = h[h.length - 1];
-      fill(root, '[data-ch="ci"]', kpi(done.length ? `${Math.round(ok / done.length * 100)} %` : '—', `réussies sur les ${h.length} dernières`, `<em><code>${esc(fl.base)}</code></em>`) + chart.strip(h)
-        + `<p class="pj-chart-foot">Dernière : <span class="${last?.state === 'success' ? 'ok' : last?.state === 'failure' ? 'err' : 'warn'}">${last?.state === 'success' ? '✓ réussie' : last?.state === 'failure' ? '✕ en échec' : '… en cours'}</span>${fl.releases[0] ? ` · version <b>${esc(fl.releases[0].tag)}</b>` : ''}</p>`);
-    } catch (e) { fill(root, '[data-ch="ci"]', muted(esc(errMsg(e)))); }
+    if (!p.repos.length || !github.connected()) return fill(root, '[data-ch="ci"]', muted(p.repos.length ? 'Connecte GitHub pour suivre la CI.' : 'Associe un dépôt GitHub au projet.'));
+    const got = await Promise.allSettled(p.stack.map(r => github.flow(r.name)));
+    const rows = p.stack.flatMap((r, i) => { const g = got[i]; return g?.status === 'fulfilled' ? [{ r, fl: g.value }] : []; });
+    if (!rows.length) return fill(root, '[data-ch="ci"]', muted('GitHub ne répond pas.'));
+    const runs = rows.flatMap(x => x.fl.history), done = runs.filter(x => x.state !== 'pending'), ok = done.filter(x => x.state === 'success').length;
+    if (!runs.length) return fill(root, '[data-ch="ci"]', muted('Aucune exécution de CI sur les branches principales.'));
+    const rate = (h: chart.Run[]): number | null => { const d = h.filter(x => x.state !== 'pending'); return d.length ? Math.round(d.filter(x => x.state === 'success').length / d.length * 100) : null; };
+    const main = rows[0], rel0 = main?.fl.releases[0];
+    fill(root, '[data-ch="ci"]', kpi(done.length ? `${Math.round(ok / done.length * 100)} %` : '—', 'réussies', `<em>${runs.length} exécutions</em>`)
+      + `<div class="pj-ci-rows">${rows.map(({ r, fl }) => {
+        const pc = rate(fl.history), st = fl.history[fl.history.length - 1]?.state;
+        return `<div class="pj-ci-row">${model.roleTag(r.role, 'sm')}<code title="${esc(r.name)}">${esc(short(r.name))}</code>${fl.history.length ? chart.strip(fl.history) : '<span class="pj-ci-none">pas de CI</span>'}<b class="${st === 'failure' ? 'err' : st === 'pending' ? 'warn' : 'ok'}">${pc === null ? '—' : `${pc} %`}</b></div>`;
+      }).join('')}</div>`
+      + (main && rel0 ? `<p class="pj-chart-foot">Dernière version de ${esc(short(main.r.name))} : <b>${esc(rel0.tag)}</b></p>` : ''));
   })();
   chart.bindTips(root);
 }
@@ -303,7 +331,7 @@ async function repoStates(root: HTMLElement, p: Project, f: Folder | null): Prom
     const box = $(`[data-rp="${CSS.escape(r.name)}"] [data-rp-st]`, root); if (!box) return;
     try {
       const [fl, pr] = await Promise.all([github.flow(r.name), github.project(r.name)]);
-      const [hueCi, ci] = CI_TXT[fl.baseCi] ?? ['gray', ''], rel0 = fl.releases[fl.releases.length - 1] ?? fl.releases[0];
+      const [hueCi, ci] = CI_TXT[fl.baseCi] ?? ['gray', ''], rel0 = fl.releases[0];
       box.innerHTML = `<span class="pj-rp-ci" style="--c:var(--c-${hueCi})"><i></i>${ci}</span><span><b>${pr.pulls.length}</b> PR</span>${rel0 ? `<span class="pj-rp-tag">${esc(rel0.tag)}</span>` : ''}<span class="muted">${esc(rel(Date.parse(pr.info.pushed_at)))}</span>`;
     } catch (e) { box.innerHTML = `<span class="err">${esc(errMsg(e))}</span>`; }
   }));

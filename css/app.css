@@ -1320,10 +1320,11 @@ button.lv-chip:hover, .lv-chip.sel { color: var(--text); background: var(--btn);
 .pj-ovs { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
 .pj-ov { display: flex; flex-direction: column; gap: 8px; min-height: 92px; padding: 14px 14px 12px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2); text-align: left; transition: border-color .12s, background .12s, transform .12s; }
 .pj-ov:hover { border-color: var(--border-2); background: var(--bg); transform: translateY(-1px); }
-.pj-ov-h { display: flex; align-items: center; gap: 7px; color: var(--text-2); font-size: var(--t-1); font-weight: 600; }
-.pj-ov-h .ic { width: 13px; height: 13px; color: var(--text-3); }
-.pj-ov-h .ic:last-child { margin-left: auto; opacity: 0; transition: opacity .12s; }
-.pj-ov:hover .pj-ov-h .ic:last-child { opacity: 1; }
+.pj-ov-h { display: flex; align-items: center; gap: 9px; color: var(--text); font-size: var(--t-2); font-weight: 600; }
+.pj-ov-h > .ic { width: 13px; height: 13px; color: var(--text-3); }
+.pj-ov-h > .ic:last-child { margin-left: auto; opacity: 0; transition: opacity .12s; }
+.pj-ov:hover .pj-ov-h > .ic:last-child { opacity: 1; }
+.pj-ov:hover { border-color: color-mix(in srgb, var(--c) 40%, var(--border)); }
 .pj-ov-b { color: var(--text-2); font-size: var(--t-2); line-height: 1.5; }
 .pj-ov-b b { color: var(--text); font-weight: 600; font-size: var(--t-4); margin-right: 2px; }
 
@@ -1655,27 +1656,67 @@ button.lv-chip:hover, .lv-chip.sel { color: var(--text); background: var(--btn);
 .ch-tip { position: fixed; z-index: 90; pointer-events: none; padding: 5px 8px; border-radius: 6px; background: var(--text); color: var(--bg); font-size: var(--t-1); font-weight: 500; white-space: nowrap; opacity: 0; transform: translateY(3px); transition: opacity .1s, transform .1s; }
 .ch-tip.on { opacity: 1; transform: none; }
 
-/* ---------- Projet : tableau de bord ---------- */
-.pj-dash { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.pj-chart { display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 16px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2); }
+/* Histogramme empilé (chart.stacked) : une colonne par jour, une couleur par série, lignes de repère, une date par semaine. */
+.ch-stack .ch-plot { height: 128px; gap: 3px; padding-top: 18px; border-bottom-color: var(--border-2); }
+.ch-grid { position: absolute; inset: 18px 0 0; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none; }
+.ch-grid i { height: 0; border-top: 1px dashed color-mix(in srgb, var(--border) 80%, transparent); }
+.ch-grid i:last-child { visibility: hidden; }
+.ch-stack .ch-max { top: 0; right: 0; line-height: 14px; }
+.ch-stack .ch-max::before { content: "max "; }
+.ch-stack .ch-col { position: relative; border-radius: 4px 4px 0 0; }
+.ch-stack .ch-col b { display: flex; flex-direction: column-reverse; width: 100%; max-width: 16px; margin: 0 auto; border-radius: 4px 4px 1px 1px; overflow: hidden; gap: 1px; transition: filter .12s; }
+.ch-stack .ch-col b i { display: block; flex-basis: 0; min-height: 2px; max-width: none; border-radius: 0; background: var(--c); opacity: 1; }
+.ch-stack .ch-col:hover { background: color-mix(in srgb, var(--text) 5%, transparent); }
+.ch-stack .ch-col:hover b { filter: brightness(1.12); }
+.ch-stack .ch-col.now b { box-shadow: 0 0 0 1px var(--surface-2), 0 0 0 2px color-mix(in srgb, var(--text) 25%, transparent); }
+.ch-ticks { position: relative; height: 16px; margin-top: 6px; color: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+.ch-ticks span { position: absolute; left: var(--x); transform: translateX(-50%); white-space: nowrap; }
+.ch-ticks span:first-child { transform: none; left: 0; }
+.ch-ticks span:last-child { transform: translateX(-100%); left: 100%; }
+/* Tendance sur 7 jours. */
+.ch-trend { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 10px; font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text-2); background: var(--btn); }
+.ch-trend.up { color: color-mix(in srgb, var(--c-green) 80%, var(--text)); background: color-mix(in srgb, var(--c-green) 14%, transparent); }
+.ch-trend.down { color: var(--text-2); }
+/* Répartition (chart.segments) et légende partagée. */
+.ch-segs { display: flex; gap: 3px; height: 12px; }
+.ch-segs i { flex-basis: 0; min-width: 6px; border-radius: 4px; background: var(--c); }
+.ch-segs i:hover { filter: brightness(1.12); }
+.ch-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.ch-legend li { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); font-size: var(--t-1); }
+.ch-legend i { width: 8px; height: 8px; border-radius: 2px; background: var(--c); }
+.ch-legend b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* ---------- Projet : tableau de bord (Activité, Raccourcis) ---------- */
+.pj-sec h2 .pj-sec-meta { margin-left: auto; font-weight: 500; color: var(--text-3); }
+.pj-dash { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+.pj-chart { grid-column: span 3; display: flex; flex-direction: column; gap: 14px; min-width: 0; padding: 14px 16px 16px; border-radius: 14px; border: 1px solid var(--border); background: var(--surface-2); transition: border-color .12s; }
+.pj-chart:hover { border-color: var(--border-2); }
+.pj-chart.wide { grid-column: span 4; }
+.pj-chart.wide + .pj-chart { grid-column: span 2; }
 .pj-chart header { display: flex; align-items: center; gap: 8px; }
-.pj-chart h3 { flex: 1; display: flex; align-items: center; gap: 7px; margin: 0; color: var(--text-2); font-size: var(--t-1); font-weight: 600; }
-.pj-chart h3 .ic { width: 13px; height: 13px; color: var(--text-3); }
-.pj-more { display: inline-flex; align-items: center; gap: 2px; color: var(--text-3); font-size: var(--t-1); }
+/* Pastille d'icône teintée : la couleur de la carte (--c). */
+.pj-ico { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); }
+.pj-ico .ic { width: 13px; height: 13px; }
+.pj-chart h3 { flex: 1; margin: 0; color: var(--text); font-size: var(--t-2); font-weight: 600; }
+.pj-more { display: inline-flex; align-items: center; gap: 2px; height: 24px; padding: 0 4px 0 8px; border-radius: 6px; color: var(--text-3); font-size: var(--t-1); opacity: .8; transition: opacity .12s, background .12s, color .12s; }
 .pj-more .ic { width: 12px; height: 12px; }
-.pj-more:hover { color: var(--text); }
-.pj-chart-b { display: flex; flex-direction: column; gap: 12px; min-height: 140px; }
-.pj-kpi { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin: 0; }
-.pj-kpi strong { font-size: 26px; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1; }
+.pj-chart:hover .pj-more { opacity: 1; }
+.pj-more:hover { color: var(--text); background: var(--hover); }
+.pj-chart-b { display: flex; flex-direction: column; gap: 14px; min-height: 150px; }
+.pj-kpi { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0; }
+.pj-kpi strong { color: var(--text); font-size: 28px; font-weight: 650; letter-spacing: -.03em; font-variant-numeric: tabular-nums; line-height: 1; }
 .pj-kpi span { color: var(--text-2); font-size: var(--t-2); }
 .pj-kpi em { margin-left: auto; font-style: normal; color: var(--text-3); font-size: var(--t-1); }
-.pj-chart-empty { margin: auto 0; color: var(--text-3); font-size: var(--t-2); line-height: 1.5; }
+.pj-chart-empty { margin: auto 0; padding: 18px; border-radius: 10px; border: 1px dashed var(--border); color: var(--text-3); font-size: var(--t-2); line-height: 1.5; text-align: center; }
 .pj-chart-foot { margin: 0; color: var(--text-3); font-size: var(--t-1); }
-.pj-chart-foot b { color: var(--text-2); font-weight: 500; }
-.pj-facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0; }
-.pj-facts div { padding: 8px 10px; border-radius: 8px; background: var(--bg); border: 1px solid var(--border); }
-.pj-facts dt { color: var(--text-3); font-size: var(--t-1); }
-.pj-facts dd { margin: 2px 0 0; font-size: var(--t-4); font-weight: 600; font-variant-numeric: tabular-nums; }
+.pj-chart-foot b { color: var(--text-2); font-weight: 600; font-family: var(--mono); font-size: 11px; }
+/* CI : une ligne par dépôt. */
+.pj-ci-rows { display: flex; flex-direction: column; gap: 8px; }
+.pj-ci-row { display: grid; grid-template-columns: auto minmax(0, 7em) minmax(0, 1fr) 3.2em; align-items: center; gap: 8px; }
+.pj-ci-row code { font: 12px var(--mono); color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pj-ci-row .ch-strip { height: 20px; }
+.pj-ci-row b { text-align: right; font-size: var(--t-1); font-weight: 600; font-variant-numeric: tabular-nums; }
+.pj-ci-none { color: var(--text-3); font-size: var(--t-1); }
 .pj-skel { height: 120px; border-radius: 8px; background: linear-gradient(90deg, var(--active), var(--hover), var(--active)); background-size: 200% 100%; animation: skel 1.4s ease-in-out infinite; opacity: .5; }
 @keyframes skel { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 .pj-ovs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -1684,7 +1725,7 @@ button.lv-chip:hover, .lv-chip.sel { color: var(--text); background: var(--btn);
 .pj-agent span { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 .pj-agent em { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: normal; color: var(--text-3); }
 .pj-agent > .ic { width: 13px; height: 13px; color: var(--text-3); }
-@media (max-width: 860px) { .pj-dash, .pj-ovs { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 860px) { .pj-dash, .pj-ovs { grid-template-columns: minmax(0, 1fr); } .pj-chart, .pj-chart.wide, .pj-chart.wide + .pj-chart { grid-column: auto; } }
 
 /* ---------- Claude Code : consigne et agents ---------- */
 .ag-compose { display: flex; flex-direction: column; border-radius: 12px; border: 1px solid var(--border-2); background: var(--bg); transition: border-color .12s, box-shadow .12s; }
