@@ -53,6 +53,18 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'server-keys-ext', date: '2026-11-15', icon: 'server', hue: 'teal',
+    title: 'Ton serveur, clé et extensions',
+    lead: 'Une clé SSH gardée chiffrée par Studio, et Docker ou Kubernetes pilotés depuis l’onglet Serveur.',
+    bits: [
+      ['key', 'Clé SSH dans Studio', 'créée (Ed25519) ou importée, chiffrée dans le trousseau du Mac, jamais montrée'],
+      ['shield', 'Empreinte vérifiée', 'un nouveau serveur n’est accepté qu’après confirmation de son empreinte'],
+      ['container', 'Docker', 'conteneurs, Compose, ressources, journaux ; démarrer, arrêter, redémarrer'],
+      ['kube', 'Kubernetes', 'nœuds, déploiements, pods (kubectl, k3s, microk8s) ; journaux, redémarrage'],
+    ],
+    where: ['Projets', 'un projet', 'Serveur', 'Modifier'],
+    visual: { kind: 'stack', rows: [[['Clé', 'teal', 'key'], 'vps-prod · ED25519'], [['Docker', 'blue', 'container'], '4 en marche sur 5'], [['Kube', 'indigo', 'kube'], '1 nœud · 12 pods']] },
+    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
   { id: 'project-repos', date: '2026-11-15', icon: 'github', hue: 'indigo',
     title: 'Un projet, tous ses dépôts',
     lead: 'L’app, son site, son API : chaque dépôt a son rôle et sa carte dans le projet.',
