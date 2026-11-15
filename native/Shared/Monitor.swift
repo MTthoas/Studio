@@ -11,7 +11,7 @@ final class Monitors {
     private static let keep = 200
 
     private final class Probe {
-        let host: String, path: String
+        let server: Servers.Server
         var process: Process?
         var buffer = ""
         var samples: [[String: Any]] = []
@@ -22,7 +22,7 @@ final class Monitors {
         var lastPoll = Date(), lastExit: Date?
         var prevCPU: (total: Double, idle: Double)?
         var prevNet: (rx: Double, tx: Double, at: Date)?
-        init(host: String, path: String) { self.host = host; self.path = path }
+        init(_ server: Servers.Server) { self.server = server }
     }
     private var probes: [String: Probe] = [:]
     private let lock = NSLock()
@@ -40,7 +40,7 @@ final class Monitors {
         guard let c = Servers.shared.config(pid) else { return ["ok": false, "message": "Aucun serveur configuré."] }
         lock.lock(); defer { lock.unlock() }
         var p = probes[pid]
-        if p == nil || p!.host != c.host || p!.path != c.path { p?.process?.terminate(); p = Probe(host: c.host, path: c.path); probes[pid] = p }
+        if p == nil || p!.server != c { p?.process?.terminate(); p = Probe(c); probes[pid] = p }
         let probe = p!
         probe.lastPoll = Date()
         // Relance après une coupure, sans marteler un serveur injoignable.
@@ -74,10 +74,10 @@ final class Monitors {
     private func start(_ probe: Probe) {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
-        p.arguments = Servers.shared.sshArgs(probe.host, Self.script(Servers.qPath(probe.path)))
-        var env = ["HOME": NSHomeDirectory(), "PATH": "/usr/bin:/bin", "LC_ALL": "C"]
-        if let sock = ProcessInfo.processInfo.environment["SSH_AUTH_SOCK"] { env["SSH_AUTH_SOCK"] = sock }
-        p.environment = env
+        let l = Servers.shared.launch(probe.server, Self.script(Servers.qPath(probe.server.path)), env: Servers.baseEnv)
+        if let e = l.error { probe.error = e; probe.lastExit = Date(); return }
+        p.arguments = l.args
+        p.environment = l.env
         let out = Pipe(), err = Pipe()
         p.standardOutput = out; p.standardError = err; p.standardInput = FileHandle.nullDevice
         probe.buffer = ""; probe.prevCPU = nil; probe.prevNet = nil

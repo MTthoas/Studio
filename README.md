@@ -196,7 +196,16 @@ Ces réglages restent sur le Mac. Un appareil lié ne peut ni les lire ni les mo
 
 ### Serveurs et pilotage à distance
 
-**Serveur** (VPS, VM) : relie un hôte SSH (alias de `~/.ssh/config` ou `utilisateur@hôte`) et le dossier du projet sur ce serveur. Studio affiche son état (charge, mémoire, disque, dépôt, Claude Code), ouvre un terminal SSH, et y lance des agents Claude Code avec les mêmes garde-fous. Connexion par clé uniquement (`BatchMode`) : Studio ne stocke ni ne voit aucune clé. Les commandes distantes sont fixes et protégées, et la configuration reste dans l'app Mac.
+**Serveur** (VPS, VM) : relie un hôte SSH (alias de `~/.ssh/config` ou `utilisateur@hôte`) et le dossier du projet sur ce serveur. Studio affiche son état (charge, mémoire, disque, dépôt, Claude Code), ouvre un terminal SSH, et y lance des agents Claude Code avec les mêmes garde-fous. Connexion par clé uniquement (`BatchMode`), au choix :
+
+- **ta configuration SSH** (`~/.ssh/config`, agent SSH), dont Studio ne voit rien ;
+- **une clé gardée par Studio**, créée dans l'app (Ed25519) ou importée d'un fichier : la clé privée est chiffrée dans le trousseau macOS de ce Mac (jamais synchronisée), ne passe jamais par la page ni par le disque en clair, et n'est chargée que dans un agent SSH privé à Studio, le temps que l'app est ouverte. Elle seule est proposée au serveur. Studio affiche la commande qui installe sa clé publique sur le serveur. Après chaque reconstruction de l'app, macOS redemande une fois l'accès à la clé.
+
+Un serveur jamais vu n'est accepté qu'après confirmation de son empreinte, ajoutée alors à `~/.ssh/known_hosts` ; une empreinte changée est refusée.
+
+**Extensions du serveur**, à cocher une par une : **Docker** (conteneurs, projets Compose, processeur et mémoire, journaux ; démarrer, arrêter, redémarrer) et **Kubernetes** (`kubectl`, `k3s` ou `microk8s` : nœuds, déploiements, pods, journaux ; redémarrage d'un déploiement, suppression d'un pod). Chaque action demande confirmation. Depuis un appareil lié, on ne fait que lire leur état.
+
+Les commandes distantes sont fixes et protégées, et la configuration reste dans l'app Mac.
 
 **À distance** : depuis l'iPhone (ou un autre ordinateur) lié au Mac, tu suis les agents, lances une consigne, reprends ou arrêtes une session — via la liaison chiffrée de bout en bout. Sur le Mac, chaque appareil doit être autorisé (Réglages → Appareils → « Peut piloter Claude Code sur ce Mac ») ; seules ces actions passent, jamais les commandes ni la publication, et chacune est signalée sur le Mac. Studio doit rester ouvert sur le Mac.
 
@@ -341,7 +350,9 @@ native/             apps Mac et iPhone (Swift) et leurs scripts de build
     Agents.swift        agents Claude Code et leurs garde-fous
     Orchestrator.swift  publication : mise à jour, conflits, commit, push
     Sessions.swift      lecture des sessions Claude Code locales
-    Servers.swift       serveurs joints en SSH
+    Servers.swift       serveurs joints en SSH : options, port, empreinte de l'hôte
+    SSHKeys.swift       clés SSH de Studio : trousseau, agent SSH privé
+    ServerExtensions.swift  extensions du serveur : Docker, Kubernetes
     Sites.swift         site d'un projet en local : détection, serveur de fichiers, script dev
   macOS/, iOS/        points d'entrée de chaque plateforme
 site/               site vitrine de Studio : HTML, CSS et JS statiques, sans build ni dépendance

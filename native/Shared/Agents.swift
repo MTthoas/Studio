@@ -29,6 +29,8 @@ final class Agents {
         var finished: Date?
         var quota: [String: Any]?
         var machine = "mac", host = ""
+        /// Serveur de l'agent (machine "server") : pour l'arrêter par la même connexion.
+        var server: Servers.Server?
         /// Modèle et niveau d'effort de ce tour ("" : ceux de Claude Code par défaut).
         var model = "", effort = ""
         /// Commandes autorisées pour ce tour (case « Commandes ») : une réponse dans la discussion les garde.
@@ -153,13 +155,14 @@ final class Agents {
         lock.lock(); let r = runs[id]; let p = r?.process
         guard let r, let p, p.isRunning else { lock.unlock(); return ["ok": false, "message": "Cet agent ne tourne plus."] }
         r.status = "stopped"; if r.result.isEmpty { r.result = "Arrêté à ta demande." }
-        let remotePid = r.remotePid, host = r.host, onServer = r.machine == "server"
+        let remotePid = r.remotePid, server = r.server, onServer = r.machine == "server"
         lock.unlock()
-        if onServer, remotePid > 0 {
+        if onServer, remotePid > 0, let server {
+            let l = Servers.shared.launch(server, "pkill -TERM -P \(remotePid) 2>/dev/null; kill -TERM \(remotePid) 2>/dev/null; true", env: Servers.baseEnv)
             let k = Process(); k.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
-            k.arguments = Servers.shared.sshArgs(host, "pkill -TERM -P \(remotePid) 2>/dev/null; kill -TERM \(remotePid) 2>/dev/null; true")
+            k.arguments = l.args; k.environment = l.env
             k.standardOutput = FileHandle.nullDevice; k.standardError = FileHandle.nullDevice
-            try? k.run()
+            if l.error == nil { try? k.run() }
         } else {
             Self.signalTree(p.processIdentifier, SIGTERM)
         }
@@ -322,9 +325,10 @@ final class Agents {
         run.actions.append(["at": ISO8601DateFormatter().string(from: Date()), "kind": "prompt", "text": String(prompt.prefix(4000))])
         let p = Process()
         p.executableURL = URL(fileURLWithPath: bin)
+        var sshSock: String?
         if let server {
             // Sur le serveur : modèle de commande fixe, chaque argument protégé, Claude Code cherché aux emplacements usuels.
-            run.machine = "server"; run.host = server.host
+            run.machine = "server"; run.host = server.host; run.server = server
             var prep = ""
             if !newWorktree.isEmpty {
                 // Même règle que sur le Mac : copie isolée partant de la dernière version de la branche principale distante.
@@ -336,7 +340,10 @@ final class Agents {
             // Première ligne du flux : le numéro du processus distant (exec le conserve), pour pouvoir l'arrêter.
             let remote = "cd \(Servers.qPath(cwd)) && \(prep)echo \"{\\\"type\\\":\\\"studio_pid\\\",\\\"pid\\\":$$}\" && PATH=\"$HOME/.local/bin:$HOME/.claude/local:$PATH\" "
                 + AgentTuning.env().sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value) " }.joined() + "exec claude " + args.map(Servers.q).joined(separator: " ")
-            p.arguments = Servers.shared.sshArgs(server.host, remote)
+            let l = Servers.shared.launch(server, remote, env: [:])
+            if let e = l.error { return done(["ok": false, "message": e]) }
+            p.arguments = l.args
+            sshSock = l.env["SSH_AUTH_SOCK"]
             p.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
         } else {
             p.arguments = args
@@ -345,6 +352,8 @@ final class Agents {
         var env = ProcessInfo.processInfo.environment
         env["DISABLE_AUTOUPDATER"] = "1"; env["NO_COLOR"] = "1"
         for (k, v) in AgentTuning.env() { env[k] = v }
+        // Sur un serveur : l'agent SSH choisi par Servers.launch (celui de Studio pour une clé gardée par Studio).
+        if onServer { env["SSH_AUTH_SOCK"] = sshSock }
         // Ouverte depuis le Dock, l'app n'a qu'un PATH minimal : les dossiers réglés passent devant (cargo, Homebrew…).
         if !onServer, !AgentPermissions.path.isEmpty {
             env["PATH"] = (AgentPermissions.path + [env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"]).joined(separator: ":")

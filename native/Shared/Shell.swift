@@ -217,9 +217,22 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
         case "server":
             switch body["op"] as? String ?? "" {
             case "hosts": bg { Servers.shared.hosts() }
-            case "set": bg { Servers.shared.set(pid, host: body["host"] as? String ?? "", path: body["path"] as? String ?? "") }
+            case "set": bg { Servers.shared.set(pid, host: body["host"] as? String ?? "", path: body["path"] as? String ?? "", port: body["port"] as? String ?? "",
+                                                key: body["key"] as? String ?? "", ext: body["ext"] as? [String] ?? []) }
             case "forget": Servers.shared.forget(pid); Monitors.shared.stop(pid); send(["ok": true])
-            case "terminal": send(Servers.shared.terminal(pid))
+            case "terminal": bg { Servers.shared.terminal(pid) }
+            // Empreinte du serveur : lue (ssh-keyscan), puis ajoutée à known_hosts seulement si c'est celle que l'utilisateur a confirmée.
+            case "hostkeys": bg { Servers.shared.hostKeys(pid) }
+            case "trust": bg { Servers.shared.trust(pid, confirmed: body["fingerprints"] as? [String] ?? []) }
+            // Clés SSH gardées par Studio (SSHKeys.swift) : la clé privée ne traverse jamais le pont.
+            case "keys": bg { SSHKeys.shared.list() }
+            case "key-new": bg { SSHKeys.shared.generate(name: body["name"] as? String ?? "") }
+            case "key-import": SSHKeys.shared.pick(name: body["name"] as? String ?? "", done: send)
+            case "key-delete": bg { SSHKeys.shared.delete(body["key"] as? String ?? "") }
+            // Extensions du serveur (ServerExtensions.swift) : état, journaux, actions nommées.
+            case "ext": bg { ServerExtensions.shared.read(pid, ext: body["ext"] as? String ?? "") }
+            case "ext-logs": bg { ServerExtensions.shared.logs(pid, ext: body["ext"] as? String ?? "", name: body["name"] as? String ?? "", ns: body["ns"] as? String ?? "") }
+            case "ext-act": bg { ServerExtensions.shared.act(pid, ext: body["ext"] as? String ?? "", action: body["action"] as? String ?? "", name: body["name"] as? String ?? "", ns: body["ns"] as? String ?? "") }
             // Monitoring en direct (Monitor.swift) et terminal intégré (Terminals.swift).
             case "monitor": bg { Monitors.shared.poll(pid, since: body["since"] as? Double ?? 0) }
             case "term-open":

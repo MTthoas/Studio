@@ -15,6 +15,7 @@ import * as flux from './flux.ts';
 import * as sessions from './sessions.ts';
 import * as review from './review.ts';
 import * as site from './site.ts';
+import * as infra from './infra.ts';
 import * as chart from '../../ui/chart.ts';
 import * as bridge from '../../integrations/remote.ts';
 import { shareable } from '../../integrations/ai.ts';
@@ -130,21 +131,15 @@ function tabBody(p: Project, tab: string): string {
 }
 
 // ---------- Serveur (VPS, VM) ----------
-interface ServerStatus { configured?: boolean; online?: boolean; host?: string; path?: string; ms?: number; error?: string; load?: number[]; cpus?: number; uptime?: string; disk?: { size: string; used: string; free: string; pct: number }; mem?: { total: number; used: number }; git?: string; claude?: string; os?: string }
+// Connexion, clés SSH, empreinte et extensions (Docker, Kubernetes) : voir infra.ts.
+interface ServerStatus extends infra.ServerConf { online?: boolean; ms?: number; error?: string; load?: number[]; cpus?: number; uptime?: string; disk?: { size: string; used: string; free: string; pct: number }; mem?: { total: number; used: number }; git?: string; claude?: string; os?: string }
 const level = (pct: number) => pct >= 90 ? 'red' : pct >= 75 ? 'amber' : 'green';
-function serverForm(hosts: { alias: string; hostname: string }[], cur?: ServerStatus): string {
-  return `<form class="sv-form"><div class="ag-empty sv-intro">${icon('server')}<h3>Relie un serveur à ce projet</h3><p>Un VPS ou une VM où tourne le projet ou ses agents. Studio s’y connecte en SSH depuis ce Mac, avec ta configuration habituelle (<code>~/.ssh/config</code>, agent SSH) : aucune clé n’est stockée par Studio.</p></div>
-    <label class="pj-field"><span>Hôte SSH</span><input class="field" name="host" list="sv-hosts" placeholder="vps-prod ou deploy@203.0.113.10" value="${esc(cur?.host ?? '')}" required autocomplete="off"><datalist id="sv-hosts">${hosts.map(h => `<option value="${esc(h.alias)}">${esc(h.hostname)}</option>`).join('')}</datalist></label>
-    <label class="pj-field"><span>Dossier du projet sur le serveur</span><input class="field" name="path" placeholder="/srv/studio ou ~/studio" value="${esc(cur?.path ?? '')}" required autocomplete="off"></label>
-    <p class="modal-hint">${icon('shield')}Connexion par clé uniquement (jamais de mot de passe demandé). Les commandes envoyées sont fixes : état du serveur, et Claude Code avec les mêmes garde-fous que sur le Mac.</p>
-    <div class="modal-actions">${cur?.configured ? '<button type="button" class="btn" data-sv="cancel">Annuler</button>' : ''}<button class="btn btn-primary">${icon('check')}Enregistrer</button></div></form>`;
-}
 function serverHTML(st: ServerStatus): string {
   const local = bridge.local();
-  const head = `<div class="sv-head"><span class="pj-site-dot ${st.online ? 'up' : 'down'}"></span><div><strong>${esc(st.host ?? '')}</strong><code>${esc(st.path ?? '')}</code></div>
+  const head = `<div class="sv-head"><span class="pj-site-dot ${st.online ? 'up' : 'down'}"></span><div><strong>${esc(st.host ?? '')}</strong><code>${esc(st.path ?? '')}</code>${infra.viaHTML(st)}</div>
     <span class="sv-state">${st.online ? `En ligne · ${st.ms} ms` : 'Injoignable'}</span>
     <span class="sv-act">${local ? `<button class="btn" data-sv="terminal">${icon('terminal')}Terminal SSH</button>` : ''}<button class="btn" data-sv="refresh">${icon('refresh')}Actualiser</button>${local ? `<button class="icon-btn" data-sv="edit" title="Modifier" aria-label="Modifier le serveur">${icon('pencil')}</button>` : ''}</span></div>`;
-  if (!st.online) return head + `<p class="sv-err">${icon('shield')}${esc(st.error || 'La connexion SSH a échoué.')}</p><p class="modal-hint">Vérifie que <code>ssh ${esc(st.host ?? '')}</code> fonctionne dans le Terminal sans mot de passe (clé chargée dans l’agent SSH).</p>`;
+  if (!st.online) return head + `<p class="sv-err">${icon('shield')}${esc(st.error || 'La connexion SSH a échoué.')}</p>${local ? infra.offlineHTML(st) : ''}`;
   const load = st.load?.[0] ?? 0, cpus = st.cpus || 1, loadPct = Math.min(100, Math.round(load / cpus * 100));
   const memPct = st.mem ? Math.round(st.mem.used / st.mem.total * 100) : 0, diskPct = st.disk?.pct ?? 0;
   const tile = (label: string, value: string, sub: string, pct?: number) => `<div class="sv-tile"><span>${label}</span><strong>${value}</strong>${pct !== undefined ? chart.meter(pct, 100, level(pct)) : ''}<em>${sub}</em></div>`;
@@ -156,6 +151,7 @@ function serverHTML(st: ServerStatus): string {
     <dl class="sv-facts"><div><dt>Dépôt</dt><dd>${st.git ? `<code>${esc(st.git.replace(/^## /, ''))}</code>` : 'pas un dépôt Git'}</dd></div>
       <div><dt>Claude Code</dt><dd>${st.claude ? esc(st.claude) : '<span class="warn">non installé</span>'}</dd></div>
       <div><dt>Système</dt><dd>${esc(st.os ?? '')}${st.uptime ? ` · allumé depuis ${esc(st.uptime)}` : ''}</dd></div></dl>
+    ${infra.extsHTML(st)}
     ${st.claude ? `<h3 class="ss-h">Lancer un agent sur ce serveur <span>dans une copie isolée du dépôt distant</span></h3>${sessions.composerHTML(model.byId(app.viewState().project) as Project, { machine: 'server' })}` : `<p class="modal-hint">Installe Claude Code sur le serveur (<code>curl -fsSL https://claude.ai/install.sh | bash</code>) et connecte-le (<code>claude</code> puis <code>/login</code>) pour y lancer des agents.</p>`}`;
 }
 async function server(root: HTMLElement, p: Project): Promise<void> {
@@ -166,11 +162,11 @@ async function server(root: HTMLElement, p: Project): Promise<void> {
   if (!st.ok) { box.innerHTML = `<p class="hm-empty">${esc(st.message ?? 'Lecture impossible.')}</p>`; return; }
   if (!st.configured) {
     if (!bridge.local()) { box.innerHTML = `<div class="ag-empty">${icon('server')}<h3>Aucun serveur relié</h3><p>Relie le serveur du projet depuis le Mac (onglet Serveur).</p></div>`; return; }
-    const h = await native.call('agent', 'server', { project: p.id, op: 'hosts' }, 10000);
-    box.innerHTML = serverForm((h.hosts as { alias: string; hostname: string }[]) ?? []); return;
+    await infra.openForm(box, p); return;
   }
   box.innerHTML = serverHTML(st);
   box.dataset.st = JSON.stringify(st);
+  if (st.online) infra.loadExts(box, p);
   sessions.bindComposer(box, p, r => { sessions.select(r.session || null, p.id); void go(p.id, 'sessions'); });
 }
 
@@ -492,10 +488,8 @@ export function mount(main: HTMLElement): void {
     }
     if (f.closest('.sv-form')) {
       e.preventDefault();
-      const v = (n: string) => need<HTMLInputElement>(`[name=${n}]`, f).value.trim();
-      const r = await native.call('agent', 'server', { project: p.id, op: 'set', host: v('host'), path: v('path') }, 10000);
-      if (!r.ok) { toast(r.message ?? 'Configuration refusée.'); return; }
-      toast('Serveur relié au projet'); const box = $('.sv-box', root); if (box) box.innerHTML = '<div class="pj-skel"></div>'; void server(root, p); return;
+      if (!await infra.submit(f as HTMLFormElement, p)) return;
+      const box = $('.sv-box', root); if (box) box.innerHTML = '<div class="pj-skel"></div>'; void server(root, p); return;
     }
     if (f.closest('.pj-site-form')) {
       e.preventDefault();
@@ -511,12 +505,13 @@ export function mount(main: HTMLElement): void {
     if (tb && p) { await app.setView({ type: 'projets', project: p.id, tab: tb.dataset.pjTab ?? 'overview' }); return; }
     const ccNote = t.closest('[data-pj-cc-note]'), ccTask = t.closest('[data-pj-cc-task]');
     if ((ccNote || ccTask) && p) { await toClaude(p, ccNote ? { notes: [ccNote.dataset.pjCcNote ?? ''] } : { prompt: ccTask?.dataset.pjCcTask ?? '' }); return; }
+    if (p && t.closest('.sv-box') && await infra.click(t, p, () => { const box = $('.sv-box', root); if (box) box.innerHTML = '<div class="pj-skel"></div>'; void server(root, p); })) return;
     const sv = t.closest('[data-sv]');
     if (sv && p) {
       const act = sv.dataset.sv, box = $('.sv-box', root);
       if (act === 'refresh') { if (box) box.innerHTML = '<div class="pj-skel"></div>'; void server(root, p); }
       if (act === 'terminal') { const r = await native.call('agent', 'server', { project: p.id, op: 'terminal' }, 10000); if (!r.ok) toast(r.message ?? 'Impossible.'); }
-      if (act === 'edit' && box) { const h = await native.call('agent', 'server', { project: p.id, op: 'hosts' }, 10000); box.innerHTML = serverForm((h.hosts as { alias: string; hostname: string }[]) ?? [], JSON.parse(box.dataset.st || '{}') as ServerStatus); }
+      if (act === 'edit' && box) await infra.openForm(box, p, JSON.parse(box.dataset.st || '{}') as ServerStatus);
       if (act === 'cancel') void server(root, p);
       return;
     }

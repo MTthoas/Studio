@@ -1872,7 +1872,76 @@ button.lv-chip:hover, .lv-chip.sel { color: var(--text); background: var(--btn);
 .sv-facts dt { color: var(--text-3); font-size: var(--t-1); }
 .sv-facts dd { margin: 3px 0 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sv-box .ss-h { margin: 4px 0 -4px; }
-@media (max-width: 760px) { .sv-grid, .sv-facts { grid-template-columns: minmax(0, 1fr); } .sv-act { margin-left: 0; } }
+/* Connexion : clé SSH, port, extensions (infra.ts) */
+.sv-row { display: flex; gap: 10px; }
+.sv-row > .pj-field:first-child { flex: 1; min-width: 0; }
+.sv-port { width: 90px; }
+.sv-keyrow { display: flex; gap: 6px; align-items: center; }
+.sv-keyrow select { flex: 1; min-width: 0; }
+.sv-keyrow .btn { height: 32px; flex: none; }
+.sv-keyinfo { margin-top: 4px; font-weight: 400; }
+.sv-pub { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text-2); font-weight: 400; }
+.sv-pub p { margin: 0; font-size: var(--t-1); }
+.sv-pub-h { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sv-pub-h strong { color: var(--text); }
+.sv-pub-h span { color: var(--text-3); font-size: var(--t-1); }
+.sv-pub-h .ic { width: 14px; height: 14px; color: var(--text-3); }
+.sv-cmd { margin: 0; padding: 8px 10px; border-radius: 8px; background: var(--bg); border: 1px solid var(--border); font: 11.5px/1.5 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; user-select: all; }
+.sv-pub-a { display: flex; gap: 6px; flex-wrap: wrap; }
+.sv-pub-a .btn { height: 28px; }
+.sv-exts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.sv-extopt { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); cursor: pointer; font-weight: 400; }
+.sv-extopt:has(input:checked) { border-color: var(--accent); background: var(--surface-2); }
+.sv-extopt input { margin: 3px 0 0; }
+.sv-extopt > span:last-child { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sv-extopt b { color: var(--text); font-weight: 600; }
+.sv-extopt em { font-style: normal; color: var(--text-3); font-size: var(--t-1); }
+.sv-ext-ic { display: inline-flex; color: var(--text-2); }
+.sv-ext-ic .ic { width: 18px; height: 18px; }
+.sv-via { display: inline-flex; align-items: center; gap: 4px; color: var(--text-3); font-size: var(--t-1); }
+.sv-via .ic { width: 12px; height: 12px; }
+.sv-trust { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2); }
+.sv-trust p { margin: 0; color: var(--text-2); }
+.sv-trust p .ic { width: 14px; height: 14px; vertical-align: -2px; margin-right: 6px; }
+.modal.sv-trustm { width: min(500px, 100%); }
+.sv-fps { list-style: none; margin: 12px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.sv-fps li { display: flex; gap: 10px; align-items: baseline; padding: 8px 10px; border-radius: 8px; background: var(--bg); border: 1px solid var(--border); }
+.sv-fps span { color: var(--text-3); font-size: var(--t-1); width: 64px; flex: none; }
+.sv-fps code { font: 12px var(--mono); overflow-wrap: anywhere; }
+.sv-klist { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
+.sv-krow { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); }
+.sv-krow > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sv-krow span, .sv-krow em { color: var(--text-3); font-size: var(--t-1); font-style: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-krow > .ic { width: 16px; height: 16px; color: var(--text-3); flex: none; }
+/* Extensions Docker et Kubernetes */
+.sv-ext { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2); }
+.sv-ext-h { display: flex; align-items: center; gap: 10px; }
+.sv-ext-h h3 { margin: 0; font-size: var(--t-2); font-weight: 600; }
+.sv-ext-sub { color: var(--text-3); font-size: var(--t-1); flex: 1; min-width: 0; }
+.sv-ext-t { margin: 6px 0 0; color: var(--text-2); font-size: var(--t-1); font-weight: 600; }
+.sv-tblw { overflow-x: auto; }
+.sv-tbl { width: 100%; border-collapse: collapse; font-size: var(--t-1); }
+.sv-tbl th { text-align: left; color: var(--text-3); font-weight: 500; padding: 4px 8px; white-space: nowrap; }
+.sv-tbl td { padding: 6px 8px; border-top: 1px solid var(--border); vertical-align: middle; color: var(--text-2); }
+.sv-tbl td:first-child, .sv-tbl th:first-child { width: 10px; padding-right: 0; }
+.sv-tbl strong { color: var(--text); font-weight: 600; margin-right: 6px; }
+.sv-tbl em { display: block; font-style: normal; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 340px; }
+.sv-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.sv-ports { font: 11.5px var(--mono); max-width: 220px; overflow-wrap: anywhere; }
+.sv-acts { white-space: nowrap; text-align: right; }
+.sv-acts .icon-btn { width: 26px; height: 26px; }
+.sv-chip { display: inline-block; padding: 0 6px; border-radius: 6px; background: var(--bg); border: 1px solid var(--border); color: var(--text-3); font-size: 11px; }
+.sv-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); }
+.sv-dot.up { background: var(--c-green); }
+.sv-dot.amber { background: var(--c-amber); }
+.sv-dot.down { background: var(--c-red); }
+.sv-nodes { display: flex; flex-wrap: wrap; gap: 6px; }
+.sv-node { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); font-size: var(--t-1); }
+.sv-node em { font-style: normal; color: var(--text-3); }
+.sv-sys summary { cursor: pointer; color: var(--text-3); font-size: var(--t-1); margin-top: 4px; }
+.modal.sv-logm { width: min(920px, 100%); }
+.sv-log { max-height: 60vh; min-height: 200px; }
+@media (max-width: 760px) { .sv-grid, .sv-facts, .sv-exts { grid-template-columns: minmax(0, 1fr); } .sv-act { margin-left: 0; } .sv-keyrow { flex-wrap: wrap; } }
 
 /* ---------- Notes et tâches confiées à Claude Code ---------- */
 .ag-ctx { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 0 12px 2px; }
