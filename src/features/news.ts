@@ -53,6 +53,17 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'agent-multi-repo', date: '2026-11-16', icon: 'folder', hue: 'blue', mac: true,
+    title: 'Un agent, tous tes dépôts',
+    lead: 'Claude Code travaille sur tous les dépôts du projet à la fois : l’app, son site, son API.',
+    bits: [
+      ['folder', 'Trouvés seuls', 'les clones rangés à côté du dossier du projet ; sinon, cloner en un clic'],
+      ['github', 'Une copie par dépôt', 'isolées, du même nom, ton dossier n’est jamais touché'],
+      ['check', 'Une PR par dépôt', 'même branche partout, les pull requests se citent entre elles'],
+    ],
+    where: ['Projets', 'un projet', 'Agents'],
+    visual: { kind: 'stack', rows: [[['app', 'blue', 'folder'], '3 fichiers modifiés'], [['site', 'green', 'folder'], '1 fichier modifié'], [['api', 'amber', 'folder'], 'rien à publier']] },
+    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
   { id: 'servers-many', date: '2026-11-16', icon: 'server', hue: 'blue', mac: true,
     title: 'Plusieurs serveurs par projet',
     lead: 'Relie la production, la préproduction et les autres au même projet, et teste la connexion avant d’enregistrer.',

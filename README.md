@@ -49,7 +49,7 @@ Studio est un carnet de notes Markdown reliées entre elles, qui réunit aussi t
 | Plateforme | Prérequis | Installation |
 | --- | --- | --- |
 | **Web** | Node.js ≥ 22.18 | `npm install && npm run serve` |
-| **Mac** | macOS 13+, outils en ligne de commande d'Apple | `./native/build-mac.sh --install`, ou `Studio-macOS.zip` depuis les [Releases](https://github.com/MTthoas/Studio/releases/latest) |
+| **Mac** | macOS 13+ (rien d'autre) | `curl -fsSL https://mtthoas.github.io/Studio/install.sh \| sh` dans le Terminal ([détails](#mac)) ; depuis les sources : `./native/build-mac.sh --install` (outils en ligne de commande d'Apple) |
 | **iPhone / iPad** | iOS 16+, Xcode avec la plateforme iOS | `./native/iphone.sh` |
 
 ### Web
@@ -68,11 +68,34 @@ L'app s'installe comme une application à part entière et fonctionne hors ligne
 
 ### Mac
 
+**Le plus simple, en trente secondes, sans rien installer d'autre :**
+
+1. Ouvre le **Terminal** : ⌘ Espace, tape « Terminal », Entrée.
+2. Colle cette ligne, puis Entrée :
+
+   ```bash
+   curl -fsSL https://mtthoas.github.io/Studio/install.sh | sh
+   ```
+
+3. Studio s'ouvre. Il est rangé dans `/Applications` (ou `~/Applications` si ton compte n'est pas administrateur) et apparaît dans le Launchpad.
+
+Pour **mettre à jour**, relance la même ligne : elle remplace l'app par la dernière version publiée et garde tes données. Le script ([`site/install.sh`](site/install.sh), à lire avant si tu préfères) télécharge `Studio-macOS.zip` depuis les [Releases](https://github.com/MTthoas/Studio/releases/latest), vérifie que c'est bien une app Studio intacte (identifiant et signature), puis l'installe. L'app (binaire universel Apple Silicon et Intel, ~1 Mo) embarque ses fichiers : rien n'est mis en ligne, aucun serveur.
+
+**Pourquoi pas un simple téléchargement du zip ?** Tant que l'app publiée n'est pas notarisée par Apple (voir [Signature et notarisation](#signature-et-notarisation)), macOS refuse d'ouvrir une app téléchargée avec un navigateur et affiche « Apple n'a pas pu vérifier que Studio ne contenait pas de logiciel malveillant ». L'app n'est pas en cause : macOS bloque toute app qui n'est pas passée par Apple. Un fichier récupéré par `curl` n'est pas mis en quarantaine, d'où la commande ci-dessus. Si tu as déjà téléchargé le zip :
+
+- tente d'ouvrir l'app une fois, puis Réglages Système → Confidentialité et sécurité → tout en bas, « Ouvrir quand même » ;
+- ou lève la quarantaine : `xattr -dr com.apple.quarantine /Applications/Studio.app`.
+
+**Pour les agents Claude Code**, installe aussi [Claude Code](https://docs.anthropic.com/claude-code) et connecte-toi une fois (`claude` dans le Terminal). Le reste de l'app s'en passe.
+
+**Depuis les sources** (développeurs, outils en ligne de commande d'Apple : `xcode-select --install`) :
+
 ```bash
+git clone https://github.com/MTthoas/Studio.git && cd Studio
 ./native/build-mac.sh --install
 ```
 
-Construit `Studio.app` (binaire universel Apple Silicon et Intel, ~1 Mo) et l'installe dans `/Applications`. L'app embarque ses fichiers : rien n'est mis en ligne, aucun serveur. Chaque push produit aussi l'app dans l'onglet *Actions* de GitHub, et chaque version est publiée dans les *Releases*.
+Chaque push produit aussi l'app dans l'onglet *Actions* de GitHub, et chaque version est publiée dans les *Releases*.
 
 ### iPhone / iPad
 
@@ -162,6 +185,7 @@ Une note ou une tâche y appartient avec le tag `#projet/studio` — posé par l
 Dans l'onglet **Claude Code** d'un projet, tu écris une consigne, Claude Code travaille dans le dépôt, et tu suis tout en direct (app Mac).
 
 - **Modifier** : l'agent travaille dans une **copie isolée** du dépôt (worktree Git dans `.claude/worktrees/`, exclue de `git status`). Ton dossier n'est jamais touché. Ensuite : **Revue** IA, **VS Code**, **Publier** ou **Supprimer**.
+- **Plusieurs dépôts** (l'app, son site, son API…) : l'agent les voit tous. Chaque dépôt a son dossier sur le Mac, affiché sur sa carte avec un bouton **Changer**. Studio retrouve seul les clones rangés à côté du dossier du projet (d'après leur remote GitHub) ; pour les autres, **Cloner** ou **Choisir son dossier** depuis la carte. En mode Modifier, chaque dépôt reçoit sa copie isolée, du même nom ; **Publier** pousse la même branche et ouvre une pull request dans chaque dépôt modifié, les PR se citant entre elles.
 - **Étapes** : le panneau range les copies par étape, chacune de sa couleur — **au travail** (ambre), **à publier** (orange), **PR ouverte** (bleu), **fusionné** (violet) — avec un bandeau de compteurs en tête ; les sessions et la barre latérale reprennent la même couleur, et ce qui est livré s’efface.
 - **Analyser** : lecture seule, Claude Code explore et propose.
 - **À voix haute** : le bouton micro, à côté de **Lancer** ou de **Envoyer**, dicte la consigne ou la réponse dans le champ (à la suite du texte déjà écrit) ; un second clic termine, tu relis et tu envoies. La transcription est faite sur l'appareil (app Mac ou iPhone).
@@ -388,11 +412,25 @@ La CI ([`.github/workflows/build.yml`](.github/workflows/build.yml)) tourne à c
 | Job | Rôle |
 | --- | --- |
 | **Vérifications** | Types TypeScript stricts, build, cache hors ligne complet, aucune clé d'API dans le code |
-| **App Mac** | Construit `Studio.app` (Apple Silicon et Intel) et vérifie sa signature |
+| **App Mac** | Construit `Studio.app` (Apple Silicon et Intel) et vérifie sa signature ; la notarise si les secrets Apple existent |
 | **App iPhone** | Vérifie que l'app compile pour le simulateur |
 | **Publication** | Sur `main` et sur les tags `v…` : crée la Release et publie le paquet |
 
 Chaque push sur `main` publie une Release `v1.0.<n>` avec `Studio-macOS.zip` et `Studio-web.zip`, ainsi que le paquet `@mtthoas/studio` (l'app web compilée) dans GitHub Packages. Un tag `v…` fait de même avec son propre nom.
+
+### Signature et notarisation
+
+Par défaut, l'app est signée « ad hoc » : elle fonctionne, mais macOS refuse de l'ouvrir après un téléchargement par navigateur. Pour que le zip des Releases s'ouvre d'un double-clic, il faut un compte [Apple Developer Program](https://developer.apple.com/programs/) (payant) et cinq secrets dans le dépôt (Settings → Secrets and variables → Actions). La CI signe et notarise alors chaque version publiée ; sans eux, rien ne change.
+
+| Secret | Contenu |
+| --- | --- |
+| `MACOS_CERTIFICATE` | Le certificat **Developer ID Application** et sa clé privée, exportés en `.p12` depuis Trousseaux d'accès, puis encodés : `base64 -i certificat.p12 \| pbcopy` |
+| `MACOS_CERTIFICATE_PWD` | Le mot de passe choisi à l'export du `.p12` |
+| `APPLE_ID` | L'adresse du compte Apple Developer |
+| `APPLE_TEAM_ID` | L'identifiant d'équipe (10 caractères, visible dans le compte développeur, rubrique Membership) |
+| `APPLE_APP_PASSWORD` | Un mot de passe d'app créé sur [account.apple.com](https://account.apple.com) (Connexion et sécurité → Mots de passe pour app) |
+
+En local, `SIGN_IDENTITY="Developer ID Application: … (ÉQUIPE)" ./native/build-mac.sh` signe de la même façon (droits dans [`native/macOS/Studio.entitlements`](native/macOS/Studio.entitlements)). Sans cette variable, la signature reste locale.
 
 ### Héberger la version web
 

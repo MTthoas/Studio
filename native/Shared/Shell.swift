@@ -126,6 +126,16 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
             catch { answer(["id": id, "ok": false, "message": error.localizedDescription]) }
         case "forget":
             folders.forget(pid); answer(["id": id, "ok": true])
+        // Plusieurs dépôts par projet : où est chaque clone sur ce Mac (retrouvé seul à côté du dossier du projet),
+        // choix d'un dossier, ou clonage à côté. La page n'envoie que des noms « propriétaire/dépôt ».
+        case "repos":
+            if let r = body["repos"] { folders.rememberRepos(pid, r) }
+            DispatchQueue.global(qos: .userInitiated).async { var r = folders.repoList(pid); r["id"] = id; self.answer(r) }
+        case "repo-pick":
+            folders.pickRepo(pid, repo: body["repo"] as? String ?? "") { var r = $0; r["id"] = id; self.answer(r) }
+        case "repo-clone":
+            let repo = body["repo"] as? String ?? ""
+            DispatchQueue.global(qos: .userInitiated).async { var r = folders.cloneRepo(pid, repo: repo); r["id"] = id; self.answer(r) }
         case "diff":
             let scope = body["scope"] as? String ?? "working"
             let wt = body["worktree"] as? String

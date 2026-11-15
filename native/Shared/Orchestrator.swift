@@ -19,6 +19,8 @@ final class Orchestrator {
         var log: [String] = []
         var conflicts: [String] = []
         var branch = "", message = "", run = ""
+        /// Branches poussées, une par dépôt modifié (le projet peut en avoir plusieurs : copies sœurs).
+        var pushed: [[String: String]] = []
         init(project: String, worktree: String, kind: String) { self.project = project; self.worktree = worktree; self.kind = kind }
     }
     private var jobs: [String: Job] = [:]
@@ -28,7 +30,7 @@ final class Orchestrator {
 
     private func summary(_ j: Job) -> [String: Any] {
         ["ok": true, "job": j.id, "kind": j.kind, "worktree": j.worktree, "status": j.status, "step": j.step,
-         "log": j.log, "conflicts": j.conflicts, "branch": j.branch, "message": j.message, "run": j.run]
+         "log": j.log, "conflicts": j.conflicts, "branch": j.branch, "message": j.message, "run": j.run, "pushed": j.pushed]
     }
     private func set(_ j: Job, _ change: (Job) -> Void) { lock.lock(); change(j); lock.unlock() }
     private func note(_ j: Job, _ step: String) { set(j) { $0.step = step; $0.log.append(step) } }
@@ -67,16 +69,48 @@ final class Orchestrator {
         return job(j.id)
     }
 
+    /// Issue de la publication d'une copie : poussée, rien à pousser (avec la raison), ou tâche arrêtée (erreur, conflits).
+    private enum Outcome { case pushed(String, String), skipped(String), stopped }
+
+    /// Publie la copie et ses copies sœurs (autres dépôts du projet) qui ont du travail, l'une après l'autre,
+    /// sur la même branche. La première qui échoue arrête tout : les suivantes attendent un nouvel essai.
     private func execute(_ j: Job, dir: String, wt: String, message: String, branch: String) {
         let folders = ProjectFolders.shared
-        let fail: (String) -> Void = { m in self.set(j) { $0.status = "error"; $0.step = m; $0.log.append(m) } }
+        let sisters = folders.sisterCopies(j.project, j.worktree)
+        var copies: [(repo: String, wt: String)] = [(folders.remote(dir) ?? "", wt)] + sisters.map { s -> (repo: String, wt: String) in (s.repo.name, s.wt) }
+        if copies.count > 1 {
+            let busy = copies.filter { folders.hasWork($0.wt) }
+            copies = busy.isEmpty ? [copies[0]] : busy
+        }
+        let many = copies.count > 1
+        var last = ""
+        for c in copies {
+            switch one(j, home: dir, wt: c.wt, label: many ? c.repo : "", message: message, branch: branch) {
+            case .stopped: return
+            case .skipped(let why): last = why
+            case .pushed(let b, let msg):
+                set(j) { $0.pushed.append(["repo": c.repo, "branch": b]); if $0.branch.isEmpty { $0.branch = b; $0.message = msg } }
+            }
+        }
+        set(j) {
+            $0.status = "done"
+            if $0.pushed.isEmpty { $0.step = last }
+            else if many { $0.step = "Branche \($0.branch) poussée dans \($0.pushed.compactMap { $0["repo"] }.joined(separator: ", "))." }
+            if $0.log.last != $0.step { $0.log.append($0.step) }
+        }
+    }
+
+    private func one(_ j: Job, home dir: String, wt: String, label: String, message: String, branch: String) -> Outcome {
+        let folders = ProjectFolders.shared
+        let note: (String) -> Void = { self.note(j, label.isEmpty ? $0 : "\(label) · \($0)") }
+        let fail: (String) -> Outcome = { m in let t = label.isEmpty ? m : "\(label) · \(m)"; self.set(j) { $0.status = "error"; $0.step = t; $0.log.append(t) }; return .stopped }
 
         // Le travail de la copie est déjà fusionné dans la branche principale et rien de nouveau n'a été fait :
         // il n'y a rien à publier (on ne repousse jamais une branche déjà fusionnée).
-        note(j, "Vérification de ce qui est déjà fusionné…")
+        note("Vérification de ce qui est déjà fusionné…")
         if let old = folders.recycleIfDelivered(wt, fetch: true) {
-            set(j) { $0.status = "done"; $0.step = "\(old) est déjà fusionnée dans la branche principale : rien de nouveau à publier. La copie repart de sa dernière version, sur une nouvelle branche."; $0.log.append($0.step) }
-            return
+            let why = "\(old) est déjà fusionnée dans la branche principale : rien de nouveau à publier. La copie repart de sa dernière version, sur une nouvelle branche."
+            note(why); return .skipped(why)
         }
         // Copie déjà publiée : son message d'origine servira à re-valider le travail après la mise à jour.
         let base0 = folders.baseRef(wt, fetch: false)
@@ -87,19 +121,19 @@ final class Orchestrator {
         if merged, let sha = folders.git(["rev-parse", "HEAD"], in: wt)?.trimmingCharacters(in: .whitespacesAndNewlines) {
             let subject = folders.git(["log", "-1", "--format=%s"], in: wt)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             folders.recordDelivery(wt, branch: current, sha: sha, merged: true, subject: subject)
-            note(j, "\(current) est déjà fusionnée : seul le nouveau travail sera publié.")
+            note("\(current) est déjà fusionnée : seul le nouveau travail sera publié.")
         }
         let pushed = published && !merged
         let dirty = !(folders.git(["status", "--porcelain"], in: wt) ?? "").isEmpty
         let firstCommit = folders.git(["rev-list", "--reverse", "\(base0)..HEAD"], in: wt)?.split(separator: "\n").first.map(String.init)
         let previous = firstCommit.flatMap { folders.git(["log", "-1", "--format=%B", $0], in: wt)?.trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
 
-        note(j, "Mise à jour sur la dernière version de la branche principale…")
+        note("Mise à jour sur la dernière version de la branche principale…")
         var sync = folders.syncWorktree(wt)
         guard sync["ok"] as? Bool == true else { return fail(sync["message"] as? String ?? "Mise à jour impossible.") }
         let base = sync["base"] as? String ?? "origin/main"
         var conflicts = sync["conflicts"] as? [String] ?? []
-        note(j, sync["updated"] as? Bool == true ? "Copie remise sur \(base)." : "Copie déjà à jour avec \(base).")
+        note(sync["updated"] as? Bool == true ? "Copie remise sur \(base)." : "Copie déjà à jour avec \(base).")
 
         var attempt = 0
         while !conflicts.isEmpty {
@@ -107,16 +141,18 @@ final class Orchestrator {
             guard attempt < maxAttempts else { break }
             attempt += 1
             guard let session = ClaudeSessions.shared.latest(project: dir, worktree: j.worktree) else {
-                note(j, "Aucune session d'agent pour cette copie : résolution à la main."); break
+                note("Aucune session d'agent pour cette copie : résolution à la main."); break
             }
-            note(j, "Conflits dans \(conflicts.count) fichier\(conflicts.count > 1 ? "s" : "") : l'agent les résout (essai \(attempt)/\(maxAttempts))…")
-            let started = startAgent(project: j.project, session: session, prompt: Self.resolvePrompt(base: base, files: conflicts))
+            note("Conflits dans \(conflicts.count) fichier\(conflicts.count > 1 ? "s" : "") : l'agent les résout (essai \(attempt)/\(maxAttempts))…")
+            // Copie sœur : l'agent travaille depuis la copie du dépôt principal, on lui donne donc les chemins complets.
+            let files = label.isEmpty ? conflicts : conflicts.map { wt + "/" + $0 }
+            let started = startAgent(project: j.project, session: session, prompt: Self.resolvePrompt(base: base, files: files))
             guard let runId = started["run"] as? String, started["ok"] as? Bool == true else {
-                note(j, "L'agent n'a pas pu être relancé : \(started["message"] as? String ?? "raison inconnue")."); break
+                note("L'agent n'a pas pu être relancé : \(started["message"] as? String ?? "raison inconnue")."); break
             }
             set(j) { $0.run = runId }
             let end = Agents.shared.wait(runId, timeout: agentTimeout)
-            if end["status"] as? String != "done" { note(j, "L'agent s'est arrêté avant la fin (\(end["status"] as? String ?? "?"))."); break }
+            if end["status"] as? String != "done" { note("L'agent s'est arrêté avant la fin (\(end["status"] as? String ?? "?"))."); break }
             conflicts = folders.conflictFiles(wt)
             // La branche principale a pu bouger pendant ce temps : on remet la copie à jour une fois de plus.
             if conflicts.isEmpty {
@@ -126,8 +162,9 @@ final class Orchestrator {
             }
         }
         if !conflicts.isEmpty {
-            set(j) { $0.status = "blocked"; $0.conflicts = conflicts; $0.step = "À toi de jouer : conflits à résoudre dans \(conflicts.joined(separator: ", "))."; $0.log.append($0.step) }
-            return
+            let shown = label.isEmpty ? conflicts : conflicts.map { "\(label)/\($0)" }
+            set(j) { $0.status = "blocked"; $0.conflicts = shown; $0.step = "À toi de jouer : conflits à résoudre dans \(shown.joined(separator: ", "))."; $0.log.append($0.step) }
+            return .stopped
         }
         set(j) { $0.conflicts = [] }
 
@@ -135,17 +172,19 @@ final class Orchestrator {
         let msg = j.kind == "publish" ? message : previous
         // Mise à jour : on ne republie automatiquement que ce qui l'était déjà (pas de travail en cours non relu).
         if j.kind == "sync" && !(pushed && !dirty && !msg.isEmpty) {
-            set(j) { $0.status = "done"; $0.step = "Copie à jour, prête à être publiée."; $0.log.append($0.step) }
-            return
+            let why = "Copie à jour, prête à être publiée."
+            note(why); return .skipped(why)
         }
-        note(j, "Commit et push…")
-        let r = folders.commitPush(j.project, name: j.worktree, message: msg, branch: j.kind == "publish" ? branch : "")
+        note("Commit et push…")
+        let r = folders.commitPush(at: wt, message: msg, branch: j.kind == "publish" ? branch : "")
         guard r["ok"] as? Bool == true else {
+            let out = fail(r["message"] as? String ?? "Échec du push.")
             if let c = r["conflicts"] as? [String], !c.isEmpty { set(j) { $0.status = "blocked"; $0.conflicts = c } }
-            return fail(r["message"] as? String ?? "Échec du push.")
+            return out
         }
         let b = r["branch"] as? String ?? ""
-        set(j) { $0.status = "done"; $0.branch = b; $0.message = msg; $0.step = "Branche \(b) poussée, à jour avec \(base)."; $0.log.append($0.step) }
+        note("Branche \(b) poussée, à jour avec \(base).")
+        return .pushed(b, msg)
     }
 
     private func startAgent(project: String, session: String, prompt: String) -> [String: Any] {
