@@ -1,5 +1,6 @@
 // Onglet Site d'un projet, partie locale : Studio cherche un site dans le dossier du projet (app Mac), le lance
-// sur ce Mac et le suit — adresse, pages vues, requêtes, journal du serveur de développement. Voir Sites.swift :
+// sur ce Mac et le suit — adresse, pages vues, requêtes, journal du serveur de développement. Il y lance aussi les
+// scripts « build » du projet et leurs variantes (build:prod…), dont la fin est notifiée par le Mac. Voir Sites.swift :
 // la page ne fournit ni chemin ni commande, seulement l'emplacement relatif d'un site que le Mac vient de détecter.
 import * as native from '../../core/native.ts';
 import { esc } from '../../lib/markdown.ts';
@@ -8,7 +9,9 @@ import type { Project } from './model.ts';
 
 type Found = { rel: string; kind: string; label: string; command: string };
 type Live = { rel: string; kind: string; label: string; status: string; url: string; port: number; since: number; requests: number; pages: number; bytes: number; log: string };
-type State = { ok: boolean; message?: string; folder?: boolean; sites?: Found[]; live?: Live };
+type Maker = { rel: string; scripts: { name: string; command: string }[] };
+type Build = { rel: string; script: string; command: string; status: 'building' | 'done' | 'failed' | 'stopped'; code: number; since: number; ended?: number; log: string };
+type State = { ok: boolean; message?: string; folder?: boolean; sites?: Found[]; live?: Live; builds?: Maker[]; build?: Build };
 
 const place = (rel: string): string => (rel ? `${rel}/` : 'racine du dossier');
 const dec = (n: number): string => n.toFixed(1).replace('.', ',');
@@ -46,11 +49,54 @@ function foundHTML(list: Found[]): string {
     <button class="btn btn-primary" data-st="start" data-rel="${esc(s.rel)}">${icon('play')}Lancer</button></div>`).join('')}</div>`;
 }
 
+/** Durée écoulée, à la seconde près (un build dure rarement plus de quelques minutes). */
+function took(from: number, to = Date.now()): string {
+  const s = Math.max(0, Math.round((to - from) / 1000));
+  return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')}`;
+}
+
+/** Variante choisie dans chaque liste déroulante, par emplacement : le rafraîchissement redessine la section. */
+const chosen = new Map<string, string>();
+
+function makersHTML(list: Maker[]): string {
+  return `<div class="st-list">${list.map(m => {
+    const pick = m.scripts.find(s => s.name === chosen.get(m.rel)) ?? m.scripts[0];
+    const variants = m.scripts.length > 1
+      ? `<select class="field st-variant" data-st-variant data-rel="${esc(m.rel)}" aria-label="Variante de build">${m.scripts.map(s => `<option value="${esc(s.name)}"${s === pick ? ' selected' : ''}>${esc(s.name)}</option>`).join('')}</select>`
+      : '';
+    return `<div class="st-row">${icon('bolt')}
+    <div><strong>${m.scripts.length > 1 ? `Build · ${m.scripts.length} variantes` : 'Build'}</strong><code>${esc(place(m.rel))}</code><em>Lance <code data-st-cmd>${esc(pick.command)}</code> sur ce Mac ; une notification t’avertit quand il se termine</em></div>
+    ${variants}<button class="btn" data-st="build" data-rel="${esc(m.rel)}" data-script="${esc(pick.name)}">${icon('play')}Construire</button></div>`;
+  }).join('')}</div>`;
+}
+
+function buildHTML(b: Build): string {
+  const running = b.status === 'building', ok = b.status === 'done';
+  const title = running ? 'Build en cours…' : ok ? 'Build terminé' : `Build en échec${b.code ? ` (code ${b.code})` : ''}`;
+  const state = running ? `depuis ${took(b.since)}` : ok ? `réussi en ${took(b.since, b.ended)}` : `<span class="err">arrêté après ${took(b.since, b.ended)}</span>`;
+  const again = `<button class="btn${ok ? '' : ' btn-primary'}" data-st="build" data-rel="${esc(b.rel)}" data-script="${esc(b.script)}">${icon('refresh')}Relancer</button>`;
+  return `<div class="sv-head"><span class="pj-site-dot ${ok ? 'up' : running ? '' : 'down'}"></span>
+    <div><strong>${title}</strong><code>${esc(b.command)} · ${esc(place(b.rel))}</code></div>
+    <span class="sv-state">${state}</span>
+    <div class="sv-act">${running ? '' : again}<button class="btn" data-st="build-stop">${icon(running ? 'stop' : 'check')}${running ? 'Arrêter' : 'Fermer'}</button></div></div>
+    <pre class="st-log" aria-label="Sortie du build">${esc(b.log.trim() || 'En attente de la sortie du build…')}</pre>`;
+}
+
+/** Partie build : le build en cours ou terminé, sinon les dossiers qui savent se construire. */
+function buildsHTML(st: State): string {
+  if (st.build) return buildHTML(st.build);
+  return st.builds?.length ? makersHTML(st.builds) : '';
+}
+
 function stateHTML(st: State): string {
   if (!st.ok) return empty('Lecture impossible', esc(st.message ?? 'Le dossier du projet n’a pas pu être lu.'));
   if (!st.folder) return empty('Choisis d’abord le dossier du projet', 'Studio y cherchera un site à lancer. Le dossier se choisit dans l’onglet Code.');
+  return siteHTML(st) + buildsHTML(st);
+}
+
+function siteHTML(st: State): string {
   if (st.live) return liveHTML(st.live);
-  if (!st.sites?.length) return empty('Aucun site trouvé dans le dossier', 'Studio reconnaît un dossier contenant un <code>index.html</code> (<code>site/</code>, <code>web/</code>, <code>docs/</code>, <code>dist/</code>…) et les projets Next.js, Astro, Vite, Nuxt ou SvelteKit qui ont un script <code>dev</code>.');
+  if (!st.sites?.length) return st.builds?.length || st.build ? '' : empty('Aucun site trouvé dans le dossier', 'Studio reconnaît un dossier contenant un <code>index.html</code> (<code>site/</code>, <code>web/</code>, <code>docs/</code>, <code>dist/</code>…) et les projets Next.js, Astro, Vite, Nuxt ou SvelteKit qui ont un script <code>dev</code>.');
   return foundHTML(st.sites);
 }
 
@@ -73,7 +119,7 @@ export function mount(root: HTMLElement, p: Project): void {
   let shown = '', busy = false;
   const paint = (st: State): void => {
     const html = stateHTML(st);
-    box.dataset.live = st.live && st.live.status !== 'error' ? '1' : '';
+    box.dataset.live = (st.live && st.live.status !== 'error') || st.build?.status === 'building' ? '1' : '';
     if (html !== shown) { shown = html; box.innerHTML = html; }
   };
   const ask = async (extra: Record<string, unknown> = {}): Promise<State> => (await native.call('project', 'local', { project: p.id, ...extra }, 30000)) as State;
@@ -84,11 +130,23 @@ export function mount(root: HTMLElement, p: Project): void {
     busy = true; b.disabled = true;
     try {
       let st: State;
-      if (b.dataset.st === 'start') st = await ask({ op: 'start', rel: b.dataset.rel ?? '' });
-      else { await ask({ op: 'stop' }); st = await ask(); }
-      if (!st.ok) { toast(st.message ?? 'Impossible de lancer le site.'); b.disabled = false; return; }
+      const op = b.dataset.st;
+      if (op === 'start') st = await ask({ op: 'start', rel: b.dataset.rel ?? '' });
+      else if (op === 'build') st = await ask({ op: 'build', rel: b.dataset.rel ?? '', script: b.dataset.script ?? '', name: p.name });
+      else { await ask({ op: op === 'build-stop' ? 'build-stop' : 'stop' }); st = await ask(); }
+      if (!st.ok) { toast(st.message ?? (op === 'build' ? 'Impossible de lancer le build.' : 'Impossible de lancer le site.')); b.disabled = false; return; }
       if (box.isConnected) paint(st);
     } finally { busy = false; }
+  });
+  // Choix d'une variante : le bouton et la commande affichée suivent, et le choix survit aux rafraîchissements.
+  box.addEventListener('change', e => {
+    const sel = target(e).closest<HTMLSelectElement>('[data-st-variant]');
+    const row = sel?.closest('.st-row');
+    if (!sel || !row) return;
+    chosen.set(sel.dataset.rel ?? '', sel.value);
+    const go = row.querySelector<HTMLButtonElement>('[data-st="build"]'), cmd = row.querySelector('[data-st-cmd]');
+    if (go) go.dataset.script = sel.value;
+    if (cmd) cmd.textContent = (cmd.textContent ?? '').replace(/\S+$/, sel.value);
   });
   void load();
   timer = window.setInterval(() => {

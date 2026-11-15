@@ -1378,6 +1378,7 @@ button.lv-chip:hover, .lv-chip.sel { color: var(--text); background: var(--btn);
 .st-row em, .st-empty p { flex-basis: 100%; margin: 0; font-style: normal; color: var(--text-2); font-size: var(--t-1); line-height: 1.55; }
 .st-row em code, .st-empty code { background: var(--code); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; font: 11.5px var(--mono); }
 .st-row .btn { flex: none; height: 30px; }
+.st-row select.st-variant { flex: none; width: auto; max-width: 180px; height: 30px; margin: 0; padding: 0 28px 0 10px; font: 12px var(--mono); text-overflow: ellipsis; }
 .st-log { margin: 0; max-height: 220px; overflow: auto; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); color: var(--text-2); font: 12px/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .st-soon .sv-tile { border-style: dashed; background: none; }
 .st-soon .sv-tile strong { color: var(--text-3); }

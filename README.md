@@ -150,7 +150,7 @@ Une note ou une tâche y appartient avec le tag `#projet/studio` — posé par l
 | **Flux** | Le parcours de chaque branche façon gitflow : en cours → PR ouverte → prête à fusionner → fusionnée → publiée (Release), avec CI et revues ; au-dessus, l'état de chaque workflow GitHub Actions (dernière exécution, branche, durée, précédentes), relu toutes les 30 s tant qu'une exécution tourne ; **Relancer** sur une exécution en échec ou annulée relance ses jobs en échec (même commit ; jeton avec le droit Actions en écriture) |
 | **Serveur** | L'état du VPS ou de la VM du projet, joint en SSH, et ses agents |
 | **Tâches · Notes** | Ce qui est tagué `#projet/<nom>` |
-| **Site** | Le site du projet : lancé **en local** depuis le Mac (adresse, pages vues, requêtes), et vérifié **en ligne** (code, temps de réponse) |
+| **Site** | Le site du projet : lancé **en local** depuis le Mac (adresse, pages vues, requêtes), **construit** (`build` et ses variantes `build:prod`…, notification à la fin), et vérifié **en ligne** (code, temps de réponse) |
 
 - Le **dossier local** est choisi dans le sélecteur de macOS et reste dans les réglages de l'app Mac : il n'est jamais écrit dans une note ni synchronisé. L'app n'en lit l'état Git qu'en lecture seule.
 - **Revue IA** : le diff est lu en local, montré, puis envoyé à l'IA branchée seulement après ton clic ; la revue peut être enregistrée comme note du projet.
@@ -354,7 +354,7 @@ native/             apps Mac et iPhone (Swift) et leurs scripts de build
     Servers.swift       serveurs joints en SSH : options, port, empreinte de l'hôte
     SSHKeys.swift       clés SSH de Studio : trousseau, agent SSH privé
     ServerExtensions.swift  extensions du serveur : Docker, Kubernetes
-    Sites.swift         site d'un projet en local : détection, serveur de fichiers, script dev
+    Sites.swift         site d'un projet en local : détection, serveur de fichiers, script dev, builds notifiés
   macOS/, iOS/        points d'entrée de chaque plateforme
 site/               site vitrine de Studio : HTML, CSS et JS statiques, sans build ni dépendance
 scripts/            build.ts (esbuild), check.ts et site.ts, exécutés directement par Node
