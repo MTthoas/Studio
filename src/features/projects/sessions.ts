@@ -12,16 +12,19 @@ import { icon, rel, modal, need, toast, confirmBox, errMsg, $ } from '../../ui/k
 import * as review from './review.ts';
 import * as store from '../../core/store.ts';
 import * as model from './model.ts';
+import { AUTO, pickFor as autoPick, label as autoLabel } from './autopick.ts';
 import * as saved from './drafts.ts';
+import { paintPulse } from './pulse.ts';
 import * as permissions from '../permissions.ts';
 import * as voice from '../voice.ts';
 import { menu } from '../../ui/kit.ts';
 import type { Project } from './model.ts';
 
 interface Tokens { input: number; output: number; cacheRead: number; cacheWrite: number }
-interface Session { id: string; title: string; /** Titre écrit par Claude Code lui-même, s'il y en a un. */ aiTitle?: string; firstPrompt?: string; branch: string; worktree: string; started: string; updated: string; /** Dernier vrai échange (absent avec une app Mac ancienne). */ active?: string; live: boolean; models: string[]; prompts: number; lastPrompt: string; tokens: Tokens; tools: Record<string, number>; files: string[] }
+interface Session { id: string; title: string; /** Titre écrit par Claude Code lui-même, s'il y en a un. */ aiTitle?: string; firstPrompt?: string; branch: string; worktree: string; started: string; updated: string; /** Dernier vrai échange (absent avec une app Mac ancienne). */ active?: string; live: boolean; models: string[]; prompts: number; lastPrompt: string; tokens: Tokens; tools: Record<string, number>; files: string[]; /** Lignes ajoutées et retirées sur la session (absent avec une app Mac ancienne). */ lines?: { add: number; del: number } }
 interface Quota { status?: string; resetsAt?: number; rateLimitType?: string; isUsingOverage?: boolean }
-interface Action { at: string; kind: string; text: string }
+/** `add`/`del` : lignes ajoutées et retirées par une écriture (nombre, ou texte pour les agents sur serveur). */
+interface Action { at: string; kind: string; text: string; add?: number | string; del?: number | string }
 export interface AgentRun { machine?: string; host?: string; run: string; mode: string; prompt: string; status: string; session: string; worktree: string; started: string; finished: string; result: string; lastText: string; turns: number; denials: string[]; quota?: Quota | null }
 interface Worktree {
   name: string; branch: string; /** Commit de la copie (absent avec une app Mac ancienne). */ head?: string; changes: number; ahead: number; behind?: number; pushed: boolean; conflicts?: string[];
@@ -344,11 +347,30 @@ const EFFORTS: [string, string][] = [['', 'Effort par défaut'], ['low', 'Effort
 /** Valeur de l'entrée « Autre modèle… » (jamais envoyée : elle ouvre la saisie d'un identifiant). */
 const OTHER = '+';
 function modelOptions(cur: string): string {
-  const list: [string, string][] = ai.CC_MODELS.map(([v, l]): [string, string] => [v, v ? l : 'Modèle par défaut']);
+  const list: [string, string][] = [[AUTO, 'Auto (selon la consigne)'], ...ai.CC_MODELS.map(([v, l]): [string, string] => [v, v ? l : 'Modèle par défaut'])];
   for (const v of [...saved.extraModels(), cur]) if (v && !list.some(x => x[0] === v)) list.push([v, modelName(v)]);
   return list.map(([v, l]) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(l)}</option>`).join('') + `<option value="${OTHER}">Autre modèle…</option>`;
 }
-const tuneHTML = (c: saved.Choice): string => `<select class="field" name="model" aria-label="Modèle" title="Modèle utilisé par Claude Code" data-prev="${esc(c.model)}">${modelOptions(c.model)}</select><select class="field" name="effort" aria-label="Niveau d’effort" title="Niveau d’effort : plus il est élevé, plus Claude réfléchit, et plus il consomme">${EFFORTS.map(([v, l]) => `<option value="${v}"${v === c.effort ? ' selected' : ''}>${l}</option>`).join('')}</select>`;
+const tuneHTML = (c: saved.Choice): string => `<select class="field" name="model" aria-label="Modèle" title="Modèle utilisé par Claude Code. Auto : le plus économe qui suffit à la consigne en cours" data-prev="${esc(c.model)}">${modelOptions(c.model)}</select><select class="field" name="effort" aria-label="Niveau d’effort" title="Niveau d’effort : plus il est élevé, plus Claude réfléchit, et plus il consomme">${EFFORTS.map(([v, l]) => `<option value="${v}"${v === c.effort ? ' selected' : ''}>${l}</option>`).join('')}</select><span class="ag-auto" data-auto hidden></span>`;
+/** Modèle et effort réellement envoyés : « Auto » est remplacé d'après la consigne ; un effort choisi à la main est gardé. */
+const autoOf = (f: HTMLFormElement) => autoPick(f.querySelector('textarea')?.value ?? '', {
+  read: f.querySelector<HTMLInputElement>('[name=mode]:checked')?.value === 'read', reply: !!f.dataset.session });
+function resolveChoice(f: HTMLFormElement, c: saved.Choice): saved.Choice {
+  if (c.model !== AUTO) return c;
+  const a = autoOf(f);
+  return { model: a.model, effort: c.effort || a.effort };
+}
+/** Affiche, à côté de la liste, ce que « Auto » retient pour la consigne en cours. */
+function showAuto(f: HTMLFormElement): void {
+  const box = f.querySelector<HTMLElement>('[data-auto]'), sel = f.querySelector<HTMLSelectElement>('select[name=model]'); if (!box || !sel) return;
+  box.hidden = sel.value !== AUTO || !(f.querySelector('textarea')?.value.trim());
+  if (box.hidden) return;
+  const hand = !!f.querySelector<HTMLSelectElement>('select[name=effort]')?.value, a = autoOf(f), l = autoLabel(a);
+  box.innerHTML = `${icon('sparkle')}<b>${esc(l.model)}</b>${hand ? '' : ` · ${esc(l.effort)}`}`;
+  box.title = `Choisi automatiquement : ${a.why}${hand ? ' · effort choisi à la main' : ''}`;
+}
+/** Le champ suit la hauteur du texte, sans limite. */
+function grow(ta: HTMLTextAreaElement): void { ta.style.height = 'auto'; ta.style.height = `${ta.scrollHeight + 2}px`; }
 /** Demande l'identifiant d'un modèle absent de la liste ; il y reste ensuite proposé. `null` si l'utilisateur renonce. */
 function askModel(): Promise<string | null> {
   return new Promise<string | null>(res => {
@@ -419,15 +441,19 @@ export function composerHTML(p: Project, { session = '', compact = false, machin
 export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: AgentRun) => void): void {
   void loadLimits();
   permissions.preload();
+  // Formulaires fraîchement rendus (brouillon repris) : hauteur du texte et choix « Auto » à jour.
+  requestAnimationFrame(() => root.querySelectorAll<HTMLFormElement>('.ag-compose').forEach(f => { const ta = f.querySelector('textarea'); if (ta) grow(ta); showAuto(f); }));
   if (root.dataset.agBound) return;
   root.dataset.agBound = '1';
   root.addEventListener('input', e => {
     const t = e.target as HTMLElement, f = t.closest<HTMLFormElement>('.ag-compose');
-    if (f && t.tagName === 'TEXTAREA') keepDraft(f);
+    if (f && t.tagName === 'TEXTAREA') { grow(t as HTMLTextAreaElement); keepDraft(f); showAuto(f); }
   });
+  root.addEventListener('focusin', e => { const t = e.target as HTMLElement; if (t.tagName === 'TEXTAREA' && t.closest('.ag-compose')) grow(t as HTMLTextAreaElement); });
   root.addEventListener('change', e => {
     const t = e.target as HTMLInputElement, f = t.closest<HTMLFormElement>('.ag-compose'); if (!f) return;
-    if (t.name === 'model' || t.name === 'effort') { void tune(f, t as unknown as HTMLSelectElement); return; }
+    if (t.name === 'model' || t.name === 'effort') { void tune(f, t as unknown as HTMLSelectElement).then(() => showAuto(f)); return; }
+    if (t.name === 'mode') showAuto(f);
     if (t.name === 'tests') { keepDraft(f); return; }
     if (t.name !== 'mode') return;
     const hint = $('[data-hint]', f), tests = $<HTMLInputElement>('[name=tests]', f);
@@ -438,7 +464,7 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
   root.addEventListener('click', e => {
     const t = e.target as HTMLElement, f = t.closest<HTMLFormElement>('.ag-compose'); if (!f) return;
     const mic = t.closest<HTMLElement>('[data-vc-mic]');
-    if (mic) { voice.dictate(need<HTMLTextAreaElement>('textarea', f), mic, () => keepDraft(f)); return; }
+    if (mic) { const ta = need<HTMLTextAreaElement>('textarea', f); voice.dictate(ta, mic, () => { keepDraft(f); grow(ta); showAuto(f); }); return; }
     const lim = t.closest<HTMLElement>('[data-ag-lim]');
     if (lim) { void limitsAction(lim.dataset.agLim ?? ''); return; }
     const ids = () => (f.dataset.notes || '').split(',').filter(Boolean);
@@ -467,7 +493,8 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     const picked: saved.Choice = { model: val('model')?.value ?? '', effort: val('effort')?.value ?? '' };
     if (picked.model === OTHER) picked.model = '';
     // Tous les dépôts du projet : le Mac ouvre à l'agent ceux dont il trouve un clone (copie sœur dans chacun).
-    const body: Record<string, unknown> = { project: p.id, prompt, ...picked, repos: p.stack };
+    // « Auto » n'est jamais envoyé : remplacé par le modèle (et l'effort) qui suffit à cette consigne.
+    const body: Record<string, unknown> = { project: p.id, prompt, ...resolveChoice(f, picked), repos: p.stack };
     if (f.dataset.session) { body.session = f.dataset.session; if (f.dataset.machine) body.machine = f.dataset.machine; }
     else { body.mode = f.querySelector<HTMLInputElement>('[name=mode]:checked')?.value ?? 'edit'; body.tests = !!val('tests')?.checked; const mc = val('machine'); if (mc && !mc.hidden) { const [m, s] = mc.value.split(':'); body.machine = m; if (s) body.server = s; } }
     btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Envoi…';
@@ -475,7 +502,7 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     btn.disabled = false; btn.innerHTML = label; delete f.dataset.busy;
     // En cas d'échec, le texte reste dans le formulaire et dans son brouillon.
     if (!r.ok) { toast(r.message ?? 'Lancement impossible.'); return; }
-    ta.value = ''; f.dataset.notes = ''; f.querySelectorAll('.ag-note').forEach(x => x.remove());
+    ta.value = ''; grow(ta); showAuto(f); f.dataset.notes = ''; f.querySelectorAll('.ag-note').forEach(x => x.remove());
     if (f.dataset.draft) saved.dropDraft(f.dataset.draft);
     // La conversation lancée garde le modèle et l'effort de sa première consigne : ils sont proposés pour la suite.
     if (!f.dataset.session && typeof r.session === 'string' && r.session) saved.setSession(r.session, picked);
@@ -705,7 +732,7 @@ function showDetail(zone: HTMLElement, raw: Partial<Session> & { actions?: Actio
   let feed = $('.ss-feed', zone);
   const feedId = agent ? `${s.id}/${agent.id}` : s.id;
   if (!feed || feed.dataset.id !== feedId) {
-    zone.innerHTML = `<div class="ss-top"></div><div class="ss-thread"><div class="ss-feed" role="log" aria-label="Fil de la session" tabindex="0"></div><button class="ss-jump" data-ag="end" hidden>${icon('chevron')}Nouvelles étapes</button></div>`;
+    zone.innerHTML = `<div class="ss-top"></div><div class="ss-pulse"></div><div class="ss-thread"><div class="ss-feed" role="log" aria-label="Fil de la session" tabindex="0"></div><button class="ss-jump" data-ag="end" hidden>${icon('chevron')}Nouvelles étapes</button></div>`;
     const f = need('.ss-feed', zone), jump = need('.ss-jump', zone);
     f.dataset.id = feedId;
     f.addEventListener('scroll', () => { if (atEnd(f)) jump.hidden = true; }, { passive: true });
@@ -724,6 +751,9 @@ function showDetail(zone: HTMLElement, raw: Partial<Session> & { actions?: Actio
     selTitle = nameOf(named); notify();
     if (cur && wantsName(named, working)) void nameSession(cur.p, named, s.actions);
   }
+  // Tableau de bord en direct (pulse.ts) : mis à jour en place à chaque relecture, avant le fil.
+  const pulseBox = $('.ss-pulse', zone);
+  if (pulseBox) paintPulse(pulseBox, { ...s, working, short: f => short(f, root) });
   const first = !feed.children.length, end = atEnd(feed);
   // Messages en attente restés en plan : le dernier tour s'est terminé autrement que normalement (arrêt, erreur).
   const latest = own.reduce<AgentRun | undefined>((a, r) => !a || ms(r.started) > ms(a.started) ? r : a, undefined);
@@ -1332,7 +1362,7 @@ export function mount(box: HTMLElement, p: Project, folder: string | null): void
   if (!at) { box.innerHTML = `<div class="ag-empty">${icon('terminal')}<h3>Claude Code tourne sur ton Mac</h3><p>Ouvre ce projet dans l’app Studio pour Mac. Pour le piloter d’ici, lie cet appareil au Mac (Réglages → Appareils) et autorise-le, sur le Mac, à piloter Claude Code.</p></div>`; return; }
   remote = at.kind === 'remote' ? at.name : '';
   if (remote && !folder) { void bridge.call('project', 'info', { project: p.id }, 15000).then(r => mount(box, p, typeof r.path === 'string' ? r.path : '')); box.innerHTML = '<p class="hm-empty">Connexion au Mac…</p>'; return; }
-  if (!folder) { box.innerHTML = `<div class="ag-empty">${icon('folder')}<h3>Choisis le dossier du projet</h3><p>Claude Code travaille dans le dépôt du projet sur ce Mac, toujours dans une copie isolée quand il modifie quelque chose.</p><button class="btn btn-primary" data-pj="pick">Choisir le dossier</button></div>`; return; }
+  if (!folder) { box.innerHTML = `<div class="ag-empty">${icon('folder')}<h3>Choisis le dossier mère du projet</h3><p>Claude Code travaille dans les dépôts du projet sur ce Mac, toujours dans une copie isolée quand il modifie quelque chose. Ils sont rangés dans le dossier mère ; ceux qui manquent s’y clonent depuis l’onglet Code.</p><button class="btn btn-primary" data-pj="home">Choisir le dossier mère</button></div>`; return; }
   // État des copies : le dernier connu s'affiche aussitôt ; GitHub dit tout de suite quelles PR sont fusionnées.
   restoreTrees(p.id); treesSoon = false;
   shell(box, p);

@@ -17,29 +17,85 @@ final class ProjectFolders {
     /// Identifiant de projet : celui d'une note (UUID ou hexadécimal), rien d'autre.
     private func valid(_ id: String) -> Bool { !id.isEmpty && id.count <= 64 && id.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" } }
 
+    /// Dossier du dépôt principal : celui choisi, sinon son clone retrouvé dans le dossier mère du projet.
     func path(_ id: String) -> String? {
-        guard valid(id), let p = folders[id], FileManager.default.fileExists(atPath: p) else { return nil }
+        guard valid(id) else { return nil }
+        if let p = folders[id], FileManager.default.fileExists(atPath: p) { return p }
+        guard let h = home(id), let main = repos(id).first else { return nil }
+        memoLock.lock(); let missed = misses[id].map { Date().timeIntervalSince($0) < 30 } ?? false; memoLock.unlock()
+        if missed { return nil }
+        guard let p = findClone(main.name, in: h, except: nil) else {
+            memoLock.lock(); misses[id] = Date(); memoLock.unlock(); return nil
+        }
+        var f = folders; f[id] = p; folders = f
         return p
     }
 
-    func pick(_ id: String, done: @escaping (String?) -> Void) {
-        guard valid(id) else { return done(nil) }
+    // MARK: Dossier mère
+    // Le dossier qui réunit les dépôts du projet (ex. ~/Code/MonProjet/{app,site,api}) : on y cherche les clones,
+    // et on y clone ceux qui manquent. Sans dossier mère choisi, c'est le parent du dossier du dépôt principal.
+    private let homesKey = "studio.projectHomes"
+    private var homes: [String: String] {
+        get { UserDefaults.standard.dictionary(forKey: homesKey) as? [String: String] ?? [:] }
+        set { UserDefaults.standard.set(newValue, forKey: homesKey) }
+    }
+    func home(_ id: String) -> String? {
+        guard valid(id), let h = homes[id] else { return nil }
+        var isDir: ObjCBool = false
+        return FileManager.default.fileExists(atPath: h, isDirectory: &isDir) && isDir.boolValue ? h : nil
+    }
+
+    private func panel(_ message: String, at dir: String?, done: @escaping (URL?) -> Void) {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
+        panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
         panel.prompt = "Choisir ce dossier"
-        panel.message = "Dossier du projet sur ce Mac (souvent le dépôt Git)"
-        if let p = path(id) { panel.directoryURL = URL(fileURLWithPath: p) }
-        panel.begin { r in
-            guard r == .OK, let url = panel.url else { return done(nil) }
+        panel.message = message
+        if let d = dir { panel.directoryURL = URL(fileURLWithPath: d) }
+        panel.begin { r in done(r == .OK ? panel.url : nil) }
+    }
+
+    /// Dossier du dépôt principal, choisi directement (un clone existant).
+    func pick(_ id: String, done: @escaping (String?) -> Void) {
+        guard valid(id) else { return done(nil) }
+        panel("Clone du dépôt principal du projet sur ce Mac", at: path(id) ?? home(id)) { url in
+            guard let url = url else { return done(nil) }
             var f = self.folders; f[id] = url.path; self.folders = f
             self.forgetMemo(id)
             done(url.path)
         }
     }
 
-    func forget(_ id: String) { var f = folders; f.removeValue(forKey: id); folders = f; forgetMemo(id) }
+    /// Dossier mère du projet. Un dossier qui est lui-même un dépôt Git est pris pour le dépôt principal
+    /// (cloner dedans mélangerait les dépôts) : son parent sert alors de dossier mère.
+    func pickHome(_ id: String, done: @escaping ([String: Any]) -> Void) {
+        guard valid(id) else { return done(["ok": false, "message": "Projet invalide."]) }
+        panel("Dossier mère du projet : ses dépôts y sont rangés, ceux qui manquent y seront clonés", at: home(id) ?? shelf(id)) { url in
+            guard let url = url else { return done(["ok": false, "cancelled": true]) }
+            DispatchQueue.global(qos: .userInitiated).async {
+                let p = url.path
+                var f = self.folders, h = self.homes
+                if FileManager.default.fileExists(atPath: p + "/.git") {
+                    f[id] = p; h.removeValue(forKey: id)
+                    self.folders = f; self.homes = h; self.forgetMemo(id)
+                    return done(["ok": true, "path": p, "repo": true])
+                }
+                h[id] = p; self.homes = h
+                // Le dépôt principal choisi avant reste s'il est rangé dans ce dossier ; sinon on l'y cherche.
+                if let cur = f[id], !(cur + "/").hasPrefix(p + "/") { f.removeValue(forKey: id); self.folders = f }
+                self.forgetMemo(id)
+                done(["ok": true, "home": p, "path": self.path(id) ?? NSNull()])
+            }
+        }
+    }
+
+    func forget(_ id: String) {
+        var f = folders; f.removeValue(forKey: id); folders = f
+        var h = homes; h.removeValue(forKey: id); homes = h
+        forgetMemo(id)
+    }
 
     // MARK: Plusieurs dépôts par projet
     // Le dossier choisi est celui d'un dépôt (souvent le principal). Les autres dépôts du projet sont retrouvés seuls
@@ -86,29 +142,35 @@ final class ProjectFolders {
         return String(url[m]).replacingOccurrences(of: #"^github\.com[:/]"#, with: "", options: .regularExpression).replacingOccurrences(of: ".git", with: "")
     }
     private func isRepoOf(_ dir: String, _ repo: String) -> Bool { remote(dir)?.lowercased() == repo.lowercased() }
-    /// Dossier où chercher (et cloner) les autres dépôts : le parent du dossier du projet.
-    private func shelf(_ id: String) -> String? { path(id).map { ($0 as NSString).deletingLastPathComponent } }
-
-    /// Dossier local d'un dépôt du projet : le dossier du projet s'il en est le clone, celui retenu avant,
-    /// sinon un clone trouvé à côté (même nom d'abord, puis tout dossier voisin dont le remote correspond).
-    func repoPath(_ id: String, _ repo: String) -> String? {
-        guard Self.validRepo(repo), let main = path(id) else { return nil }
-        if isRepoOf(main, repo) { return main }
+    /// Dossier où chercher (et cloner) les dépôts : le dossier mère, sinon le parent du dossier du dépôt principal.
+    func shelf(_ id: String) -> String? {
+        home(id) ?? folders[id].flatMap { FileManager.default.fileExists(atPath: $0) ? ($0 as NSString).deletingLastPathComponent : nil }
+    }
+    private func isMain(_ id: String, _ repo: String) -> Bool { repos(id).first?.name.lowercased() == repo.lowercased() }
+    /// Un clone de `repo` rangé dans `parent` : même nom d'abord, puis tout dossier dont le remote correspond.
+    private func findClone(_ repo: String, in parent: String, except: String?) -> String? {
         let fm = FileManager.default
-        if let p = repoFolders[id]?[repo.lowercased()], fm.fileExists(atPath: p + "/.git"), isRepoOf(p, repo) { return p }
-        guard let parent = shelf(id) else { return nil }
-        let short = String(repo.split(separator: "/").last ?? "")
+        let short = String(repo.split(separator: "/").last ?? "").lowercased()
         let all = ((try? fm.contentsOfDirectory(atPath: parent)) ?? []).filter { !$0.hasPrefix(".") }.prefix(300)
-        let same = all.filter { $0.lowercased() == short.lowercased() }
-        for n in same + all.filter({ $0.lowercased() != short.lowercased() }) {
+        for n in all.filter({ $0.lowercased() == short }) + all.filter({ $0.lowercased() != short }) {
             let p = parent + "/" + n
-            guard p != main, fm.fileExists(atPath: p + "/.git"), isRepoOf(p, repo) else { continue }
-            storeRepoFolder(id, repo, p); return p
+            if p != except, fm.fileExists(atPath: p + "/.git"), isRepoOf(p, repo) { return p }
         }
         return nil
     }
+
+    /// Dossier local d'un dépôt du projet : le dossier du projet s'il en est le clone, celui retenu avant,
+    /// sinon un clone trouvé dans le dossier mère.
+    func repoPath(_ id: String, _ repo: String) -> String? {
+        guard Self.validRepo(repo) else { return nil }
+        let main = path(id)
+        if let m = main, isRepoOf(m, repo) { return m }
+        if let p = repoFolders[id]?[repo.lowercased()], FileManager.default.fileExists(atPath: p + "/.git"), isRepoOf(p, repo) { return p }
+        guard let parent = shelf(id), let p = findClone(repo, in: parent, except: main) else { return nil }
+        storeRepoFolder(id, repo, p); return p
+    }
     /// Autres dépôts du projet (hors celui du dossier du projet), trouvés sur ce Mac ou non.
-    /// Gardé 30 s : la liste des copies est relue souvent, et chercher un dépôt absent parcourt tout le dossier parent.
+    /// Gardé 30 s : la liste des copies est relue souvent, et chercher un dépôt absent parcourt tout le dossier mère.
     func otherRepos(_ id: String) -> (found: [(repo: Repo, dir: String)], missing: [Repo]) {
         memoLock.lock()
         if let m = memo[id], Date().timeIntervalSince(m.at) < 30 { memoLock.unlock(); return (m.found, m.missing) }
@@ -122,37 +184,62 @@ final class ProjectFolders {
         return (found, missing)
     }
     private var memo: [String: (at: Date, found: [(repo: Repo, dir: String)], missing: [Repo])] = [:]
+    private var misses: [String: Date] = [:]
     private let memoLock = NSLock()
-    private func forgetMemo(_ id: String) { memoLock.lock(); memo[id] = nil; memoLock.unlock() }
-    /// État de chaque dépôt sur ce Mac, pour la page du projet.
+    private func forgetMemo(_ id: String) { memoLock.lock(); memo[id] = nil; misses[id] = nil; memoLock.unlock() }
+    private func tilde(_ p: String) -> String { p.replacingOccurrences(of: NSHomeDirectory(), with: "~") }
+    /// État de chaque dépôt sur ce Mac, pour la page du projet (aussi sans dépôt principal, dès qu'un dossier mère existe).
     func repoList(_ id: String) -> [String: Any] {
-        guard let main = path(id) else { return ["ok": true, "repos": [], "folder": false] }
-        let others = otherRepos(id), tilde = { (p: String) in p.replacingOccurrences(of: NSHomeDirectory(), with: "~") }
+        let main = path(id), shelfDir = shelf(id)
+        var r: [String: Any] = ["ok": true, "folder": main != nil, "home": shelfDir.map { self.tilde($0) } ?? NSNull(), "homeSet": home(id) != nil]
+        guard main != nil || shelfDir != nil else { r["repos"] = []; return r }
         var list: [[String: Any]] = []
-        if let r = remote(main) { list.append(["name": r, "path": tilde(main), "main": true]) }
-        list += others.found.map { f -> [String: Any] in ["name": f.repo.name, "path": tilde(f.dir), "main": false] }
-        list += others.missing.map { r -> [String: Any] in ["name": r.name, "path": NSNull(), "main": false] }
-        return ["ok": true, "repos": list, "folder": true]
+        if let m = main, let rem = remote(m) { list.append(["name": rem, "path": tilde(m), "main": true]) }
+        if main != nil {
+            let others = otherRepos(id)
+            list += others.found.map { f -> [String: Any] in ["name": f.repo.name, "path": tilde(f.dir), "main": false] }
+            list += others.missing.map { x -> [String: Any] in ["name": x.name, "path": NSNull(), "main": false] }
+        } else {
+            list += repos(id).map { x -> [String: Any] in
+                let d = repoPath(id, x.name)
+                return ["name": x.name, "path": d.map { self.tilde($0) } ?? NSNull(), "main": isMain(id, x.name)]
+            }
+        }
+        r["repos"] = list
+        return r
+    }
+    /// Retient le clone choisi ; celui du dépôt principal devient le dossier du projet.
+    private func adopt(_ id: String, _ repo: String, _ dir: String) {
+        if isMain(id, repo), path(id).map({ !isRepoOf($0, repo) }) ?? true {
+            var f = folders; f[id] = dir; folders = f
+        }
+        storeRepoFolder(id, repo, dir)
     }
     func pickRepo(_ id: String, repo: String, done: @escaping ([String: Any]) -> Void) {
         guard valid(id), Self.validRepo(repo) else { return done(["ok": false, "message": "Dépôt invalide."]) }
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false
-        panel.prompt = "Choisir ce dossier"
-        panel.message = "Clone de \(repo) sur ce Mac"
-        if let s = shelf(id) { panel.directoryURL = URL(fileURLWithPath: s) }
-        panel.begin { r in
-            guard r == .OK, let url = panel.url else { return done(["ok": false, "cancelled": true]) }
+        panel("Clone de \(repo) sur ce Mac", at: shelf(id)) { url in
+            guard let url = url else { return done(["ok": false, "cancelled": true]) }
             DispatchQueue.global(qos: .userInitiated).async {
                 guard self.isRepoOf(url.path, repo) else { return done(["ok": false, "message": "Ce dossier n'est pas un clone de \(repo) (remote origin différent)."]) }
-                self.storeRepoFolder(id, repo, url.path); done(["ok": true])
+                self.adopt(id, repo, url.path); done(["ok": true])
             }
         }
     }
-    /// Clone un dépôt du projet à côté du dossier du projet, avec les identifiants Git habituels de l'utilisateur.
-    func cloneRepo(_ id: String, repo: String) -> [String: Any] {
-        guard Self.validRepo(repo), let parent = shelf(id) else { return ["ok": false, "message": "Choisis d'abord le dossier du projet sur ce Mac."] }
-        if let p = repoPath(id, repo) { return ["ok": true, "path": p] }
+    /// Clonage dans un dossier choisi pour l'occasion (le dossier mère par défaut). Sans dossier mère, celui-ci le devient.
+    func cloneRepoAsk(_ id: String, repo: String, done: @escaping ([String: Any]) -> Void) {
+        guard valid(id), Self.validRepo(repo) else { return done(["ok": false, "message": "Dépôt invalide."]) }
+        panel("Où cloner \(repo) ? Choisis le dossier qui le contiendra", at: shelf(id)) { url in
+            guard let url = url else { return done(["ok": false, "cancelled": true]) }
+            DispatchQueue.global(qos: .userInitiated).async {
+                if self.shelf(id) == nil { var h = self.homes; h[id] = url.path; self.homes = h; self.forgetMemo(id) }
+                done(self.cloneRepo(id, repo: repo, into: url.path))
+            }
+        }
+    }
+    /// Clone un dépôt du projet dans le dossier mère (ou `into`), avec les identifiants Git habituels de l'utilisateur.
+    func cloneRepo(_ id: String, repo: String, into: String? = nil) -> [String: Any] {
+        guard Self.validRepo(repo), let parent = into ?? shelf(id) else { return ["ok": false, "message": "Choisis d'abord le dossier mère du projet sur ce Mac."] }
+        if into == nil, let p = repoPath(id, repo) { return ["ok": true, "path": tilde(p)] }
         let short = String(repo.split(separator: "/").last ?? "depot")
         var dest = parent + "/" + short, n = 2
         while FileManager.default.fileExists(atPath: dest) { dest = parent + "/" + short + "-\(n)"; n += 1 }
@@ -161,8 +248,8 @@ final class ProjectFolders {
             let why = Self.gitError(r.err)
             return ["ok": false, "message": "Clonage impossible" + (why.isEmpty ? "." : " : \(why)") + " Dans le Terminal, « git clone https://github.com/\(repo).git » enregistre tes identifiants une fois pour toutes."]
         }
-        storeRepoFolder(id, repo, dest)
-        return ["ok": true, "path": dest.replacingOccurrences(of: NSHomeDirectory(), with: "~")]
+        adopt(id, repo, dest)
+        return ["ok": true, "path": tilde(dest)]
     }
     /// Copies sœurs d'une copie isolée : même nom, dans les autres dépôts du projet.
     func sisterCopies(_ id: String, _ name: String) -> [(repo: Repo, dir: String, wt: String)] {
@@ -733,8 +820,9 @@ final class ProjectFolders {
 
     /// État du dépôt : branche, avance/retard, fichiers modifiés, dépôt GitHub d'origine.
     func info(_ id: String) -> [String: Any] {
-        guard let dir = path(id) else { return ["ok": true, "path": NSNull()] }
-        var r: [String: Any] = ["ok": true, "path": dir, "name": (dir as NSString).lastPathComponent, "git": false]
+        let homeDir: Any = shelf(id).map { tilde($0) } ?? NSNull(), homeSet = home(id) != nil
+        guard let dir = path(id) else { return ["ok": true, "path": NSNull(), "home": homeDir, "homeSet": homeSet, "main": repos(id).first?.name ?? NSNull()] }
+        var r: [String: Any] = ["ok": true, "path": dir, "name": (dir as NSString).lastPathComponent, "git": false, "home": homeDir, "homeSet": homeSet]
         if let s = git(["status", "--porcelain=v1", "--branch"], in: dir) {
             let lines = s.split(separator: "\n").map(String.init)
             r["git"] = true

@@ -53,6 +53,38 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'agent-live-pulse', date: '2026-11-16', icon: 'bolt', hue: 'orange', mac: true,
+    title: 'Claude au travail, en direct',
+    lead: 'Au-dessus du fil, tu vois Claude avancer seconde par seconde.',
+    bits: [
+      ['search', 'Étapes', 'explore, modifie, vérifie, répond : l’étape en cours bat'],
+      ['plus', 'Compteurs vivants', 'lignes ajoutées et retirées, fichiers, commandes, tokens'],
+      ['pencil', 'Fichiers', 'chacun avec ses +/−, ceux qui bougent s’allument'],
+    ],
+    where: ['Projets', 'un projet', 'Agents', 'une conversation'],
+    visual: { kind: 'flow', steps: [['Explore', 'blue', 'search'], ['Modifie', 'green', 'pencil'], ['Vérifie', 'amber', 'terminal'], ['Répond', 'pink', 'sparkle']] },
+    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
+  { id: 'agent-auto-model', date: '2026-11-16', icon: 'sparkle', hue: 'violet', mac: true,
+    title: 'Le bon modèle à chaque consigne',
+    lead: 'Avec « Auto », chaque message envoyé à Claude Code prend le modèle le plus économe qui suffit.',
+    bits: [
+      ['sparkle', 'À chaque envoi', 'nouvelle consigne comme réponse dans une conversation'],
+      ['bolt', 'Économe', 'Haiku pour un petit changement, Sonnet pour le courant, Opus pour une refonte'],
+      ['pencil', 'Champ sans limite', 'il grandit avec ton texte : tout reste visible'],
+    ],
+    where: ['Projets', 'un projet', 'Agents'],
+    visual: { kind: 'chips', chips: [['Haiku', 'green', 'bolt'], ['Sonnet', 'blue', 'sparkle'], ['Opus', 'violet', 'sparkle']] },
+    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
+  { id: 'project-home', date: '2026-11-16', icon: 'folder', hue: 'blue', mac: true,
+    title: 'Le dossier mère du projet',
+    lead: 'Tu choisis le dossier qui réunit les dépôts du projet, et où cloner ceux qui manquent.',
+    bits: [
+      ['folder', 'Retrouvés seuls', 'les dépôts déjà rangés dans le dossier mère'],
+      ['download', 'Clonés au bon endroit', 'dans le dossier mère, ou ailleurs au choix'],
+    ],
+    where: ['Projets', 'un projet', 'Code'],
+    visual: { kind: 'flow', steps: [['Dossier mère', 'blue', 'folder'], ['Dépôts clonés', 'green', 'download']] },
+    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
   { id: 'agent-multi-repo', date: '2026-11-16', icon: 'folder', hue: 'blue', mac: true,
     title: 'Un agent, tous tes dépôts',
     lead: 'Claude Code travaille sur tous les dépôts du projet à la fois : l’app, son site, son API.',
