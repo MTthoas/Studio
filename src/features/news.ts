@@ -53,6 +53,17 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'github-actions', date: '2026-11-15', icon: 'bolt', hue: 'green',
+    title: 'GitHub Actions, et GitHub plus rapide',
+    lead: 'L’état de chaque workflow dans l’onglet Flux, et beaucoup moins d’attente sur les projets.',
+    bits: [
+      ['bolt', 'Un workflow par ligne', 'dernière exécution, branche, déclencheur, durée et bande des précédentes'],
+      ['refresh', 'Suivi en direct', 'relu toutes les 30 s tant qu’une exécution tourne'],
+      ['check', 'Requêtes partagées', 'une même donnée n’est demandée qu’une fois, puis seulement revalidée'],
+    ],
+    where: ['Projets', 'un projet', 'Flux'],
+    visual: { kind: 'stack', rows: [[['Build', 'green', 'check'], 'main · réussie · 2 min 14'], [['Pages', 'amber', 'bolt'], 'main · en cours'], [['Tests', 'red', 'bolt'], 'feat/api · en échec']] },
+    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
   { id: 'server-keys-ext', date: '2026-11-15', icon: 'server', hue: 'teal',
     title: 'Ton serveur, clé et extensions',
     lead: 'Une clé SSH gardée chiffrée par Studio, et Docker ou Kubernetes pilotés depuis l’onglet Serveur.',
