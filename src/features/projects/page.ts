@@ -37,25 +37,30 @@ const titleOf = (n: Note) => n.title.trim() || 'Sans titre';
 const go = (id: string | null, tab?: string) => app.setView({ type: 'projets', project: id, ...(tab ? { tab } : {}) });
 
 // ---------- Dossier local (app Mac) ----------
-interface Folder { path: string | null; name?: string; git?: boolean; branch?: string; ahead?: number; behind?: number; changes?: number; remote?: string }
+/** `home` : dossier mère du projet (où sont rangés et clonés ses dépôts), `homeSet` s'il a été choisi
+ *  (sinon c'est le parent du dépôt principal). */
+interface Folder { path: string | null; name?: string; git?: boolean; branch?: string; ahead?: number; behind?: number; changes?: number; remote?: string; home?: string | null; homeSet?: boolean }
 const folders = new Map<string, Folder>();
 async function folderOf(p: Project, fresh = false): Promise<Folder | null> {
   if (!bridge.local()) return null;
   if (!fresh && folders.has(p.id)) return folders.get(p.id) ?? null;
-  const r = await native.call('project', 'info', { project: p.id }, 10000);
+  const r = await native.call('project', 'info', { project: p.id, repos: p.stack }, 10000);
   const f: Folder = { path: typeof r.path === 'string' ? r.path : null, ...(r as Partial<Folder>) };
   folders.set(p.id, f);
   return f;
 }
+const homeLine = (f: Folder) => f.home ? `<div class="pj-folder pj-home">${icon('folder')}<span class="muted">Dossier mère</span><code title="Ses dépôts y sont rangés, ceux qui manquent y sont clonés">${esc(f.home)}</code>${f.homeSet ? '' : '<span class="muted">(parent du dépôt principal)</span>'}<button class="link-btn" data-pj="home">${f.homeSet ? 'Changer' : 'Choisir le dossier mère'}</button></div>` : '';
 function folderHTML(p: Project, f: Folder | null): string {
   if (!bridge.local()) { const at = bridge.where(); return `<p class="pj-folder muted">${icon(at ? 'devices' : 'folder')}${at ? `Dossier et VS Code sur <strong>${esc(at.kind === 'remote' ? at.name : 'le Mac')}</strong> · Claude Code se pilote d’ici` : 'Le dossier du projet et VS Code s’ouvrent depuis l’app Studio pour Mac.'}</p>`; }
   if (!f) return `<p class="pj-folder muted">${icon('folder')}Lecture du dossier…</p>`;
-  if (!f.path) return `<div class="pj-folder">${icon('folder')}<span>Aucun dossier choisi sur ce Mac.</span><button class="btn btn-primary" data-pj="pick">Choisir le dossier</button></div>`;
+  const main = p.stack[0]?.name;
+  if (!f.path && f.home) return `${homeLine(f)}<div class="pj-folder">${icon('download')}<span>${main ? `Le dépôt principal <b>${esc(main)}</b> n’est pas encore dans ce dossier.` : 'Associe un dépôt GitHub au projet pour le cloner ici.'}</span>${main ? `<span class="pj-open"><button class="btn btn-primary" data-pj="repo-clone" data-repo="${esc(main)}">${icon('download')}Le cloner ici</button><button class="btn" data-pj="repo-clone" data-repo="${esc(main)}" data-choose="1">Cloner ailleurs…</button><button class="btn" data-pj="pick">J’ai déjà un clone</button></span>` : ''}</div>`;
+  if (!f.path) return `<div class="pj-folder">${icon('folder')}<span>Choisis le <b>dossier mère</b> du projet : ses dépôts y sont rangés, ceux qui manquent y seront clonés.</span><span class="pj-open"><button class="btn btn-primary" data-pj="home">Choisir le dossier mère</button><button class="btn" data-pj="pick">Choisir directement le dépôt</button></span></div>`;
   const git = f.git ? `<span class="pj-git">${icon('pr')}${esc(f.branch ?? '?')}${f.changes ? ` · <b>${f.changes} modif.</b>` : ' · à jour'}${f.ahead ? ` · ↑${f.ahead}` : ''}${f.behind ? ` · ↓${f.behind}` : ''}</span>` : '<span class="pj-git muted">pas un dépôt Git</span>';
   const own = model.repoNamed(p, f.remote);
   const hint = own ? model.roleTag(own.role, 'sm') : f.remote ? `<button class="link-btn" data-pj="link-repo" data-repo="${esc(f.remote)}">Associer ${esc(f.remote)}</button>` : '';
-  return `<div class="pj-folder">${icon('folder')}<code title="${esc(f.path)}">${esc(f.path.replace(/^\/Users\/[^/]+/, '~'))}</code>${git}${hint}
-    <span class="pj-open"><button class="btn" data-pj="vscode">${icon('code')}VS Code</button><button class="btn" data-pj="finder">${icon('folder')}Finder</button><button class="btn" data-pj="terminal">${icon('terminal')}Terminal</button><button class="icon-btn" data-pj="pick" title="Changer de dossier" aria-label="Changer de dossier">${icon('more')}</button></span></div>`;
+  return `${homeLine(f)}<div class="pj-folder">${icon('folder')}<code title="${esc(f.path)}">${esc(f.path.replace(/^\/Users\/[^/]+/, '~'))}</code>${git}${hint}
+    <span class="pj-open"><button class="btn" data-pj="vscode">${icon('code')}VS Code</button><button class="btn" data-pj="finder">${icon('folder')}Finder</button><button class="btn" data-pj="terminal">${icon('terminal')}Terminal</button><button class="icon-btn" data-pj="pick" title="Changer le dossier du dépôt principal" aria-label="Changer le dossier du dépôt principal">${icon('more')}</button></span></div>`;
 }
 
 // ---------- Liste ----------
@@ -337,7 +342,7 @@ const CI_TXT: Record<string, [string, string]> = { success: ['green', 'CI verte'
 async function repoStates(root: HTMLElement, p: Project, f: Folder | null): Promise<void> {
   const here = model.repoNamed(p, f?.remote);
   if (here) { const b = $(`[data-rp="${CSS.escape(here.name)}"] [data-rp-here]`, root); if (b) b.hidden = false; }
-  if (f && p.stack.length > 1) void localRepos(root, p);
+  if (f && (f.path || f.home) && (p.stack.length > 1 || !f.path)) void localRepos(root, p);
   if (!github.connected()) return;
   await Promise.all(p.stack.map(async r => {
     const box = $(`[data-rp="${CSS.escape(r.name)}"] [data-rp-st]`, root); if (!box) return;
@@ -369,7 +374,8 @@ async function localRepos(root: HTMLElement, p: Project): Promise<void> {
     }
     if (box) {
       box.hidden = false;
-      box.innerHTML = `<span class="muted">Pas sur ce Mac : les agents ne le voient pas.</span><button class="link-btn" data-pj="repo-clone" data-repo="${esc(x.name)}">${icon('download')}Cloner</button><button class="link-btn" data-pj="repo-pick" data-repo="${esc(x.name)}">${icon('folder')}Choisir son dossier</button>`;
+      const where = typeof r.home === 'string' ? ` dans ${esc(r.home)}` : '';
+      box.innerHTML = `<span class="muted">Pas sur ce Mac : les agents ne le voient pas.</span><button class="link-btn" data-pj="repo-clone" data-repo="${esc(x.name)}" title="Cloner${where}">${icon('download')}Cloner${where}</button><button class="link-btn" data-pj="repo-clone" data-repo="${esc(x.name)}" data-choose="1">Cloner ailleurs…</button><button class="link-btn" data-pj="repo-pick" data-repo="${esc(x.name)}">${icon('folder')}Choisir son dossier</button>`;
     }
   }
 }
@@ -458,7 +464,7 @@ export async function createDialog(): Promise<void> {
     try {
       const p = await model.createProject({ name, repos, linear: val('linear') || null, description: val('desc') });
       m.close();
-      if (native.available()) { const r = await native.call('project', 'pick', { project: p.id }, 600000); if (r.ok) folders.delete(p.id); }
+      if (native.available() && document.documentElement.dataset.native === 'mac') { const r = await native.call('project', 'home', { project: p.id, repos: p.stack }, 600000); if (r.ok) folders.delete(p.id); }
       await go(p.id);
       toast(`Projet « ${p.name} » créé`);
     } catch (x) { need('.lock-err', m.node).textContent = errMsg(x); }
@@ -578,17 +584,27 @@ export function mount(main: HTMLElement): void {
     if (act === 'claude') { const id = p.id; void import('../chat.ts').then(m => m.startIn(id)); return; }
     if (act === 'kanban') { todo.showProject(p.id); await app.setView({ type: 'tasks' }); }
     if (act === 'new-note') { const n = await store.createNote({ title: '', body: `\n\n#${p.tag}` }); app.openNote(n.id); }
-    if (act === 'pick') { const r = await native.call('project', 'pick', { project: p.id }, 600000); if (r.ok) { folders.delete(p.id); void hydrate(root, p, tab); } }
+    if (act === 'pick' || act === 'home') {
+      const r = await native.call('project', act, { project: p.id, repos: p.stack }, 600000);
+      if (r.ok) {
+        folders.delete(p.id);
+        if (act === 'home') toast(r.repo ? 'Ce dossier est un dépôt Git : il devient le dépôt principal, son parent sert de dossier mère' : typeof r.path === 'string' ? 'Dossier mère choisi · dépôt principal retrouvé dedans' : 'Dossier mère choisi · les dépôts manquants y seront clonés');
+        void hydrate(root, p, tab); void localRepos(root, p);
+      } else if (r.message) toast(r.message);
+    }
     if (act === 'vscode' || act === 'finder' || act === 'terminal') { const r = await native.call('project', 'open', { project: p.id, app: act }, 15000); if (!r.ok) toast(r.message ?? 'Impossible d’ouvrir.'); }
     if (act === 'link-repo' && b.dataset.repo) { const role = model.guessRole(b.dataset.repo, !p.stack.length); await model.setRepos(p, [...p.stack, { name: b.dataset.repo, role }]); toast(`${b.dataset.repo} associé au projet · ${model.ROLES[role].label}`); }
     if (act === 'repo-add') addRepoDialog(p);
     if (act === 'repo-menu' && b.dataset.repo) repoMenu(p, b, b.dataset.repo);
     if ((act === 'repo-clone' || act === 'repo-pick') && b.dataset.repo) {
-      const repo = b.dataset.repo, box = b.closest<HTMLElement>('[data-rp-local]');
-      if (act === 'repo-clone' && box) box.innerHTML = `<span class="spin"></span>Clonage de ${esc(repo)} à côté du dossier du projet…`;
-      const r = await native.call('project', act, { project: p.id, repo }, act === 'repo-clone' ? 620000 : 600000);
+      const repo = b.dataset.repo, choose = !!b.dataset.choose, box = b.closest<HTMLElement>('[data-rp-local], .pj-folder');
+      if (act === 'repo-clone' && box && !choose) box.innerHTML = `<span class="spin"></span>Clonage de ${esc(repo)} dans le dossier mère…`;
+      const r = await native.call('project', act, { project: p.id, repo, repos: p.stack, ...(choose ? { choose: true } : {}) }, act === 'repo-clone' ? 1220000 : 600000);
       if (r.ok) toast(act === 'repo-clone' ? `${repo} cloné${typeof r.path === 'string' ? ` dans ${r.path}` : ''} : les agents y travaillent aussi` : `${repo} retrouvé sur ce Mac`);
       else if (!r.cancelled) toast(r.message ?? 'Impossible.');
+      folders.delete(p.id);
+      const f = await folderOf(p);
+      fill(root, '.pj-folder-box', folderHTML(p, f));
       void localRepos(root, p);
     }
     if (act === 'review-working') await review.review(p, 'working');

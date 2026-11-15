@@ -490,7 +490,11 @@ final class Agents {
                     if b["type"] as? String == "tool_use", let name = b["name"] as? String {
                         let input = b["input"] as? [String: Any] ?? [:]
                         let detail = input["file_path"] as? String ?? input["path"] as? String ?? input["pattern"] as? String ?? input["command"] as? String ?? ""
-                        run.actions.append(["at": now, "kind": "tool:" + name, "text": String(detail.prefix(240))])
+                        // `add`/`del` en texte : `actions` ne porte que des chaînes (la page les relit par Number).
+                        var a = ["at": now, "kind": "tool:" + name, "text": String(detail.prefix(240))]
+                        let delta = ClaudeSessions.lineDelta(name, input)
+                        if delta.add > 0 { a["add"] = String(delta.add) }; if delta.del > 0 { a["del"] = String(delta.del) }
+                        run.actions.append(a)
                     }
                 }
                 if run.actions.count > 150 { run.actions.removeFirst(run.actions.count - 150) }

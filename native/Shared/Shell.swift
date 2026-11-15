@@ -115,9 +115,13 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
         #if os(macOS)
         let folders = ProjectFolders.shared
         let pid = body["project"] as? String ?? ""
+        if ["pick", "home", "info"].contains(action), let r = body["repos"] { folders.rememberRepos(pid, r) }
         switch action {
         case "pick":
             folders.pick(pid) { path in self.answer(["id": id, "ok": path != nil, "path": path ?? NSNull()]) }
+        case "home":
+            // Dossier mère du projet : on y cherche les dépôts et on y clone ceux qui manquent.
+            folders.pickHome(pid) { var r = $0; r["id"] = id; self.answer(r) }
         case "info":
             DispatchQueue.global(qos: .userInitiated).async { var r = folders.info(pid); r["id"] = id; self.answer(r) }
         case "open":
@@ -135,6 +139,7 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
             folders.pickRepo(pid, repo: body["repo"] as? String ?? "") { var r = $0; r["id"] = id; self.answer(r) }
         case "repo-clone":
             let repo = body["repo"] as? String ?? ""
+            if body["choose"] as? Bool == true { folders.cloneRepoAsk(pid, repo: repo) { var r = $0; r["id"] = id; self.answer(r) }; return }
             DispatchQueue.global(qos: .userInitiated).async { var r = folders.cloneRepo(pid, repo: repo); r["id"] = id; self.answer(r) }
         case "diff":
             let scope = body["scope"] as? String ?? "working"
