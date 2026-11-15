@@ -29,6 +29,8 @@ export const init = (shell: AppShell): void => {
     const c = $('#main .toolbar .crumb');
     if (c && app.view() === 'projets') c.outerHTML = trailHTML();
   });
+  // Serveurs du projet lus, ajoutés, retirés, ou autre serveur affiché : la barre latérale suit.
+  infra.onChange(() => app.renderSidebar());
 };
 
 const titleOf = (n: Note) => n.title.trim() || 'Sans titre';
@@ -456,7 +458,10 @@ export function toClaude(p: Project, what: { notes?: string[]; prompt?: string }
 /** Conversations Claude Code récentes d'un projet, pour la barre latérale. */
 export const sideSessions = (pid: string) => sessions.sideSessions(pid);
 /** Choisit la conversation à ouvrir dans l'onglet Claude Code du projet (`null` : la liste). */
-export const openSession = (pid: string, id: string | null, agent: string | null = null): void => sessions.select(id, pid, agent);
+export const sideServers = (pid: string) => infra.sideServers(pid);
+/** Choisit le serveur que l'onglet Serveur du projet affichera (clic dans la barre latérale). */
+export const openServer = (pid: string, id: string): void => { const p = model.byId(pid); if (p) infra.use(p, id); };
+export const openSession =(pid: string, id: string | null, agent: string | null = null): void => sessions.select(id, pid, agent);
 
 // ---------- Page ----------
 /** Fil d'Ariane : Projets › projet › onglet › conversation Claude Code › sous-agent, chaque niveau ramenant à sa page. */
