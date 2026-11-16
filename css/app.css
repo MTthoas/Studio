@@ -1870,7 +1870,11 @@ button.lv-chip:hover, .lv-chip.sel { color: var(--text); background: var(--btn);
 .ag-auto .ic { width: 12px; height: 12px; color: var(--c-orange); }
 .ag-auto b { color: var(--text); font-weight: 600; }
 .ag-compose textarea:focus { outline: none; }
-.ag-opts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px 10px 12px; }
+/* Deux colonnes : les réglages (`.ag-tools`) passent à la ligne entre eux, l'envoi (`.ag-go`) garde la sienne,
+   en bas à droite : il ne se retrouve jamais seul sur une ligne vide. */
+.ag-opts { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px 12px; padding: 8px 10px 10px 12px; }
+.ag-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; min-height: 32px; }
+@media (max-width: 520px) { .ag-opts { grid-template-columns: minmax(0, 1fr); } .ag-go { justify-self: end; } }
 .ag-seg { display: inline-flex; padding: 2px; border-radius: 8px; background: var(--btn); }
 .ag-seg label { cursor: pointer; }
 .ag-seg input { position: absolute; opacity: 0; pointer-events: none; }
@@ -1881,10 +1885,10 @@ button.lv-chip:hover, .lv-chip.sel { color: var(--text); background: var(--btn);
 .ag-check { display: inline-flex; align-items: center; gap: 6px; height: 30px; color: var(--text-2); font-size: var(--t-1); }
 .ag-check:has(input:disabled) { opacity: .45; }
 .ag-opts select.field { width: auto; max-width: 200px; height: 30px; margin: 0; padding: 0 28px 0 10px; font-size: var(--t-1); text-overflow: ellipsis; }
-.ag-hint { flex: 1; min-width: 160px; display: inline-flex; align-items: center; gap: 6px; color: var(--text-3); font-size: var(--t-1); }
+.ag-hint { flex: 1 1 220px; min-width: 0; display: inline-flex; align-items: center; gap: 6px; color: var(--text-3); font-size: var(--t-1); }
 .ag-hint .ic { flex: none; width: 13px; height: 13px; }
 /* Micro, Arrêter et Envoyer restent groupés à droite, même quand la barre passe à la ligne. */
-.ag-go { flex: none; margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+.ag-go { display: inline-flex; align-items: center; gap: 6px; }
 /* Envoyer : le bouton principal de l'app (`.btn-primary`, couleur du texte sur le fond), pas de vermillon. */
 .ag-opts .ag-send { flex: none; height: 32px; padding: 0 6px 0 11px; gap: 7px; border-radius: 6px; }
 .ag-opts .ag-send:focus-visible { outline: 2px solid color-mix(in srgb, var(--text) 30%, transparent); outline-offset: 2px; }
