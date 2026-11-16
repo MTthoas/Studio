@@ -192,6 +192,8 @@ final class ProjectFolders {
     private var memo: [String: (at: Date, found: [(repo: Repo, dir: String)], missing: [Repo])] = [:]
     private var misses: [String: Date] = [:]
     private let memoLock = NSLock()
+    /// Une seule création de copie mère à la fois (les agents d'un groupe partent l'un après l'autre, mais par sécurité).
+    private let groupLock = NSLock()
     private func forgetMemo(_ id: String) { memoLock.lock(); memo[id] = nil; misses[id] = nil; memoLock.unlock() }
     private func tilde(_ p: String) -> String { p.replacingOccurrences(of: NSHomeDirectory(), with: "~") }
     /// État de chaque dépôt sur ce Mac, pour la page du projet (aussi sans dépôt principal, dès qu'un dossier mère existe).
@@ -667,6 +669,83 @@ final class ProjectFolders {
         // --no-track : la branche de l'agent ne « suit » pas la branche principale (sinon elle paraîtrait déjà poussée).
         let r = gitRun(["worktree", "add", "-q", "--no-track", "-b", "worktree-" + name, wt, base], in: dir, timeout: 60)
         return r.ok ? (wt, "") : (nil, "Copie isolée impossible : \(Self.gitError(r.err))")
+    }
+
+    // ---------- Groupes d'agents : une branche mère, une sous-branche par agent ----------
+    // « 3× … » lance trois agents sur la même consigne. Le premier crée la copie mère `<groupe>` (branche
+    // worktree-<groupe>, depuis la dernière version de la branche principale) ; chaque agent travaille dans sa copie
+    // `<groupe>-aN`, partie de la branche mère. On compare, puis `mergeChild` rapatrie le travail retenu dans la mère,
+    // qui se publie comme n'importe quelle copie (PR vers la branche principale).
+
+    /// Nom de groupe valable : celui d'une copie Studio, assez court pour recevoir « -aN ».
+    static func validGroup(_ g: String) -> Bool { validWorktree(g) && g.hasPrefix("studio-") && g.count <= 60 }
+    /// Groupe et numéro d'agent d'une copie `<groupe>-aN`, ou nil.
+    static func groupOf(_ name: String) -> (group: String, slot: Int)? {
+        guard let r = name.range(of: #"-a[1-8]$"#, options: .regularExpression), let n = Int(name[r].dropFirst(2)) else { return nil }
+        let g = String(name[..<r.lowerBound])
+        return validGroup(g) ? (g, n) : nil
+    }
+
+    /// Copie isolée partant d'une branche locale donnée (la branche mère d'un groupe).
+    func createWorktree(_ dir: String, name: String, from ref: String) -> (path: String?, error: String) {
+        guard Self.validWorktree(name), Self.validBranch(ref) else { return (nil, "Nom de copie invalide.") }
+        excludeWorktrees(dir)
+        let wt = dir + "/.claude/worktrees/" + name
+        let r = gitRun(["worktree", "add", "-q", "--no-track", "-b", "worktree-" + name, wt, ref], in: dir, timeout: 60)
+        return r.ok ? (wt, "") : (nil, "Copie isolée impossible : \(Self.gitError(r.err))")
+    }
+
+    /// Branche de la copie mère d'un groupe, créée au premier agent depuis la dernière version de la branche principale.
+    func groupMother(_ dir: String, group: String) -> (branch: String?, error: String) {
+        guard Self.validGroup(group) else { return (nil, "Nom de groupe invalide.") }
+        groupLock.lock(); defer { groupLock.unlock() }
+        let wt = dir + "/.claude/worktrees/" + group
+        if !FileManager.default.fileExists(atPath: wt) {
+            let made = createWorktree(dir, name: group)
+            guard made.path != nil else { return (nil, made.error) }
+        }
+        guard let b = currentBranch(wt) else { return (nil, "Branche mère introuvable.") }
+        return (b, "")
+    }
+
+    /// Rapatrie le travail de l'agent `child` (`<groupe>-aN`) dans la branche mère du groupe, dans chaque dépôt du projet
+    /// où l'agent a une copie. Ses changements en cours y sont d'abord commités. Fusion --no-ff ; en cas de conflit, la
+    /// fusion est annulée et les fichiers en cause sont renvoyés (rien n'est laissé à moitié fusionné).
+    func mergeChild(_ id: String, child: String) -> [String: Any] {
+        guard let (group, slot) = Self.groupOf(child) else { return ["ok": false, "message": "Cette copie n'appartient pas à un groupe d'agents."] }
+        guard let main = path(id) else { return ["ok": false, "message": "Dossier du projet introuvable."] }
+        let fm = FileManager.default
+        var merged = 0, nothing = 0
+        for d in [main] + otherRepos(id).found.map(\.dir) {
+            let cw = d + "/.claude/worktrees/" + child, mw = d + "/.claude/worktrees/" + group
+            guard fm.fileExists(atPath: cw) else { continue }
+            let left = conflictFiles(cw)
+            if !left.isEmpty { return ["ok": false, "conflicts": left, "message": "Conflits non résolus dans la copie de l'agent : \(left.joined(separator: ", "))."] }
+            if !(git(["status", "--porcelain", "--untracked-files=all"], in: cw) ?? "").isEmpty {
+                let add = gitRun(["add", "-A"], in: cw, timeout: 30)
+                let commit = add.ok ? gitRun(["commit", "-q", "-m", "Agent \(slot) : travail retenu"], in: cw, timeout: 30) : add
+                guard commit.ok else { return ["ok": false, "message": "Le commit du travail de l'agent a échoué : \(Self.gitError(commit.err))"] }
+            }
+            guard let cb = currentBranch(cw) else { return ["ok": false, "message": "Branche de l'agent introuvable."] }
+            if !fm.fileExists(atPath: mw) {
+                let made = createWorktree(d, name: group)
+                guard made.path != nil else { return ["ok": false, "message": made.error] }
+            }
+            if gitRun(["merge-base", "--is-ancestor", cb, "HEAD"], in: mw).ok { nothing += 1; continue }
+            if !(git(["status", "--porcelain", "--untracked-files=all"], in: mw) ?? "").isEmpty {
+                return ["ok": false, "message": "La branche mère a des changements non commités : publie-les ou supprime-les d'abord."]
+            }
+            let r = gitRun(["merge", "--no-ff", "--no-edit", "-m", "Fusion du travail de l'agent \(slot)", cb], in: mw, timeout: 60)
+            if !r.ok {
+                let files = (git(["diff", "--name-only", "--diff-filter=U"], in: mw) ?? "").split(separator: "\n").map(String.init)
+                _ = gitRun(["merge", "--abort"], in: mw, timeout: 30)
+                return ["ok": false, "conflicts": files, "message": files.isEmpty ? "Fusion impossible : \(Self.gitError(r.err))"
+                        : "Le travail de l'agent \(slot) entre en conflit avec la branche mère (\(files.joined(separator: ", "))). Rien n'a été fusionné : demande à l'agent de repartir de la mère, ou garde un seul agent."]
+            }
+            merged += 1
+        }
+        if merged == 0 && nothing == 0 { return ["ok": false, "message": "Copie de l'agent introuvable."] }
+        return ["ok": true, "merged": merged, "mother": group, "message": merged == 0 ? "Déjà dans la branche mère." : "Travail de l'agent \(slot) fusionné dans la branche mère."]
     }
 
     /// Recrée, à son ancien emplacement, la copie isolée d'une discussion qui a été supprimée (souvent après publication),

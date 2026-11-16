@@ -2693,3 +2693,14 @@ a.dk-port:hover { background: color-mix(in srgb, var(--c-blue) 14%, transparent)
 .ci-bar.sel path { opacity: 1; stroke: var(--text); stroke-width: 1.5; }
 .ci-base { stroke: var(--border-2); stroke-width: 1; }
 @media (max-width: 760px) { .ci-stats { gap: 14px; } .ci-stat b { font-size: 17px; } .ci-head .link-btn { margin-left: 0; } }
+
+/* Groupe d'agents (« 3× … ») : la branche mère et ses agents (features/projects/sessions.ts, listHTML) */
+.ag-family { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px 12px; background: var(--surface-2); }
+.ag-family > h4 { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 0 0 8px; font-size: var(--t-2); font-weight: 500; }
+.ag-family > h4 .ic { width: 14px; height: 14px; color: var(--accent-text); }
+.ag-family > h4 span { font-size: var(--t-1); color: var(--text-3); font-weight: 400; }
+.ag-family .ag-child { margin-left: 22px; position: relative; }
+.ag-family .ag-child::before { content: ''; position: absolute; left: -14px; top: -6px; bottom: 50%; width: 10px; border-left: 1.5px solid var(--border-2); border-bottom: 1.5px solid var(--border-2); border-bottom-left-radius: 6px; }
+.ag-family .ag-mother b { color: var(--accent-text); }
+.ag-in-mother { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border-radius: var(--r); font-size: var(--t-1); font-weight: 500; color: var(--c-green); background: color-mix(in srgb, var(--c-green) 12%, transparent); }
+.ag-in-mother .ic { width: 12px; height: 12px; stroke-width: 2.2; }

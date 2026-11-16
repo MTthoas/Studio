@@ -292,7 +292,7 @@ final class Agents {
         lock.lock(); let full = runs.values.filter { $0.status == "running" || $0.status == "starting" }.count >= maxRunning; lock.unlock()
         if full { return done(["ok": false, "message": "\(maxRunning) agents tournent déjà : attends qu'un se termine ou arrête-en un."]) }
 
-        var cwd = dir, mode = body["mode"] as? String == "edit" ? "edit" : "read", newWorktree = "", restored = ""
+        var cwd = dir, mode = body["mode"] as? String == "edit" ? "edit" : "read", newWorktree = "", restored = "", groupNote = ""
         var args = ["-p", "--output-format", "stream-json", "--verbose", "--restricted", "--permission-mode", "dontAsk",
                     "--setting-sources", "", "--strict-mcp-config", "--disable-slash-commands"]
         if !resume.isEmpty {
@@ -327,9 +327,19 @@ final class Agents {
             let stamp = DateFormatter(); stamp.dateFormat = "MMdd-HHmm"
             let base = Self.slug(body["name"] as? String ?? prompt)
             newWorktree = "studio-" + (base.isEmpty ? "agent" : base) + "-" + stamp.string(from: Date())
+            // Groupe d'agents (« 3× … ») : sur ce Mac, chaque agent part de la branche mère du groupe, dans sa copie `<groupe>-aN`.
+            let group = body["group"] as? String ?? "", slot = body["slot"] as? Int ?? 0
+            let grouped = !onServer && ProjectFolders.validGroup(group) && (1...8).contains(slot)
+            if grouped { newWorktree = group + "-a\(slot)"; groupNote = Self.groupPrompt(slot: slot, of: body["of"] as? Int ?? 0) }
             if !onServer {
                 guard folders.isRepo(dir) else { return done(["ok": false, "message": "Le mode « modifier » demande un dépôt Git : il travaille dans une copie isolée."]) }
-                let made = folders.createWorktree(dir, name: newWorktree)
+                var from: String? = nil
+                if grouped {
+                    let mother = folders.groupMother(dir, group: group)
+                    guard let b = mother.branch else { return done(["ok": false, "message": mother.error]) }
+                    from = b
+                }
+                let made = from.map { folders.createWorktree(dir, name: newWorktree, from: $0) } ?? folders.createWorktree(dir, name: newWorktree)
                 guard let path = made.path else { return done(["ok": false, "message": made.error]) }
                 cwd = path
             }
@@ -424,7 +434,7 @@ final class Agents {
         if !extraDirs.isEmpty { args += ["--add-dir"] + extraDirs }
         // Notes et tâches du projet : permises par les réglages, jamais pour l'orchestrateur (résolution de conflits).
         let items = AgentPermissions.projectItems && body["internal"] as? Bool != true
-        let added = [AgentTuning.prompt(mode: mode, tests: tests, items: items, shell: shell), team?.prompt(edit: mode == "edit") ?? "", repoNote, browse?.prompt ?? ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        let added = [AgentTuning.prompt(mode: mode, tests: tests, items: items, shell: shell), team?.prompt(edit: mode == "edit") ?? "", repoNote, groupNote, browse?.prompt ?? ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
         if !added.isEmpty { args += ["--append-system-prompt", added] }
         args += ["--allowedTools"] + AgentPermissions.allowed(tools: tools, commands: tests, shell: shell) + (browse == nil ? [] : ["mcp__\(AgentPermissions.browserServer)"])
 
@@ -562,6 +572,11 @@ final class Agents {
         let lines = text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         guard !lines.isEmpty else { return nil }
         return "Claude Code s'est arrêté : " + String(lines.suffix(4).joined(separator: "\n").suffix(600))
+    }
+
+    /// Consigne ajoutée à un agent d'un groupe : il sait qu'il travaille en parallèle d'autres agents sur la même demande.
+    static func groupPrompt(slot: Int, of total: Int) -> String {
+        "Tu es l'agent \(slot)\(total > 1 ? " sur \(total)" : "") d'un groupe : d'autres agents reçoivent la même demande en parallèle, chacun dans sa propre copie, partie de la même branche mère. L'utilisateur comparera vos résultats et fusionnera le meilleur (ou plusieurs) dans la branche mère. Propose ta propre solution, complète et cohérente, sans te soucier des autres agents. Ne commite pas : Studio s'en charge."
     }
 
     private func withOk(_ r: Run) -> [String: Any] { lock.lock(); defer { lock.unlock() }; var s = summary(r); s["ok"] = true; return s }

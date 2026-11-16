@@ -53,6 +53,27 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'agent-groups', date: '2026-11-17', icon: 'pr', hue: 'orange', mac: true,
+    title: 'Branche mère des agents',
+    lead: 'Plusieurs agents lancés ensemble partent d’une branche mère commune, chacun sur sa sous-branche.',
+    bits: [
+      ['play', '3×', '« 3× … », un agent par note ou par ligne : une branche mère, une sous-branche par agent'],
+      ['eye', 'Comparer', 'le groupe s’affiche ensemble dans les copies des agents : Revue, VS Code'],
+      ['pr', 'Fusionner', 'le travail retenu rejoint la mère ; un conflit ne fusionne rien et nomme les fichiers'],
+      ['upload', 'Publier', 'la mère part en une seule PR'],
+    ],
+    where: ['Projets', 'un projet', 'Claude Code'],
+    visual: { kind: 'flow', steps: [['Branche mère', 'orange', 'pr'], ['Agents 1, 2, 3', 'blue', 'bot'], ['Fusion', 'green', 'check']] } },
+  { id: 'ci-graph', date: '2026-11-17', icon: 'graph', hue: 'teal',
+    title: 'Graphe des workflows',
+    lead: 'Chaque exécution GitHub Actions en graphe de jobs, en direct, avec l’historique des durées.',
+    bits: [
+      ['graph', 'Graphe', 'jobs et dépendances (needs), état, durée, attente d’un runner, étape en cours'],
+      ['list', 'Étapes', 'un clic sur un job : ses étapes et ses logs'],
+      ['history', 'Historique', 'réussite, durée médiane, une barre par exécution (cliquer l’affiche)'],
+    ],
+    where: ['Projets', 'un projet', 'Flux'],
+    visual: { kind: 'flow', steps: [['Vérifications', 'green', 'check'], ['Apps Mac et iPhone', 'amber', 'bolt'], ['Publication', 'gray', 'upload']] } },
   { id: 'agents-workspace', date: '2026-11-17', icon: 'board', hue: 'violet', mac: true,
     title: 'Espace agents',
     lead: 'Tous les agents de tous les projets, dans une liste à la Linear et une grille de 1 à 8 vues en direct.',
