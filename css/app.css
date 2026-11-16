@@ -1454,7 +1454,7 @@ button.lv-chip:hover, .lv-chip.sel { color: var(--text); background: var(--btn);
 .fx-acts-head { display: flex; align-items: center; gap: 7px; padding: 8px 11px; color: var(--text-2); font-weight: 500; }
 .fx-acts-head .ic { width: 13px; height: 13px; color: var(--text-3); }
 .fx-acts-head .link-btn { margin-left: auto; font-size: var(--t-1); font-weight: 400; color: var(--text-3); }
-.fx-act { display: grid; grid-template-columns: 8px minmax(120px, 1.2fr) auto minmax(0, 1fr) auto minmax(90px, 160px) auto auto; align-items: center; gap: 10px; padding: 7px 11px; border-top: 1px solid var(--border); }
+.fx-act { display: grid; grid-template-columns: 8px minmax(120px, 1.2fr) auto minmax(0, 1fr) auto minmax(90px, 160px) auto auto auto; align-items: center; gap: 10px; padding: 7px 11px; border-top: 1px solid var(--border); }
 .fx-act-name { color: var(--text); font-weight: 500; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fx-act-name:hover { text-decoration: underline; text-decoration-color: var(--border-2); text-underline-offset: 3px; }
 .fx-act-st { color: var(--c); white-space: nowrap; }
@@ -2638,3 +2638,58 @@ a.dk-port:hover { background: color-mix(in srgb, var(--c-blue) 14%, transparent)
   .aw-root .toolbar .crumb { min-width: 0; }
   .aw-seg button { min-width: 26px; padding: 0 4px; }
 }
+
+/* ---------- Graphe d'un workflow GitHub Actions (features/projects/ci.ts) ---------- */
+.ci-toggle.on { color: var(--accent-text); background: var(--accent-soft); }
+.ci-panel { border-top: 1px solid var(--border); background: var(--surface-2); padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 12px; }
+.ci-wait { margin: 4px 0; color: var(--text-3); font-size: var(--t-1); display: flex; align-items: center; }
+.ci-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: var(--t-2); }
+.ci-head strong { font-weight: 600; }
+.ci-head code { font-size: var(--t-1); }
+.ci-head .link-btn { margin-left: auto; }
+.ci-meta { color: var(--text-3); font-size: var(--t-1); display: inline-flex; align-items: center; gap: 5px; }
+.ci-meta .ic { width: 12px; height: 12px; }
+.ci-badge { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 11px; font-size: var(--t-1); font-weight: 500; color: var(--c); background: color-mix(in srgb, var(--c) 13%, transparent); }
+.ci-badge .ic { width: 12px; height: 12px; stroke-width: 2.2; }
+.ci-ring { display: inline-block; width: 12px; height: 12px; border-radius: 50%; border: 1.8px solid color-mix(in srgb, var(--c, var(--c-amber)) 30%, transparent); border-top-color: var(--c, var(--c-amber)); animation: spin .9s linear infinite; }
+.ci-graph { overflow-x: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); background-image: radial-gradient(circle, color-mix(in srgb, var(--text-3) 22%, transparent) 1px, transparent 1.2px); background-size: 16px 16px; }
+.ci-canvas { position: relative; }
+.ci-canvas > svg { position: absolute; inset: 0; overflow: visible; }
+.ci-edge { fill: none; stroke: var(--border-2); stroke-width: 1.6; }
+.ci-edge.done { stroke: color-mix(in srgb, var(--c-green) 55%, var(--border-2)); }
+.ci-edge.bad { stroke: color-mix(in srgb, var(--c-red) 55%, var(--border-2)); }
+.ci-edge.flow { stroke: var(--c-amber); stroke-dasharray: 5 5; animation: ci-flow 0.9s linear infinite; }
+@keyframes ci-flow { to { stroke-dashoffset: -10; } }
+.ci-node { position: absolute; display: flex; align-items: center; gap: 10px; padding: 0 12px; border: 1px solid var(--border-2); border-left: 3px solid var(--c); border-radius: 8px; background: var(--bg); color: var(--text); text-align: left; box-shadow: 0 1px 2px rgba(0,0,0,.06); cursor: pointer; transition: box-shadow .12s, border-color .12s; }
+.ci-node:hover:not(:disabled) { box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 18%, transparent); }
+.ci-node.sel { border-color: var(--c); box-shadow: 0 0 0 3px color-mix(in srgb, var(--c) 22%, transparent); }
+.ci-node:disabled { cursor: default; opacity: .75; border-style: dashed; border-left-style: solid; }
+.ci-node.st-skipped, .ci-node.st-cancelled { opacity: .7; }
+.ci-ic { flex: none; width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center; color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); }
+.ci-ic .ic { width: 12px; height: 12px; stroke-width: 2.4; }
+.ci-node.st-queued .ci-ic { animation: vc-pulse 1.4s ease-in-out infinite; }
+.ci-txt { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ci-txt b { font-size: var(--t-2); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ci-txt em { font-style: normal; font-size: var(--t-1); color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ci-steps { border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+.ci-steps header { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: var(--t-2); }
+.ci-steps header .link-btn { margin-left: auto; }
+.ci-steps ol { list-style: none; margin: 0; padding: 4px 0; max-height: 260px; overflow: auto; }
+.ci-steps li { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 4px 12px; font-size: var(--t-1); }
+.ci-steps li span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ci-steps li em { font-style: normal; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.ci-hist { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px 24px; }
+.ci-stats { display: flex; gap: 22px; }
+.ci-stat { display: flex; flex-direction: column; gap: 2px; max-width: 150px; }
+.ci-stat b { font-size: 20px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.ci-stat span { font-size: var(--t-1); color: var(--text-3); line-height: 1.3; }
+.ci-chart { margin: 0; min-width: 0; overflow-x: auto; }
+.ci-chart figcaption { font-size: var(--t-1); font-weight: 500; color: var(--text-2); margin-bottom: 6px; }
+.ci-chart figcaption span { font-weight: 400; color: var(--text-3); }
+.ci-bar { cursor: pointer; outline: none; }
+.ci-bar .hit { fill: transparent; }
+.ci-bar:hover .hit, .ci-bar:focus-visible .hit { fill: color-mix(in srgb, var(--text) 7%, transparent); }
+.ci-bar path { opacity: .85; }
+.ci-bar.sel path { opacity: 1; stroke: var(--text); stroke-width: 1.5; }
+.ci-base { stroke: var(--border-2); stroke-width: 1; }
+@media (max-width: 760px) { .ci-stats { gap: 14px; } .ci-stat b { font-size: 17px; } .ci-head .link-btn { margin-left: 0; } }
