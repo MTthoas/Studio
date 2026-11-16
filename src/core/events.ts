@@ -2,10 +2,10 @@
 // se passe, les automatisations s'y abonnent. Aucune dépendance : n'importe quel module peut émettre.
 
 /** Événements qui peuvent déclencher une automatisation. Le texte est une DONNÉE décrivant l'événement. */
-export type Trigger = 'capture' | 'linear' | 'github' | 'tache';
+export type Trigger = 'capture' | 'linear' | 'github' | 'tache' | 'commande';
 /** D'où vient l'événement : une automatisation ne le reçoit que s'il tombe dans son périmètre (integrations/scope.ts).
  *  Sans origine, il n'est livré à aucune automatisation. */
-export interface EventOrigin { noteId?: string; line?: string; linearProject?: string; repo?: string }
+export interface EventOrigin { noteId?: string; line?: string; linearProject?: string; repo?: string; /** Boutique (`nom.myshopify.com`). */ shop?: string }
 export interface AppEvent { kind: Trigger; text: string; at: number; origin?: EventOrigin }
 
 const listeners = new Set<(e: AppEvent) => void>();
@@ -20,10 +20,12 @@ export const TRIGGERS: Record<Trigger, string> = {
   linear: 'à chaque notification Linear',
   github: 'à chaque nouveauté GitHub',
   tache: 'à chaque tâche terminée',
+  commande: 'à chaque nouvelle commande de la boutique',
 };
 /** Lit la valeur écrite dans un bloc ```agent (« déclencheur: capture », « linear », …). */
 export function parseTrigger(v: string): Trigger | null {
   const s = v.toLowerCase();
+  if (/commande|boutique|shopify|vente|order/.test(s)) return 'commande';
   if (/captur|bo[iî]te|inbox|note/.test(s)) return 'capture';
   if (/linear|notif|ticket/.test(s)) return 'linear';
   if (/github|git|d[eé]p[oô]t|commit|pr\b/.test(s)) return 'github';

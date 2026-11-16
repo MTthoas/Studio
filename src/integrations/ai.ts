@@ -9,6 +9,7 @@ import * as linear from './linear/api.ts';
 import * as todo from '../features/tasks.ts';
 import * as notifs from './linear/notifications.ts';
 import * as github from './github/api.ts';
+import * as commerce from './commerce/index.ts';
 import { parseTrigger, TRIGGERS, type AppEvent, type Trigger } from '../core/events.ts';
 import { fold } from '../lib/fuzzy.ts';
 import { errMsg } from '../ui/kit.ts';
@@ -211,6 +212,39 @@ function githubTools(scope: sc.Scope): Tool[] {
       .map(({ e, d }) => ({ qui: e.actor?.login, quoi: `${d.verb} ${d.what}`.trim(), depot: e.repo?.name, quand: e.created_at, extrait: d.quote?.slice(0, 200) })) }];
 }
 
+/** Boutique en ligne du projet (socle e-commerce, integrations/commerce) : lecture seule, et seulement depuis son projet.
+ *  Ce qui part chez le fournisseur d'IA : des chiffres, des numéros de commande et des noms de produits ; jamais un client. */
+export const SHOP_FAMILY = ['boutique', 'shopify', 'commerce'];
+function shopTools(scope: sc.Scope): Tool[] {
+  const snap = () => commerce.snapshot(sc.needShop(scope));
+  const line = (o: commerce.Order) => ({ numero: o.name, quand: new Date(o.at).toISOString(), total: o.total, devise: o.currency, paiement: commerce.PAY[o.pay][0], expedition: commerce.SHIP[o.ship][0], annulee: o.cancelled, articles: o.items.map(l => `${l.qty} × ${l.title}`) });
+  return [
+    { name: 'boutique_resume', description: `Chiffres de la boutique en ligne du projet sur les ${commerce.DAYS} derniers jours : chiffre d’affaires (taxes et livraison comprises, remboursements déduits) et nombre de commandes aujourd’hui, sur 7 jours, sur les 7 jours d’avant et sur la période ; panier moyen, commandes à expédier, produits les plus vendus, nombre de références en stock bas. Lecture seule, sans donnée de client.`,
+      schema: { type: 'object', properties: {} },
+      run: async () => {
+        const s = await snap(), st = commerce.stats(s.orders);
+        return { boutique: s.shop.name, devise: s.shop.currency, periode_jours: s.days, ...(s.partial ? { attention: 'Trop de commandes pour tout lire : les totaux de la période sont des minimums.' } : {}),
+          aujourd_hui: st.today, sept_jours: st.d7, sept_jours_precedents: st.prev7, periode: st.all, panier_moyen: st.basket,
+          a_expedier: s.toShip ?? st.toShip, meilleures_ventes: st.top.map(l => ({ produit: l.title, vendus: l.qty })), references_en_stock_bas: s.stock?.length ?? null };
+      } },
+    { name: 'boutique_commandes', description: `Commandes de la boutique du projet sur les ${commerce.DAYS} derniers jours, de la plus récente à la plus ancienne : numéro, date, total, paiement, expédition, articles. Aucun nom ni adresse de client.`,
+      schema: { type: 'object', properties: { etat: { type: 'string', enum: ['toutes', 'a_expedier'], description: 'Facultatif : « a_expedier » pour les seules commandes payées qui ne sont pas encore parties' }, jours: { type: 'number', description: 'Facultatif : ne garder que les N derniers jours' }, limite: { type: 'number', description: 'Facultatif : nombre de commandes (25 par défaut, 60 au plus)' } } },
+      run: async i => {
+        const s = await snap(), days = Number(i.jours) > 0 ? Number(i.jours) : s.days, from = commerce.dayStart(Date.now(), Math.min(days, s.days) - 1);
+        const list = s.orders.filter(o => o.at >= from && !o.test && (str(i.etat) !== 'a_expedier' || commerce.toShip(o)));
+        const max = Math.min(60, Math.max(1, Number(i.limite) || 25));
+        return { total_trouve: list.length, commandes: list.slice(0, max).map(line) };
+      } },
+    { name: 'boutique_stock', description: `Références de la boutique du projet dont le stock suivi est à ${commerce.LOW} exemplaires ou moins (ruptures comprises), de la plus basse à la plus haute.`,
+      schema: { type: 'object', properties: {} },
+      run: async () => {
+        const s = await snap();
+        if (!s.stock) throw new Error(`Stock illisible : ${s.stockNote ?? 'raison inconnue'}.`);
+        return s.stock.map(l => ({ produit: l.product, variante: l.variant || null, sku: l.sku || null, en_stock: l.qty }));
+      } },
+  ];
+}
+
 function agentTools(ctx: RunContext, scope: sc.Scope): Tool[] {
   // Les noms sont donnés d'emblée : l'agent n'a pas à dépenser une étape pour les découvrir par une erreur.
   // Seuls les agents du même périmètre : déléguer ne doit pas ouvrir les données d'un autre projet.
@@ -269,6 +303,7 @@ function toolset(names: string[], ctx: RunContext, scope: sc.Scope): Tool[] {
     ...(set.has('notes') ? noteTools(ctx, scope) : []),
     ...(set.has('linear') && sc.hasLinear(scope) ? linearTools(scope) : []),
     ...(set.has('github') && github.connected() ? githubTools(scope) : []),
+    ...(SHOP_FAMILY.some(k => set.has(k)) && sc.hasShop(scope) ? shopTools(scope) : []),
     ...(set.has('agents') ? agentTools(ctx, scope) : []),
   ];
 }
@@ -475,7 +510,7 @@ export async function complete(system: string, user: string, { provider, light =
 // ---------- Agents définis dans les notes ----------
 // ```agent
 // nom: Revue du lundi
-// outils: notes, linear, agents   (+ github, navigateur)
+// outils: notes, linear, agents   (+ github, navigateur, boutique)
 // projet: Studio            (périmètre : ses seules données ; absent = Général, sans Linear — voir scope.ts)
 // modèle: claude            (claude | openai | local)
 // sortie: journal           (journal | ici | [[Titre]] | aucune)

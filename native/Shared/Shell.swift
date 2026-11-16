@@ -97,6 +97,7 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
         if type == "claude", let action = body["action"] as? String, let id = body["id"] as? Int { claude(action, id: id, body: body) }
         if type == "docker", let action = body["action"] as? String, let id = body["id"] as? Int { docker(action, id: id, body: body) }
         if type == "browser", let action = body["action"] as? String, let id = body["id"] as? Int { browser(action, id: id, body: body) }
+        if type == "commerce", let action = body["action"] as? String, let id = body["id"] as? Int { commerce(action, id: id, body: body) }
         if type == "update", let action = body["action"] as? String, let id = body["id"] as? Int { update(action, id: id) }
         if type == "voice", let action = body["action"] as? String {
             Dictation.shared.send = { [weak self] payload in
@@ -211,6 +212,20 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
 
     /// Docker sur ce Mac, en lecture seule : conteneurs et images, rattachés aux projets dont la page donne l'identifiant
     /// (voir Docker.swift). Les dossiers de chaque projet (tous ses dépôts) sont lus ici, jamais fournis par la page.
+    /// Boutique d'un projet : relais vers l'API Admin de Shopify (Commerce.swift), sur Mac comme sur iPhone.
+    private func commerce(_ action: String, id: Int, body: [String: Any]) {
+        let shop = body["shop"] as? String ?? ""
+        DispatchQueue.global(qos: .userInitiated).async {
+            var r: [String: Any]
+            switch action {
+            case "graphql": r = Commerce.graphql(shop: shop, token: body["token"] as? String ?? "", query: body["query"] as? String ?? "", variables: body["variables"] as? [String: Any] ?? [:])
+            case "token": r = Commerce.token(shop: shop, clientId: body["clientId"] as? String ?? "", secret: body["secret"] as? String ?? "")
+            default: r = ["ok": false, "message": "Action inconnue."]
+            }
+            r["id"] = id; self.answer(r)
+        }
+    }
+
     private func docker(_ action: String, id: Int, body: [String: Any]) {
         #if os(macOS)
         guard action == "status" else { answer(["id": id, "ok": false, "message": "Action inconnue."]); return }

@@ -22,6 +22,7 @@ export const target = (e: Event): HTMLElement => (e.target instanceof Element ? 
 
 const I: Record<string, string> = {
   today: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M2.5 12h2M19.5 12h2M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>',
+  bag: '<path d="M5.5 8.5h13l1 12h-15z"/><path d="M8.8 8.5V7a3.2 3.2 0 016.4 0v1.5"/>',
   notes: '<path d="M6 3.5h8.5L19 8v12.5H6z"/><path d="M14 3.5V8.5h5M9.5 13h5.5M9.5 16.5h5.5"/>',
   inbox: '<path d="M3.5 13.5l3-8.5h11l3 8.5v5.5h-17z"/><path d="M3.5 13.5h5l1 2.5h5l1-2.5h5"/>',
   hourglass: '<path d="M7 3.5h10M7 20.5h10M8.5 3.5v3.5L12 12l3.5-5V3.5M8.5 20.5V17L12 12l3.5 5v3.5"/>',

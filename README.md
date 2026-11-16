@@ -173,6 +173,7 @@ Une note ou une tâche y appartient avec le tag `#projet/studio` — posé par l
 | **Code** | Dossier local, branches locales (avance / retard), PR et activité, **revue IA** des changements en cours ou de la branche ; ouverture dans VS Code, le Finder ou le Terminal |
 | **Flux** | Le parcours de chaque branche façon gitflow : en cours → PR ouverte → prête à fusionner → fusionnée → publiée (Release), avec CI et revues ; au-dessus, l'état de chaque workflow GitHub Actions (dernière exécution, branche, durée, précédentes), relu toutes les 30 s tant qu'une exécution tourne ; **Relancer** sur une exécution en échec ou annulée relance ses jobs en échec (même commit ; jeton avec le droit Actions en écriture) |
 | **Serveur** | L'état du VPS ou de la VM du projet, joint en SSH, et ses agents |
+| **Boutique** | La boutique Shopify reliée au projet, en lecture seule : chiffre d'affaires et commandes (aujourd'hui, 7 jours, 30 jours), panier moyen, commandes à expédier, ventes par jour, commandes récentes, stock bas, meilleures ventes (app Mac et iPhone) |
 | **Docker** | Les conteneurs du projet sur ce Mac (en cours ou arrêtés, ports cliquables, ceux lancés par un agent) et ses images (app Mac) ; ceux du serveur sont dans l'onglet Serveur |
 | **Tâches · Notes** | Ce qui est tagué `#projet/<nom>` |
 | **Site** | Le site du projet : lancé **en local** depuis le Mac (adresse, pages vues, requêtes), **construit** (`build` et ses variantes `build:prod`…, notification à la fin), et vérifié **en ligne** (code, temps de réponse) |
@@ -181,6 +182,7 @@ Une note ou une tâche y appartient avec le tag `#projet/studio` — posé par l
 - **Revue IA** : le diff est lu en local, montré, puis envoyé à l'IA branchée seulement après ton clic ; la revue peut être enregistrée comme note du projet.
 - **Sessions** : l'app Mac lit les journaux locaux de Claude Code (`~/.claude/projects/…`), en lecture seule ; rien ne quitte la machine.
 - **Site en local** (app Mac) : l'onglet Site cherche un site dans le dossier du projet (racine, `site/`, `web/`, `docs/`, `dist/`…). Un dossier avec un `index.html` est servi par Studio lui-même, sur `127.0.0.1` uniquement, avec le compte des pages vues, des requêtes et des données servies. Un projet Next.js, Astro, Vite, Nuxt ou SvelteKit est lancé avec son script (`npm run dev`, ou pnpm, yarn, bun selon le fichier de verrou) : Studio affiche l'adresse annoncée et la sortie du serveur. Tout s'arrête d'un clic, et à la fermeture de l'app. Le suivi du site en production (monitoring, consommation, visiteurs) viendra avec le serveur du projet.
+- **Boutique** (app Mac et iPhone, lecture seule) : relie une boutique Shopify à un projet, dans son onglet Boutique. L'adresse (`boutique: nom.myshopify.com`) s'écrit dans le bloc `projet` ; les identifiants restent chiffrés dans le coffre de l'appareil. Deux connexions possibles : une app du [Dev Dashboard](https://dev.shopify.com/dashboard) (Client ID et secret, échangés contre un jeton de 24 h renouvelé tout seul ; l'app et la boutique doivent être dans la même organisation), ou le jeton d'accès Admin (`shpat_…`) d'une app personnalisée existante. Droits à donner, tous en lecture : `read_orders`, `read_products`, `read_inventory`. Studio ne demande aucune donnée de client (ni nom, ni adresse, ni e-mail) et ne modifie jamais la boutique. Le chiffre d'affaires est le total des commandes non annulées, taxes et livraison comprises, remboursements déduits, sur 30 jours (jours de l'appareil). Une nouvelle commande est signalée par une notification dans les trois minutes, et peut déclencher une automatisation du projet (`déclencheur: commande`). L'IA lit la boutique avec `outils: boutique` (chiffres, commandes, stock), seulement depuis son projet.
 - **Docker** (app Mac, lecture seule) : Studio lit le moteur Docker par sa socket (Docker Desktop, OrbStack, Colima, Rancher Desktop), sans lancer `docker` ni aucun shell, et ne peut ni lancer, ni arrêter, ni supprimer quoi que ce soit. Un conteneur appartient au projet quand il a été lancé par Docker Compose ou un devcontainer depuis le dossier d'un de ses dépôts, ou depuis la copie isolée d'un agent (marqué « agent »), ou qu'il en monte un dossier ; une image, quand un de ses conteneurs l'utilise ou que Compose l'a construite pour lui. L'onglet se relit toutes les 5 secondes, la vue d'ensemble a sa carte, et l'**accueil** liste les conteneurs en cours du Mac avec leur projet.
 
 ### Agents Claude Code
@@ -355,7 +357,7 @@ src/                               TypeScript strict
     hub.ts            réglages, coffre, agents, blocs spéciaux, liaison d'appareils
     projects/         model.ts (bloc ```projet, tags), page.ts (cockpit), flux.ts,
                       review.ts (revue IA), sessions.ts (agents Claude Code, publication),
-                      items.ts (notes et tâches créées par les agents), site.ts (site du projet lancé en local), docker.ts (conteneurs et images)
+                      items.ts (notes et tâches créées par les agents), site.ts (site du projet lancé en local), docker.ts (conteneurs et images), shop.ts (boutique en ligne)
     news.ts           nouveautés présentées après une mise à jour, fenêtre « mise à jour prête »
     permissions.ts    réglages des autorisations des agents Claude Code (commandes, web, notes et tâches, PATH), gardés sur le Mac
     automations.ts, help.ts, onboarding.ts
@@ -367,6 +369,7 @@ src/                               TypeScript strict
     link.ts           liaison et synchronisation entre appareils (WebRTC)
     remote.ts         pont vers les agents Claude Code, sur le Mac ou via un Mac lié
     linear/           api.ts (GraphQL typé), page.ts, render.ts, notifications.ts
+    commerce/         socle e-commerce : core.ts (types et calculs, sans fournisseur), shopify.ts (API Admin), index.ts (boutique d'un projet, nouvelles commandes)
     github/           api.ts (actualité des dépôts), page.ts
   lib/              outils sans état : markdown, calc, schema, graph, qr, fuzzy, diff, zip
   plugins/          registre d'extensions, plugins maison (GitHub, Linear) et optionnels (Spotify, n8n, Figma)
@@ -390,6 +393,7 @@ native/             apps Mac et iPhone (Swift) et leurs scripts de build
     ServerExtensions.swift  extensions du serveur : Docker, Kubernetes
     Sites.swift         site d'un projet en local : détection, serveur de fichiers, script dev, builds notifiés
     Docker.swift        conteneurs et images Docker du Mac (lecture seule, par la socket du moteur)
+    Commerce.swift      relais vers l'API Admin de Shopify (lecture de la boutique d'un projet), Mac et iPhone
   macOS/, iOS/        points d'entrée de chaque plateforme
 site/               site vitrine de Studio : HTML, CSS et JS statiques, sans build ni dépendance
 scripts/            build.ts (esbuild), check.ts et site.ts, exécutés directement par Node

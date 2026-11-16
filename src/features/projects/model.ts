@@ -7,6 +7,7 @@
 //                                                    parenthèses est facultatif, deviné du nom sinon)
 //   linear: Studio                                  (projet Linear, facultatif)
 //   site: https://studio.example.com                (site web du projet, facultatif)
+//   boutique: ma-boutique.myshopify.com             (boutique en ligne, facultatif : onglet Boutique)
 //   ```
 //
 // Une note ou une tâche appartient au projet si elle porte le tag #projet/<nom> (ou se trouve dans
@@ -32,6 +33,8 @@ export interface Project {
   linear: string | null;
   /** Site web du projet (https uniquement). */
   site: string | null;
+  /** Boutique en ligne (`nom.myshopify.com`) ; ses identifiants restent dans le coffre (integrations/commerce). */
+  shop: string | null;
   hue: string;
 }
 
@@ -90,11 +93,12 @@ export const PROJECT_TAG_RE = /(^|\s)#projet\/([\p{L}\d][\p{L}\d_-]*)(?=[\s,.;:!
 
 export const slugify = (s: string): string => fold(s).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'projet';
 
+const SHOP_RE = /^[a-z0-9](?:[a-z0-9-]{0,60}[a-z0-9])?\.myshopify\.com$/;
 /** Lit le bloc ```projet d'une note (null si la note n'en a pas, ou s'il est vide). */
 export function parse(n: Note): Project | null {
   const body = store.getBody(n); if (!body || !body.includes('```projet')) return null;
   const m = body.match(BLOCK_RE); if (!m) return null;
-  let name = n.title.trim(), stack: Repo[] = [], linear: string | null = null, site: string | null = null;
+  let name = n.title.trim(), stack: Repo[] = [], linear: string | null = null, site: string | null = null, shop: string | null = null;
   for (const line of (m[1] ?? '').split('\n')) {
     const kv = line.match(/^\s*([\p{L}]+)\s*:\s*(.*)$/u); if (!kv) continue;
     const k = fold(kv[1] ?? ''), v = (kv[2] ?? '').trim();
@@ -102,10 +106,11 @@ export function parse(n: Note): Project | null {
     else if (k === 'depot' || k === 'depots' || k === 'repo' || k === 'repos' || k === 'github') stack = parseRepos(v);
     else if (k === 'linear') linear = v || null;
     else if (k === 'site' || k === 'url' || k === 'web') site = /^https:\/\/[^\s]+$/i.test(v) ? v : null;
+    else if (k === 'boutique' || k === 'shopify' || k === 'shop') shop = SHOP_RE.test(v.toLowerCase()) ? v.toLowerCase() : null;
   }
   name = name || 'Projet';
   const slug = slugify(name);
-  return { id: n.id, note: n, name, slug, tag: `projet/${slug}`, repos: stack.map(r => r.name), stack, linear, site, hue: hue(slug) };
+  return { id: n.id, note: n, name, slug, tag: `projet/${slug}`, repos: stack.map(r => r.name), stack, linear, site, shop, hue: hue(slug) };
 }
 
 let cache: { idx: object; list: Project[]; ofNote: Map<string, Project | null> } | null = null;
@@ -157,12 +162,13 @@ export async function setNoteProject(n: Note, p: Project | null): Promise<void> 
 }
 
 /** Écrit (ou remplace) un champ du bloc ```projet de la note du projet. */
-export async function setField(p: Project, key: 'dépôts' | 'linear' | 'site', value: string): Promise<void> {
+export async function setField(p: Project, key: 'dépôts' | 'linear' | 'site' | 'boutique', value: string): Promise<void> {
   const body = store.getBody(p.note); if (body == null) throw new Error('Déverrouille la note du projet.');
   const re = key === 'dépôts' ? /^(\s*)d[ée]p[oô]ts?\s*:.*$/m : new RegExp(`^(\\s*)${key}\\s*:.*$`, 'm');
   if (/[\r\n]/.test(value)) throw new Error('Valeur invalide.');
   const line = `${key}: ${value}`;
-  const next = re.test(body) ? body.replace(re, (_, sp: string) => sp + line) : body.replace(/^(```projet[ \t]*\n[\s\S]*?)^```/m, (_, head: string) => `${head}${line}\n\`\`\``);
+  // Boutique retirée : la ligne disparaît du bloc au lieu de rester vide.
+  const next = key === 'boutique' && !value ? body.replace(new RegExp(`^\\s*boutique\\s*:.*\\n?`, 'm'), '') : re.test(body) ? body.replace(re, (_, sp: string) => sp + line) : body.replace(/^(```projet[ \t]*\n[\s\S]*?)^```/m, (_, head: string) => `${head}${line}\n\`\`\``);
   if (next === body) return;
   store.touch(p.note); store.setBody(p.note, next); p.note.updated = Date.now(); await store.saveNote(p.note);
 }

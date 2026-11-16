@@ -12,6 +12,7 @@ import * as todo from './features/tasks.ts';
 import * as notifs from './integrations/linear/notifications.ts';
 import * as linearView from './integrations/linear/page.ts';
 import * as github from './integrations/github/api.ts';
+import * as commerce from './integrations/commerce/index.ts';
 import * as usage from './integrations/usage.ts';
 import * as ai from './integrations/ai.ts';
 import * as githubPage from './integrations/github/page.ts';
@@ -208,7 +209,8 @@ function renderSidebar() {
         // Sous « Serveur » : les serveurs du projet, celui qui est affiché en surbrillance.
         const servers = open ? projectsPage.sideServers(p.id) : [], serving = tab === 'server' && servers.some(s => s.sel);
         return `<button class="side-item side-sub${open && tab === 'overview' ? ' sel' : ''}${open ? ' open' : ''}" data-pj-open="${esc(p.id)}"><i class="tag-dot" style="--c:var(--c-${p.hue})"></i><span>${esc(p.name)}</span></button>`
-          + (open ? projectsPage.TABS.slice(1).map(([k, l, ic]) => `<button class="side-item side-sub2${tab === k && !(k === 'sessions' && talking) && !(k === 'server' && serving) ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="${k}"${k === 'sessions' ? ' data-pj-session=""' : ''}>${icon(ic)}<span>${esc(l)}</span></button>`
+          // « Boutique » n'encombre la barre que pour un projet qui en a une (l'onglet reste dans la page du projet).
+          + (open ? projectsPage.TABS.slice(1).filter(([k]) => k !== 'shop' || !!p.shop).map(([k, l, ic]) => `<button class="side-item side-sub2${tab === k && !(k === 'sessions' && talking) && !(k === 'server' && serving) ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="${k}"${k === 'sessions' ? ' data-pj-session=""' : ''}>${icon(ic)}<span>${esc(l)}</span></button>`
             + (k === 'server' ? servers.map(s => `<button class="side-item side-sub3${tab === 'server' && s.sel ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="server" data-pj-server="${esc(s.id)}" title="${esc(s.dest)}">${icon('server')}<span>${esc(s.name)}</span></button>`).join('') : '')
             + (k === 'sessions' ? talks.map(s => `<button class="side-item side-sub3${tab === 'sessions' && s.sel && !s.subs.some(a => a.sel) ? ' sel' : ''}${!s.live && s.stage ? ` ${s.stage.cls}` : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="sessions" data-pj-session="${esc(s.id)}" title="${esc(s.title)}${s.live ? ' · en cours' : s.stage ? ` · ${esc(s.stage.label)}` : ''}"><i class="ss-live${s.live ? ' on' : s.stage ? ` ${s.stage.cls}` : ''}"></i><span>${esc(s.title)}</span>${!s.live && s.stage?.cls === 'st-review' ? `<em class="side-stage">${esc(s.stage.label)}</em>` : ''}</button>`
               // Sous la conversation : ses sous-agents épinglés, et celui dont on lit le fil.
@@ -1317,7 +1319,7 @@ async function start() {
   if (!store.get(ui.id)) ui.id = WIDE.has(ui.view.type) ? null : viewNotes()[0]?.id ?? null;
   if (matchMedia('(max-width: 900px)').matches) ui.side = false;
   render();
-  notifs.init(shared); github.init(shared);
+  notifs.init(shared); github.init(shared); commerce.init();
   // Notes et tâches envoyées par les agents Claude Code à leur projet (app Mac) : créées ici, à leur arrivée.
   agentItems.init(shared);
   if (voice.available()) document.body.insertAdjacentHTML('beforeend', `<button class="fab-mic" data-act="voice" aria-label="Note vocale">${icon('mic')}</button>`);

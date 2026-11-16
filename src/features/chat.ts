@@ -32,7 +32,7 @@ let loaded: Promise<void> | undefined;
 const drafts = new Map<string, string>();
 
 /** Outils demandés ; le périmètre décide ensuite ce qu'ils voient (Linear : seulement dans un projet relié). */
-const TOOLS = ['notes', 'linear', 'github', 'navigateur'];
+const TOOLS = ['notes', 'linear', 'github', 'navigateur', 'boutique'];
 const PROJECT_SUGGESTIONS = [
   'Où en est ce projet ?',
   'Quelles tâches du projet sont en retard ?',

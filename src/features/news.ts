@@ -53,6 +53,18 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'shop-shopify', date: '2026-11-17', icon: 'bag', hue: 'green',
+    title: 'Ta boutique Shopify dans tes projets',
+    lead: 'Un onglet Boutique par projet : ventes, commandes à expédier et stock bas, à côté du code et des tâches.',
+    bits: [
+      ['activity', 'Chiffres', 'chiffre d’affaires et commandes du jour, sur 7 et 30 jours, panier moyen, ventes par jour'],
+      ['bell', 'Nouvelles commandes', 'notification dans les trois minutes, et `déclencheur: commande` pour tes automatisations'],
+      ['sparkle', 'L’IA lit la boutique', '`outils: boutique` : chiffres, commandes et stock, seulement depuis son projet'],
+      ['shield', 'Lecture seule', 'identifiants dans le coffre, aucune donnée de client, rien n’est modifié dans Shopify'],
+    ],
+    where: ['Projets', 'un projet', 'Boutique'],
+    visual: { kind: 'stack', rows: [[['Aujourd’hui', 'green', 'bag'], '412,80 € · 6 commandes'], [['À expédier', 'blue', 'bag'], '4 commandes'], [['Stock bas', 'amber', 'container'], '3 références']] },
+    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
   { id: 'docker-local', date: '2026-11-16', icon: 'container', hue: 'blue', mac: true,
     title: 'Les conteneurs de ton Mac, dans tes projets',
     lead: 'Un onglet Docker par projet : ce qui tourne sur ton Mac pour lui, reconnu à son dossier.',

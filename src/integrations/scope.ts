@@ -2,11 +2,12 @@
 // périmètre, et ses outils ne voient que les données de celui-ci. Le filtre est appliqué ici, dans le code, avant que
 // quoi que ce soit parte chez le fournisseur : aucune consigne ne peut l'élargir.
 //   Projet  : la note du projet et celles taguées #projet/<slug>, ses tâches, ses dépôts GitHub, et son projet Linear
-//             (champ « linear: » du bloc ```projet, nom exact).
-//   Général : ce qui n'appartient à aucun projet. Jamais Linear : un ticket n'est lisible que depuis son projet.
+//             (champ « linear: » du bloc ```projet, nom exact), et sa boutique en ligne (champ « boutique: »).
+//   Général : ce qui n'appartient à aucun projet. Jamais Linear ni boutique : ils ne sont lisibles que depuis leur projet.
 // La liste des tâches (note « Tâches ») n'est jamais lue d'un bloc : ses lignes passent une à une par taskIn.
 import * as store from '../core/store.ts';
 import * as linear from './linear/api.ts';
+import * as commerce from './commerce/index.ts';
 import * as model from '../features/projects/model.ts';
 import { fold } from '../lib/fuzzy.ts';
 import type { AppEvent } from '../core/events.ts';
@@ -63,6 +64,14 @@ export async function needLinear(s: Scope): Promise<linear.ScopedProject> {
 /** Linear est proposé à l'IA : seulement dans un projet relié à un projet Linear. */
 export const hasLinear = (s: Scope): boolean => !!s.project?.linear && linear.connected();
 
+/** La boutique est proposée à l'IA : seulement dans le projet qui la déclare, sur un appareil qui en a les identifiants. */
+export const hasShop = (s: Scope): boolean => commerce.ready(s.project);
+/** Le projet du périmètre, s'il a une boutique lisible ; sinon une erreur claire. */
+export function needShop(s: Scope): model.Project {
+  if (!commerce.ready(s.project)) throw new Error(s.project?.shop ? 'La boutique de ce projet n’est pas reliée sur cet appareil (onglet Boutique du projet).' : 'Aucune boutique n’est accessible dans ce périmètre.');
+  return s.project;
+}
+
 /** L'événement tombe-t-il dans le périmètre ? Sans origine connue : non. */
 export async function eventIn(s: Scope, e: AppEvent): Promise<boolean> {
   const o = e.origin;
@@ -73,6 +82,7 @@ export async function eventIn(s: Scope, e: AppEvent): Promise<boolean> {
     return !!p && p.id === o.linearProject;
   }
   if (e.kind === 'github') return !!o.repo && repoIn(s, o.repo);
+  if (e.kind === 'commande') return !!o.shop && s.project?.shop === o.shop;
   const n = store.get(o.noteId);
   if (!n) return false;
   return e.kind === 'tache' ? taskIn(s, n, o.line ?? '') : noteIn(s, n);
@@ -81,7 +91,7 @@ export async function eventIn(s: Scope, e: AppEvent): Promise<boolean> {
 /** Ce que l'IA doit savoir de son périmètre ; part avec la demande (pas dans la consigne système, gardée en cache). */
 export function describe(s: Scope): string {
   const p = s.project;
-  if (!p) return 'Périmètre : Général. Tes outils ne voient que les notes et les tâches qui n’appartiennent à aucun projet, et les dépôts GitHub qu’aucun projet ne déclare. Linear n’est pas accessible ici : pour un projet, l’utilisateur ouvre la conversation dans ce projet. N’invente rien sur ce que tu ne vois pas.';
-  const bits = ['ses notes', 'ses tâches', ...(p.repos.length ? [`ses dépôts GitHub (${p.stack.map(r => `${r.name} : ${model.ROLES[r.role].label}`).join(', ')})`] : []), ...(hasLinear(s) ? [`son projet Linear « ${p.linear ?? ''} »`] : [])];
+  if (!p) return 'Périmètre : Général. Tes outils ne voient que les notes et les tâches qui n’appartiennent à aucun projet, et les dépôts GitHub qu’aucun projet ne déclare. Ni Linear ni aucune boutique ne sont accessibles ici : pour un projet, l’utilisateur ouvre la conversation dans ce projet. N’invente rien sur ce que tu ne vois pas.';
+  const bits = ['ses notes', 'ses tâches', ...(p.repos.length ? [`ses dépôts GitHub (${p.stack.map(r => `${r.name} : ${model.ROLES[r.role].label}`).join(', ')})`] : []), ...(hasLinear(s) ? [`son projet Linear « ${p.linear ?? ''} »`] : []), ...(hasShop(s) ? [`sa boutique en ligne (${p.shop ?? ''}, en lecture seule, sans donnée de client)`] : [])];
   return `Périmètre : projet « ${p.name} ». Tes outils ne voient que ${bits.join(', ')}. Rien d’autre n’est accessible ; n’invente rien sur le reste.`;
 }
