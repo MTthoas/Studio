@@ -45,6 +45,12 @@ final class ProjectFolders {
         return FileManager.default.fileExists(atPath: h, isDirectory: &isDir) && isDir.boolValue ? h : nil
     }
 
+    /// Dossiers (dépôt principal, dossier mère) des autres projets connus de Studio : la bulle des agents les rend illisibles.
+    func otherProjectDirs(except id: String) -> [String] {
+        let all = folders.filter { $0.key != id }.map(\.value) + homes.filter { $0.key != id }.map(\.value)
+        return Array(Set(all)).filter { $0.hasPrefix("/") && $0 != "/" && $0 != NSHomeDirectory() }
+    }
+
     private func panel(_ message: String, at dir: String?, done: @escaping (URL?) -> Void) {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true

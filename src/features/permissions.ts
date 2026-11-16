@@ -1,6 +1,7 @@
 // Réglages → Autorisations : ce que les agents Claude Code des projets ont le droit de faire sur ce Mac.
 // - Commandes : la liste des commandes permises quand la case « Commandes » est cochée au lancement (par défaut
 //   `npm test` et `npm run …`), ou toutes ; et si cette case vaut aussi en mode Analyser.
+// - Terminal isolé (coché à l'origine) : bulle macOS autour de chaque agent (AgentSandbox.swift), terminal complet en mode Modifier.
 // - Web : recherche et lecture de pages (WebSearch, WebFetch).
 // - Notes et tâches du projet : l'agent peut en créer dans son projet (features/projects/items.ts).
 // - Navigateur : Playwright MCP (clics, formulaires, captures), limité aux sites listés (`--allowed-origins`).
@@ -13,7 +14,7 @@ import * as native from '../core/native.ts';
 import { esc } from '../lib/markdown.ts';
 import { $, icon, toast, confirmBox } from '../ui/kit.ts';
 
-interface Values { web: boolean; anyCommand: boolean; commandsInRead: boolean; projectItems: boolean; commands: string[]; path: string[]; browser: boolean; sites: string[] }
+interface Values { web: boolean; anyCommand: boolean; commandsInRead: boolean; projectItems: boolean; commands: string[]; path: string[]; browser: boolean; sites: string[]; terminal: boolean }
 interface Preview { read: string[]; readCommands: string[]; edit: string[]; editCommands: string[]; npx: boolean }
 type ListKey = 'commands' | 'path' | 'sites';
 const LISTS: ListKey[] = ['commands', 'path', 'sites'];
@@ -31,7 +32,7 @@ function parse(r: native.Reply): State | null {
   const v = r.values as Record<string, unknown> | undefined, d = r.defaults as Record<string, unknown> | undefined, p = r.preview as Record<string, unknown> | undefined;
   if (!r.ok || !v || !d || !p) return null;
   const values = (o: Record<string, unknown>): Values => ({ web: o.web === true, anyCommand: o.anyCommand === true, commandsInRead: o.commandsInRead === true, projectItems: o.projectItems === true, commands: strings(o.commands), path: strings(o.path),
-    browser: o.browser === true, sites: strings(o.sites) });
+    browser: o.browser === true, sites: strings(o.sites), terminal: o.terminal !== false });
   return { values: values(v), defaults: values(d), changed: strings(r.changed),
     preview: { read: strings(p.read), readCommands: strings(p.readCommands), edit: strings(p.edit), editCommands: strings(p.editCommands), npx: p.npx !== false } };
 }
@@ -88,6 +89,9 @@ function bodyHTML(): string {
       ${v.anyCommand ? `<p class="modal-hint ap-warn">${icon('shield')}Toutes les commandes sont permises : la liste ci-dessous ne s’applique pas.</p>` : listHTML('commands', 'Commandes permises', 'Une par ligne, au format des règles de Claude Code : <code>npm run *</code> permet tout ce qui commence par <code>npm run </code>. Sans parenthèses. Liste vide : aucune commande.', COMMAND_IDEAS)}
       ${check('anyCommand', 'Toutes les commandes (terminal sans restriction)', 'L’agent peut lancer n’importe quelle commande sur ce Mac, y compris supprimer des fichiers hors de sa copie ou envoyer des données en ligne. À réserver aux dépôts dont tu relis chaque consigne.')}
       ${check('commandsInRead', 'Aussi en mode Analyser', 'En mode Analyser, l’agent travaille directement dans le dossier du projet, pas dans une copie isolée : ses commandes y laissent leurs traces (fichiers de build, dépendances installées).')}</section>
+    <section class="cx-sec tn"><h4>${icon('shield')}Terminal isolé</h4>
+      <p>Chaque agent lancé sur ce Mac tourne dans une bulle macOS, avec tout ce qu’il lance. Il n’écrit que dans sa copie (et le <code>.git</code> de son dépôt), les caches des outils et les dossiers temporaires. Il ne peut lire ni tes notes, ni le coffre, ni les réglages de Studio, ni les autres projets, ni les autres sessions de Claude Code. Dans cette bulle, il a en mode Modifier le terminal complet, comme Claude Code seul : <code>git</code>, <code>gh</code>, <code>npm</code>, tests, builds.</p>
+      ${check('terminal', 'Bulle et terminal complet en mode Modifier', 'Le réseau reste ouvert (git push, npm install) : un agent peut envoyer en ligne ce qu’il lit, c’est-à-dire le projet. Sa consigne lui dit de ne commiter et pousser que si tu le demandes, jamais en force ni sur la branche principale. Décoché : pas de bulle, et les commandes reviennent à la liste ci-dessus, avec la case « Commandes ».')}</section>
     <section class="cx-sec tn"><h4>${icon('search')}Web</h4>
       ${check('web', 'Rechercher et lire des pages web (WebSearch, WebFetch)', 'Dans les deux modes. Utile pour consulter une documentation ; l’agent peut alors aussi envoyer des requêtes vers n’importe quelle adresse.')}</section>
     <section class="cx-sec tn"><h4>${icon('eye')}Navigateur</h4>
@@ -153,7 +157,7 @@ export async function onClick(t: HTMLElement, redraw: () => void): Promise<boole
     return true;
   }
   if (t.closest('[data-ap-all]')) {
-    if (!await confirmBox({ title: 'Tout rétablir ?', text: 'Les agents reprennent les autorisations d’origine : lecture (et écriture en mode Modifier) dans leur dossier, et avec « Commandes » seulement npm test et npm run … ; pas de web ni de navigateur, notes et tâches du projet permises, et le PATH de l’app.', ok: 'Tout rétablir', danger: true })) return true;
+    if (!await confirmBox({ title: 'Tout rétablir ?', text: 'Les agents reprennent les autorisations d’origine : lecture (et écriture en mode Modifier) dans leur dossier, terminal complet dans la bulle en mode Modifier, sinon avec « Commandes » seulement npm test et npm run … ; pas de web ni de navigateur, notes et tâches du projet permises, et le PATH de l’app.', ok: 'Tout rétablir', danger: true })) return true;
     if (ai.cc.onMac() && !await call({ reset: 'all' })) toast(err);
     redraw(); toast('Autorisations d’origine rétablies');
     return true;

@@ -15,6 +15,7 @@
 // Garde-fous : programme à un emplacement connu, aucun shell, --restricted (outils de fichiers confinés au
 // dossier de travail), --permission-mode dontAsk (tout ce qui n'est pas listé est refusé, sans question),
 // aucun réglage, hook ni serveur MCP de l'utilisateur, trois agents à la fois au plus, 90 minutes au plus.
+// Sur ce Mac, bulle macOS autour de l'agent et de ses commandes (AgentSandbox.swift), qui lui ouvre le terminal en mode Modifier.
 // Un appareil lié ne peut jamais demander les commandes (voir link.ts), ni changer les autorisations.
 import Foundation
 #if os(macOS)
@@ -356,10 +357,16 @@ final class Agents {
         }
         // Commandes : demandées par la case du formulaire, permises dans ce mode par les réglages, jamais sur un serveur.
         let tests = asked == true && !onServer && AgentPermissions.commandsAllowed(mode: mode)
-        let tools = AgentPermissions.tools(mode: mode, commands: tests)
+        // Bulle macOS (réglage « Terminal isolé ») : tout agent lancé sur ce Mac y tourne, avec ses sous-processus.
+        // En mode Modifier, elle lui donne le terminal complet, sauf à l'orchestrateur (Studio commite et publie lui-même).
+        // Profil refusé par macOS : l'agent part comme avant, sans bulle ni terminal.
+        let bubble = onServer || !AgentPermissions.terminal ? nil
+            : AgentSandbox.profile(project: pid, workDirs: [cwd] + extraDirs, readDirs: [dir])
+        let shell = bubble != nil && mode == "edit" && body["internal"] as? Bool != true
+        let tools = AgentPermissions.tools(mode: mode, commands: tests, shell: shell)
         args += ["--tools", tools.joined(separator: ",")]
         // Navigateur : sur ce Mac seulement, jamais pour l'orchestrateur ; ses outils sont permis en bloc (`mcp__browser`).
-        let browse = onServer || body["internal"] as? Bool == true ? nil : AgentPermissions.browserSetup()
+        let browse = onServer || body["internal"] as? Bool == true ? nil : AgentPermissions.browserSetup(bubble: bubble != nil)
         if let b = browse { args += ["--mcp-config", b.config] }
         let useModel = model ?? "", useEffort = effort ?? ""
         let modelOK = !useModel.isEmpty && Self.modelRe.firstMatch(in: useModel, range: NSRange(useModel.startIndex..., in: useModel)) != nil
@@ -369,9 +376,9 @@ final class Agents {
         if !extraDirs.isEmpty { args += ["--add-dir"] + extraDirs }
         // Notes et tâches du projet : permises par les réglages, jamais pour l'orchestrateur (résolution de conflits).
         let items = AgentPermissions.projectItems && body["internal"] as? Bool != true
-        let added = [AgentTuning.prompt(mode: mode, tests: tests, items: items), repoNote, browse?.prompt ?? ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        let added = [AgentTuning.prompt(mode: mode, tests: tests, items: items, shell: shell), repoNote, browse?.prompt ?? ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
         if !added.isEmpty { args += ["--append-system-prompt", added] }
-        args += ["--allowedTools"] + AgentPermissions.allowed(tools: tools, commands: tests) + (browse == nil ? [] : ["mcp__\(AgentPermissions.browserServer)"])
+        args += ["--allowedTools"] + AgentPermissions.allowed(tools: tools, commands: tests, shell: shell) + (browse == nil ? [] : ["mcp__\(AgentPermissions.browserServer)"])
 
         let run = Run(id: UUID().uuidString, project: pid, mode: mode, prompt: String(prompt.prefix(500)))
         run.model = modelOK ? useModel : ""; run.effort = effortOK ? useEffort : ""; run.commands = tests; run.projectItems = items
@@ -399,6 +406,10 @@ final class Agents {
             p.arguments = l.args
             sshSock = l.env["SSH_AUTH_SOCK"]
             p.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+        } else if let bubble {
+            p.executableURL = URL(fileURLWithPath: AgentSandbox.exec)
+            p.arguments = ["-p", bubble, bin] + args
+            p.currentDirectoryURL = URL(fileURLWithPath: cwd, isDirectory: true)
         } else {
             p.arguments = args
             p.currentDirectoryURL = URL(fileURLWithPath: cwd, isDirectory: true)
@@ -613,9 +624,10 @@ enum AgentTuning {
     static var lean: Bool { saved["lean"] as? Bool ?? true }
 
     /// Texte ajouté à la consigne système de Claude Code, selon le mode de l'agent.
-    static func prompt(mode: String, tests: Bool, items: Bool = false) -> String {
+    static func prompt(mode: String, tests: Bool, items: Bool = false, shell: Bool = false) -> String {
         [text("intro"), text(mode == "edit" ? "edit" : "read"), text("context"), mode == "edit" ? text("contextEdit") : "",
-         text("economy"), tests ? text("tests") : "", tests ? AgentPermissions.promptLine : "", items ? AgentPermissions.itemsLine : "",
+         text("economy"), tests ? text("tests") : "", tests && !shell ? AgentPermissions.promptLine : "", shell ? AgentPermissions.shellPrompt : "",
+         items ? AgentPermissions.itemsLine : "",
          text("behavior"), text("extra")]
             .filter { !$0.isEmpty }.joined(separator: " ")
     }
@@ -671,7 +683,8 @@ enum AgentPermissions {
     static let defaultCommands = ["npm test", "npm run test", "npm run *"]
     private static let maxCommands = 60, maxDirs = 20, maxSites = 50
     /// Réglages oui/non et leur valeur d'origine.
-    private static let flagDefaults: [String: Bool] = ["web": false, "anyCommand": false, "commandsInRead": false, "browser": false, "projectItems": true]
+    private static let flagDefaults: [String: Bool] = ["web": false, "anyCommand": false, "commandsInRead": false, "browser": false, "projectItems": true,
+                                                       "terminal": true]
     private static let flags = flagDefaults.keys.sorted()
     /// Nom du serveur MCP du navigateur : ses outils s'appellent `mcp__browser__…`.
     static let browserServer = "browser"
@@ -686,6 +699,9 @@ enum AgentPermissions {
     /// L'agent peut créer des notes et des tâches dans le projet d'où il est lancé (création seulement : il ne modifie
     /// ni ne supprime rien). Elles passent par son compte rendu, pas par un outil : rien de plus ne lui est ouvert sur ce Mac.
     static var projectItems: Bool { saved["projectItems"] as? Bool ?? true }
+    /// Terminal complet en mode Modifier, sans cocher « Commandes », dans la bulle macOS d'AgentSandbox
+    /// (écriture limitée à la copie, données de Studio et autres projets illisibles). Sans bulle possible : coupé.
+    static var terminal: Bool { saved["terminal"] as? Bool ?? true }
     /// Commandes permises, au format des règles de Claude Code (`npm run *` : tout ce qui commence par `npm run `).
     static var commands: [String] { (saved["commands"] as? [String])?.compactMap(command) ?? defaultCommands }
     /// Dossiers placés en tête du PATH des agents lancés sur ce Mac.
@@ -722,10 +738,11 @@ enum AgentPermissions {
         return (dir + "/npx", ["-y", "@playwright/mcp@latest", "--headless", "--isolated", "--allowed-origins", list.joined(separator: ";")], dir, list)
     }
 
-    static func browserSetup() -> (config: String, dir: String, prompt: String)? {
+    /// `bubble` : l'agent tourne dans la bulle macOS, où Chrome ne peut pas poser son propre bac à sable (`--no-sandbox`).
+    static func browserSetup(bubble: Bool = false) -> (config: String, dir: String, prompt: String)? {
         guard let cmd = browserCommand() else { return nil }
         let list = cmd.sites, dir = cmd.dir
-        let server: [String: Any] = ["command": cmd.exe, "args": cmd.args]
+        let server: [String: Any] = ["command": cmd.exe, "args": cmd.args + (bubble ? ["--no-sandbox"] : [])]
         guard let data = try? JSONSerialization.data(withJSONObject: ["mcpServers": [browserServer: server]]),
               let config = String(data: data, encoding: .utf8) else { return nil }
         let prompt = "Tu as un navigateur (outils `mcp__\(browserServer)__…`) : ouvrir une page, cliquer, remplir un formulaire, faire une capture, lire la console. "
@@ -750,15 +767,22 @@ enum AgentPermissions {
 
     static func commandsAllowed(mode: String) -> Bool { (mode == "edit" || commandsInRead) && (anyCommand || !commands.isEmpty) }
 
-    /// --tools : ce que l'agent voit.
-    static func tools(mode: String, commands: Bool) -> [String] {
-        (mode == "edit" ? editTools : readTools) + (web ? webTools : []) + (commands ? ["Bash"] : [])
+    /// --tools : ce que l'agent voit. `shell` : terminal complet dans la bulle (voir AgentSandbox).
+    static func tools(mode: String, commands: Bool, shell: Bool = false) -> [String] {
+        (mode == "edit" ? editTools : readTools) + (web ? webTools : []) + (commands || shell ? ["Bash"] : [])
     }
     /// --allowedTools : ce qui passe sans question (le reste est refusé par dontAsk). Bash n'y est permis que pour
-    /// les commandes listées, ou en entier si « toutes les commandes » est choisi.
-    static func allowed(tools: [String], commands: Bool) -> [String] {
-        tools.filter { $0 != "Bash" } + (commands ? bashRules : [])
+    /// les commandes listées, ou en entier si « toutes les commandes » est choisi ou si l'agent est dans la bulle.
+    static func allowed(tools: [String], commands: Bool, shell: Bool = false) -> [String] {
+        tools.filter { $0 != "Bash" } + (shell ? ["Bash"] : commands ? bashRules : [])
     }
+    /// Ajouté à la consigne quand l'agent a le terminal dans la bulle : ses limites, et la nuance au « pas de commit ».
+    static let shellPrompt = "Tu as un terminal complet (Bash), dans une bulle macOS : tu n'écris que dans ta copie (et le .git de son dépôt), "
+        + "les caches des outils et /tmp ; les données de Studio, les autres projets et les autres sessions te sont illisibles. "
+        + "Si une commande échoue sur « Operation not permitted », c'est la bulle : ne cherche pas à la contourner, dis-le. "
+        + "Tu peux utiliser `git` et `gh`. Par défaut, ne commite pas et ne pousse pas : Studio publie lui-même ta copie. "
+        + "Mais si l'utilisateur te demande explicitement de travailler sur une branche ou une pull request (récupérer une branche, fusionner, résoudre des conflits, commiter, pousser), fais-le. "
+        + "Jamais de `push --force` ni de suppression de branche distante sans demande explicite, et ne pousse jamais sur la branche principale."
     private static var bashRules: [String] { anyCommand ? ["Bash"] : commands.map { "Bash(\($0))" } }
 
     /// Ajouté à la consigne quand les commandes sont permises : l'agent sait d'emblée ce qu'il peut lancer.
@@ -782,7 +806,7 @@ enum AgentPermissions {
     /// Valeurs en vigueur, valeurs d'origine, clés modifiées, et ce que reçoit Claude Code dans chaque mode.
     static func state(rejected: [String] = []) -> [String: Any] {
         let values: [String: Any] = ["web": web, "anyCommand": anyCommand, "commandsInRead": commandsInRead, "projectItems": projectItems,
-                                     "commands": commands, "path": path, "browser": browser, "sites": sites]
+                                     "commands": commands, "path": path, "browser": browser, "sites": sites, "terminal": terminal]
         var defaults: [String: Any] = ["commands": defaultCommands, "path": [String](), "sites": [String]()]
         for (k, v) in flagDefaults { defaults[k] = v }
         let s = saved
@@ -790,7 +814,7 @@ enum AgentPermissions {
         let browse = browser && !sites.isEmpty ? ["mcp__\(browserServer)"] : []
         let preview: [String: Any] = [
             "read": tools(mode: "read", commands: false) + browse, "readCommands": commandsAllowed(mode: "read") ? bashRules : [],
-            "edit": tools(mode: "edit", commands: false) + browse, "editCommands": commandsAllowed(mode: "edit") ? bashRules : [],
+            "edit": tools(mode: "edit", commands: false) + browse + (terminal && AgentSandbox.available ? ["Bash (bulle)"] : []), "editCommands": commandsAllowed(mode: "edit") ? bashRules : [],
             "npx": npxDir != nil,
         ]
         return ["ok": true, "values": values, "defaults": defaults, "changed": changed, "preview": preview, "rejected": rejected]
