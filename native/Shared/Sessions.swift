@@ -57,7 +57,11 @@ final class ClaudeSessions {
     /// et ses copies isolées (worktrees créés par Claude Code dans .claude/worktrees/).
     private func dirs(for project: String) -> [URL] {
         let home = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude/projects", isDirectory: true)
-        let encoded = String(project.map { $0.isLetter || $0.isNumber ? $0 : "-" })
+        // Même règle que Claude Code (`/[^a-zA-Z0-9]/g` → « - », unité UTF-16 par unité) : un dossier au nom accentué
+        // (« Projets », « Écriture »…) gardait sinon ses lettres ici, et aucune session de ce projet n'était retrouvée.
+        let encoded = String(decoding: project.utf16.map { c -> UInt16 in
+            (c >= 0x30 && c <= 0x39) || (c >= 0x41 && c <= 0x5A) || (c >= 0x61 && c <= 0x7A) ? c : 0x2D
+        }, as: UTF16.self)
         let names = (try? FileManager.default.contentsOfDirectory(atPath: home.path)) ?? []
         return names.filter { $0 == encoded || $0.hasPrefix(encoded + "--claude-worktrees-") }
             .map { home.appendingPathComponent($0, isDirectory: true) }

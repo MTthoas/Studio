@@ -79,7 +79,7 @@ final class Agents {
     func detail(_ id: String) -> [String: Any] {
         lock.lock(); defer { lock.unlock() }
         guard let r = runs[id] else { return ["ok": false, "message": "Agent introuvable."] }
-        var s = summary(r); s["ok"] = true; s["actions"] = r.actions.suffix(80); return s
+        var s = summary(r); s["ok"] = true; s["actions"] = Array(r.actions.suffix(80)); return s
     }
 
     func list(project: String) -> [String: Any] {
