@@ -13,7 +13,8 @@
 // que Studio en retire et crée dans le projet (AgentItems, tout en bas ; la page les crée, features/projects/items.ts).
 //
 // Garde-fous : programme à un emplacement connu, aucun shell, --restricted (outils de fichiers confinés au
-// dossier de travail), --permission-mode dontAsk (tout ce qui n'est pas listé est refusé, sans question),
+// dossier de travail), --permission-mode dontAsk (tout ce qui n'est pas listé est refusé, sans question ; en mode
+// Modifier dans la bulle, bypassPermissions : c'est alors la bulle qui borne l'écriture à la copie),
 // aucun réglage, hook ni serveur MCP de l'utilisateur, huit agents à la fois au plus, 90 minutes au plus.
 // Sur ce Mac, bulle macOS autour de l'agent et de ses commandes (AgentSandbox.swift), qui lui ouvre le terminal en mode Modifier.
 // Un appareil lié ne peut jamais demander les commandes (voir link.ts), ni changer les autorisations.
@@ -393,6 +394,11 @@ final class Agents {
         let bubble = onServer || !AgentPermissions.terminal ? nil
             : AgentSandbox.profile(project: pid, workDirs: [cwd] + extraDirs, readDirs: [dir])
         let shell = bubble != nil && mode == "edit" && body["internal"] as? Bool != true
+        // Dans la bulle, en mode Modifier, c'est macOS qui borne l'écriture à la copie : Claude Code passe en
+        // bypassPermissions pour ne plus refuser Edit/Write sous `.claude/` (les copies vivent dans `.claude/worktrees/`,
+        // un chemin qu'il protège et refuse en dontAsk même autorisé). Les outils restent ceux de --tools (sans Bash
+        // pour l'orchestrateur), et l'écriture reste bornée par la bulle. Hors bulle ou en mode Analyser : dontAsk.
+        if bubble != nil && mode == "edit", let i = args.firstIndex(of: "dontAsk") { args[i] = "bypassPermissions" }
         // Sous-agents (outil Agent) : demandés par la consigne, jamais pour l'orchestrateur. Ils héritent des outils et
         // des permissions de l'agent, et tournent dans le même processus, donc dans la même bulle.
         let team = body["internal"] as? Bool == true ? nil : AgentTeam(body["subagents"])

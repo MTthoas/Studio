@@ -2418,3 +2418,106 @@ a.dk-port:hover { background: color-mix(in srgb, var(--c-blue) 14%, transparent)
 .dk-size { flex: none; color: var(--text-2); font-size: var(--t-1); font-variant-numeric: tabular-nums; }
 .dk-proj { padding: 1px 7px; border-radius: 999px; font-size: var(--t-1); color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); }
 .dk-more { margin: 6px 0 0; color: var(--text-3); font-size: var(--t-1); }
+
+/* ---------- Demander à l'IA sur une sélection (src/ui/selask.ts) ---------- */
+.selask { position: absolute; left: 0; top: 0; z-index: 60; width: 340px; max-width: calc(100% - 16px); padding: 6px; border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); font-size: var(--t-2); animation: sa-in .12s ease-out; }
+.selask.wide { width: 460px; }
+.selask[hidden] { display: none; }
+@keyframes sa-in { from { opacity: 0; translate: 0 -3px; } }
+.sa-row { display: flex; align-items: center; gap: 6px; padding: 0 2px 0 6px; }
+.sa-ic { flex: none; color: var(--accent); }
+.sa-in { flex: 1; min-width: 0; height: 28px; border: 0; outline: 0; background: none; color: var(--text); font: inherit; }
+.sa-in::placeholder { color: var(--text-3); }
+.sa-go { flex: none; width: 24px; height: 24px; border-radius: 6px; background: var(--btn); color: var(--text-2); }
+.sa-go:hover { background: var(--btn-hover); color: var(--text); }
+.sa-quick { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 2px 2px; border-top: 1px solid var(--border); margin-top: 4px; }
+.sa-quick button, .sa-actions button { height: 24px; padding: 0 9px; border-radius: 6px; background: var(--btn); color: var(--text-2); font-size: var(--t-1); }
+.sa-quick button:hover, .sa-actions button:hover { background: var(--btn-hover); color: var(--text); }
+.sa-actions button.primary { background: var(--accent); color: #fff; }
+.sa-actions button.primary:hover { background: var(--accent-hover); color: #fff; }
+.sa-q { display: flex; align-items: center; gap: 6px; padding: 2px 6px 6px; color: var(--text-2); font-size: var(--t-1); }
+.sa-q span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sa-ans { max-height: 260px; overflow: auto; padding: 8px 10px; border-radius: 6px; background: var(--surface-2); color: var(--text); white-space: pre-wrap; overflow-wrap: break-word; line-height: 1.55; user-select: text; outline: 0; }
+.sa-err { padding: 8px 10px; border-radius: 6px; background: var(--del); color: var(--danger); white-space: pre-wrap; }
+.sa-wait { display: flex; align-items: center; gap: 4px; padding: 10px; color: var(--text-3); }
+.sa-wait i { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); animation: sa-dot 1s ease-in-out infinite; }
+.sa-wait i:nth-child(2) { animation-delay: .15s; } .sa-wait i:nth-child(3) { animation-delay: .3s; }
+.sa-wait span { margin-left: 6px; }
+@keyframes sa-dot { 50% { opacity: .25; transform: translateY(-2px); } }
+.sa-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding-top: 6px; }
+.sa-sp { flex: 1; }
+@media (prefers-reduced-motion: reduce) { .selask, .sa-wait i { animation: none; } }
+
+/* ---------- Panneau IA de la note (src/features/noteai.ts) ---------- */
+.note-wrap { flex: 1; min-height: 0; display: flex; }
+.note-wrap > .note { min-width: 0; }
+.nai { flex: none; width: 380px; display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--border); background: var(--bg-list); animation: nai-in .16s ease-out; }
+.nai[hidden] { display: none; }
+@keyframes nai-in { from { opacity: 0; translate: 12px 0; } }
+.nai-btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); }
+.nai-head { flex: none; display: flex; align-items: center; gap: 8px; height: 44px; padding: 0 10px 0 14px; border-bottom: 1px solid var(--border); }
+.nai-head > .ic { width: 16px; height: 16px; color: var(--accent); }
+.nai-head b { flex: 1; font-weight: 600; }
+.nai-prov { max-width: 150px; border: 1px solid var(--border-2); border-radius: 5px; background: var(--bg); padding: 2px 6px; font-size: var(--t-1); color: var(--text-2); }
+.nai-ib { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 6px; color: var(--text-3); }
+.nai-ib:hover { background: var(--hover); color: var(--text); }
+.nai-ib .ic { width: 14px; height: 14px; }
+.nai-ctx { flex: none; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.nai-ctx-l { margin-bottom: 6px; font-size: var(--t-1); color: var(--text-3); text-transform: uppercase; letter-spacing: .04em; }
+.nai-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.nai-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 100%; height: 26px; padding: 0 9px; border-radius: 13px; border: 1px dashed var(--border-2); color: var(--text-3); font-size: var(--t-1); }
+.nai-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nai-chip .ic { flex: none; width: 13px; height: 13px; }
+.nai-chip:hover:not([disabled]) { background: var(--hover); color: var(--text); }
+.nai-chip.on { border-style: solid; border-color: transparent; background: var(--accent-soft); color: var(--accent-text); }
+.nai-chip[disabled] { opacity: .5; cursor: not-allowed; }
+.nai-chip.nai-pj { border-style: solid; border-color: transparent; }
+.nai-warn { margin: 8px 0 0; font-size: var(--t-1); color: var(--warn); }
+.nai-thread { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.nai-empty p { margin: 0 0 8px; color: var(--text-2); font-size: var(--t-2); }
+.nai-quick { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.nai-quick button { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 6px 10px; border-radius: 8px; background: var(--surface); box-shadow: 0 0 0 1px var(--border); text-align: left; font-size: var(--t-2); color: var(--text); }
+.nai-quick button:hover { box-shadow: 0 0 0 1px var(--border-2); background: var(--surface-2); }
+.nai-quick .ic { flex: none; width: 15px; height: 15px; color: var(--accent); }
+.nai-tip { display: flex; align-items: center; gap: 6px; margin-top: 14px !important; font-size: var(--t-1) !important; color: var(--text-3) !important; }
+.nai-tip .ic { width: 13px; height: 13px; }
+.nai-msg { font-size: var(--t-2); line-height: 1.55; }
+.nai-msg.me { align-self: flex-end; max-width: 88%; padding: 8px 11px; border-radius: 12px 12px 3px 12px; background: var(--active); }
+.nai-msg.me p { margin: 0; white-space: pre-wrap; overflow-wrap: break-word; }
+.nai-msg.me blockquote { margin: 0 0 6px; padding-left: 8px; border-left: 2px solid var(--accent); color: var(--text-2); font-size: var(--t-1); }
+.nai-msg.ai .md { font-size: var(--t-2); line-height: 1.6; }
+.nai-msg.ai .md > :first-child { margin-top: 0; } .nai-msg.ai .md > :last-child { margin-bottom: 0; }
+.nai-msg.err p { margin: 0; padding: 8px 10px; border-radius: 6px; background: var(--del); color: var(--danger); white-space: pre-wrap; }
+.nai-steps { display: flex; flex-direction: column; gap: 2px; margin-bottom: 6px; font-size: var(--t-1); color: var(--text-3); }
+.nai-steps span { display: inline-flex; align-items: center; gap: 5px; }
+.nai-steps .ic { width: 12px; height: 12px; }
+.nai-acts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
+.nai-acts button { height: 24px; padding: 0 9px; border-radius: 6px; background: var(--btn); color: var(--text-2); font-size: var(--t-1); }
+.nai-acts button:hover { background: var(--btn-hover); color: var(--text); }
+.nai-acts button.primary { background: var(--accent); color: #fff; }
+.nai-acts button.primary:hover { background: var(--accent-hover); }
+.nai-via { margin-top: 4px; font-size: 11px; color: var(--text-3); }
+.nai-dots { display: flex; align-items: center; gap: 4px; color: var(--text-3); }
+.nai-dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); animation: sa-dot 1s ease-in-out infinite; }
+.nai-dots i:nth-child(2) { animation-delay: .15s; } .nai-dots i:nth-child(3) { animation-delay: .3s; }
+.nai-dots span { margin-left: 6px; }
+.nai-compose { flex: none; margin: 0 10px 10px; padding: 6px; border-radius: 10px; background: var(--surface); box-shadow: 0 0 0 1px var(--border-2); }
+.nai-compose:focus-within { box-shadow: 0 0 0 1px var(--accent), 0 0 0 4px var(--accent-soft); }
+.nai-sel { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; padding: 4px 6px 4px 8px; border-radius: 6px; background: var(--accent-soft); color: var(--accent-text); font-size: var(--t-1); }
+.nai-sel[hidden] { display: none; }
+.nai-sel .ic { flex: none; width: 13px; height: 13px; }
+.nai-sel span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nai-sel button { flex: none; width: 18px; height: 18px; border-radius: 4px; color: inherit; }
+.nai-sel button:hover { background: var(--hover); }
+.nai-in { display: block; width: 100%; min-height: 24px; max-height: 180px; padding: 4px 6px; border: 0; outline: 0; resize: none; background: none; color: var(--text); font: inherit; font-size: var(--t-2); line-height: 1.5; }
+.nai-bar { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding-top: 4px; }
+.nai-hint { flex: 1; font-size: 11px; color: var(--text-3); }
+.nai-bar .btn { height: 26px; padding: 0 12px; }
+@media (max-width: 1100px) { .nai { width: 330px; } .nai-quick { grid-template-columns: 1fr; } }
+/* Écran étroit : le panneau passe par-dessus la note, en feuille. */
+@media (max-width: 800px) {
+  .nai { position: fixed; z-index: 65; inset: auto 0 0 0; width: auto; height: min(72vh, 620px); border-left: 0; border-radius: 14px 14px 0 0; box-shadow: var(--shadow); padding-bottom: env(safe-area-inset-bottom, 0px); animation-name: nai-up; }
+  .nai-hint { display: none; }
+  @keyframes nai-up { from { translate: 0 30px; opacity: 0; } }
+}
+@media (prefers-reduced-motion: reduce) { .nai, .nai-dots i { animation: none; } }
