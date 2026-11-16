@@ -416,14 +416,15 @@ Un plugin est un objet `Plugin` : il déclare ses réglages (`settings`, la page
 
 ### Intégration continue et versions
 
-La CI ([`.github/workflows/build.yml`](.github/workflows/build.yml)) tourne à chaque push et pull request :
+La CI ([`.github/workflows/build.yml`](.github/workflows/build.yml)) tourne à chaque pull request et à chaque push sur `main` :
 
 | Job | Rôle |
 | --- | --- |
 | **Vérifications** | Types TypeScript stricts, build, cache hors ligne complet, aucune clé d'API dans le code |
-| **App Mac** | Construit `Studio.app` (Apple Silicon et Intel) et vérifie sa signature ; la notarise si les secrets Apple existent |
-| **App iPhone** | Vérifie que l'app compile pour le simulateur |
+| **Apps Mac et iPhone** | Sur un seul runner macOS : construit `Studio.app` et vérifie sa signature (notarisée si les secrets Apple existent), puis vérifie que l'app iPhone compile pour le simulateur |
 | **Publication** | Sur `main` et sur les tags `v…` : crée la Release et publie le paquet |
+
+Une pull request ne compile les apps natives que si elle touche à `native/`, au workflow, aux dépendances ou aux scripts de build, et alors pour Apple Silicon seulement (`STUDIO_ARCHS=arm64`) : une PR qui ne change que l'app web est vérifiée en une vingtaine de secondes. Le build complet (binaire universel, signature, publication) se fait une seule fois, sur `main`, après la fusion.
 
 Chaque push sur `main` publie une Release `v1.0.<n>` avec `Studio-macOS.zip` et `Studio-web.zip`, ainsi que le paquet `@mtthoas/studio` (l'app web compilée) dans GitHub Packages. Un tag `v…` fait de même avec son propre nom.
 

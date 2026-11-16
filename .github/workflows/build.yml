@@ -1,17 +1,22 @@
 # Studio : vérifications, builds et publication.
 #   check   → types TypeScript stricts, build, cache hors ligne complet, aucun secret dans le code
-#   macos   → construit Studio.app (Apple Silicon + Intel) ; signée Developer ID et notarisée pour une
-#             publication si les secrets Apple sont renseignés, sinon signée « ad hoc »
-#   ios     → vérifie que l'app iPhone compile (sans signature : non installable, voir README)
+#   native  → sur UN seul runner macOS : construit Studio.app (signée Developer ID et notarisée pour une publication
+#             si les secrets Apple sont renseignés, sinon signée « ad hoc »), puis vérifie que l'app iPhone compile
+#             (sans signature : non installable, voir README)
 #   release → à chaque push sur main (et sur un tag v…), publie une Release avec l'app Mac et l'app web,
 #             et le paquet @mtthoas/studio (app web compilée) dans les Packages du dépôt
 #
 # Quand le build se lance :
 #   - push sur main ou tag v…  → build complet + publication ;
-#   - pull request (ouverte, ou branche re-poussée) → build de vérification, une seule fois par push ;
+#   - pull request (ouverte, ou branche re-poussée) → vérifications (20 s) ; les apps natives ne sont compilées que
+#     si la PR touche au natif ou au build (voir « Ce que la PR touche »), et alors pour Apple Silicon seulement.
+#     Le build complet et la publication se font une seule fois, sur main, après la fusion ;
 #   - push sur une autre branche → rien (avant, chaque push d'agent lançait deux builds : « push » ET « pull_request »,
 #     dans deux groupes de concurrence différents ; le second annulait parfois le premier, d'où des builds « au hasard »).
 #   Une branche poussée sans PR se vérifie à la main : Actions → Build → Run workflow.
+#
+# Pourquoi un seul job macOS : le travail dure 2 à 3 minutes, mais un runner macOS se fait attendre 5 à 10 minutes.
+# Deux jobs (Mac, iPhone) par build, deux builds par PR (la PR puis main) : l'attente se payait quatre fois.
 name: Build
 
 on:
@@ -25,10 +30,12 @@ on:
 permissions:
   contents: read
 
-# Un seul build à la fois par PR (ou par branche) : un nouveau push annule le build devenu périmé.
-# Jamais sur main ni sur un tag : chaque fusion doit aller jusqu'à sa publication.
+# Un seul build à la fois par PR (ou par branche lancée à la main) : un nouveau push annule le build devenu périmé.
+# Jamais sur main ni sur un tag : chaque fusion doit aller jusqu'à sa publication. Leur groupe est donc propre à
+# chaque exécution : dans un groupe partagé, GitHub ne garde qu'UN build en attente et annule les autres, même sans
+# `cancel-in-progress` (deux fusions rapprochées, et la première publication disparaissait).
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || (github.event_name == 'push' && github.run_id) || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -36,10 +43,26 @@ jobs:
     name: Vérifications
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      native: ${{ steps.touche.outputs.native }}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          # Une PR est testée sur son commit de fusion : son premier parent est la branche de base.
+          fetch-depth: 2
+      # Les apps natives embarquent l'app web telle quelle : une PR qui ne touche que src/, css/ ou la doc ne peut pas
+      # casser leur compilation, et les vérifications ci-dessous couvrent déjà l'app web. Hors PR : toujours tout.
+      - name: Ce que la PR touche
+        id: touche
+        run: |
+          NATIVE=true
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            FILES="$(git diff --name-only HEAD^1 HEAD)" || FILES="native/"
+            echo "$FILES" | grep -qE '^(native/|\.github/workflows/build\.yml$|package(-lock)?\.json$|scripts/|icons/|index\.html$|manifest\.webmanifest$)' || NATIVE=false
+          fi
+          echo "native=$NATIVE" >> "$GITHUB_OUTPUT"
+          echo "Apps natives à compiler : $NATIVE"
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -59,11 +82,17 @@ jobs:
           path: Studio-web.zip
           retention-days: 30
 
-  macos:
-    name: App Mac
+  native:
+    name: Apps Mac et iPhone
     needs: check
+    if: needs.check.outputs.native == 'true'
     runs-on: macos-15
-    timeout-minutes: 20
+    timeout-minutes: 30
+    env:
+      # Une PR vérifie que le code compile : une architecture suffit. La publication garde le binaire universel.
+      STUDIO_ARCHS: ${{ github.event_name == 'pull_request' && 'arm64' || 'arm64 x86_64' }}
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_INSTALL_CLEANUP: 1
     steps:
       - uses: actions/checkout@v7
         with:
@@ -127,26 +156,13 @@ jobs:
           path: Studio-macOS.zip
           retention-days: 30
 
-  ios:
-    name: App iPhone (compilation)
-    needs: check
-    runs-on: macos-15
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-      - run: npm ci --no-audit --no-fund
-      - name: Outils
-        run: brew install xcodegen
-      - name: Compiler pour le simulateur
+      # L'app web vient d'être construite pour l'app Mac (dist/) : elle est recopiée telle quelle, sans second build.
+      - name: Outils iPhone
+        run: command -v xcodegen >/dev/null || brew install xcodegen
+      - name: Compiler l'app iPhone (simulateur)
         working-directory: native
         run: |
-          ./copy-web.sh build/web
+          rm -rf build/web && mkdir -p build/web && cp -R ../dist/. build/web/ && find build/web -name '*.map' -delete
           xcodegen generate --spec project.yml --quiet
           xcodebuild -project Studio.xcodeproj -scheme Studio \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
@@ -155,7 +171,7 @@ jobs:
   release:
     name: Publication
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-    needs: [macos, ios]
+    needs: native
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

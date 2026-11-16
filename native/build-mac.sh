@@ -21,12 +21,21 @@ echo "→ Fichiers de l'application"
 
 echo "→ Compilation (Swift)"
 SOURCES=("$ROOT"/native/Shared/*.swift "$ROOT"/native/macOS/*.swift)
-for ARCH in arm64 x86_64; do
+# Architectures : les deux par défaut (binaire universel). STUDIO_ARCHS="arm64" n'en compile qu'une (vérification en CI).
+# Elles se compilent en même temps : c'est l'étape la plus longue du build, et elles n'ont rien en commun.
+read -r -a ARCHS <<< "${STUDIO_ARCHS:-arm64 x86_64}"
+PIDS=()
+for ARCH in "${ARCHS[@]}"; do
   swiftc -O -target "$ARCH-apple-macos13.0" -parse-as-library -module-name Studio \
-    -framework AppKit -framework WebKit -framework UserNotifications -framework Speech -framework AVFoundation -framework LocalAuthentication -framework Security "${SOURCES[@]}" -o "$BUILD/Studio-$ARCH"
+    -framework AppKit -framework WebKit -framework UserNotifications -framework Speech -framework AVFoundation -framework LocalAuthentication -framework Security "${SOURCES[@]}" -o "$BUILD/Studio-$ARCH" &
+  PIDS+=("$!")
 done
-lipo -create "$BUILD/Studio-arm64" "$BUILD/Studio-x86_64" -output "$APP/Contents/MacOS/Studio"
-rm "$BUILD/Studio-arm64" "$BUILD/Studio-x86_64"
+FAILED=0
+for PID in "${PIDS[@]}"; do wait "$PID" || FAILED=1; done
+[ "$FAILED" = 0 ] || { echo "✗ La compilation Swift a échoué." >&2; exit 1; }
+BINS=(); for ARCH in "${ARCHS[@]}"; do BINS+=("$BUILD/Studio-$ARCH"); done
+lipo -create "${BINS[@]}" -output "$APP/Contents/MacOS/Studio"
+rm "${BINS[@]}"
 
 echo "→ Icône"
 ICONSET="$BUILD/Studio.iconset"
