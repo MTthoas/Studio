@@ -39,6 +39,8 @@ const runsBy = new Map<string, AgentRun[]>();
 const queuedBy = new Map<string, Queued[]>();
 const details = new Map<string, Detail>();
 let root: HTMLElement | null = null, timer: ReturnType<typeof setInterval> | undefined, tick = 0, cursor = 0, listing = false;
+/** Conversations d'agents déjà réclamées à la liste du Mac (relue une fois pour chacune, pas à chaque tour). */
+const asked = new Set<string>();
 
 const ms = (iso?: string) => Date.parse(iso || '') || 0;
 const pkey = (p: Pane) => `${p.project}/${p.session}`;
@@ -50,7 +52,13 @@ function rows(): Row[] {
   const out: Row[] = [];
   for (const p of projects.projects()) {
     const runs = runsBy.get(p.id) ?? [];
-    for (const s of sessionsBy.get(p.id)?.list ?? []) {
+    // Les agents lancés (ici, dans l'onglet Claude Code ou ailleurs) dont la conversation n'est pas encore dans la liste
+    // du Mac : affichés tout de suite d'après leur lancement, sans attendre la relecture des journaux.
+    const listed = sessionsBy.get(p.id)?.list ?? [], known = new Set(listed.map(s => s.id));
+    const fresh = runs.filter(r => r.session && !known.has(r.session) && (live(r) || Date.now() - ms(r.finished || r.started) < 36e5))
+      .filter((r, i, l) => l.findIndex(x => x.session === r.session) === i)
+      .map((r): Session => ({ id: r.session, title: r.prompt, firstPrompt: r.prompt, branch: '', worktree: r.worktree, started: r.started, updated: r.finished || r.started, active: r.finished || r.started, live: live(r), models: [], prompts: 1, lastPrompt: r.prompt, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }, tools: {}, files: [] }));
+    for (const s of [...listed, ...fresh]) {
       const mine = runs.filter(r => r.session === s.id), last = mine.reduce<AgentRun | undefined>((a, r) => !a || ms(r.started) > ms(a.started) ? r : a, undefined);
       const act = ms(s.active || s.updated);
       const status = mine.some(live) || s.live ? 'running' : last?.status === 'error' ? 'error' : act > (seen[s.id] ?? 0) && Date.now() - act < 3 * 864e5 ? 'review' : 'idle';
@@ -81,9 +89,15 @@ async function loadDetail(p: Pane): Promise<void> {
 async function refresh(): Promise<void> {
   if (!root?.isConnected) { stop(); return; }
   const all = projects.projects(), shown = panes().filter((x): x is Pane => !!x);
-  // Les agents : à chaque tour pour les projets affichés ou qui travaillent, tous les quatre tours pour les autres.
+  // Les agents (lecture en mémoire sur le Mac, rapide) : à chaque tour pour les projets affichés ou qui travaillent, un tour sur deux pour les autres.
   const busy = new Set([...shown.map(x => x.project), ...[...runsBy].filter(([, l]) => l.some(live)).map(([k]) => k)]);
-  await Promise.all(all.filter(p => busy.has(p.id) || tick % 4 === 0).map(p => loadRuns(p.id)));
+  await Promise.all(all.filter(p => busy.has(p.id) || tick % 2 === 0).map(p => loadRuns(p.id)));
+  // Un agent dont la conversation manque à la liste : la liste de son projet est relue tout de suite (une fois par agent).
+  for (const p of all) {
+    const known = new Set((sessionsBy.get(p.id)?.list ?? []).map(s => s.id));
+    const missing = (runsBy.get(p.id) ?? []).filter(r => r.session && !known.has(r.session) && !asked.has(r.session));
+    if (missing.length && sessionsBy.has(p.id)) { missing.forEach(r => asked.add(r.session)); void loadSessions(p).then(paintList); }
+  }
   // Une vue qui attend son agent : la conversation apparaît dès que le Mac l'a créée.
   for (const x of shown) if (!x.session && x.run) { const r = runsBy.get(x.project)?.find(y => y.run === x.run); if (r?.session) { x.session = r.session; save(); } }
   // Les fils : à chaque tour tant que l'agent travaille, une fois sur quatre au repos.
@@ -99,7 +113,8 @@ async function refresh(): Promise<void> {
   tick++;
   paint();
 }
-function start(): void { stop(); void refresh(); timer = setInterval(() => void refresh(), TICK); }
+// Chaque ouverture relit tout de suite la liste des conversations (tick à 0), puis toutes les 30 s.
+function start(): void { stop(); tick = 0; void refresh(); timer = setInterval(() => void refresh(), TICK); }
 export function stop(): void { clearInterval(timer); timer = undefined; }
 
 // ---------- Rendu ----------
