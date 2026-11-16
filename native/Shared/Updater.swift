@@ -13,6 +13,8 @@
 import Foundation
 #if os(macOS)
 import AppKit
+import CryptoKit
+import Security
 
 final class Updater {
     static let shared = Updater()
@@ -71,6 +73,35 @@ final class Updater {
         guard (try? p.run()) != nil else { return -1 }
         p.waitUntilExit()
         return p.terminationStatus
+    }
+
+    // MARK: Signature locale
+
+    /// Signature d'une app : ad hoc ou non, et empreinte SHA-1 de son certificat feuille.
+    private static func signing(_ url: URL) -> (adhoc: Bool, leaf: String?)? {
+        var code: SecStaticCode?
+        guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code else { return nil }
+        var info: CFDictionary?
+        guard SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
+              let d = info as? [String: Any] else { return nil }
+        let flags = (d[kSecCodeInfoFlags as String] as? NSNumber)?.uint32Value ?? 0
+        let leaf = (d[kSecCodeInfoCertificates as String] as? [SecCertificate])?.first.map {
+            Insecure.SHA1.hash(data: SecCertificateCopyData($0) as Data).map { String(format: "%02X", $0) }.joined()
+        }
+        return (flags & SecCodeSignatureFlags.adhoc.rawValue != 0, leaf)
+    }
+
+    /// Si l'app en cours est signée par le certificat « Studio Local » de build-mac.sh et que la Release est ad hoc,
+    /// la re-signe avec ce même certificat : l'exigence de signature ne change pas, et le trousseau garde ses
+    /// « Toujours autoriser » (sinon il redemande l'accès au coffre et aux clés SSH après chaque mise à jour).
+    /// En cas d'échec, le paquet reste ad hoc : la mise à jour marche, le trousseau redemandera simplement.
+    private func resignLocally(_ fresh: URL) {
+        guard let mine = Self.signing(Bundle.main.bundleURL), !mine.adhoc, let id = mine.leaf,
+              let theirs = Self.signing(fresh), theirs.adhoc else { return }
+        if Self.run("/usr/bin/codesign", ["--force", "--sign", id, "--timestamp=none", fresh.path]) != 0
+            || Self.run("/usr/bin/codesign", ["--verify", "--deep", "--strict", fresh.path]) != 0 {
+            _ = Self.run("/usr/bin/codesign", ["--force", "--sign", "-", "--timestamp=none", fresh.path])
+        }
     }
 
     // MARK: Paquet prêt
@@ -159,6 +190,7 @@ final class Updater {
               Self.run("/usr/bin/codesign", ["--verify", "--deep", "--strict", fresh.path]) == 0 else {
             return .failed("Le paquet téléchargé n'est pas une app Studio intacte : rien n'a été changé.")
         }
+        resignLocally(fresh)
         keep = true
         return .ready(Staged(tag: rel.tag, app: fresh, tmp: tmp))
     }
