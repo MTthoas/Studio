@@ -127,7 +127,7 @@ Dans l'app, la page **Aide** (touche `?`) explique la prise en main en cartes co
 
 ### Notes et blocs spéciaux
 
-Les notes sont du Markdown : `[[Titre]]` crée un lien (chaque note montre qui la cite, le graphe dessine l'ensemble), `#tag` range la note sans dossier, et une capture sans tag arrive dans la boîte de réception. Chaque note garde son historique de versions, et peut être **éphémère** : elle s'efface seule à la date choisie.
+Les notes sont du Markdown : `[[Titre]]` crée un lien (chaque note montre qui la cite, le graphe dessine l'ensemble), `#tag` range la note sans dossier, et une capture sans tag arrive dans la boîte de réception. Chaque note garde son historique de versions, et peut être **éphémère** : elle s'efface seule à la date choisie. Une note peut avoir des **sous-notes** (menu ⋯ → « Nouvelle sous-note » ou « Ranger sous une note… ») : elles s'affichent en arbre dans la section **Arborescence** de la barre latérale, sous leur note parente et dans son fil d'Ariane.
 
 | Écriture | Effet |
 | --- | --- |
@@ -136,6 +136,7 @@ Les notes sont du Markdown : `[[Titre]]` crée un lien (chaque note montre qui l
 | ` ```sql ` / ` ```schema ` | Diagramme entité-association ; export SQL, Mermaid, SVG |
 | ` ```agent ` | Automatisation IA (outils : `notes`, `linear`, `github`, `agents` ; `projet:` pour son périmètre, Général sinon), lançable ou planifiée |
 | ` ```linear ` | Liste d'issues Linear filtrée (assigné, état, équipe…) |
+| ` ```commandes ` | Commandes enregistrées : une par ligne, `# description` au-dessus, `## Section` pour grouper, `\` pour continuer ; un clic les copie, la palette (⌘K) les retrouve |
 | ` ```projet ` | Déclare un [projet](#projets) |
 
 Sur iPhone, le bouton micro transforme ta voix en note ; la transcription est faite sur l'appareil.
@@ -347,6 +348,7 @@ src/                               TypeScript strict
     tasks.ts          tâches, sous-tâches, échéances, tickets Linear
     board.ts          Kanban générique (glisser-déposer, clavier, tactile)
     voice.ts          notes vocales (transcription sur l'appareil)
+    commands.ts       bloc ```commandes (commandes enregistrées à copier) et leur recherche dans la palette
     hub.ts            réglages, coffre, agents, blocs spéciaux, liaison d'appareils
     projects/         model.ts (bloc ```projet, tags), page.ts (cockpit), flux.ts,
                       review.ts (revue IA), sessions.ts (agents Claude Code, publication),

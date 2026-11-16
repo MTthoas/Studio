@@ -53,6 +53,17 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'subnotes-commands', date: '2026-11-16', icon: 'notes', hue: 'teal',
+    title: 'Sous-notes et commandes',
+    lead: 'Une note peut en contenir d’autres, rangées en arbre dans la barre latérale, et garder des commandes à copier.',
+    bits: [
+      ['notes', 'Sous-notes', 'menu ⋯ → « Nouvelle sous-note » ou « Ranger sous une note… »'],
+      ['sidebar', 'Arborescence', 'section de la barre latérale, branches dépliables'],
+      ['terminal', 'Bloc commandes', '`# description` au-dessus, `## Section` pour grouper, un clic copie'],
+      ['search', 'Palette', 'les commandes enregistrées se retrouvent avec ⌘K'],
+    ],
+    where: ['Barre latérale', 'Arborescence'],
+    visual: { kind: 'stack', rows: [[['Note', 'gray', 'notes'], 'Serveur'], [['Sous-note', 'teal', 'notes'], 'Déploiement'], [['Commande', 'orange', 'terminal'], 'docker compose up -d']] } },
   { id: 'agent-browser', date: '2026-11-16', icon: 'eye', hue: 'blue', mac: true,
     title: 'Navigateur des agents',
     lead: 'Les agents Claude Code et l’IA de Studio pilotent un navigateur sur les sites que tu leur ouvres.',
