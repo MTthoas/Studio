@@ -7,7 +7,27 @@ import Foundation
 final class ClaudeSessions {
     static let shared = ClaudeSessions()
 
-    struct Action { let at: String; let kind: String; let text: String }
+    /// `add`/`del` : lignes ajoutées et retirées par une modification de fichier (Edit, Write, MultiEdit), pour le suivi en direct.
+    struct Action {
+        let at: String; let kind: String; let text: String; var add = 0; var del = 0
+        var json: [String: Any] {
+            var d: [String: Any] = ["at": at, "kind": kind, "text": text]
+            if add > 0 { d["add"] = add }; if del > 0 { d["del"] = del }
+            return d
+        }
+    }
+    /// Lignes ajoutées et retirées par un appel d'outil d'écriture (estimation : lignes de l'ancien et du nouveau texte).
+    static func lineDelta(_ name: String, _ input: [String: Any]) -> (add: Int, del: Int) {
+        let n = { (s: Any?) -> Int in (s as? String).map { $0.isEmpty ? 0 : $0.split(separator: "\n", omittingEmptySubsequences: false).count } ?? 0 }
+        switch name {
+        case "Write": return (n(input["content"]), 0)
+        case "Edit": return (n(input["new_string"]), n(input["old_string"]))
+        case "MultiEdit":
+            let edits = input["edits"] as? [[String: Any]] ?? []
+            return edits.reduce((0, 0)) { ($0.0 + n($1["new_string"]), $0.1 + n($1["old_string"])) }
+        default: return (0, 0)
+        }
+    }
     final class State {
         var offset: UInt64 = 0
         var title = ""; var branch = ""; var started = ""; var updated = ""; var lastPrompt = ""; var firstPrompt = ""
@@ -17,6 +37,8 @@ final class ClaudeSessions {
         var models = Set<String>(); var seen = Set<String>()
         var tokIn = 0, tokOut = 0, tokCacheRead = 0, tokCacheWrite = 0, prompts = 0
         var tools: [String: Int] = [:]; var files: [String] = []
+        /// Lignes ajoutées et retirées sur toute la session (voir `lineDelta`).
+        var added = 0, removed = 0
         var actions: [Action] = []
         var quota: [String: Any]?
         var cwd = ""
@@ -107,7 +129,9 @@ final class ClaudeSessions {
                         }
                     }
                     let detail = path.isEmpty ? (input["description"] as? String ?? input["command"] as? String ?? input["pattern"] as? String ?? "") : path
-                    push(st, Action(at: ts, kind: "tool:" + name, text: clip(detail, 240)))
+                    let delta = Self.lineDelta(name, input)
+                    st.added += delta.add; st.removed += delta.del
+                    push(st, Action(at: ts, kind: "tool:" + name, text: clip(detail, 240), add: delta.add, del: delta.del))
                 }
             }
         default: break
@@ -166,7 +190,7 @@ final class ClaudeSessions {
                 "aiTitle": st.title, "firstPrompt": st.firstPrompt,
                 "models": Array(st.models).sorted(), "prompts": st.prompts, "lastPrompt": st.lastPrompt,
                 "tokens": ["input": st.tokIn, "output": st.tokOut, "cacheRead": st.tokCacheRead, "cacheWrite": st.tokCacheWrite],
-                "tools": st.tools, "files": Array(st.files.prefix(15))]
+                "tools": st.tools, "files": Array(st.files.prefix(15)), "lines": ["add": st.added, "del": st.removed]]
     }
 
     /// Sessions du dossier, les plus récentes d'abord, et l'état de la limite d'utilisation de Claude Code.
@@ -195,7 +219,7 @@ final class ClaudeSessions {
             guard let f = self.file(folder, session), let st = self.refresh(f) else { return done(["ok": false, "message": "Session introuvable."]) }
             var r = self.summary(f, st)
             r["ok"] = true
-            r["actions"] = st.actions.suffix(80).map { ["at": $0.at, "kind": $0.kind, "text": $0.text] }
+            r["actions"] = st.actions.suffix(80).map { $0.json }
             r["subagents"] = self.subagents(folder, session)
             done(r)
         }
@@ -253,7 +277,7 @@ final class ClaudeSessions {
             var r = self.summary(f, st)
             r["ok"] = true
             r["agent"] = self.subSummary(f, st)
-            r["actions"] = st.actions.suffix(80).map { ["at": $0.at, "kind": $0.kind, "text": $0.text] }
+            r["actions"] = st.actions.suffix(80).map { $0.json }
             r["subagents"] = self.subagents(folder, session)
             done(r)
         }

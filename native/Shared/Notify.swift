@@ -1,4 +1,5 @@
-// Notifications système et pastille de l'icône, demandées par la page (notifications Linear).
+// Notifications système et pastille de l'icône, demandées par la page (notifications Linear) ou par l'app
+// elle-même (fin d'un build lancé depuis l'onglet Site, voir Sites.swift).
 // Tout est local : la page interroge Linear elle-même, l'app ne fait qu'afficher.
 import Foundation
 import UserNotifications
@@ -14,14 +15,15 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
 
     func setUp() { UNUserNotificationCenter.current().delegate = self }
 
-    func post(title: String, body: String, url: String?) {
+    /// `thread` regroupe les notifications d'une même source dans le centre de notifications (« linear », « build »…).
+    func post(title: String, body: String, url: String?, thread: String = "linear") {
         let center = UNUserNotificationCenter.current()
         let send = {
             let c = UNMutableNotificationContent()
             c.title = title
             c.body = body
             c.sound = .default
-            c.threadIdentifier = "linear"
+            c.threadIdentifier = thread
             if let url, url.hasPrefix("https://linear.app/") { c.userInfo = ["url": url] }
             center.add(UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil))
         }

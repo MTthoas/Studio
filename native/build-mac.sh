@@ -68,8 +68,17 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 </dict></plist>
 PLIST
 
-echo "→ Signature locale"
-codesign --force --sign - --timestamp=none "$APP" >/dev/null
+# Sans SIGN_IDENTITY : signature locale (« ad hoc »), suffisante pour une app construite sur ce Mac.
+# Avec SIGN_IDENTITY="Developer ID Application: … (ÉQUIPE)" : signature distribuable, prête pour la notarisation
+# d'Apple (hardened runtime + horodatage), sans laquelle macOS refuse d'ouvrir une app téléchargée. La CI s'en sert.
+if [ -n "${SIGN_IDENTITY:-}" ]; then
+  echo "→ Signature Developer ID"
+  codesign --force --sign "$SIGN_IDENTITY" --options runtime --timestamp \
+    --entitlements "$ROOT/native/macOS/Studio.entitlements" "$APP" >/dev/null
+else
+  echo "→ Signature locale"
+  codesign --force --sign - --timestamp=none "$APP" >/dev/null
+fi
 
 echo "✓ $APP"
 if [ "${1:-}" = "--install" ]; then

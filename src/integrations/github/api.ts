@@ -31,14 +31,53 @@ export const state = () => ({ events, me, error, loaded, seen: localStorage.getI
 export const connected = (): boolean => !!vault.secret('github');
 export const active = (): boolean => vault.isOpen() && connected();
 
-export async function api<T>(path: string, token: string | null = vault.secret('github')): Promise<T> {
-  if (!token) throw new Error('GitHub n’est pas connecté (Réglages → GitHub).');
-  const r = await fetch(API + path, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' }, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' });
-  if (r.status === 401) throw new Error('jeton refusé ou expiré');
-  if (r.status === 403 || r.status === 429) throw new Error('limite de requêtes atteinte, réessaie plus tard');
-  if (!r.ok) throw new Error(`GitHub a répondu ${r.status}`);
-  return r.json() as Promise<T>;
+// Cache des lectures, en mémoire seulement. Trois économies : une même adresse demandée en même temps ne part
+// qu'une fois (`inflight` : vue d'ensemble, cartes des dépôts et graphiques chargent les mêmes données ensemble),
+// une réponse de moins de `REUSE` est resservie telle quelle, et au-delà la requête est conditionnelle
+// (`If-None-Match`) : un 304 de GitHub est rapide, léger et ne compte pas dans la limite de requêtes.
+// Les données rendues sont partagées : ne jamais les modifier en place.
+/** Refus de GitHub, avec son code : les appelants peuvent distinguer « hors de portée du jeton » (404) d'un manque de droit (403). */
+export class GitHubError extends Error {
+  constructor(message: string, readonly status: number, readonly repo = '') { super(message); }
 }
+const repoOf = (path: string): string => /^\/repos\/([^/?]+\/[^/?]+)/.exec(path)?.[1] ?? '';
+/** Message précis pour une réponse en erreur. GitHub répond 404, et non 403, pour un dépôt que le jeton ne voit pas
+ *  (il ne dit pas qu'un dépôt privé existe) : c'est le cas d'un jeton à accès précis créé pour d'autres dépôts. */
+async function refusal(r: Response, repo: string, need = 'Contents : lecture'): Promise<GitHubError> {
+  const j = await r.json().catch(() => ({})) as { message?: string; errors?: { message?: string }[] };
+  const said = j.errors?.[0]?.message || j.message || '';
+  const limited = r.status === 429 || (r.status === 403 && (r.headers.get('x-ratelimit-remaining') === '0' || /rate limit/i.test(said)));
+  const msg = r.status === 401 ? 'Jeton GitHub refusé ou expiré : remplace-le dans Réglages → GitHub.'
+    : limited ? 'GitHub limite les requêtes pour l’instant : réessaie dans quelques minutes.'
+    : r.status === 404 && repo ? `Ton jeton GitHub n’a pas accès au dépôt ${repo} (ou ce dépôt n’existe pas sous ce nom). Un jeton à accès précis ne voit que les dépôts choisis à sa création : ajoute ${repo} dans « Repository access » du jeton sur GitHub, ou remplace le jeton dans Réglages → GitHub.`
+    : r.status === 403 ? `Ton jeton GitHub n’a pas le droit nécessaire${repo ? ` sur ${repo}` : ''} (permission « ${need} »)${said ? ` — GitHub : ${said}` : ''}.`
+    : said ? `GitHub a répondu ${r.status} : ${said}` : `GitHub a répondu ${r.status}`;
+  return new GitHubError(msg, r.status, repo);
+}
+
+const REUSE = 20e3, CACHE_MAX = 400;
+const cache = new Map<string, { at: number; etag: string; data: unknown }>(), inflight = new Map<string, Promise<unknown>>();
+export function api<T>(path: string, token: string | null = vault.secret('github'), { maxAge = REUSE } = {}): Promise<T> {
+  if (!token) return Promise.reject(new Error('GitHub n’est pas connecté (Réglages → GitHub).'));
+  const key = `${token} ${path}`, hit = cache.get(key), running = inflight.get(key);
+  if (running) return running as Promise<T>;
+  if (hit && Date.now() - hit.at < maxAge) return Promise.resolve(hit.data as T);
+  const p = (async () => {
+    const headers: Record<string, string> = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' };
+    if (hit?.etag) headers['If-None-Match'] = hit.etag;
+    const r = await fetch(API + path, { headers, credentials: 'omit', referrerPolicy: 'no-referrer', cache: 'no-store' });
+    if (r.status === 304 && hit) { hit.at = Date.now(); return hit.data; }
+    if (!r.ok) throw await refusal(r, repoOf(path));
+    const data: unknown = await r.json();
+    cache.delete(key); cache.set(key, { at: Date.now(), etag: r.headers.get('ETag') ?? '', data });
+    if (cache.size > CACHE_MAX) { const old = cache.keys().next().value; if (old !== undefined) cache.delete(old); }
+    return data;
+  })().finally(() => inflight.delete(key));
+  inflight.set(key, p);
+  return p as Promise<T>;
+}
+/** Les lectures d'un dépôt seront revalidées auprès de GitHub (après une écriture, ou sur demande d'actualisation). */
+function forget(repo: string): void { for (const [k, v] of cache) if (k.includes(` /repos/${repo}/`) || k.endsWith(` /repos/${repo}`)) v.at = 0; }
 /** Commits par jour sur la branche principale (repli quand le dossier n'est pas sur ce Mac). */
 export async function commitsPerDay(repo: string, days = 30): Promise<Record<string, number>> {
   if (!REPO_RE.test(repo)) throw new Error(`Dépôt invalide : ${repo}`);
@@ -54,12 +93,39 @@ export async function createPull(repo: string, pr: { head: string; base: string;
   if (!REPO_RE.test(repo)) throw new Error(`Dépôt invalide : ${repo}`);
   const token = vault.secret('github'); if (!token) throw new Error('GitHub n’est pas connecté (Réglages → GitHub).');
   const r = await fetch(`${API}/repos/${repo}/pulls`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' }, body: JSON.stringify(pr), credentials: 'omit', referrerPolicy: 'no-referrer' });
-  const j = await r.json().catch(() => ({})) as { number?: number; html_url?: string; message?: string; errors?: { message?: string }[] };
-  if (!r.ok || !j.number || !j.html_url) throw new Error(j.errors?.[0]?.message || j.message || `GitHub a répondu ${r.status}`);
-  flowCache.delete(repo);
+  if (!r.ok) throw await refusal(r, repo, 'Pull requests : lecture et écriture');
+  const j = await r.json().catch(() => ({})) as { number?: number; html_url?: string };
+  if (!j.number || !j.html_url) throw new GitHubError('GitHub n’a pas renvoyé la pull request créée.', r.status, repo);
+  flowCache.delete(repo); repoCache.delete(repo); forget(repo);
   return { number: j.number, html_url: j.html_url };
 }
-export const viewer = (token?: string): Promise<{ login: string }> => api('/user', token ?? vault.secret('github'));
+
+/** Relance une exécution GitHub Actions : seulement ses jobs en échec quand `failedOnly`, sinon toute l'exécution.
+ *  Même commit qu'à l'origine : pour construire le dernier commit d'une branche, il faut un nouveau push. */
+export async function rerun(repo: string, runId: number, { failedOnly = true } = {}): Promise<void> {
+  if (!REPO_RE.test(repo)) throw new Error(`Dépôt invalide : ${repo}`);
+  if (!Number.isSafeInteger(runId) || runId <= 0) throw new Error('Exécution inconnue.');
+  const token = vault.secret('github'); if (!token) throw new Error('GitHub n’est pas connecté (Réglages → GitHub).');
+  const r = await fetch(`${API}/repos/${repo}/actions/runs/${runId}/${failedOnly ? 'rerun-failed-jobs' : 'rerun'}`, { method: 'POST', headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28' }, credentials: 'omit', referrerPolicy: 'no-referrer' });
+  if (r.status === 403 || r.status === 404) throw new Error('Le jeton GitHub ne peut pas relancer les workflows : donne-lui le droit Actions en lecture et écriture (Réglages → GitHub).');
+  if (!r.ok) { const j = await r.json().catch(() => ({})) as { message?: string }; throw new Error(j.message || `GitHub a répondu ${r.status}`); }
+  flowCache.delete(repo); forget(repo);
+}
+export const viewer = (token?: string): Promise<{ login: string; id: number; name?: string | null }> => api('/user', token ?? vault.secret('github'));
+
+/** Identité Git du compte connecté, pour les commits des copies quand Git n'en a pas (voir `fallbackIdentity`
+ *  dans Projects.swift). Adresse « noreply » de GitHub : le commit est rattaché au compte sans exposer d'adresse. */
+let authorCache: { name: string; email: string } | null = null;
+export async function author(): Promise<{ name: string; email: string } | undefined> {
+  if (authorCache) return authorCache;
+  if (!vault.secret('github')) return undefined;
+  try {
+    const v = await viewer();
+    if (!v.login || !v.id) return undefined;
+    authorCache = { name: (v.name || '').trim() || v.login, email: `${v.id}+${v.login}@users.noreply.github.com` };
+    return authorCache;
+  } catch { return undefined; }
+}
 
 // ---------- Événements -> phrases ----------
 const ACTION: Record<string, string> = { opened: 'a ouvert', closed: 'a fermé', reopened: 'a rouvert', merged: 'a fusionné', created: 'a créé', published: 'a publié', edited: 'a modifié', submitted: 'a relu', started: 'a mis une étoile à', labeled: 'a étiqueté', assigned: 'a assigné', synchronize: 'a mis à jour' };
@@ -118,7 +184,7 @@ export function init(shell: AppShell): void {
   app = shell;
   setInterval(() => poll(), EVERY);
   document.addEventListener('visibilitychange', () => { if (!document.hidden && active()) poll(); });
-  vault.onChange(() => { if (!active()) { events = []; loaded = false; me = ''; emit(); } else if (!loaded) poll(); });
+  vault.onChange(() => { if (!active()) { events = []; loaded = false; me = ''; cache.clear(); repoCache.clear(); flowCache.clear(); authorCache = null; emit(); } else if (!loaded) poll(); });
   poll();
 }
 
@@ -154,6 +220,7 @@ export async function project(repo: string, { fresh = false } = {}): Promise<{ i
   if (!REPO_RE.test(repo)) throw new Error(`Dépôt invalide : ${repo}`);
   const hit = repoCache.get(repo);
   if (!fresh && hit && Date.now() - hit.at < 60e3) return hit;
+  if (fresh) forget(repo);
   const [info, raw] = await Promise.all([api<RepoInfo>(`/repos/${repo}`), api<RawPull[]>(`/repos/${repo}/pulls?state=open&per_page=15&sort=updated&direction=desc`)]);
   const pulls = await Promise.all(raw.map(async p => {
     const [ci, review] = await Promise.all([ciOf(repo, p.head.sha).catch((): CiState => 'none'), reviewOf(repo, p).catch((): ReviewState => 'none')]);
@@ -161,6 +228,17 @@ export async function project(repo: string, { fresh = false } = {}): Promise<{ i
   }));
   const out = { at: Date.now(), info, pulls };
   repoCache.set(repo, out);
+  return out;
+}
+export interface BranchPull { number: number; url: string; branch: string; sha: string; state: 'open' | 'merged' | 'closed' }
+/** État de la dernière PR de chaque branche (ouverte, fusionnée, fermée), en une requête : pour les copies des agents.
+ *  `fresh` force la revalidation (304 si rien n'a bougé, gratuit pour la limite de requêtes). */
+export async function branchPulls(repo: string, { fresh = false } = {}): Promise<Map<string, BranchPull>> {
+  if (!REPO_RE.test(repo)) throw new Error(`Dépôt invalide : ${repo}`);
+  const raw = await api<RawPullAll[]>(`/repos/${repo}/pulls?state=all&per_page=60&sort=updated&direction=desc`, undefined, fresh ? { maxAge: 0 } : {});
+  const out = new Map<string, BranchPull>();
+  // Triées de la plus récente à la plus ancienne : la première PR vue pour une branche est la sienne.
+  for (const p of raw) if (!out.has(p.head.ref)) out.set(p.head.ref, { number: p.number, url: p.html_url, branch: p.head.ref, sha: p.head.sha, state: p.merged_at ? 'merged' : p.state === 'open' ? 'open' : 'closed' });
   return out;
 }
 /** Activité récente d'un dépôt, déjà chargée par l'actualité GitHub. */
@@ -175,9 +253,12 @@ export interface FlowItem {
   pr?: { number: number; title: string; url: string; author: string; draft: boolean; mergedAt: string | null };
   ci: CiState; review: ReviewState; release?: { tag: string; url: string };
 }
-export interface Flow { repo: string; base: string; items: FlowItem[]; baseCi: CiState; releases: { tag: string; url: string; at: string }[]; /** Dernières exécutions de CI sur la branche principale, de la plus ancienne à la plus récente. */ history: { at: string; state: 'success' | 'failure' | 'pending'; label: string; url: string }[] }
+export interface Flow { repo: string; base: string; items: FlowItem[]; baseCi: CiState; releases: { tag: string; url: string; at: string }[]; /** Dernières exécutions de CI sur la branche principale, de la plus ancienne à la plus récente. */ history: { at: string; state: 'success' | 'failure' | 'pending'; label: string; url: string }[]; actions: Workflow[] }
+/** Un workflow GitHub Actions : sa dernière exécution (toutes branches) et ses précédentes, de la plus ancienne à la plus récente. */
+export interface Workflow { name: string; last: ActionRun; runs: { at: string; state: 'success' | 'failure' | 'pending'; label: string; url: string }[] }
+export interface ActionRun { id: number; state: CiState; status: string; conclusion: string | null; branch: string; title: string; event: string; at: string; url: string; seconds: number | null }
 
-interface RawRun { head_branch: string; status: string; conclusion: string | null; created_at: string; name: string; html_url?: string; display_title?: string }
+interface RawRun { id: number; head_branch: string; status: string; conclusion: string | null; created_at: string; updated_at?: string; run_started_at?: string; name: string; html_url?: string; display_title?: string; event?: string }
 interface RawPullAll extends RawPull { state: 'open' | 'closed'; merged_at: string | null; closed_at: string | null; created_at: string }
 const runState = (r?: RawRun): CiState => !r ? 'none' : r.status !== 'completed' ? 'pending' : ['success', 'skipped', 'neutral'].includes(r.conclusion ?? '') ? 'success' : 'failure';
 const flowCache = new Map<string, { at: number; flow: Flow }>();
@@ -186,6 +267,7 @@ const flowCache = new Map<string, { at: number; flow: Flow }>();
 export async function flow(repo: string, { fresh = false } = {}): Promise<Flow> {
   if (!REPO_RE.test(repo)) throw new Error(`Dépôt invalide : ${repo}`);
   const hit = flowCache.get(repo); if (!fresh && hit && Date.now() - hit.at < 60e3) return hit.flow;
+  if (fresh) forget(repo);
   const [info, branches, pulls, releases, runs] = await Promise.all([
     api<RepoInfo>(`/repos/${repo}`),
     api<{ name: string }[]>(`/repos/${repo}/branches?per_page=60`),
@@ -197,20 +279,18 @@ export async function flow(repo: string, { fresh = false } = {}): Promise<Flow> 
   const lastRun = new Map<string, RawRun>();
   for (const r of runs.workflow_runs) if (r.name !== 'Dependabot Updates' && !lastRun.has(r.head_branch)) lastRun.set(r.head_branch, r);
   const rels = releases.filter(r => !r.draft && r.published_at).sort((a, b) => a.published_at.localeCompare(b.published_at));
-  const items: FlowItem[] = [], seen = new Set<string>([base]);
-  for (const p of pulls) {
-    if (seen.has(p.head.ref) || p.head.ref === base) continue;
-    seen.add(p.head.ref);
+  const seen = new Set<string>([base]), heads = pulls.filter(p => !seen.has(p.head.ref) && p.head.ref !== base && !!seen.add(p.head.ref));
+  // Les PR ouvertes demandent chacune leur CI et leurs revues : toutes en parallèle, pas l'une après l'autre.
+  const items: FlowItem[] = await Promise.all(heads.map(async (p): Promise<FlowItem> => {
     const pr = { number: p.number, title: p.title, url: p.html_url, author: p.user?.login ?? '', draft: !!p.draft, mergedAt: p.merged_at };
     if (p.state === 'closed') {
       const rel = p.merged_at ? rels.find(r => r.published_at >= (p.merged_at ?? '')) : undefined;
-      items.push({ branch: p.head.ref, stage: p.merged_at ? (rel ? 'publiee' : 'fusionnee') : 'fermee', updated: p.merged_at ?? p.closed_at ?? p.updated_at, pr, ci: runState(lastRun.get(p.head.ref)), review: 'none', ...(rel ? { release: { tag: rel.tag_name, url: rel.html_url } } : {}) });
-      continue;
+      return { branch: p.head.ref, stage: p.merged_at ? (rel ? 'publiee' : 'fusionnee') : 'fermee', updated: p.merged_at ?? p.closed_at ?? p.updated_at, pr, ci: runState(lastRun.get(p.head.ref)), review: 'none', ...(rel ? { release: { tag: rel.tag_name, url: rel.html_url } } : {}) };
     }
     const [ci, review] = await Promise.all([ciOf(repo, p.head.sha).catch((): CiState => runState(lastRun.get(p.head.ref))), reviewOf(repo, p).catch((): ReviewState => 'none')]);
     const stage: Stage = p.draft ? 'pr' : ci === 'failure' || ci === 'pending' ? 'ci' : review === 'approved' ? 'prete' : review === 'changes' || review === 'pending' ? 'revue' : ci === 'success' ? 'prete' : 'pr';
-    items.push({ branch: p.head.ref, stage, updated: p.updated_at, pr, ci, review });
-  }
+    return { branch: p.head.ref, stage, updated: p.updated_at, pr, ci, review };
+  }));
   for (const b of branches) {
     if (seen.has(b.name)) continue;
     seen.add(b.name);
@@ -219,7 +299,17 @@ export async function flow(repo: string, { fresh = false } = {}): Promise<Flow> 
   }
   const history = runs.workflow_runs.filter(r => r.head_branch === base && r.name !== 'Dependabot Updates').slice(0, 24).reverse()
     .map(r => { const st = runState(r); return { at: r.created_at, state: st === 'none' ? 'pending' as const : st, label: `${r.display_title || r.name} · ${new Date(r.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}`, url: r.html_url ?? '' }; });
-  const flow: Flow = { repo, base, items, baseCi: runState(lastRun.get(base)), releases: rels.slice(-5).reverse().map(r => ({ tag: r.tag_name, url: r.html_url, at: r.published_at })), history };
+  const byWf = new Map<string, RawRun[]>();
+  for (const r of runs.workflow_runs) { const l = byWf.get(r.name); if (l) l.push(r); else byWf.set(r.name, [r]); }
+  const actions: Workflow[] = [...byWf].map(([name, list]) => {
+    const r = list[0] as RawRun, from = Date.parse(r.run_started_at ?? r.created_at), to = Date.parse(r.updated_at ?? '');
+    return {
+      name,
+      last: { id: r.id, state: runState(r), status: r.status, conclusion: r.conclusion, branch: r.head_branch, title: r.display_title || '', event: r.event ?? '', at: r.created_at, url: r.html_url ?? '', seconds: r.status === 'completed' && to >= from ? Math.round((to - from) / 1000) : null },
+      runs: list.slice(0, 12).reverse().map(x => { const st = runState(x); return { at: x.created_at, state: st === 'none' ? 'pending' as const : st, label: `${x.display_title || x.name} · ${x.head_branch}`, url: x.html_url ?? '' }; }),
+    };
+  }).sort((a, b) => b.last.at.localeCompare(a.last.at));
+  const flow: Flow = { repo, base, items, baseCi: runState(lastRun.get(base)), releases: rels.slice(-5).reverse().map(r => ({ tag: r.tag_name, url: r.html_url, at: r.published_at })), history, actions };
   flowCache.set(repo, { at: Date.now(), flow });
   return flow;
 }

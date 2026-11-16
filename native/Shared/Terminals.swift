@@ -39,10 +39,10 @@ final class Terminals {
             s.master = master
             let remote = "cd \(Servers.qPath(c.path)) 2>/dev/null; exec \"${SHELL:-/bin/sh}\" -l"
             s.process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
-            s.process.arguments = ["-tt", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=30", c.host, "--", remote]
-            var env = ["HOME": NSHomeDirectory(), "PATH": "/usr/bin:/bin", "TERM": "xterm-256color", "LANG": "en_US.UTF-8"]
-            if let sock = ProcessInfo.processInfo.environment["SSH_AUTH_SOCK"] { env["SSH_AUTH_SOCK"] = sock }
-            s.process.environment = env
+            let l = Servers.shared.launch(c, remote, tty: true, env: ["HOME": NSHomeDirectory(), "PATH": "/usr/bin:/bin", "TERM": "xterm-256color", "LANG": "en_US.UTF-8"])
+            if let e = l.error { close(master); close(slave); return ["ok": false, "message": e] }
+            s.process.arguments = l.args
+            s.process.environment = l.env
             let fh = FileHandle(fileDescriptor: slave, closeOnDealloc: false)
             s.process.standardInput = fh; s.process.standardOutput = fh; s.process.standardError = fh
             s.process.terminationHandler = { [weak self] p in
@@ -66,7 +66,7 @@ final class Terminals {
             s.source = src
             src.resume()
             sessions[id] = s
-            return ["ok": true, "term": id, "host": c.host, "path": c.path]
+            return ["ok": true, "term": id, "host": c.dest, "path": c.path]
         }
     }
 

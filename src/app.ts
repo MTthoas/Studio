@@ -198,8 +198,11 @@ function renderSidebar() {
         const open = v.type === 'projets' && v.project === p.id, tab = v.tab ?? 'overview';
         // Sous « Claude Code » : les conversations récentes du projet, celle qui est ouverte en surbrillance.
         const talks = open ? projectsPage.sideSessions(p.id) : [], talking = tab === 'sessions' && talks.some(s => s.sel);
+        // Sous « Serveur » : les serveurs du projet, celui qui est affiché en surbrillance.
+        const servers = open ? projectsPage.sideServers(p.id) : [], serving = tab === 'server' && servers.some(s => s.sel);
         return `<button class="side-item side-sub${open && tab === 'overview' ? ' sel' : ''}${open ? ' open' : ''}" data-pj-open="${esc(p.id)}"><i class="tag-dot" style="--c:var(--c-${p.hue})"></i><span>${esc(p.name)}</span></button>`
-          + (open ? projectsPage.TABS.slice(1).map(([k, l, ic]) => `<button class="side-item side-sub2${tab === k && !(k === 'sessions' && talking) ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="${k}"${k === 'sessions' ? ' data-pj-session=""' : ''}>${icon(ic)}<span>${esc(l)}</span></button>`
+          + (open ? projectsPage.TABS.slice(1).map(([k, l, ic]) => `<button class="side-item side-sub2${tab === k && !(k === 'sessions' && talking) && !(k === 'server' && serving) ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="${k}"${k === 'sessions' ? ' data-pj-session=""' : ''}>${icon(ic)}<span>${esc(l)}</span></button>`
+            + (k === 'server' ? servers.map(s => `<button class="side-item side-sub3${tab === 'server' && s.sel ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="server" data-pj-server="${esc(s.id)}" title="${esc(s.dest)}">${icon('server')}<span>${esc(s.name)}</span></button>`).join('') : '')
             + (k === 'sessions' ? talks.map(s => `<button class="side-item side-sub3${tab === 'sessions' && s.sel && !s.subs.some(a => a.sel) ? ' sel' : ''}${!s.live && s.stage ? ` ${s.stage.cls}` : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="sessions" data-pj-session="${esc(s.id)}" title="${esc(s.title)}${s.live ? ' · en cours' : s.stage ? ` · ${esc(s.stage.label)}` : ''}"><i class="ss-live${s.live ? ' on' : s.stage ? ` ${s.stage.cls}` : ''}"></i><span>${esc(s.title)}</span>${!s.live && s.stage?.cls === 'st-review' ? `<em class="side-stage">${esc(s.stage.label)}</em>` : ''}</button>`
               // Sous la conversation : ses sous-agents épinglés, et celui dont on lit le fil.
               + s.subs.map(a => `<button class="side-item side-sub4${tab === 'sessions' && a.sel ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="sessions" data-pj-session="${esc(s.id)}" data-pj-sub="${esc(a.id)}" title="Sous-agent : ${esc(a.title)}"><i class="ss-live${a.live ? ' on' : ''}"></i><span>${esc(a.title)}</span></button>`).join('')).join('') : '')).join('') : '');
@@ -277,8 +280,19 @@ const tbLeft = () => `<div class="tb-side">${WIDE.has(ui.view.type) ? '' : tb('b
 // sans attributs, le niveau n'est pas cliquable), par exemple Projets › Mon projet › Claude Code.
 const crumb = (cur: string, trail: [string, string][] = []) => {
   const v = ui.view, parent = v.type === 'tag' ? '#' + v.tag : VIEWS[v.type]?.label, sep = icon('chevronRight');
-  return `<div class="crumb">${parent && !WIDE.has(v.type) ? `<span>${esc(parent)}</span>${sep}` : ''}${trail.map(([l, a]) => (a ? `<button ${a}>${esc(l)}</button>` : `<span>${esc(l)}</span>`) + sep).join('')}<span class="crumb-cur">${esc(cur)}</span></div>`;
+  return `<div class="crumb">${parent && !WIDE.has(v.type) ? `<span>${esc(parent)}</span>${sep}` : ''}${trail.map(([l, a]) => (a ? `<button ${a}>${esc(l)}</button>` : `<span>${esc(l)}</span>`) + sep).join('')}<span class="crumb-cur">${esc(cur)}</span>${CAT}</div>`;
 };
+// Le petit chat assis sur le filet du bas de la barre d'outils, à droite : il respire, cligne des yeux, remue la queue,
+// tourne la tête et dresse une oreille de temps en temps (styles `.crumb-cat`). Placé dans le fil d'Ariane pour être sur toutes les vues.
+const CAT = `<span class="crumb-cat" aria-hidden="true"><svg viewBox="0 0 32 32" width="26" height="26">
+<path class="cat-tail" d="M21 30.6c5.6.6 8.6-1.6 8.4-6-.1-2.6-1.6-4.3-3.4-5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
+<g class="cat-body"><path d="M9 32c-1-6.4.6-11.6 4.6-14.6h4.8c4 3 5.6 8.2 4.6 14.6Z"/>
+<ellipse cx="13.4" cy="31" rx="2.4" ry="1.4"/><ellipse cx="18.6" cy="31" rx="2.4" ry="1.4"/>
+<g class="cat-head"><path class="cat-ear-l" d="M9.8 11.4 10.4 3.8 14.6 8.4Z"/><path class="cat-ear-r" d="M22.2 11.4 21.6 3.8 17.4 8.4Z"/>
+<ellipse cx="16" cy="12.6" rx="6.8" ry="5.8"/>
+<g class="cat-eyes"><ellipse cx="13.3" cy="12.2" rx=".95" ry="1.25"/><ellipse cx="18.7" cy="12.2" rx=".95" ry="1.25"/></g>
+<path class="cat-nose" d="M15.2 14.6h1.6L16 15.5Z"/>
+<path class="cat-whisk" d="M10 14.4 5.8 13.8M10 15.6 6 16.6M22 14.4 26.2 13.8M22 15.6 26 16.6"/></g></g></svg></span>`;
 
 function renderMain() {
   const main = need('#main');
@@ -1016,7 +1030,7 @@ async function onClick(e: MouseEvent): Promise<void> {
   if (await plugins.click(t)) return;
   if (await hub.click(e)) return;
   let x: HTMLElement | null;
-  if ((x = t.closest('[data-pj-open], [data-project-open]')) && !t.closest('.pj')) { if (x.dataset.pjOpen && x.dataset.pjSession !== undefined) projectsPage.openSession(x.dataset.pjOpen, x.dataset.pjSession || null, x.dataset.pjSub || null); await setView({ type: 'projets', project: x.dataset.pjOpen || x.dataset.projectOpen || null, ...(x.dataset.pjTab ? { tab: x.dataset.pjTab } : {}) }); return; }
+  if ((x = t.closest('[data-pj-open], [data-project-open]')) && !t.closest('.pj')) { if (x.dataset.pjOpen && x.dataset.pjSession !== undefined) projectsPage.openSession(x.dataset.pjOpen, x.dataset.pjSession || null, x.dataset.pjSub || null); if (x.dataset.pjOpen && x.dataset.pjServer !== undefined) projectsPage.openServer(x.dataset.pjOpen, x.dataset.pjServer); await setView({ type: 'projets', project: x.dataset.pjOpen || x.dataset.projectOpen || null, ...(x.dataset.pjTab ? { tab: x.dataset.pjTab } : {}) }); return; }
   if ((x = t.closest('[data-chat]'))) { await setView(x.dataset.chat ? { type: 'claude', chat: x.dataset.chat } : { type: 'claude' }); return; }
   if ((x = t.closest('[data-view]'))) { await setView({ type: x.dataset.view ?? 'home' }); return; }
   if ((x = t.closest('[data-open-note]')) && store.get(x.dataset.openNote)) { await openNote(x.dataset.openNote ?? ''); return; }

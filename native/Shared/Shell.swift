@@ -121,9 +121,13 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
         #if os(macOS)
         let folders = ProjectFolders.shared
         let pid = body["project"] as? String ?? ""
+        if ["pick", "home", "info"].contains(action), let r = body["repos"] { folders.rememberRepos(pid, r) }
         switch action {
         case "pick":
             folders.pick(pid) { path in self.answer(["id": id, "ok": path != nil, "path": path ?? NSNull()]) }
+        case "home":
+            // Dossier mère du projet : on y cherche les dépôts et on y clone ceux qui manquent.
+            folders.pickHome(pid) { var r = $0; r["id"] = id; self.answer(r) }
         case "info":
             DispatchQueue.global(qos: .userInitiated).async { var r = folders.info(pid); r["id"] = id; self.answer(r) }
         case "open":
@@ -132,6 +136,17 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
             catch { answer(["id": id, "ok": false, "message": error.localizedDescription]) }
         case "forget":
             folders.forget(pid); answer(["id": id, "ok": true])
+        // Plusieurs dépôts par projet : où est chaque clone sur ce Mac (retrouvé seul à côté du dossier du projet),
+        // choix d'un dossier, ou clonage à côté. La page n'envoie que des noms « propriétaire/dépôt ».
+        case "repos":
+            if let r = body["repos"] { folders.rememberRepos(pid, r) }
+            DispatchQueue.global(qos: .userInitiated).async { var r = folders.repoList(pid); r["id"] = id; self.answer(r) }
+        case "repo-pick":
+            folders.pickRepo(pid, repo: body["repo"] as? String ?? "") { var r = $0; r["id"] = id; self.answer(r) }
+        case "repo-clone":
+            let repo = body["repo"] as? String ?? ""
+            if body["choose"] as? Bool == true { folders.cloneRepoAsk(pid, repo: repo) { var r = $0; r["id"] = id; self.answer(r) }; return }
+            DispatchQueue.global(qos: .userInitiated).async { var r = folders.cloneRepo(pid, repo: repo); r["id"] = id; self.answer(r) }
         case "diff":
             let scope = body["scope"] as? String ?? "working"
             let wt = body["worktree"] as? String
@@ -148,6 +163,8 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
                 switch op {
                 case "start": r = Sites.shared.start(pid, rel: rel)
                 case "stop": r = Sites.shared.stop(pid)
+                case "build": r = Sites.shared.build(pid, rel: rel, script: body["script"] as? String ?? "", name: body["name"] as? String ?? "")
+                case "build-stop": r = Sites.shared.stopBuild(pid)
                 default: r = Sites.shared.state(pid)
                 }
                 r["id"] = id; self.answer(r)
@@ -205,9 +222,9 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
         case "itemsDone": send(AgentItems.done(body["run"] as? String ?? ""))
         case "unqueue": send(Agents.shared.unqueue(project: pid, id: body["queued"] as? String ?? ""))
         case "stop": send(Agents.shared.stop(body["run"] as? String ?? ""))
-        case "worktrees": bg { folders.worktrees(pid) }
+        case "worktrees": bg { folders.worktrees(pid, fresh: body["fresh"] as? Bool == true) }
         case "pushcheck": bg { folders.pushCheck(pid) }
-        case "push": bg { folders.commitPush(pid, name: body["worktree"] as? String ?? "", message: body["message"] as? String ?? "", branch: body["branch"] as? String ?? "") }
+        case "push": folders.rememberAuthor(body["author"]); bg { folders.commitPush(pid, name: body["worktree"] as? String ?? "", message: body["message"] as? String ?? "", branch: body["branch"] as? String ?? "") }
         case "discard":
             let name = body["worktree"] as? String ?? ""
             if Orchestrator.shared.busy(project: pid, worktree: name) { send(["ok": false, "message": "Une publication est en cours sur cette copie."]); return }
@@ -217,31 +234,52 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
             if Orchestrator.shared.busy(project: pid, worktree: name) || Agents.shared.busy(project: pid, worktree: name) { send(["ok": false, "message": "Un agent ou une publication travaille encore dans cette copie."]); return }
             bg { folders.newBranch(pid, name: name) }
         // Orchestrateur : publication ou mise à jour d'une copie, de bout en bout (voir Orchestrator.swift).
-        case "publish": bg { Orchestrator.shared.start(kind: "publish", project: pid, worktree: body["worktree"] as? String ?? "", message: body["message"] as? String ?? "", branch: body["branch"] as? String ?? "") }
-        case "sync": bg { Orchestrator.shared.start(kind: "sync", project: pid, worktree: body["worktree"] as? String ?? "") }
+        case "publish": folders.rememberAuthor(body["author"]); bg { Orchestrator.shared.start(kind: "publish", project: pid, worktree: body["worktree"] as? String ?? "", message: body["message"] as? String ?? "", branch: body["branch"] as? String ?? "") }
+        case "sync": folders.rememberAuthor(body["author"]); bg { Orchestrator.shared.start(kind: "sync", project: pid, worktree: body["worktree"] as? String ?? "") }
         case "job": send(Orchestrator.shared.job(body["job"] as? String ?? ""))
         case "jobs": send(Orchestrator.shared.list(project: pid))
         case "commits": bg { folders.commits(pid, days: body["days"] as? Int ?? 30) }
         case "run": send(Agents.shared.detail(body["run"] as? String ?? ""))
         case "server":
+            // Un projet peut avoir plusieurs serveurs : `server` désigne lequel ("" : le premier). `sref` est sa clé de rangement.
+            let sid = body["server"] as? String ?? "", sref = Servers.ref(pid, sid)
+            // Formulaire pas encore enregistré (test de connexion, empreinte) : le serveur vient des champs envoyés.
+            let draft = { Servers.shared.draft(host: body["host"] as? String ?? "", user: body["user"] as? String ?? "", path: body["path"] as? String ?? "", port: body["port"] as? String ?? "", key: body["key"] as? String ?? "") }
             switch body["op"] as? String ?? "" {
             case "hosts": bg { Servers.shared.hosts() }
-            case "set": bg { Servers.shared.set(pid, host: body["host"] as? String ?? "", path: body["path"] as? String ?? "") }
-            case "forget": Servers.shared.forget(pid); Monitors.shared.stop(pid); send(["ok": true])
-            case "terminal": send(Servers.shared.terminal(pid))
+            case "list": send(Servers.shared.list(pid))
+            case "set": bg { Servers.shared.set(pid, server: sid, name: body["name"] as? String ?? "", host: body["host"] as? String ?? "", user: body["user"] as? String ?? "", path: body["path"] as? String ?? "", port: body["port"] as? String ?? "",
+                                                key: body["key"] as? String ?? "", ext: body["ext"] as? [String] ?? []) }
+            case "test": bg { switch draft() { case .failure(let f): return ["ok": false, "message": f.message]; case .success(let c): return Servers.shared.test(c) } }
+            case "forget": Servers.shared.forget(sref); Monitors.shared.stopAll(pid); send(["ok": true])
+            case "terminal": bg { Servers.shared.terminal(sref) }
+            // Empreinte du serveur : lue (ssh-keyscan), puis ajoutée à known_hosts seulement si c'est celle que l'utilisateur a confirmée.
+            case "hostkeys": bg { if body["host"] != nil { switch draft() { case .failure(let f): return ["ok": false, "message": f.message]; case .success(let c): return Servers.shared.hostKeys(c) } }; return Servers.shared.hostKeys(sref) }
+            case "trust": bg { if body["host"] != nil { switch draft() { case .failure(let f): return ["ok": false, "message": f.message]; case .success(let c): return Servers.shared.trust(c, confirmed: body["fingerprints"] as? [String] ?? []) } }; return Servers.shared.trust(sref, confirmed: body["fingerprints"] as? [String] ?? []) }
+            // Clés SSH gardées par Studio (SSHKeys.swift) : la clé privée ne traverse jamais le pont.
+            case "keys": bg { SSHKeys.shared.list() }
+            case "key-new": bg { SSHKeys.shared.generate(name: body["name"] as? String ?? "") }
+            case "key-import": SSHKeys.shared.pick(name: body["name"] as? String ?? "", done: send)
+            case "key-delete": bg { SSHKeys.shared.delete(body["key"] as? String ?? "") }
+            // Extensions du serveur (ServerExtensions.swift) : état, journaux, actions nommées.
+            case "ext": bg { ServerExtensions.shared.read(sref, ext: body["ext"] as? String ?? "") }
+            case "ext-logs": bg { ServerExtensions.shared.logs(sref, ext: body["ext"] as? String ?? "", name: body["name"] as? String ?? "", ns: body["ns"] as? String ?? "") }
+            case "ext-act": bg { ServerExtensions.shared.act(sref, ext: body["ext"] as? String ?? "", action: body["action"] as? String ?? "", name: body["name"] as? String ?? "", ns: body["ns"] as? String ?? "") }
             // Monitoring en direct (Monitor.swift) et terminal intégré (Terminals.swift).
-            case "monitor": bg { Monitors.shared.poll(pid, since: body["since"] as? Double ?? 0) }
+            case "monitor": bg { Monitors.shared.poll(sref, since: body["since"] as? Double ?? 0) }
+            // Fiche de la machine (emplacement, puissance, capacités) ; `geo` : localisation par ipinfo.io, sur demande.
+            case "specs": bg { Servers.shared.specs(sref, geo: body["geo"] as? Bool == true) }
             case "term-open":
                 Terminals.shared.emit = { [weak self] payload in
                     guard let data = try? JSONSerialization.data(withJSONObject: payload), let json = String(data: data, encoding: .utf8) else { return }
                     DispatchQueue.main.async { self?.web?.evaluateJavaScript("window.carnet && window.carnet.term && window.carnet.term(\(json))", completionHandler: nil) }
                 }
-                bg { Terminals.shared.open(pid, cols: body["cols"] as? Int ?? 80, rows: body["rows"] as? Int ?? 24) }
+                bg { Terminals.shared.open(sref, cols: body["cols"] as? Int ?? 80, rows: body["rows"] as? Int ?? 24) }
             case "term-write": send(Terminals.shared.input(body["term"] as? String ?? "", body["data"] as? String ?? ""))
             case "term-resize": send(Terminals.shared.resize(body["term"] as? String ?? "", cols: body["cols"] as? Int ?? 80, rows: body["rows"] as? Int ?? 24))
             case "term-close": send(Terminals.shared.stop(body["term"] as? String ?? ""))
-            case "term-list": send(Terminals.shared.list(pid))
-            default: bg { Servers.shared.status(pid) }
+            case "term-list": send(Terminals.shared.list(sref))
+            default: bg { Servers.shared.status(sref) }
             }
         case "daily":
             guard let dir = folders.path(pid) else { send(["ok": true, "tokens": [:], "sessions": [:]]); return }

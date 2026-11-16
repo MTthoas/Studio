@@ -195,10 +195,13 @@ export function mount(main: HTMLElement): void {
       </form></div>
     </div>`;
   const ta = need<HTMLTextAreaElement>('textarea', main), form = need<HTMLFormElement>('.cl-compose', main);
-  const submit = () => { const v = ta.value; if (!v.trim() || (c && live.has(c.id))) return; ta.value = ''; void send(v); };
+  // Le champ suit la hauteur du texte, sans limite : tout reste visible pendant qu'on écrit.
+  const grow = () => { ta.style.height = 'auto'; ta.style.height = `${ta.scrollHeight + 2}px`; };
+  const submit = () => { const v = ta.value; if (!v.trim() || (c && live.has(c.id))) return; ta.value = ''; grow(); void send(v); };
   form.onsubmit = e => { e.preventDefault(); submit(); };
   ta.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); submit(); } });
-  ta.addEventListener('input', () => { drafts.set(key, ta.value); });
+  ta.addEventListener('input', () => { drafts.set(key, ta.value); grow(); });
+  requestAnimationFrame(grow);
   need('.cl', main).addEventListener('click', e => void onClick(e, ta));
   need('.cl', main).addEventListener('change', e => { const s = target(e).closest<HTMLSelectElement>('[data-cl-scope]'); if (s) { nextProject = s.value; paint(); } });
   need('[data-cl="stop"]', main).onclick = () => { if (c) live.get(c.id)?.ctrl.abort(); };
