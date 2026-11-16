@@ -89,6 +89,7 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
         if type == "project", let action = body["action"] as? String, let id = body["id"] as? Int { project(action, id: id, body: body) }
         if type == "agent", let action = body["action"] as? String, let id = body["id"] as? Int { agent(action, id: id, body: body) }
         if type == "claude", let action = body["action"] as? String, let id = body["id"] as? Int { claude(action, id: id, body: body) }
+        if type == "browser", let action = body["action"] as? String, let id = body["id"] as? Int { browser(action, id: id, body: body) }
         if type == "update", let action = body["action"] as? String, let id = body["id"] as? Int { update(action, id: id) }
         if type == "voice", let action = body["action"] as? String {
             Dictation.shared.send = { [weak self] payload in
@@ -299,6 +300,21 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
         }
         #else
         answer(["id": id, "ok": false, "message": "Claude Code s'utilise depuis l'app Mac."])
+        #endif
+    }
+
+    /// Navigateur de l'IA de Studio, tous fournisseurs (voir Browser.swift). Jamais à distance : hors de REMOTE_ALLOWED.
+    private func browser(_ action: String, id: Int, body: [String: Any]) {
+        #if os(macOS)
+        let send: ([String: Any]) -> Void = { var r = $0; r["id"] = id; self.answer(r) }
+        switch action {
+        case "tools": Browser.shared.list(done: send)
+        case "call": Browser.shared.call(body["name"] as? String ?? "", body["args"] as? [String: Any] ?? [:], done: send)
+        case "stop": Browser.shared.stop(); send(["ok": true])
+        default: send(["ok": false, "message": "Action inconnue."])
+        }
+        #else
+        answer(["id": id, "ok": false, "message": "Le navigateur s’utilise depuis l’app Mac."])
         #endif
     }
 

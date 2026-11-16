@@ -53,6 +53,17 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'agent-browser', date: '2026-11-16', icon: 'eye', hue: 'blue', mac: true,
+    title: 'Navigateur des agents',
+    lead: 'Les agents Claude Code et l’IA de Studio pilotent un navigateur sur les sites que tu leur ouvres.',
+    bits: [
+      ['eye', 'Actions', 'ouvrir une page, cliquer, remplir un formulaire, capturer, lire la console'],
+      ['sparkle', 'Tous fournisseurs', 'Claude, OpenAI ou modèle local : page Claude, « Demander à l’IA », outils: navigateur'],
+      ['shield', 'Sites listés', 'tout autre site est bloqué ; profil vide, sans tes sessions'],
+      ['bolt', 'Playwright MCP', 'lancé par npx, sans fenêtre, sur ce Mac seulement'],
+    ],
+    where: ['Réglages', 'Autorisations des agents', 'Navigateur'],
+    visual: { kind: 'flow', steps: [['Ouvre', 'blue', 'eye'], ['Clique', 'orange', 'bolt'], ['Capture', 'green', 'check']] } },
   { id: 'server-specs', date: '2026-11-16', icon: 'server', hue: 'teal', mac: true,
     title: 'Fiche machine du serveur',
     lead: 'L’onglet Serveur décrit la machine : où elle se trouve, sa puissance, ce qui y est installé.',

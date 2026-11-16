@@ -2,6 +2,7 @@
 // - Commandes : la liste des commandes permises quand la case « Commandes » est cochée au lancement (par défaut
 //   `npm test` et `npm run …`), ou toutes ; et si cette case vaut aussi en mode Analyser.
 // - Web : recherche et lecture de pages (WebSearch, WebFetch).
+// - Navigateur : Playwright MCP (clics, formulaires, captures), limité aux sites listés (`--allowed-origins`).
 // - PATH : dossiers ajoutés en tête du PATH des agents (l'app ouverte depuis le Dock n'a qu'un PATH minimal).
 // Gardé sur le Mac, là où les agents sont lancés : voir AgentPermissions dans Agents.swift. Un appareil lié ne peut
 // ni lire ni modifier ces réglages (« agent.permissions » n'est pas dans REMOTE_ALLOWED, link.ts).
@@ -11,8 +12,10 @@ import * as native from '../core/native.ts';
 import { esc } from '../lib/markdown.ts';
 import { $, icon, toast, confirmBox } from '../ui/kit.ts';
 
-interface Values { web: boolean; anyCommand: boolean; commandsInRead: boolean; commands: string[]; path: string[] }
-interface Preview { read: string[]; readCommands: string[]; edit: string[]; editCommands: string[] }
+interface Values { web: boolean; anyCommand: boolean; commandsInRead: boolean; commands: string[]; path: string[]; browser: boolean; sites: string[] }
+interface Preview { read: string[]; readCommands: string[]; edit: string[]; editCommands: string[]; npx: boolean }
+type ListKey = 'commands' | 'path' | 'sites';
+const LISTS: ListKey[] = ['commands', 'path', 'sites'];
 interface State { values: Values; defaults: Values; changed: string[]; preview: Preview }
 type Key = keyof Values;
 
@@ -26,9 +29,10 @@ const strings = (v: unknown): string[] => Array.isArray(v) ? v.filter((x): x is 
 function parse(r: native.Reply): State | null {
   const v = r.values as Record<string, unknown> | undefined, d = r.defaults as Record<string, unknown> | undefined, p = r.preview as Record<string, unknown> | undefined;
   if (!r.ok || !v || !d || !p) return null;
-  const values = (o: Record<string, unknown>): Values => ({ web: o.web === true, anyCommand: o.anyCommand === true, commandsInRead: o.commandsInRead === true, commands: strings(o.commands), path: strings(o.path) });
+  const values = (o: Record<string, unknown>): Values => ({ web: o.web === true, anyCommand: o.anyCommand === true, commandsInRead: o.commandsInRead === true, commands: strings(o.commands), path: strings(o.path),
+    browser: o.browser === true, sites: strings(o.sites) });
   return { values: values(v), defaults: values(d), changed: strings(r.changed),
-    preview: { read: strings(p.read), readCommands: strings(p.readCommands), edit: strings(p.edit), editCommands: strings(p.editCommands) } };
+    preview: { read: strings(p.read), readCommands: strings(p.readCommands), edit: strings(p.edit), editCommands: strings(p.editCommands), npx: p.npx !== false } };
 }
 
 /** Lit (et modifie, si `body` le demande) les autorisations gardées sur le Mac. */
@@ -58,7 +62,7 @@ function previewHTML(p: Preview): string {
   return `<div class="ap-preview">${row('Analyser', p.read, p.readCommands)}${row('Modifier', p.edit, p.editCommands)}</div>`;
 }
 
-function listHTML(key: 'commands' | 'path', label: string, hint: string, ideas: string[]): string {
+function listHTML(key: ListKey, label: string, hint: string, ideas: string[]): string {
   const s = state; if (!s) return '';
   const lines = s.values[key], have = new Set(lines);
   const changed = s.changed.includes(key);
@@ -85,6 +89,12 @@ function bodyHTML(): string {
       ${check('commandsInRead', 'Aussi en mode Analyser', 'En mode Analyser, l’agent travaille directement dans le dossier du projet, pas dans une copie isolée : ses commandes y laissent leurs traces (fichiers de build, dépendances installées).')}</section>
     <section class="cx-sec tn"><h4>${icon('search')}Web</h4>
       ${check('web', 'Rechercher et lire des pages web (WebSearch, WebFetch)', 'Dans les deux modes. Utile pour consulter une documentation ; l’agent peut alors aussi envoyer des requêtes vers n’importe quelle adresse.')}</section>
+    <section class="cx-sec tn"><h4>${icon('eye')}Navigateur</h4>
+      <p>L’agent pilote un vrai navigateur (Playwright) : il ouvre des pages, clique, remplit des formulaires, fait des captures et lit la console. Il n’ouvre que les sites listés ci-dessous. Le navigateur n’a pas de fenêtre et son profil est vide à chaque lancement : il n’a ni tes sessions ni tes mots de passe. Dans les deux modes, sur ce Mac seulement. Le même navigateur sert à l’IA de Studio, quel que soit son fournisseur (Claude, OpenAI, modèle local) : page Claude, « Demander à l’IA » (case Navigateur) et automatisations avec <code>outils: navigateur</code>.</p>
+      ${check('browser', 'Piloter un navigateur sur les sites listés', 'Une page peut contenir des instructions écrites pour détourner l’agent. Il est prévenu de ne pas y obéir, mais ne liste que des sites de confiance.')}
+      ${v.browser && !v.sites.length ? `<p class="modal-hint ap-warn">${icon('shield')}Aucun site listé : le navigateur reste coupé.</p>` : ''}
+      ${v.browser && !state.preview.npx ? `<p class="modal-hint ap-warn">${icon('shield')}<code>npx</code> introuvable : installe Node.js, ou ajoute son dossier aux dossiers des outils ci-dessous.</p>` : ''}
+      ${listHTML('sites', 'Sites ouverts au navigateur', 'Une adresse par ligne : <code>exemple.fr</code> (https), <code>http://localhost:5173</code>. Chaque sous-domaine se liste à part (<code>www.exemple.fr</code>) ; le chemin est ignoré. Les redirections vers un autre site ne sont pas toutes bloquées : ce filtre n’est pas un cloisonnement strict. Au premier lancement, <code>npx</code> télécharge Playwright MCP, et il faut Google Chrome sur ce Mac.', [])}</section>
     <section class="cx-sec tn"><h4>${icon('folder')}Dossiers des outils</h4>
       ${listHTML('path', 'Ajoutés en tête du PATH', 'Ouvert depuis le Dock, Studio n’a qu’un PATH minimal : un agent ne trouve ni <code>cargo</code>, ni les outils de Homebrew. Un dossier absolu par ligne, <code>~</code> accepté. Vide : le PATH de l’app.', PATH_IDEAS)}</section>`;
 }
@@ -111,7 +121,7 @@ async function save(set: Partial<Values>): Promise<void> {
 /** Un champ de l'onglet a changé : la valeur est enregistrée. Renvoie false si le champ n'est pas le sien. */
 export function onChange(t: HTMLInputElement): boolean {
   const k = t.dataset.ap as Key | undefined; if (!k) return false;
-  if (k === 'commands' || k === 'path') { void save({ [k]: t.value.split('\n') }); return true; }
+  if ((LISTS as string[]).includes(k)) { void save({ [k as ListKey]: t.value.split('\n') }); return true; }
   if (k === 'anyCommand' && t.checked) {
     void confirmBox({ title: 'Permettre toutes les commandes ?', text: 'Quand tu coches « Commandes », l’agent pourra lancer n’importe quelle commande sur ce Mac, sans liste ni question : supprimer des fichiers hors de sa copie, installer des programmes, envoyer des données en ligne. Les garde-fous de fichiers ne s’appliquent pas au terminal.', ok: 'Tout permettre', danger: true })
       .then(ok => { if (ok) void save({ anyCommand: true }); else t.checked = false; });
@@ -125,8 +135,8 @@ export function onChange(t: HTMLInputElement): boolean {
 export async function onClick(t: HTMLElement, redraw: () => void): Promise<boolean> {
   const add = t.closest<HTMLElement>('[data-ap-add]'), one = t.closest<HTMLElement>('[data-ap-reset]');
   if (add && state) {
-    const k = add.dataset.apAdd as 'commands' | 'path', value = add.dataset.value ?? '';
-    if (k !== 'commands' && k !== 'path') return true;
+    const k = add.dataset.apAdd as ListKey, value = add.dataset.value ?? '';
+    if (!LISTS.includes(k)) return true;
     // Le texte du champ, même pas encore enregistré, plus l'exemple.
     const field = $<HTMLTextAreaElement>(`.settings [data-ap="${k}"]`);
     const lines = (field?.value ?? state.values[k].join('\n')).split('\n').map(x => x.trim()).filter(Boolean);
@@ -140,7 +150,7 @@ export async function onClick(t: HTMLElement, redraw: () => void): Promise<boole
     return true;
   }
   if (t.closest('[data-ap-all]')) {
-    if (!await confirmBox({ title: 'Tout rétablir ?', text: 'Les agents reprennent les autorisations d’origine : lecture (et écriture en mode Modifier) dans leur dossier, et avec « Commandes » seulement npm test et npm run … ; pas de web, et le PATH de l’app.', ok: 'Tout rétablir', danger: true })) return true;
+    if (!await confirmBox({ title: 'Tout rétablir ?', text: 'Les agents reprennent les autorisations d’origine : lecture (et écriture en mode Modifier) dans leur dossier, et avec « Commandes » seulement npm test et npm run … ; pas de web ni de navigateur, et le PATH de l’app.', ok: 'Tout rétablir', danger: true })) return true;
     if (ai.cc.onMac() && !await call({ reset: 'all' })) toast(err);
     redraw(); toast('Autorisations d’origine rétablies');
     return true;
