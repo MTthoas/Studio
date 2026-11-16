@@ -127,7 +127,7 @@ Dans l'app, la page **Aide** (touche `?`) explique la prise en main en cartes co
 
 ### Notes et blocs spéciaux
 
-Les notes sont du Markdown : `[[Titre]]` crée un lien (chaque note montre qui la cite, le graphe dessine l'ensemble), `#tag` range la note sans dossier, et une capture sans tag arrive dans la boîte de réception. Chaque note garde son historique de versions, et peut être **éphémère** : elle s'efface seule à la date choisie.
+Les notes sont du Markdown : `[[Titre]]` crée un lien (chaque note montre qui la cite, le graphe dessine l'ensemble), `#tag` range la note sans dossier, et une capture sans tag arrive dans la boîte de réception. Chaque note garde son historique de versions, et peut être **éphémère** : elle s'efface seule à la date choisie. Une note peut avoir des **sous-notes** (menu ⋯ → « Nouvelle sous-note » ou « Ranger sous une note… ») : elles s'affichent en arbre dans la section **Arborescence** de la barre latérale, sous leur note parente et dans son fil d'Ariane.
 
 | Écriture | Effet |
 | --- | --- |
@@ -136,6 +136,7 @@ Les notes sont du Markdown : `[[Titre]]` crée un lien (chaque note montre qui l
 | ` ```sql ` / ` ```schema ` | Diagramme entité-association ; export SQL, Mermaid, SVG |
 | ` ```agent ` | Automatisation IA (outils : `notes`, `linear`, `github`, `agents` ; `projet:` pour son périmètre, Général sinon), lançable ou planifiée |
 | ` ```linear ` | Liste d'issues Linear filtrée (assigné, état, équipe…) |
+| ` ```commandes ` | Commandes enregistrées : une par ligne, `# description` au-dessus, `## Section` pour grouper, `\` pour continuer ; un clic les copie, la palette (⌘K) les retrouve |
 | ` ```projet ` | Déclare un [projet](#projets) |
 
 Sur iPhone, le bouton micro transforme ta voix en note ; la transcription est faite sur l'appareil.
@@ -217,6 +218,7 @@ Si l'agent ne parvient pas à résoudre, la publication s'arrête et te donne la
 - **Commandes** : celles que permet la case **Commandes**, une par ligne, au format des règles de Claude Code (`npm run *`, `cargo test *`, `npm ci`…). Par défaut `npm test` et `npm run …`. L'agent reçoit la liste dans sa consigne ; une commande hors liste est refusée, et le nombre d'actions refusées s'affiche sous son fil, avec un lien vers ce réglage. Claude Code laisse toujours passer de lui-même quelques commandes en lecture seule (`ls`, `whoami`…). Une réponse dans la discussion garde les commandes du tour précédent.
 - **Toutes les commandes** (terminal sans restriction) et **Aussi en mode Analyser** (qui travaille dans le dossier du projet, pas dans une copie) : désactivés par défaut, avec un avertissement.
 - **Web** : recherche et lecture de pages (`WebSearch`, `WebFetch`), désactivé par défaut.
+- **Navigateur** : l'agent pilote un navigateur ([Playwright MCP](https://github.com/microsoft/playwright-mcp), lancé par `npx`, sans fenêtre, profil vide à chaque lancement) pour ouvrir des pages, cliquer, remplir des formulaires et faire des captures, sur les seuls sites listés (une origine par ligne : `exemple.fr`, `http://localhost:5173`). Désactivé par défaut, sur le Mac seulement ; il faut Node.js et Google Chrome. Le même navigateur sert à l'IA de Studio quel que soit son fournisseur (Claude, OpenAI, modèle local) : page Claude, « Demander à l'IA » (case **Navigateur**) et automatisations avec `outils: navigateur` (`native/Shared/Browser.swift`, client MCP sur stdio).
 - **Dossiers des outils** : ajoutés en tête du `PATH` des agents. Ouvert depuis le Dock, Studio n'a qu'un PATH minimal : un agent ne trouverait pas `cargo` ni les outils de Homebrew.
 
 Ces réglages restent sur le Mac. Un appareil lié ne peut ni les lire ni les modifier, ni demander les commandes ; un agent lancé sur un serveur n'a jamais de commandes.
@@ -348,6 +350,7 @@ src/                               TypeScript strict
     tasks.ts          tâches, sous-tâches, échéances, tickets Linear
     board.ts          Kanban générique (glisser-déposer, clavier, tactile)
     voice.ts          notes vocales (transcription sur l'appareil)
+    commands.ts       bloc ```commandes (commandes enregistrées à copier) et leur recherche dans la palette
     hub.ts            réglages, coffre, agents, blocs spéciaux, liaison d'appareils
     projects/         model.ts (bloc ```projet, tags), page.ts (cockpit), flux.ts,
                       review.ts (revue IA), sessions.ts (agents Claude Code, publication),

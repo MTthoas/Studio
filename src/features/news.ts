@@ -1,6 +1,6 @@
-// Nouveautés : ce qui change dans Studio, présenté une nouveauté après l'autre.
-//   - après une mise à jour (ou à la première ouverture d'une version qui en apporte), un carrousel
-//     montre la version installée puis chaque nouveauté pas encore vue ;
+// Nouveautés : ce qui change dans Studio, dans une fenêtre à deux colonnes (sommaire par date, fiche).
+//   - après une mise à jour (ou à la première ouverture d'une version qui en apporte), elle liste
+//     la version installée puis chaque nouveauté pas encore vue ;
 //   - sur Mac, quand une nouvelle version est téléchargée et vérifiée, une fenêtre propose de relancer.
 //
 // Ajouter une nouveauté : une entrée en tête de NEWS (identifiant stable, jamais réutilisé). Elle sera
@@ -33,9 +33,9 @@ interface Item {
   id: string;
   /** Date de sortie, AAAA-MM-JJ. */
   date: string;
-  /** Titre : le bénéfice, en quelques mots. */
+  /** Titre : le nom de la fonction, sobre, sans slogan ; 30 caractères au plus (il tient dans le sommaire). */
   title: string;
-  /** Une phrase, pas plus. */
+  /** Une phrase factuelle, pas plus. */
   lead: string;
   /** Deux à quatre points : icône, mot-clé (en gras), précision courte. `code` entre accents graves. */
   bits: [icon: string, key: string, detail: string][];
@@ -65,9 +65,31 @@ const NEWS: Item[] = [
     where: ['Projets', 'un projet', 'Docker'],
     visual: { kind: 'stack', rows: [[['api', 'green', 'container'], 'en cours · :3000'], [['db', 'green', 'container'], 'en cours · :5432'], [['worker', 'red', 'container'], 'arrêté (code 137)']] },
     go: { label: 'Voir mes projets', view: { type: 'projets' } } },
+  { id: 'subnotes-commands', date: '2026-11-16', icon: 'notes', hue: 'teal',
+    title: 'Sous-notes et commandes',
+    lead: 'Une note peut en contenir d’autres, rangées en arbre dans la barre latérale, et garder des commandes à copier.',
+    bits: [
+      ['notes', 'Sous-notes', 'menu ⋯ → « Nouvelle sous-note » ou « Ranger sous une note… »'],
+      ['sidebar', 'Arborescence', 'section de la barre latérale, branches dépliables'],
+      ['terminal', 'Bloc commandes', '`# description` au-dessus, `## Section` pour grouper, un clic copie'],
+      ['search', 'Palette', 'les commandes enregistrées se retrouvent avec ⌘K'],
+    ],
+    where: ['Barre latérale', 'Arborescence'],
+    visual: { kind: 'stack', rows: [[['Note', 'gray', 'notes'], 'Serveur'], [['Sous-note', 'teal', 'notes'], 'Déploiement'], [['Commande', 'orange', 'terminal'], 'docker compose up -d']] } },
+  { id: 'agent-browser', date: '2026-11-16', icon: 'eye', hue: 'blue', mac: true,
+    title: 'Navigateur des agents',
+    lead: 'Les agents Claude Code et l’IA de Studio pilotent un navigateur sur les sites que tu leur ouvres.',
+    bits: [
+      ['eye', 'Actions', 'ouvrir une page, cliquer, remplir un formulaire, capturer, lire la console'],
+      ['sparkle', 'Tous fournisseurs', 'Claude, OpenAI ou modèle local : page Claude, « Demander à l’IA », outils: navigateur'],
+      ['shield', 'Sites listés', 'tout autre site est bloqué ; profil vide, sans tes sessions'],
+      ['bolt', 'Playwright MCP', 'lancé par npx, sans fenêtre, sur ce Mac seulement'],
+    ],
+    where: ['Réglages', 'Autorisations des agents', 'Navigateur'],
+    visual: { kind: 'flow', steps: [['Ouvre', 'blue', 'eye'], ['Clique', 'orange', 'bolt'], ['Capture', 'green', 'check']] } },
   { id: 'server-specs', date: '2026-11-16', icon: 'server', hue: 'teal', mac: true,
-    title: 'Ton serveur, de fond en comble',
-    lead: 'L’onglet Serveur lit la machine comme dans une console : où elle est, ce qu’elle a dans le ventre, ce qu’elle sait faire.',
+    title: 'Fiche machine du serveur',
+    lead: 'L’onglet Serveur décrit la machine : où elle se trouve, sa puissance, ce qui y est installé.',
     bits: [
       ['link', 'Emplacement', 'ville, pays et région de l’hébergeur, fuseau, adresse publique'],
       ['bolt', 'Puissance', 'vCPU et modèle du processeur, mémoire, disques SSD ou NVMe, débit réseau'],
@@ -78,8 +100,8 @@ const NEWS: Item[] = [
     visual: { kind: 'chips', chips: [['Paris, France', 'blue', 'link'], ['8 vCPU', 'orange', 'bolt'], ['32 Go', 'green', 'database'], ['NVMe', 'teal', 'server']] },
     go: { label: 'Voir mes projets', view: { type: 'projets' } } },
   { id: 'agent-live-pulse', date: '2026-11-16', icon: 'bolt', hue: 'orange', mac: true,
-    title: 'Claude au travail, en direct',
-    lead: 'Au-dessus du fil, tu vois Claude avancer seconde par seconde.',
+    title: 'Suivi en direct des agents',
+    lead: 'Au-dessus du fil, l’avancement de Claude se met à jour pendant qu’il travaille.',
     bits: [
       ['search', 'Étapes', 'explore, modifie, vérifie, répond : l’étape en cours bat'],
       ['plus', 'Compteurs vivants', 'lignes ajoutées et retirées, fichiers, commandes, tokens'],
@@ -89,7 +111,7 @@ const NEWS: Item[] = [
     visual: { kind: 'flow', steps: [['Explore', 'blue', 'search'], ['Modifie', 'green', 'pencil'], ['Vérifie', 'amber', 'terminal'], ['Répond', 'pink', 'sparkle']] },
     go: { label: 'Voir mes projets', view: { type: 'projets' } } },
   { id: 'agent-auto-model', date: '2026-11-16', icon: 'sparkle', hue: 'violet', mac: true,
-    title: 'Le bon modèle à chaque consigne',
+    title: 'Modèle « Auto » des agents',
     lead: 'Avec « Auto », chaque message envoyé à Claude Code prend le modèle le plus économe qui suffit.',
     bits: [
       ['sparkle', 'À chaque envoi', 'nouvelle consigne comme réponse dans une conversation'],
@@ -100,7 +122,7 @@ const NEWS: Item[] = [
     visual: { kind: 'chips', chips: [['Haiku', 'green', 'bolt'], ['Sonnet', 'blue', 'sparkle'], ['Opus', 'violet', 'sparkle']] },
     go: { label: 'Voir mes projets', view: { type: 'projets' } } },
   { id: 'project-home', date: '2026-11-16', icon: 'folder', hue: 'blue', mac: true,
-    title: 'Le dossier mère du projet',
+    title: 'Dossier mère du projet',
     lead: 'Tu choisis le dossier qui réunit les dépôts du projet, et où cloner ceux qui manquent.',
     bits: [
       ['folder', 'Retrouvés seuls', 'les dépôts déjà rangés dans le dossier mère'],
@@ -110,7 +132,7 @@ const NEWS: Item[] = [
     visual: { kind: 'flow', steps: [['Dossier mère', 'blue', 'folder'], ['Dépôts clonés', 'green', 'download']] },
     go: { label: 'Voir mes projets', view: { type: 'projets' } } },
   { id: 'agent-multi-repo', date: '2026-11-16', icon: 'folder', hue: 'blue', mac: true,
-    title: 'Un agent, tous tes dépôts',
+    title: 'Agents sur plusieurs dépôts',
     lead: 'Claude Code travaille sur tous les dépôts du projet à la fois : l’app, son site, son API.',
     bits: [
       ['folder', 'Trouvés seuls', 'les clones rangés à côté du dossier du projet ; sinon, cloner en un clic'],
@@ -143,7 +165,7 @@ const NEWS: Item[] = [
     visual: { kind: 'stack', rows: [[['build', 'green', 'check'], 'réussi en 42 s'], [['build:prod', 'amber', 'bolt'], 'en cours…'], [['build:staging', 'red', 'bolt'], 'en échec · code 1']] },
     go: { label: 'Voir mes projets', view: { type: 'projets' } } },
   { id: 'agent-voice', date: '2026-11-16', icon: 'mic', hue: 'violet',
-    title: 'Parle à Claude Code',
+    title: 'Dictée vocale pour les agents',
     lead: 'Dicte une consigne ou une réponse à un agent : ta voix s’écrit dans le champ, tu relis, tu envoies.',
     bits: [
       ['mic', 'Bouton micro', 'à côté de Lancer et d’Envoyer ; un second clic termine'],
@@ -154,7 +176,7 @@ const NEWS: Item[] = [
     visual: { kind: 'flow', steps: [['Tu parles', 'violet', 'mic'], ['Texte dans le champ', 'blue', 'pencil'], ['⌘↩', 'green', 'play']] },
     go: { label: 'Voir mes projets', view: { type: 'projets' } } },
   { id: 'github-actions', date: '2026-11-15', icon: 'bolt', hue: 'green',
-    title: 'GitHub Actions, et GitHub plus rapide',
+    title: 'GitHub Actions dans le Flux',
     lead: 'L’état de chaque workflow dans l’onglet Flux, et beaucoup moins d’attente sur les projets.',
     bits: [
       ['bolt', 'Un workflow par ligne', 'dernière exécution, branche, déclencheur, durée et bande des précédentes'],
@@ -166,7 +188,7 @@ const NEWS: Item[] = [
     visual: { kind: 'stack', rows: [[['Build', 'green', 'check'], 'main · réussie · 2 min 14'], [['Pages', 'amber', 'bolt'], 'main · en cours'], [['Tests', 'red', 'bolt'], 'feat/api · en échec']] },
     go: { label: 'Voir mes projets', view: { type: 'projets' } } },
   { id: 'server-user', date: '2026-11-15', icon: 'server', hue: 'teal',
-    title: 'Choisis l’utilisateur de ton serveur',
+    title: 'Utilisateur SSH du serveur',
     lead: 'Un champ Utilisateur dans l’onglet Serveur : root, ubuntu, deploy… sans toucher à ~/.ssh/config.',
     bits: [
       ['server', 'Prioritaire sur ta config', 'passe avant le `User` de ~/.ssh/config, qui reste proposé en indication'],
@@ -177,7 +199,7 @@ const NEWS: Item[] = [
     mac: true,
     go: { label: 'Voir mes projets', view: { type: 'projets' } } },
   { id: 'server-keys-ext', date: '2026-11-15', icon: 'server', hue: 'teal',
-    title: 'Ton serveur, clé et extensions',
+    title: 'Clé SSH, Docker et Kubernetes',
     lead: 'Une clé SSH gardée chiffrée par Studio, et Docker ou Kubernetes pilotés depuis l’onglet Serveur.',
     bits: [
       ['key', 'Clé SSH dans Studio', 'créée (Ed25519) ou importée, chiffrée dans le trousseau du Mac, jamais montrée'],
@@ -189,7 +211,7 @@ const NEWS: Item[] = [
     visual: { kind: 'stack', rows: [[['Clé', 'teal', 'key'], 'vps-prod · ED25519'], [['Docker', 'blue', 'container'], '4 en marche sur 5'], [['Kube', 'indigo', 'kube'], '1 nœud · 12 pods']] },
     go: { label: 'Voir mes projets', view: { type: 'projets' } } },
   { id: 'project-repos', date: '2026-11-15', icon: 'github', hue: 'indigo',
-    title: 'Un projet, tous ses dépôts',
+    title: 'Plusieurs dépôts par projet',
     lead: 'L’app, son site, son API : chaque dépôt a son rôle et sa carte dans le projet.',
     bits: [
       ['github', 'Plusieurs dépôts', 'ajoutés à la création ou d’un clic sur « Ajouter un dépôt »'],
@@ -201,7 +223,7 @@ const NEWS: Item[] = [
     visual: { kind: 'stack', rows: [[['App', 'indigo', 'code'], 'MTthoas/Studio'], [['Site', 'teal', 'link'], 'MTthoas/studio-site'], [['API', 'orange', 'plug'], 'MTthoas/studio-api']] },
     go: { label: 'Voir mes projets', view: { type: 'projets' } } },
   { id: 'agent-stages', date: '2026-11-14', icon: 'pr', hue: 'blue',
-    title: 'Où en sont tes agents, d’un coup d’œil',
+    title: 'Étapes des agents',
     lead: 'Le travail des agents est rangé par étape, chacune avec sa couleur.',
     bits: [
       ['bot', 'Quatre étapes', 'au travail, à publier, PR ouverte, fusionné'],
@@ -211,7 +233,7 @@ const NEWS: Item[] = [
     where: ['Projets', 'un projet', 'Claude Code'],
     visual: { kind: 'flow', steps: [['Au travail', 'amber', 'bot'], ['À publier', 'violet', 'upload'], ['PR ouverte', 'blue', 'pr'], ['Fusionné', 'green', 'check']] } },
   { id: 'figma-plugin', date: '2026-11-14', icon: 'figma', hue: 'violet',
-    title: 'Tes maquettes Figma dans tes notes',
+    title: 'Maquettes Figma dans les notes',
     lead: 'Un lien Figma dans une note devient un aperçu en grand.',
     bits: [
       ['figma', 'Bloc ```figma', 'maquette, prototype ou tableau FigJam, sans quitter la note'],
@@ -222,7 +244,7 @@ const NEWS: Item[] = [
     visual: { kind: 'chips', chips: [['Maquette', 'violet', 'figma'], ['Prototype', 'pink', 'play'], ['FigJam', 'amber', 'board'], ['Commentaires', 'blue', 'compose']] },
     go: { label: 'Activer Figma', view: { type: 'settings', tab: 'extensions' } } },
   { id: 'project-local-site', date: '2026-11-14', mac: true, icon: 'link', hue: 'teal',
-    title: 'Lance le site d’un projet en un clic',
+    title: 'Site du projet en local',
     lead: 'Studio trouve le site dans le dossier du projet et le sert sur ce Mac.',
     bits: [
       ['folder', 'index.html', 'servi tel quel par Studio'],
@@ -234,7 +256,7 @@ const NEWS: Item[] = [
     visual: { kind: 'flow', steps: [['Dossier', 'orange', 'folder'], ['npm run dev', 'teal', 'terminal'], ['localhost', 'green', 'link']] },
     go: { label: 'Voir mes projets', view: { type: 'projets' } } },
   { id: 'ai-project-scopes', date: '2026-11-14', icon: 'lock', hue: 'indigo',
-    title: 'L’IA ne voit que ton projet',
+    title: 'IA cloisonnée par projet',
     lead: 'Claude s’ouvre depuis un projet, et n’en sort pas.',
     bits: [
       ['folder', 'Notes, tâches, dépôts', 'seulement ceux du projet'],
@@ -245,7 +267,7 @@ const NEWS: Item[] = [
     visual: { kind: 'chips', chips: [['Ce projet', 'indigo', 'folder'], ['Ses notes', 'teal', 'notes'], ['Ses tâches', 'green', 'check'], ['Le reste', 'gray', 'lock']] },
     go: { label: 'Voir mes projets', view: { type: 'projets' } } },
   { id: 'agent-permissions', date: '2026-11-14', mac: true, icon: 'terminal', hue: 'amber',
-    title: 'Choisis ce que tes agents peuvent lancer',
+    title: 'Autorisations des agents',
     lead: 'Une liste claire des commandes, du web et du PATH permis aux agents.',
     bits: [
       ['terminal', 'Commandes', '`cargo test`, `npm ci`… quand « Commandes » est cochée'],
@@ -257,7 +279,7 @@ const NEWS: Item[] = [
     visual: { kind: 'chips', chips: [['npm ci', 'green', 'check'], ['cargo test', 'green', 'check'], ['Web', 'amber', 'link'], ['rm -rf', 'red', 'lock']] },
     go: { label: 'Régler les autorisations', view: { type: 'settings', tab: 'autorisations' } } },
   { id: 'claude-chat', date: '2026-11-14', icon: 'sparkle', hue: 'orange',
-    title: 'Parle à Claude, sans terminal',
+    title: 'Conversation avec Claude',
     lead: 'Une conversation libre avec Claude, à côté de tes notes.',
     bits: [
       ['notes', 'Tes données', 'notes, tâches, Linear et GitHub, quand c’est utile'],
@@ -267,7 +289,7 @@ const NEWS: Item[] = [
     visual: { kind: 'flow', steps: [['Ta question', 'gray', 'compose'], ['Claude lit', 'orange', 'sparkle'], ['Tu valides', 'green', 'check']] },
     go: { label: 'Voir mes projets', view: { type: 'projets' } } },
   { id: 'spotify-volume', date: '2026-11-14', icon: 'volume', hue: 'green',
-    title: 'Le volume de Spotify',
+    title: 'Volume de Spotify',
     lead: 'Règle le son de l’appareil qui joue, sans quitter Studio.',
     bits: [
       ['volume', 'Curseur', 'sous le titre en cours'],
@@ -277,7 +299,7 @@ const NEWS: Item[] = [
     where: ['Barre latérale', 'Spotify'],
     visual: { kind: 'chips', chips: [['Volume', 'green', 'volume'], ['Muet', 'gray', 'mute'], ['Palette ⌘K', 'blue', 'search']] } },
   { id: 'extensions', date: '2026-11-14', icon: 'plug', hue: 'green',
-    title: 'Des extensions : Spotify, n8n…',
+    title: 'Extensions : Spotify, n8n',
     lead: 'Active seulement ce dont tu as besoin. Toujours sans serveur.',
     bits: [
       ['music', 'Spotify', 'le titre en cours et ses commandes dans la barre latérale'],
@@ -287,7 +309,7 @@ const NEWS: Item[] = [
     visual: { kind: 'chips', chips: [['Spotify', 'green', 'music'], ['n8n', 'pink', 'bolt'], ['Figma', 'violet', 'figma']] },
     go: { label: 'Voir les extensions', view: { type: 'settings', tab: 'extensions' } } },
   { id: 'repo-memory', date: '2026-11-14', mac: true, icon: 'notes', hue: 'teal',
-    title: 'Les agents se souviennent du dépôt',
+    title: 'Mémoire du dépôt',
     lead: 'Chaque agent lit `contexte.md` avant de commencer, au lieu de tout réexplorer.',
     bits: [
       ['eye', 'Lu en premier', '`contexte.md`, à la racine du dépôt'],
@@ -298,8 +320,8 @@ const NEWS: Item[] = [
     visual: { kind: 'flow', steps: [['contexte.md', 'teal', 'notes'], ['Agent', 'violet', 'bot'], ['Appris', 'green', 'pencil']] },
     go: { label: 'Voir les consignes', view: { type: 'settings', tab: 'consignes' } } },
   { id: 'auto-update', date: '2026-11-14', mac: true, icon: 'download', hue: 'blue',
-    title: 'Studio se met à jour tout seul',
-    lead: 'Tu n’as plus rien à faire : la nouvelle version arrive en arrière-plan.',
+    title: 'Mises à jour automatiques',
+    lead: 'La nouvelle version est téléchargée en arrière-plan, puis installée à la relance.',
     bits: [
       ['download', 'Téléchargée', 'et vérifiée sans te déranger'],
       ['refresh', 'Installée', 'quand tu relances, ou toute seule quand tu quittes'],
@@ -308,8 +330,8 @@ const NEWS: Item[] = [
     visual: { kind: 'flow', steps: [['Téléchargée', 'blue', 'download'], ['Vérifiée', 'violet', 'shield'], ['Installée', 'green', 'check']] },
     go: { label: 'Réglages des mises à jour', view: { type: 'settings', tab: 'maj' } } },
   { id: 'whats-new', date: '2026-11-14', icon: 'bolt', hue: 'orange',
-    title: 'Les nouveautés, une à une',
-    lead: 'À chaque version, Studio montre ce qui change, ici même.',
+    title: 'Fenêtre des nouveautés',
+    lead: 'À chaque version, Studio liste ce qui change, rangé par date.',
     bits: [
       ['eye', 'Une fois', 'chaque nouveauté n’est montrée qu’une fois'],
       ['history', 'À revoir', 'quand tu veux, depuis le menu Studio'],
@@ -317,7 +339,7 @@ const NEWS: Item[] = [
     where: ['Studio ▾', 'Nouveautés'],
     visual: { kind: 'chips', chips: [['Nouveau', 'green', 'sparkle'], ['Amélioré', 'indigo', 'bolt'], ['Corrigé', 'orange', 'check']] } },
   { id: 'subagent-threads', date: '2026-11-13', mac: true, icon: 'bot', hue: 'violet',
-    title: 'Les sous-agents ont leur fil',
+    title: 'Fil des sous-agents',
     lead: 'Ce que Claude délègue se suit comme une conversation à part.',
     bits: [
       ['bot', 'Dans l’en-tête', 'les tâches déléguées pendant la conversation'],
@@ -328,7 +350,7 @@ const NEWS: Item[] = [
     visual: { kind: 'stack', rows: [[['Conversation', 'violet', 'terminal'], 'Refonte du site'], [['Sous-agent', 'indigo', 'bot'], 'Explorer les styles'], [['Sous-agent', 'indigo', 'bot'], 'Vérifier les liens']] },
     go: { label: 'Ouvrir les projets', view: { type: 'projets' } } },
   { id: 'queued-messages', date: '2026-11-12', mac: true, icon: 'list', hue: 'teal',
-    title: 'Écris pendant que l’agent travaille',
+    title: 'Messages en attente',
     lead: 'Studio ne coupe jamais un agent en plein travail.',
     bits: [
       ['hourglass', 'En attente', 'tes messages s’affichent ainsi dans le fil'],
@@ -336,7 +358,7 @@ const NEWS: Item[] = [
     ],
     visual: { kind: 'flow', steps: [['Tu écris', 'gray', 'compose'], ['En attente', 'amber', 'hourglass'], ['Remis', 'teal', 'check']] } },
   { id: 'reuse-worktrees', date: '2026-11-12', mac: true, icon: 'pr', hue: 'green',
-    title: 'Une discussion, plusieurs branches',
+    title: 'Copies réutilisées après fusion',
     lead: 'Une copie fusionnée repart d’elle-même sur une nouvelle branche.',
     bits: [
       ['check', 'Fusion reconnue', 'la copie n’est plus reproposée à la publication'],
@@ -345,7 +367,7 @@ const NEWS: Item[] = [
     visual: { kind: 'flow', steps: [['Fusionné', 'green', 'check'], ['main à jour', 'blue', 'refresh'], ['Nouvelle branche', 'violet', 'pr']] } },
 ];
 
-const SEEN = 'studio.news.seen', MAX_AUTO = 5;
+const SEEN = 'studio.news.seen';
 let api!: NewsApi;
 
 const applicable = (): Item[] => NEWS.filter(n => !n.mac || update.supported());
@@ -396,78 +418,102 @@ function whenFree(run: () => void, delay: number): void {
 const day = (iso: string): string => { const d = new Date(`${iso}T12:00:00`); return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' }); };
 /** Texte court : `code` entre accents graves, le reste échappé. */
 const rich = (t: string): string => esc(t).replace(/`([^`]+)`/g, '<code>$1</code>');
-const chipHTML = ([label, hue, ic]: Chip, i: number): string => `<span class="wn-pill" style="--c:var(--c-${esc(hue)});--i:${i}">${ic ? icon(ic) : ''}${esc(label)}</span>`;
+/** Repère d'une pastille ou d'une ligne : son icône, sinon un point. C'est lui seul qui porte la teinte. */
+const mark = (ic?: string): string => ic ? icon(ic) : '<i class="wn-pt"></i>';
+const chipHTML = ([label, hue, ic]: Chip): string => `<span class="wn-chip" style="--c:var(--c-${esc(hue)})">${mark(ic)}${esc(label)}</span>`;
+/** Schéma d'une nouveauté : un encadré neutre, comme les sections des Réglages. */
 function visualHTML(v: Visual): string {
-  if (v.kind === 'flow') return `<div class="wn-flow">${v.steps.map((c, i) => `${i ? `<i class="wn-arrow" style="--i:${i}">${icon('chevronRight')}</i>` : ''}${chipHTML(c, i)}`).join('')}</div>`;
-  if (v.kind === 'stack') return `<div class="wn-stack">${v.rows.map(([c, text], i) => `<div class="wn-row" style="--i:${i}">${chipHTML(c, i)}<code>${esc(text)}</code></div>`).join('')}</div>`;
-  return `<div class="wn-chips">${v.chips.slice(0, 4).map(chipHTML).join('')}</div>`;
+  if (v.kind === 'flow') return `<div class="wn-fig wn-flow" aria-hidden="true">${v.steps.map((c, i) => `${i ? `<i class="wn-arrow">${icon('chevronRight')}</i>` : ''}${chipHTML(c)}`).join('')}</div>`;
+  if (v.kind === 'stack') return `<div class="wn-fig wn-stack" aria-hidden="true">${v.rows.map(([[label, hue, ic], text]) => `<div class="wn-row" style="--c:var(--c-${esc(hue)})"><span>${mark(ic)}${esc(label)}</span><code>${esc(text)}</code></div>`).join('')}</div>`;
+  return `<div class="wn-fig wn-flow" aria-hidden="true">${v.chips.slice(0, 4).map(c => chipHTML(c)).join('')}</div>`;
 }
-/** Illustration d'une diapositive : une icône sur un fond teinté, et son schéma. */
-const hero = (ic: string, hue: string, v: Visual): string =>
-  `<div class="wn-hero" style="--c:var(--c-${esc(hue)})" aria-hidden="true"><i class="wn-orb"></i><i class="wn-orb b"></i><span class="wn-badge">${icon(ic)}</span>${visualHTML(v)}</div>`;
-const steps = (labels: string[], hue: string): Visual => ({ kind: 'flow', steps: labels.map(l => [l, hue] as Chip) });
-
-interface Slide { hero: string; kicker: string; title: string; body: string; go?: Item['go'] }
-function itemSlide(n: Item): Slide {
-  const bits = `<ul class="wn-bits">${n.bits.map(([ic, key, detail]) => `<li style="--c:var(--c-${esc(n.hue)})"><span class="wn-bit-ic">${icon(ic)}</span><span><b>${rich(key)}</b>${detail ? ` · ${rich(detail)}` : ''}</span></li>`).join('')}</ul>`;
-  const where = n.where?.length ? `<p class="wn-where">${icon('search')}<span>Où</span>${n.where.map(w => `<kbd>${esc(w)}</kbd>`).join('<i>›</i>')}</p>` : '';
-  return { hero: hero(n.icon, n.hue, n.visual), kicker: `Nouveau${day(n.date) ? ` · ${day(n.date)}` : ''}${n.mac ? ' · Mac' : ''}`, title: n.title,
-    body: `<p class="wn-lead">${rich(n.lead)}</p>${bits}${where}`, ...(n.go ? { go: n.go } : {}) };
+/** En-tête d'une fiche : l'icône dans sa case, une ligne d'informations, le titre. */
+const head = (ic: string, hue: string, meta: string[], title: string): string =>
+  `<header class="wn-head"><span class="wn-ic" style="--c:var(--c-${esc(hue)})">${icon(ic)}</span><div><p class="wn-meta">${meta.filter(Boolean).map(esc).join('<i>·</i>')}</p><h3>${esc(title)}</h3></div></header>`;
+/** Une fiche de la fenêtre : sa ligne dans le sommaire (groupe, icône, titre) et son contenu. */
+interface Entry { id: string; group: string; icon: string; title: string; html: string; where: string; go?: Item['go'] }
+function itemEntry(n: Item): Entry {
+  const bits = `<dl class="wn-bits">${n.bits.map(([ic, key, detail]) => `<div><dt>${icon(ic)}<span>${rich(key)}</span></dt><dd>${rich(detail)}</dd></div>`).join('')}</dl>`;
+  return { id: n.id, group: day(n.date), icon: n.icon, title: n.title,
+    html: `${head(n.icon, n.hue, [day(n.date), n.mac ? 'Mac' : ''], n.title)}<p class="wn-lead">${rich(n.lead)}</p>${visualHTML(n.visual)}${bits}`,
+    where: n.where?.length ? `<p class="wn-where"><span>Où</span>${n.where.map(w => `<b>${esc(w)}</b>`).join('<i>›</i>')}</p>` : '',
+    ...(n.go ? { go: n.go } : {}) };
 }
-function installedSlide(v: Installed): Slide {
+function installedEntry(v: Installed): Entry {
   const list = changeList(v.notes);
   const page = v.page.startsWith('https://github.com/') ? `<p class="wn-link"><a href="${esc(v.page)}" target="_blank" rel="noopener">Voir le détail sur GitHub</a></p>` : '';
-  return { hero: hero('check', 'green', steps(['Installée', 'Vérifiée', 'À jour'], 'green')), kicker: 'Mise à jour installée', title: `Studio ${v.tag}`,
-    body: (list ? `<p>Studio vient de se mettre à jour. Voici ce qui change :</p>${list}` : '<p>Studio vient de se mettre à jour. Tes notes et tes réglages n’ont pas bougé.</p>') + page };
+  const title = `Studio ${v.tag}`;
+  return { id: '', group: 'Mise à jour', icon: 'check', title, where: '',
+    html: head('check', 'green', ['Mise à jour installée'], title)
+      + (list ? `<p class="wn-lead">Studio vient de se mettre à jour. Voici ce qui change.</p>${list}` : '<p class="wn-lead">Studio vient de se mettre à jour. Tes notes et tes réglages n’ont pas bougé.</p>') + page };
 }
 
-/** Carrousel : une diapositive à la fois, points de progression, flèches du clavier. */
-function carousel(slides: Slide[]): void {
-  if (!slides.length) return;
-  let at = 0;
-  const m = modal({ cls: 'wn', html: '<div class="wn-stage"></div><footer class="wn-foot"><div class="wn-dots"></div><button class="btn btn-ghost" data-wn="prev">Précédent</button><button class="btn btn-primary" data-wn="next" autofocus></button></footer>' });
-  const stage = need('.wn-stage', m.body), dots = need('.wn-dots', m.body), prev = need<HTMLButtonElement>('[data-wn="prev"]', m.body), next = need<HTMLButtonElement>('[data-wn="next"]', m.body);
-  const show = (i: number, dir: 1 | -1 | 0): void => {
-    const s = slides[i]; if (!s) return;
+/**
+ * Fenêtre des nouveautés : le sommaire à gauche (rangé par date), la fiche choisie à droite.
+ * Une seule fiche : pas de sommaire. `fresh` : celles à marquer d'un point tant qu'elles n'ont pas été ouvertes.
+ */
+function viewer(entries: Entry[], fresh: Set<string> = new Set()): void {
+  if (!entries.length) return;
+  const solo = entries.length === 1;
+  let at = 0, group: string | null = null;
+  const nav = solo ? '' : `<nav class="wn-nav" aria-label="Nouveautés"><h2>Nouveautés</h2>${entries.map((e, k) => {
+    const title = e.group !== group && e.group ? `<p class="wn-group">${esc(e.group)}</p>` : '';
+    group = e.group;
+    return `${title}<button class="wn-item" data-wn-at="${k}">${icon(e.icon)}<span>${esc(e.title)}</span>${fresh.has(e.id) ? '<i class="wn-new" title="Pas encore ouverte"></i>' : ''}</button>`;
+  }).join('')}</nav>`;
+  const m = modal({ cls: solo ? 'wn wn-solo' : 'wn', html: `${nav}<div class="wn-main"><div class="wn-stage"></div><footer class="wn-foot"><span class="wn-count"></span><button class="btn btn-ghost" data-wn="prev">Précédent</button><button class="btn btn-primary" data-wn="next" autofocus></button></footer></div>` });
+  const stage = need('.wn-stage', m.body), count = need('.wn-count', m.body), prev = need<HTMLButtonElement>('[data-wn="prev"]', m.body), next = need<HTMLButtonElement>('[data-wn="next"]', m.body);
+  const items = [...m.body.querySelectorAll<HTMLElement>('.wn-item')];
+  const show = (i: number): void => {
+    const e = entries[i]; if (!e) return;
     at = i;
-    stage.innerHTML = `<section class="wn-slide${dir > 0 ? ' fwd' : dir < 0 ? ' back' : ''}" aria-live="polite">${s.hero}<div class="wn-text"><p class="wn-kicker">${esc(s.kicker)}</p><h3>${esc(s.title)}</h3>${s.body}${s.go ? `<p class="wn-link"><button class="link-btn" data-wn="go">${esc(s.go.label)}</button></p>` : ''}</div></section>`;
-    dots.innerHTML = slides.length > 1 ? slides.map((_, k) => `<button class="wn-dot${k === i ? ' on' : ''}" data-wn-at="${k}" aria-label="Nouveauté ${k + 1} sur ${slides.length}"${k === i ? ' aria-current="true"' : ''}></button>`).join('') : '';
-    prev.hidden = i === 0;
-    next.textContent = i === slides.length - 1 ? (slides.length > 1 ? 'C’est parti' : 'Compris') : 'Suivant';
+    const end = e.where || e.go ? `<div class="wn-end">${e.where}${e.go ? `<button class="btn" data-wn="go">${esc(e.go.label)}</button>` : ''}</div>` : '';
+    stage.innerHTML = `<article class="wn-art" aria-live="polite">${e.html}${end}</article>`;
+    stage.scrollTop = 0;
+    items.forEach((b, k) => {
+      if (k !== i) { b.removeAttribute('aria-current'); return; }
+      b.setAttribute('aria-current', 'true');
+      b.querySelector('.wn-new')?.remove();
+      b.scrollIntoView({ block: 'nearest' });
+    });
+    count.textContent = solo ? '' : `${i + 1} sur ${entries.length}`;
+    prev.hidden = solo;
+    prev.disabled = i === 0;
+    next.textContent = i === entries.length - 1 ? 'Fermer' : 'Suivant';
   };
   const step = (d: 1 | -1): void => {
-    if (d > 0 && at === slides.length - 1) { m.close(); return; }
-    if (at + d >= 0) show(at + d, d);
+    if (d > 0 && at === entries.length - 1) { m.close(); return; }
+    if (at + d >= 0) show(at + d);
   };
   m.node.addEventListener('click', e => {
     const b = target(e).closest('[data-wn], [data-wn-at]'); if (!b) return;
-    if (b.dataset.wnAt !== undefined) { const k = Number(b.dataset.wnAt); if (k !== at) show(k, k > at ? 1 : -1); return; }
+    if (b.dataset.wnAt !== undefined) { const k = Number(b.dataset.wnAt); if (k !== at) show(k); return; }
     if (b.dataset.wn === 'next') step(1);
     else if (b.dataset.wn === 'prev') step(-1);
-    else if (b.dataset.wn === 'go') { const go = slides[at]?.go; m.close(); if (go) void api.setView(go.view); }
+    else if (b.dataset.wn === 'go') { const go = entries[at]?.go; m.close(); if (go) void api.setView(go.view); }
   });
   m.node.addEventListener('keydown', e => {
-    if (e.key === 'ArrowRight') { e.preventDefault(); if (at < slides.length - 1) step(1); }
+    if (e.key === 'ArrowRight') { e.preventDefault(); if (at < entries.length - 1) step(1); }
     if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1); }
   });
-  show(0, 0);
+  show(0);
 }
 
-/** Toutes les nouveautés, à la demande (menu Studio → Nouveautés). */
+/** Toutes les nouveautés, à la demande (menu Studio → Nouveautés) ; celles jamais montrées portent un point. */
 export function open(): void {
-  const all = applicable();
+  const all = applicable(), fresh = new Set(unseen().map(n => n.id));
   markSeen(all);
-  carousel(all.map(itemSlide));
+  viewer(all.map(itemEntry), fresh.size < all.length ? fresh : new Set());
 }
 
 /** Une nouvelle version est prête : relancer maintenant, ou la laisser s'installer à la fermeture. */
 function promptReady(): void {
   const s = update.current(); if (!s) return;
   const list = changeList(s.notes ?? '', 5);
-  const m = modal({ cls: 'wn', html: `<section class="wn-slide">${hero('download', 'blue', steps(['Téléchargée', 'Vérifiée', 'Prête'], 'blue'))}<div class="wn-text"><p class="wn-kicker">Mise à jour prête</p><h3>Studio ${esc(s.tag ?? '')}</h3>
-      <p>La nouvelle version est déjà téléchargée et vérifiée. Relance Studio pour l’utiliser : tes notes sont enregistrées avant, et l’app se rouvre en quelques secondes.</p>${list}
-      <p class="wn-hint">Plus tard, elle s’installera toute seule quand tu quitteras Studio. Si un agent Claude Code travaille en ce moment, laisse-le d’abord finir.</p></div></section>
-    <footer class="wn-foot"><span class="wn-dots"></span><button class="btn btn-ghost" data-wn="later">Plus tard</button><button class="btn btn-primary" data-wn="restart" autofocus>${icon('refresh')}Relancer maintenant</button></footer>` });
+  const m = modal({ cls: 'wn wn-solo', html: `<div class="wn-main"><div class="wn-stage"><article class="wn-art">${head('download', 'blue', ['Mise à jour prête'], `Studio ${s.tag ?? ''}`)}
+      <p class="wn-lead">La nouvelle version est téléchargée et vérifiée. Relance Studio pour l’utiliser : tes notes sont enregistrées avant, et l’app se rouvre en quelques secondes.</p>${list}
+      <p class="wn-hint">Plus tard, elle s’installera quand tu quitteras Studio. Si un agent Claude Code travaille en ce moment, laisse-le d’abord finir.</p></article></div>
+    <footer class="wn-foot"><span class="wn-count"></span><button class="btn btn-ghost" data-wn="later">Plus tard</button><button class="btn btn-primary" data-wn="restart" autofocus>${icon('refresh')}Relancer maintenant</button></footer></div>` });
   const restart = need<HTMLButtonElement>('[data-wn="restart"]', m.body), later = need<HTMLButtonElement>('[data-wn="later"]', m.body);
   later.onclick = () => m.close();
   restart.onclick = async () => {
@@ -495,11 +541,11 @@ export function init(a: NewsApi): void {
   if (a.firstRun) { markSeen(NEWS); return; }
   if (__TEST__) return; // les tests automatisés démarrent sans fenêtre ouverte
   void update.justInstalled().then(done => {
-    const fresh = unseen().slice(0, MAX_AUTO);
+    const fresh = unseen();
     if (!done && !fresh.length) return;
     whenFree(() => {
       markSeen(applicable());
-      carousel([...(done ? [installedSlide(done)] : []), ...fresh.map(itemSlide)]);
+      viewer([...(done ? [installedEntry(done)] : []), ...fresh.map(itemEntry)]);
     }, 900);
   });
 }

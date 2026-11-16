@@ -90,6 +90,7 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
         if type == "agent", let action = body["action"] as? String, let id = body["id"] as? Int { agent(action, id: id, body: body) }
         if type == "claude", let action = body["action"] as? String, let id = body["id"] as? Int { claude(action, id: id, body: body) }
         if type == "docker", let action = body["action"] as? String, let id = body["id"] as? Int { docker(action, id: id, body: body) }
+        if type == "browser", let action = body["action"] as? String, let id = body["id"] as? Int { browser(action, id: id, body: body) }
         if type == "update", let action = body["action"] as? String, let id = body["id"] as? Int { update(action, id: id) }
         if type == "voice", let action = body["action"] as? String {
             Dictation.shared.send = { [weak self] payload in
@@ -102,12 +103,18 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
 
     // Réponse à la page : window.carnet.bio({ id, ok, ... })
     private func reply(_ payload: [String: Any]) {
-        guard let data = try? JSONSerialization.data(withJSONObject: payload), let json = String(data: data, encoding: .utf8) else { return }
+        guard JSONSerialization.isValidJSONObject(payload), let data = try? JSONSerialization.data(withJSONObject: payload), let json = String(data: data, encoding: .utf8) else { return }
         DispatchQueue.main.async { self.web?.evaluateJavaScript("window.carnet && window.carnet.bio && window.carnet.bio(\(json))", completionHandler: nil) }
     }
 
     // Réponse générique à une demande de la page : window.carnet.reply({ id, ok, ... })
+    // `isValidJSONObject` d'abord : sur un type non JSON (ArraySlice, Date…), `data(withJSONObject:)` lève une exception
+    // Objective-C que `try?` n'attrape pas, et toute l'app plante. On répond alors une erreur à la page.
     private func answer(_ payload: [String: Any]) {
+        guard JSONSerialization.isValidJSONObject(payload) else {
+            NSLog("Studio : réponse non sérialisable, remplacée par une erreur (%@)", payload.keys.sorted().joined(separator: ", "))
+            return answer(["id": payload["id"] as? Int ?? 0, "ok": false, "message": "Réponse illisible du Mac."])
+        }
         guard let data = try? JSONSerialization.data(withJSONObject: payload), let json = String(data: data, encoding: .utf8) else { return }
         DispatchQueue.main.async { self.web?.evaluateJavaScript("window.carnet && window.carnet.reply && window.carnet.reply(\(json))", completionHandler: nil) }
     }
@@ -320,6 +327,21 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
         }
         #else
         answer(["id": id, "ok": false, "message": "Claude Code s'utilise depuis l'app Mac."])
+        #endif
+    }
+
+    /// Navigateur de l'IA de Studio, tous fournisseurs (voir Browser.swift). Jamais à distance : hors de REMOTE_ALLOWED.
+    private func browser(_ action: String, id: Int, body: [String: Any]) {
+        #if os(macOS)
+        let send: ([String: Any]) -> Void = { var r = $0; r["id"] = id; self.answer(r) }
+        switch action {
+        case "tools": Browser.shared.list(done: send)
+        case "call": Browser.shared.call(body["name"] as? String ?? "", body["args"] as? [String: Any] ?? [:], done: send)
+        case "stop": Browser.shared.stop(); send(["ok": true])
+        default: send(["ok": false, "message": "Action inconnue."])
+        }
+        #else
+        answer(["id": id, "ok": false, "message": "Le navigateur s’utilise depuis l’app Mac."])
         #endif
     }
 
