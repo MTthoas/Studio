@@ -53,6 +53,18 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'agents-workspace', date: '2026-11-17', icon: 'board', hue: 'violet', mac: true,
+    title: 'Espace agents',
+    lead: 'Tous les agents de tous les projets, dans une liste à la Linear et une grille de 1 à 8 vues en direct.',
+    bits: [
+      ['list', 'Liste', 'en cours, à relire, en erreur, récentes ; filtre, et J/K pour la parcourir'],
+      ['board', 'Vues', '1, 2, 3, 4, 6 ou 8 agents côte à côte, chacun avec son champ de réponse'],
+      ['share', 'Diffuser', 'la même consigne à plusieurs vues : réponse ou nouvel agent'],
+      ['keyboard', 'Clavier', '1–8, C créer, F agrandir, X vider, L disposition, ⇧⌘↵ interrompre'],
+    ],
+    where: ['Barre latérale', 'Espace agents'],
+    visual: { kind: 'flow', steps: [['Liste', 'violet', 'list'], ['Vues', 'blue', 'board'], ['Diffuser', 'orange', 'share']] },
+    go: { label: 'Ouvrir l’espace agents', view: { type: 'workspace' } } },
   { id: 'subagents-auto', date: '2026-11-17', icon: 'bot', hue: 'violet', mac: true,
     title: 'Sous-agents automatiques',
     lead: 'Pour une même consigne, Claude Code confie de lui-même des parties du travail à des sous-agents qui tournent en parallèle.',
