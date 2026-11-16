@@ -123,12 +123,26 @@ export function gate(): Promise<void> {
     };
     $('[data-bio]', form)?.addEventListener('click', unlockBio);
     let manual = false; try { manual = sessionStorage.getItem('studio.manualLock') === '1'; sessionStorage.removeItem('studio.manualLock'); } catch { /* ignoré */ }
-    if (vault.hasBiometric() && !manual) setTimeout(unlockBio, 250);
+    // Seulement quand la fenêtre est devant toi : le verrouillage automatique tombe souvent app en arrière-plan,
+    // et la demande d'empreinte surgissait alors par-dessus les autres apps.
+    if (vault.hasBiometric() && !manual) whenInFront(() => { if (node.isConnected) setTimeout(unlockBio, 250); });
     $('[data-pk]', form)?.addEventListener('click', async () => {
       try { await vault.unlockPasskey(); done(); } catch (e) { fail(e instanceof Error && e.name === 'NotAllowedError' ? 'Authentification annulée.' : errMsg(e)); }
     });
     input.focus();
   });
+}
+
+/** Lance `fn` une fois, dès que la page est visible et que sa fenêtre a le focus. */
+function whenInFront(fn: () => void): void {
+  const front = () => document.visibilityState === 'visible' && document.hasFocus();
+  if (front()) return fn();
+  const check = () => {
+    if (!front()) return;
+    removeEventListener('focus', check); document.removeEventListener('visibilitychange', check);
+    fn();
+  };
+  addEventListener('focus', check); document.addEventListener('visibilitychange', check);
 }
 
 function askPassword({ title, text, confirm = false, ok = 'Valider' }: { title: string; text: string; confirm?: boolean; ok?: string }): Promise<string | null> {
