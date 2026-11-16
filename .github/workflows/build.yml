@@ -1,22 +1,11 @@
-# Studio : vérifications, builds et publication.
+# Studio : vérifications et publication (runners Linux uniquement : pas de macOS, trop cher en abonnement gratuit).
 #   check   → types TypeScript stricts, build, cache hors ligne complet, aucun secret dans le code
-#   native  → sur UN seul runner macOS : construit Studio.app (signée Developer ID et notarisée pour une publication
-#             si les secrets Apple sont renseignés, sinon signée « ad hoc »), puis vérifie que l'app iPhone compile
-#             (sans signature : non installable, voir README)
-#   release → à chaque push sur main (et sur un tag v…), publie une Release avec l'app Mac et l'app web,
+#   release → à chaque push sur main (et sur un tag v…), publie une Release avec l'app web,
 #             et le paquet @mtthoas/studio (app web compilée) dans les Packages du dépôt
 #
-# Quand le build se lance :
-#   - push sur main ou tag v…  → build complet + publication ;
-#   - pull request (ouverte, ou branche re-poussée) → vérifications (20 s) ; les apps natives ne sont compilées que
-#     si la PR touche au natif ou au build (voir « Ce que la PR touche »), et alors pour Apple Silicon seulement.
-#     Le build complet et la publication se font une seule fois, sur main, après la fusion ;
-#   - push sur une autre branche → rien (avant, chaque push d'agent lançait deux builds : « push » ET « pull_request »,
-#     dans deux groupes de concurrence différents ; le second annulait parfois le premier, d'où des builds « au hasard »).
-#   Une branche poussée sans PR se vérifie à la main : Actions → Build → Run workflow.
-#
-# Pourquoi un seul job macOS : le travail dure 2 à 3 minutes, mais un runner macOS se fait attendre 5 à 10 minutes.
-# Deux jobs (Mac, iPhone) par build, deux builds par PR (la PR puis main) : l'attente se payait quatre fois.
+# Les apps natives (Mac, iPhone) ne sont plus compilées ici : `./native/build-mac.sh` sur ton Mac.
+# Une PR (ou une branche lancée à la main : Actions → Build → Run workflow) ne lance que les vérifications.
+
 name: Build
 
 on:
@@ -43,26 +32,10 @@ jobs:
     name: Vérifications
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    outputs:
-      native: ${{ steps.touche.outputs.native }}
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-          # Une PR est testée sur son commit de fusion : son premier parent est la branche de base.
-          fetch-depth: 2
-      # Les apps natives embarquent l'app web telle quelle : une PR qui ne touche que src/, css/ ou la doc ne peut pas
-      # casser leur compilation, et les vérifications ci-dessous couvrent déjà l'app web. Hors PR : toujours tout.
-      - name: Ce que la PR touche
-        id: touche
-        run: |
-          NATIVE=true
-          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
-            FILES="$(git diff --name-only HEAD^1 HEAD)" || FILES="native/"
-            echo "$FILES" | grep -qE '^(native/|\.github/workflows/build\.yml$|package(-lock)?\.json$|scripts/|icons/|index\.html$|manifest\.webmanifest$)' || NATIVE=false
-          fi
-          echo "native=$NATIVE" >> "$GITHUB_OUTPUT"
-          echo "Apps natives à compiler : $NATIVE"
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -82,96 +55,10 @@ jobs:
           path: Studio-web.zip
           retention-days: 30
 
-  native:
-    name: Apps Mac et iPhone
-    needs: check
-    if: needs.check.outputs.native == 'true'
-    runs-on: macos-15
-    timeout-minutes: 30
-    env:
-      # Une PR vérifie que le code compile : une architecture suffit. La publication garde le binaire universel.
-      STUDIO_ARCHS: ${{ github.event_name == 'pull_request' && 'arm64' || 'arm64 x86_64' }}
-      HOMEBREW_NO_AUTO_UPDATE: 1
-      HOMEBREW_NO_INSTALL_CLEANUP: 1
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24
-          cache: npm
-      - run: npm ci --no-audit --no-fund
-      # Signature Developer ID : seulement pour ce qui sera publié (push sur main ou tag), et seulement si les
-      # secrets existent. Sinon l'app reste signée « ad hoc » : elle marche, mais macOS la bloque après un
-      # téléchargement par navigateur (voir README, « Signature et notarisation »).
-      - name: Certificat Developer ID
-        if: github.event_name == 'push'
-        env:
-          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
-          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
-        run: |
-          if [ -z "$MACOS_CERTIFICATE" ]; then echo "Pas de certificat : signature ad hoc."; exit 0; fi
-          KEYCHAIN="$RUNNER_TEMP/signature.keychain-db"
-          KEYCHAIN_PWD="$(uuidgen)"
-          printf '%s' "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificat.p12"
-          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
-          security set-keychain-settings -lut 3600 "$KEYCHAIN"
-          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
-          security import "$RUNNER_TEMP/certificat.p12" -P "$MACOS_CERTIFICATE_PWD" -f pkcs12 -k "$KEYCHAIN" -T /usr/bin/codesign
-          rm "$RUNNER_TEMP/certificat.p12"
-          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PWD" "$KEYCHAIN" >/dev/null
-          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
-          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" | awk -F'"' '/Developer ID Application/ { print $2; exit }')"
-          if [ -z "$IDENTITY" ]; then echo "::error::MACOS_CERTIFICATE ne contient pas de certificat « Developer ID Application »."; exit 1; fi
-          echo "SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
-      - name: Construire Studio.app
-        run: ./native/build-mac.sh
-      - name: Vérifier le binaire
-        run: |
-          lipo -archs native/build/Studio.app/Contents/MacOS/Studio
-          codesign --verify --deep --strict --verbose native/build/Studio.app
-      # Notarisation : Apple analyse l'app et délivre un ticket, agrafé dans l'app pour qu'elle s'ouvre même hors ligne.
-      - name: Notariser
-        if: env.SIGN_IDENTITY != ''
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-        run: |
-          if [ -z "$APPLE_ID" ] || [ -z "$APPLE_TEAM_ID" ] || [ -z "$APPLE_APP_PASSWORD" ]; then
-            echo "::error::App signée mais secrets de notarisation absents (APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD)."; exit 1
-          fi
-          ditto -c -k --keepParent native/build/Studio.app "$RUNNER_TEMP/notarisation.zip"
-          xcrun notarytool submit "$RUNNER_TEMP/notarisation.zip" --wait --timeout 15m \
-            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
-          xcrun stapler staple native/build/Studio.app
-          # Ce que fera Gatekeeper chez l'utilisateur : doit répondre « accepted, source=Notarized Developer ID ».
-          spctl --assess --type execute --verbose=2 native/build/Studio.app
-      - name: Archiver
-        run: ditto -c -k --keepParent native/build/Studio.app Studio-macOS.zip
-      - uses: actions/upload-artifact@v7
-        with:
-          name: Studio-macOS
-          path: Studio-macOS.zip
-          retention-days: 30
-
-      # L'app web vient d'être construite pour l'app Mac (dist/) : elle est recopiée telle quelle, sans second build.
-      - name: Outils iPhone
-        run: command -v xcodegen >/dev/null || brew install xcodegen
-      - name: Compiler l'app iPhone (simulateur)
-        working-directory: native
-        run: |
-          rm -rf build/web && mkdir -p build/web && cp -R ../dist/. build/web/ && find build/web -name '*.map' -delete
-          xcodegen generate --spec project.yml --quiet
-          xcodebuild -project Studio.xcodeproj -scheme Studio \
-            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath build/dd CODE_SIGNING_ALLOWED=NO -quiet build
-
   release:
     name: Publication
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-    needs: native
+    needs: check
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -198,9 +85,6 @@ jobs:
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v8
         with:
-          name: Studio-macOS
-      - uses: actions/download-artifact@v8
-        with:
           name: Studio-web
       - name: Créer la Release
         env:
@@ -208,7 +92,7 @@ jobs:
         run: |
           TAG="v${{ steps.v.outputs.version }}"
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
-            gh release create "$TAG" Studio-macOS.zip Studio-web.zip \
+            gh release create "$TAG" Studio-web.zip \
               --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Studio $TAG" --generate-notes
       - name: Publier le paquet @mtthoas/studio
         env:

@@ -424,12 +424,11 @@ La CI ([`.github/workflows/build.yml`](.github/workflows/build.yml)) tourne à c
 | Job | Rôle |
 | --- | --- |
 | **Vérifications** | Types TypeScript stricts, build, cache hors ligne complet, aucune clé d'API dans le code |
-| **Apps Mac et iPhone** | Sur un seul runner macOS : construit `Studio.app` et vérifie sa signature (notarisée si les secrets Apple existent), puis vérifie que l'app iPhone compile pour le simulateur |
 | **Publication** | Sur `main` et sur les tags `v…` : crée la Release et publie le paquet |
 
-Une pull request ne compile les apps natives que si elle touche à `native/`, au workflow, aux dépendances ou aux scripts de build, et alors pour Apple Silicon seulement (`STUDIO_ARCHS=arm64`) : une PR qui ne change que l'app web est vérifiée en une vingtaine de secondes. Le build complet (binaire universel, signature, publication) se fait une seule fois, sur `main`, après la fusion.
+La CI ne tourne que sur des runners Linux (le macOS est facturé dix fois plus : hors de portée de l'abonnement gratuit). Les apps natives ne sont donc plus compilées ni signées par GitHub : construis-les sur ton Mac avec `./native/build-mac.sh`. Une pull request ne lance que les vérifications, en une vingtaine de secondes.
 
-Chaque push sur `main` publie une Release `v1.0.<n>` avec `Studio-macOS.zip` et `Studio-web.zip`, ainsi que le paquet `@mtthoas/studio` (l'app web compilée) dans GitHub Packages. Un tag `v…` fait de même avec son propre nom.
+Chaque push sur `main` publie une Release `v1.0.<n>` avec `Studio-web.zip`, ainsi que le paquet `@mtthoas/studio` (l'app web compilée) dans GitHub Packages. Un tag `v…` fait de même avec son propre nom.
 
 ### Signature et notarisation
 
