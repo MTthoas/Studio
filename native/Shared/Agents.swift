@@ -14,7 +14,8 @@
 //
 // Garde-fous : programme à un emplacement connu, aucun shell, --restricted (outils de fichiers confinés au
 // dossier de travail), --permission-mode dontAsk (tout ce qui n'est pas listé est refusé, sans question ; en mode
-// Modifier dans la bulle, bypassPermissions : c'est alors la bulle qui borne l'écriture à la copie),
+// Modifier dans la bulle, bypassPermissions sans --restricted, que Claude Code refuse avec ce mode : c'est alors la
+// bulle qui borne lecture et écriture à la copie),
 // aucun réglage, hook ni serveur MCP de l'utilisateur, huit agents à la fois au plus, 90 minutes au plus.
 // Sur ce Mac, bulle macOS autour de l'agent et de ses commandes (AgentSandbox.swift), qui lui ouvre le terminal en mode Modifier.
 // Un appareil lié ne peut jamais demander les commandes (voir link.ts), ni changer les autorisations.
@@ -398,7 +399,14 @@ final class Agents {
         // bypassPermissions pour ne plus refuser Edit/Write sous `.claude/` (les copies vivent dans `.claude/worktrees/`,
         // un chemin qu'il protège et refuse en dontAsk même autorisé). Les outils restent ceux de --tools (sans Bash
         // pour l'orchestrateur), et l'écriture reste bornée par la bulle. Hors bulle ou en mode Analyser : dontAsk.
-        if bubble != nil && mode == "edit", let i = args.firstIndex(of: "dontAsk") { args[i] = "bypassPermissions" }
+        // Claude Code refuse bypassPermissions avec --restricted (« bypassPermissions not supported in restricted mode ») :
+        // l'agent s'arrêtait aussitôt, sans réponse. Dans ce cas seulement, --restricted est retiré ; ce qu'il apportait
+        // reste assuré autrement : outils limités par --tools, réglages et serveurs MCP de l'utilisateur ignorés
+        // (--setting-sources "", --strict-mcp-config), fichiers bornés par la bulle (lecture et écriture).
+        if bubble != nil && mode == "edit", let i = args.firstIndex(of: "dontAsk") {
+            args[i] = "bypassPermissions"
+            args.removeAll { $0 == "--restricted" }
+        }
         // Sous-agents (outil Agent) : demandés par la consigne, jamais pour l'orchestrateur. Ils héritent des outils et
         // des permissions de l'agent, et tournent dans le même processus, donc dans la même bulle.
         let team = body["internal"] as? Bool == true ? nil : AgentTeam(body["subagents"])
@@ -469,9 +477,14 @@ final class Agents {
             env["PATH"] = b.dir + ":" + (env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin")
         }
         p.environment = env
-        let out = Pipe(), input = Pipe()
-        p.standardOutput = out; p.standardError = FileHandle.nullDevice; p.standardInput = input
+        let out = Pipe(), input = Pipe(), errOut = Pipe()
+        p.standardOutput = out; p.standardError = errOut; p.standardInput = input
         run.process = p
+        // Sortie d'erreur de Claude Code : seule sa fin est gardée (4 Ko), pour expliquer un arrêt sans réponse
+        // (connexion expirée, programme introuvable, refus de la bulle…). Avant, elle était jetée : la page n'affichait
+        // que « Claude Code s'est arrêté avant de démarrer. », sans raison.
+        var errTail = Data()
+        let errDone = DispatchGroup(); errDone.enter()
 
         var answered = false
         let answerOnce: ([String: Any]) -> Void = { r in
@@ -482,6 +495,10 @@ final class Agents {
             self.lock.lock()
             if run.status == "running" || run.status == "starting" { run.status = proc.terminationStatus == 0 && !run.result.isEmpty ? "done" : "error" }
             run.finished = Date(); run.process = nil
+            self.lock.unlock()
+            _ = errDone.wait(timeout: .now() + 1)
+            self.lock.lock()
+            if run.result.isEmpty && run.status == "error", let why = Agents.stderrReason(errTail) { run.result = why }
             let wt = run.machine == "mac" && run.mode == "edit" && !run.worktree.isEmpty ? run.cwd : "", name = run.worktree
             self.lock.unlock()
             // Fin du tour, dans cet ordre : 1. si le travail de la copie a été fusionné entre-temps et que l'agent n'a rien
@@ -497,7 +514,15 @@ final class Agents {
             }
             answerOnce(["ok": false, "message": run.result.isEmpty ? "Claude Code s'est arrêté avant de démarrer." : run.result])
         }
-        do { try p.run() } catch { return done(["ok": false, "message": "Impossible de lancer Claude Code."]) }
+        do { try p.run() } catch { errDone.leave(); return done(["ok": false, "message": "Impossible de lancer Claude Code."]) }
+        DispatchQueue.global(qos: .utility).async {
+            while true {
+                let chunk = errOut.fileHandleForReading.availableData
+                if chunk.isEmpty { break }
+                self.lock.lock(); errTail.append(chunk); if errTail.count > 4096 { errTail = Data(errTail.suffix(4096)) }; self.lock.unlock()
+            }
+            errDone.leave()
+        }
         lock.lock(); runs[run.id] = run
         // Messages en attente transmis : ils sortent de la file (ceux arrivés entre-temps y restent pour le tour suivant).
         if !taken.isEmpty {
@@ -528,6 +553,15 @@ final class Agents {
         }
         // Si la session ne s'annonce pas, on répond quand même.
         DispatchQueue.global().asyncAfter(deadline: .now() + 30) { answerOnce(self.withOk(run)) }
+    }
+
+    /// Raison lisible d'un arrêt, d'après la fin de la sortie d'erreur : ses dernières lignes non vides, sans les
+    /// séquences de couleur. Nil si elle est vide.
+    static func stderrReason(_ data: Data) -> String? {
+        let text = String(decoding: data, as: UTF8.self).replacingOccurrences(of: "\u{1B}\\[[0-9;]*[A-Za-z]", with: "", options: .regularExpression)
+        let lines = text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        guard !lines.isEmpty else { return nil }
+        return "Claude Code s'est arrêté : " + String(lines.suffix(4).joined(separator: "\n").suffix(600))
     }
 
     private func withOk(_ r: Run) -> [String: Any] { lock.lock(); defer { lock.unlock() }; var s = summary(r); s["ok"] = true; return s }
