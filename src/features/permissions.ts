@@ -2,6 +2,7 @@
 // - Commandes : la liste des commandes permises quand la case « Commandes » est cochée au lancement (par défaut
 //   `npm test` et `npm run …`), ou toutes ; et si cette case vaut aussi en mode Analyser.
 // - Web : recherche et lecture de pages (WebSearch, WebFetch).
+// - Notes et tâches du projet : l'agent peut en créer dans son projet (features/projects/items.ts).
 // - Navigateur : Playwright MCP (clics, formulaires, captures), limité aux sites listés (`--allowed-origins`).
 // - PATH : dossiers ajoutés en tête du PATH des agents (l'app ouverte depuis le Dock n'a qu'un PATH minimal).
 // Gardé sur le Mac, là où les agents sont lancés : voir AgentPermissions dans Agents.swift. Un appareil lié ne peut
@@ -12,7 +13,7 @@ import * as native from '../core/native.ts';
 import { esc } from '../lib/markdown.ts';
 import { $, icon, toast, confirmBox } from '../ui/kit.ts';
 
-interface Values { web: boolean; anyCommand: boolean; commandsInRead: boolean; commands: string[]; path: string[]; browser: boolean; sites: string[] }
+interface Values { web: boolean; anyCommand: boolean; commandsInRead: boolean; projectItems: boolean; commands: string[]; path: string[]; browser: boolean; sites: string[] }
 interface Preview { read: string[]; readCommands: string[]; edit: string[]; editCommands: string[]; npx: boolean }
 type ListKey = 'commands' | 'path' | 'sites';
 const LISTS: ListKey[] = ['commands', 'path', 'sites'];
@@ -29,7 +30,7 @@ const strings = (v: unknown): string[] => Array.isArray(v) ? v.filter((x): x is 
 function parse(r: native.Reply): State | null {
   const v = r.values as Record<string, unknown> | undefined, d = r.defaults as Record<string, unknown> | undefined, p = r.preview as Record<string, unknown> | undefined;
   if (!r.ok || !v || !d || !p) return null;
-  const values = (o: Record<string, unknown>): Values => ({ web: o.web === true, anyCommand: o.anyCommand === true, commandsInRead: o.commandsInRead === true, commands: strings(o.commands), path: strings(o.path),
+  const values = (o: Record<string, unknown>): Values => ({ web: o.web === true, anyCommand: o.anyCommand === true, commandsInRead: o.commandsInRead === true, projectItems: o.projectItems === true, commands: strings(o.commands), path: strings(o.path),
     browser: o.browser === true, sites: strings(o.sites) });
   return { values: values(v), defaults: values(d), changed: strings(r.changed),
     preview: { read: strings(p.read), readCommands: strings(p.readCommands), edit: strings(p.edit), editCommands: strings(p.editCommands), npx: p.npx !== false } };
@@ -95,6 +96,8 @@ function bodyHTML(): string {
       ${v.browser && !v.sites.length ? `<p class="modal-hint ap-warn">${icon('shield')}Aucun site listé : le navigateur reste coupé.</p>` : ''}
       ${v.browser && !state.preview.npx ? `<p class="modal-hint ap-warn">${icon('shield')}<code>npx</code> introuvable : installe Node.js, ou ajoute son dossier aux dossiers des outils ci-dessous.</p>` : ''}
       ${listHTML('sites', 'Sites ouverts au navigateur', 'Une adresse par ligne : <code>exemple.fr</code> (https), <code>http://localhost:5173</code>. Chaque sous-domaine se liste à part (<code>www.exemple.fr</code>) ; le chemin est ignoré. Les redirections vers un autre site ne sont pas toutes bloquées : ce filtre n’est pas un cloisonnement strict. Au premier lancement, <code>npx</code> télécharge Playwright MCP, et il faut Google Chrome sur ce Mac.', [])}</section>
+    <section class="cx-sec tn"><h4>${icon('check')}Notes et tâches du projet</h4>
+      ${check('projectItems', 'Créer des notes et des tâches dans le projet de l’agent', 'Dans les deux modes. L’agent les écrit à la fin de son compte rendu, et Studio les crée dans le projet quand il a fini : 20 tâches et 5 notes par tour au plus. Il ne modifie ni ne supprime jamais une note existante, et cela ne lui ouvre aucun outil de plus sur ce Mac.')}</section>
     <section class="cx-sec tn"><h4>${icon('folder')}Dossiers des outils</h4>
       ${listHTML('path', 'Ajoutés en tête du PATH', 'Ouvert depuis le Dock, Studio n’a qu’un PATH minimal : un agent ne trouve ni <code>cargo</code>, ni les outils de Homebrew. Un dossier absolu par ligne, <code>~</code> accepté. Vide : le PATH de l’app.', PATH_IDEAS)}</section>`;
 }
@@ -150,7 +153,7 @@ export async function onClick(t: HTMLElement, redraw: () => void): Promise<boole
     return true;
   }
   if (t.closest('[data-ap-all]')) {
-    if (!await confirmBox({ title: 'Tout rétablir ?', text: 'Les agents reprennent les autorisations d’origine : lecture (et écriture en mode Modifier) dans leur dossier, et avec « Commandes » seulement npm test et npm run … ; pas de web ni de navigateur, et le PATH de l’app.', ok: 'Tout rétablir', danger: true })) return true;
+    if (!await confirmBox({ title: 'Tout rétablir ?', text: 'Les agents reprennent les autorisations d’origine : lecture (et écriture en mode Modifier) dans leur dossier, et avec « Commandes » seulement npm test et npm run … ; pas de web ni de navigateur, notes et tâches du projet permises, et le PATH de l’app.', ok: 'Tout rétablir', danger: true })) return true;
     if (ai.cc.onMac() && !await call({ reset: 'all' })) toast(err);
     redraw(); toast('Autorisations d’origine rétablies');
     return true;
