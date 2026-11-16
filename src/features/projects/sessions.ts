@@ -384,10 +384,18 @@ const FAN_MAX = 8, LAUNCH = `${icon('play')}Lancer<kbd>⌘↩</kbd>`;
 /** Une consigne par ligne non vide ; puces, numéros et cases à cocher de tête retirés. */
 const fanLines = (t: string): string[] => t.split('\n').map(l => l.replace(/^\s*(?:[-*+•]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+)/, '').trim()).filter(Boolean);
 const fanOf = (f: HTMLFormElement): string => f.querySelector<HTMLSelectElement>('select[name=fan]')?.value ?? '';
+/** Nombre d'agents écrit en tête de la consigne : « 3× … », « x3 … », « 3 agents : … ». La consigne revient sans ce
+ *  préfixe ; `n` vaut 1 sans préfixe. Annoncé dans le texte d'exemple du champ (COUNT_HINT). */
+export function agentCount(text: string): { n: number; text: string } {
+  const m = text.match(/^\s*(?:(\d{1,2})\s*[x×]|[x×]\s*(\d{1,2})|(\d{1,2})\s+agents?\b\s*[:,-]?)\s+/i);
+  const n = m ? Number(m[1] ?? m[2] ?? m[3]) : 1;
+  return m && n >= 1 ? { n, text: text.slice(m[0].length).trim() } : { n: 1, text: text.trim() };
+}
+export const COUNT_HINT = 'Commence par « 3× » pour lancer 3 agents en parallèle.';
 /** Le bouton annonce le nombre d'agents qui partiront. */
 function showFan(f: HTMLFormElement): void {
   const btn = f.querySelector<HTMLButtonElement>('.ag-send'); if (!btn || btn.disabled || !f.querySelector('select[name=fan]')) return;
-  const fan = fanOf(f), n = fan === 'notes' ? (f.dataset.notes || '').split(',').filter(Boolean).length : fan === 'lines' ? fanLines(f.querySelector('textarea')?.value ?? '').length : 1;
+  const fan = fanOf(f), n = fan === 'notes' ? (f.dataset.notes || '').split(',').filter(Boolean).length : fan === 'lines' ? fanLines(f.querySelector('textarea')?.value ?? '').length : agentCount(f.querySelector('textarea')?.value ?? '').n;
   btn.innerHTML = n > 1 ? `${icon('play')}Lancer ${n} agents<kbd>⌘↩</kbd>` : LAUNCH;
 }
 /** Le champ suit la hauteur du texte, sans limite. */
@@ -448,7 +456,7 @@ export function composerHTML(p: Project, { session = '', compact = false, machin
   const read = d?.mode === 'read', inRead = permissions.commandsInRead(), tests = (!read || inRead) && !!d?.tests;
   const fan = compact ? '' : hand?.fan || d?.fan || '';
   if (hand) saved.saveDraft(key, { text, notes, mode: read ? 'read' : 'edit', tests, fan });
-  return `<form class="ag-compose${compact ? ' compact' : ''}" data-draft="${esc(key)}" data-notes="${esc(notes.join(','))}"><textarea name="prompt" rows="${compact ? 1 : 3}" placeholder="Que doit faire Claude Code dans ${esc(p.name)} ? Ex. « Ajoute des tests au parseur de dates »" aria-label="Consigne pour Claude Code">${esc(text)}</textarea>
+  return `<form class="ag-compose${compact ? ' compact' : ''}" data-draft="${esc(key)}" data-notes="${esc(notes.join(','))}"><textarea name="prompt" rows="${compact ? 1 : 3}" placeholder="Que doit faire Claude Code dans ${esc(p.name)} ? Ex. « Ajoute des tests au parseur de dates ». ${COUNT_HINT}" aria-label="Consigne pour Claude Code">${esc(text)}</textarea>
     <div class="ag-ctx">${ctxHTML(notes)}</div>
     <div class="ag-opts"><div class="ag-tools">
       <div class="ag-seg" role="radiogroup" aria-label="Mode"><label><input type="radio" name="mode" value="edit"${read ? '' : ' checked'}><span>${icon('pencil')}Modifier</span></label><label><input type="radio" name="mode" value="read"${read ? ' checked' : ''}><span>${icon('search')}Analyser</span></label></div>
@@ -525,11 +533,14 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     const text = ta.value.trim();
     // Répartition : une consigne par note jointe, ou par ligne ; sinon une seule (toujours une seule quand on répond).
     const fan = f.dataset.session ? '' : fanOf(f), lines = fan === 'lines' ? fanLines(text) : [];
+    // « 3× … » en tête : le même travail confié à plusieurs agents (pas quand on répond, ni avec une autre répartition).
+    const counted = f.dataset.session || fan ? { n: 1, text } : agentCount(text);
     const units: { text: string; notes: string[] }[] = fan === 'notes' && noteIds.length > 1 ? noteIds.map(id => ({ text, notes: [id] }))
-      : lines.length > 1 ? lines.map(l => ({ text: l, notes: noteIds })) : [{ text, notes: noteIds }];
+      : lines.length > 1 ? lines.map(l => ({ text: l, notes: noteIds }))
+      : counted.n > 1 ? Array.from({ length: counted.n }, () => ({ text: counted.text, notes: noteIds })) : [{ text, notes: noteIds }];
     const many = units.length > 1;
     if (units.length > FAN_MAX) { toast(`${units.length} agents demandés : ${FAN_MAX} à la fois au plus. Réduis la liste, ou lance-la en plusieurs fois.`); return; }
-    if (many && !await confirmBox({ title: `Lancer ${units.length} agents ?`, text: `Ils travaillent en parallèle, chacun dans sa propre copie isolée du dépôt, avec ${fan === 'notes' ? 'une des notes jointes' : 'une ligne de la consigne'}. Ils consomment ton abonnement Claude en même temps.`, ok: `Lancer ${units.length} agents` })) return;
+    if (many && !await confirmBox({ title: `Lancer ${units.length} agents ?`, text: `Ils travaillent en parallèle, chacun dans sa propre copie isolée du dépôt, avec ${fan === 'notes' ? 'une des notes jointes' : fan === 'lines' ? 'une ligne de la consigne' : 'la même consigne'}. Ils consomment ton abonnement Claude en même temps.`, ok: `Lancer ${units.length} agents` })) return;
     const built = units.map(u => withNotes(u.text, u.notes)), refused = [...new Set(built.flatMap(b => b.refused))];
     if (refused.length) toast(`Non jointe${refused.length > 1 ? 's' : ''} (verrouillée, privée ou trop longue) : ${refused.join(', ')}`);
     const btn = need<HTMLButtonElement>('button.btn-primary', f), label = btn.innerHTML;

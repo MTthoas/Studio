@@ -8,7 +8,7 @@
 import * as bridge from '../integrations/remote.ts';
 import * as projects from './projects/model.ts';
 import * as subagents from './projects/subagents.ts';
-import { feedBlocks, syncFeed, nameOf, live, STATUS, modelName } from './projects/sessions.ts';
+import { feedBlocks, syncFeed, nameOf, live, STATUS, modelName, agentCount, COUNT_HINT } from './projects/sessions.ts';
 import type { AgentRun, Session, Action, Queued } from './projects/sessions.ts';
 import type { Project } from './projects/model.ts';
 import { esc } from '../lib/markdown.ts';
@@ -134,7 +134,7 @@ function newHTML(): string {
   return `<form class="aw-new">
     <div class="aw-new-row"><label class="aw-sel">${icon('folder')}<select name="project" aria-label="Projet">${projectOptions(cur)}</select></label>
       <div class="cx-seg aw-mode" role="radiogroup" aria-label="Mode"><label><input type="radio" name="mode" value="edit" checked>${icon('pencil')}Modifier</label><label><input type="radio" name="mode" value="read">${icon('search')}Analyser</label></div></div>
-    <textarea name="prompt" class="aw-big" placeholder="Décris ce que l’agent doit faire…" aria-label="Consigne du nouvel agent"></textarea>
+    <textarea name="prompt" class="aw-big" placeholder="Décris ce que l’agent doit faire… ${COUNT_HINT}" aria-label="Consigne du nouvel agent"></textarea>
     <div class="aw-new-foot"><span>ou glisse une conversation de la liste ici</span><button class="btn btn-primary">${icon('play')}Lancer ${kbd('mod+enter')}</button></div></form>`;
 }
 function paneShell(x: Pane | null, i: number): string {
@@ -214,17 +214,27 @@ function setLayout(n: number): void {
 const firstEmpty = () => { const i = panes().findIndex(x => !x); return i >= 0 ? i : st.focus; };
 
 async function launch(f: HTMLFormElement, i: number): Promise<void> {
-  const ta = need<HTMLTextAreaElement>('textarea', f), text = ta.value.trim();
+  const ta = need<HTMLTextAreaElement>('textarea', f), { n, text } = agentCount(ta.value);
   const pid = (f.elements.namedItem('project') as HTMLSelectElement).value, p = proj(pid);
   if (!text || !p) { ta.focus(); return; }
+  if (n > 8) { toast(`${n} agents demandés : 8 à la fois au plus.`); return; }
   const mode = f.querySelector<HTMLInputElement>('[name=mode]:checked')?.value ?? 'edit';
   const btn = need<HTMLButtonElement>('button.btn-primary', f); btn.disabled = true;
   st.draftProject = pid; save();
-  const r = await startAgent(p, text, mode);
+  // « 3× … » : chaque agent dans sa vue, celle-ci d'abord puis les vues vides suivantes (les autres restent dans la liste).
+  const free = [i, ...panes().map((x, k) => (!x && k !== i ? k : -1)).filter(k => k >= 0)];
+  let ok = 0, fail = '';
+  for (let k = 0; k < n; k++) {
+    if (n > 1) btn.innerHTML = `<span class="spin"></span>Agent ${k + 1}/${n}…`;
+    const r = await startAgent(p, text, mode);
+    if (!r.ok) { fail = r.message; break; }
+    ok++;
+    const at = free[k]; if (at !== undefined) st.panes[at] = { project: pid, session: r.session, run: r.run };
+  }
   btn.disabled = false;
-  if (!r.ok) { toast(r.message); return; }
-  setPane(i, { project: pid, session: r.session, run: r.run });
-  toast('Agent lancé'); void refresh();
+  if (!ok) { btn.innerHTML = `${icon('play')}Lancer ${kbd('mod+enter')}`; toast(fail); return; }
+  save(); st.focus = i; paint();
+  toast(n > 1 ? `${ok} agent${ok > 1 ? 's' : ''} sur ${n} au travail${fail ? ` · ${fail}` : ''}` : 'Agent lancé'); void refresh();
   void loadSessions(p).then(paintList);
 }
 async function startAgent(p: Project, prompt: string, mode = 'edit'): Promise<{ ok: true; session: string; run: string } | { ok: false; message: string }> {
