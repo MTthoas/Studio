@@ -674,6 +674,13 @@ body.focus .note-head { padding-top: 6vh; }
 .ask-opts { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--t-1); color: var(--text-2); padding: 0 18px 10px; }
 .ask-opts label { display: inline-flex; gap: 6px; align-items: center; }
 .ask-opts input { margin: 0; }
+.ask-pick { margin: 0 18px 8px; font-size: var(--t-1); color: var(--text-2); }
+.ask-pick summary { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.ask-pick summary svg { width: 13px; height: 13px; flex: none; }
+.ask-pick .field { margin: 6px 0; }
+.ask-pick-list { max-height: 160px; overflow: auto; display: grid; gap: 2px; }
+.ask-pick-list label { display: flex; gap: 6px; align-items: center; }
+.ask-pick-list label[hidden] { display: none; }
 .ask-steps { padding: 0 18px; }
 .ask-out { max-height: 46vh; overflow: auto; padding: 12px 18px; font-size: var(--t-2); border-top: 1px solid var(--border); }
 .ask .cap-foot { flex-wrap: wrap; }

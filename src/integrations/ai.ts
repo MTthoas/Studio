@@ -117,14 +117,18 @@ export interface RunContext {
   event?: AppEvent;
   /** Périmètre de l'exécution (un projet, ou Général par défaut) : les outils ne voient que ses données. */
   scope?: sc.Scope;
+  /** Notes choisies par l'utilisateur : les seules que l'IA peut lire ou modifier. Vide ou absent = aucune. */
+  notes?: string[];
 }
 
 function noteTools(ctx: RunContext, scope: sc.Scope): Tool[] {
-  const visible = (n: Note) => shareable(n) && sc.noteIn(scope, n);
+  const picked = new Set(ctx.notes ?? []);
+  // L'IA ne lit jamais une note que l'utilisateur n'a pas sélectionnée.
+  const visible = (n: Note) => picked.has(n.id) && shareable(n) && sc.noteIn(scope, n);
   const find = (t: string) => { const n = store.findByTitle(t || ''); return n && visible(n) ? n : null; };
   const own = scope.project?.tag;
   return [
-    { name: 'chercher_notes', description: 'Cherche dans les notes de l’utilisateur (titre et contenu). Renvoie jusqu’à 8 notes avec un extrait.',
+    { name: 'chercher_notes', description: 'Cherche dans les notes que l’utilisateur a sélectionnées pour toi (titre et contenu) ; les autres te sont inaccessibles. Renvoie jusqu’à 8 notes avec un extrait.',
       schema: { type: 'object', properties: { requete: { type: 'string', description: 'Mots à chercher ; vide pour les notes récentes' } }, required: ['requete'] },
       run: i => {
         const words = fold(str(i.requete)).split(/\s+/).filter(Boolean);
@@ -137,10 +141,10 @@ function noteTools(ctx: RunContext, scope: sc.Scope): Tool[] {
       } },
     { name: 'lire_note', description: 'Lit le contenu Markdown complet d’une note à partir de son titre exact.',
       schema: { type: 'object', properties: { titre: { type: 'string' } }, required: ['titre'] },
-      run: i => { const n = find(str(i.titre)); if (!n) throw new Error(`Note introuvable ou privée : ${str(i.titre)}`); return { titre: titleOf(n), contenu: (store.getBody(n) ?? '').slice(0, tuning.num('ctx.note')) }; } },
+      run: i => { const n = find(str(i.titre)); if (!n) throw new Error(`Note introuvable, privée ou non sélectionnée par l’utilisateur :${str(i.titre)}`); return { titre: titleOf(n), contenu: (store.getBody(n) ?? '').slice(0, tuning.num('ctx.note')) }; } },
     { name: 'lister_taches', description: 'Liste les tâches non cochées (- [ ]) de toutes les notes, regroupées par note.',
       schema: { type: 'object', properties: {} },
-      run: () => store.openTasks().filter(g => shareable(g.note))
+      run: () => store.openTasks().filter(g => visible(g.note))
         .map(g => ({ note: titleOf(g.note), taches: g.tasks.filter(t => sc.taskIn(scope, g.note, t.text)).map(t => t.text) })).filter(g => g.taches.length) },
     { name: 'boite_reception', description: 'Liste les notes de la boîte de réception (captures pas encore rangées), avec un extrait.',
       schema: { type: 'object', properties: {} },
@@ -149,7 +153,7 @@ function noteTools(ctx: RunContext, scope: sc.Scope): Tool[] {
       schema: { type: 'object', properties: { titre: { type: 'string' }, tags: { type: 'array', items: { type: 'string' }, description: 'Tags sans #, ex. ["projet/studio", "idée"]' } }, required: ['titre', 'tags'] },
       describe: i => `Ranger « ${str(i.titre)} » sous ${(Array.isArray(i.tags) ? i.tags : []).map(t => '#' + String(t).replace(/^#/, '')).join(' ')}`,
       run: async i => {
-        const n = find(str(i.titre)); if (!n) throw new Error(`Note introuvable ou privée : ${str(i.titre)}`);
+        const n = find(str(i.titre)); if (!n) throw new Error(`Note introuvable, privée ou non sélectionnée par l’utilisateur :${str(i.titre)}`);
         // Dans un projet, la note ne peut être rangée que dans ce projet (jamais vers un autre périmètre).
         const tags = (Array.isArray(i.tags) ? i.tags : []).map(t => String(t).trim().replace(/^#/, '').replace(/\s+/g, '-').toLowerCase()).filter(t => /^[\p{L}\d][\p{L}\d_/-]*$/u.test(t))
           .filter(t => !own || !t.startsWith('projet/') || t === own);
@@ -170,7 +174,7 @@ function noteTools(ctx: RunContext, scope: sc.Scope): Tool[] {
     { name: 'ajouter_a_note', write: true, description: 'Ajoute du texte à la fin d’une note existante. Demande l’accord de l’utilisateur.',
       schema: { type: 'object', properties: { titre: { type: 'string' }, texte: { type: 'string', description: 'Markdown à ajouter' } }, required: ['titre', 'texte'] },
       describe: i => `Ajouter du texte à « ${str(i.titre)} »`, preview: i => str(i.texte),
-      run: async i => { const n = find(str(i.titre)); if (!n) throw new Error(`Note introuvable ou privée : ${str(i.titre)}`); await appendTo(n, str(i.texte)); ctx.onWrite?.(n); return 'Texte ajouté.'; } },
+      run: async i => { const n = find(str(i.titre)); if (!n) throw new Error(`Note introuvable, privée ou non sélectionnée par l’utilisateur :${str(i.titre)}`); await appendTo(n, str(i.texte)); ctx.onWrite?.(n); return 'Texte ajouté.'; } },
   ];
 }
 

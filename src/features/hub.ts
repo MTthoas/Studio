@@ -393,17 +393,26 @@ function tick(): void {
 // ---------- Demander à l'IA ----------
 /** Note ouverte jointe à la demande : bornée, comme une note lue par l'outil lire_note (elle est renvoyée à chaque étape). */
 const noteContext = (body: string): string => { const max = tuning.num('ctx.note'); return body.length > max ? body.slice(0, max) + '\n…(note tronquée)' : body; };
-export function askAI(prefill = ''): void {
+const IMPROVE = 'Améliore cette note : corrige l’orthographe et la grammaire, clarifie et structure le texte (titres, listes), sans en changer le sens ni inventer de contenu. Réponds uniquement avec le texte Markdown complet de la note améliorée, sans commentaire.';
+/** `improve` : améliore la note ouverte (jointe d'office, remplaçable en un clic). Sinon l'IA ne lit que les notes cochées. */
+export function askAI(prefill = '', opts: { improve?: boolean } = {}): void {
   const n = app.current(), cfg = ai.config();
+  const improve = !!opts.improve && !!n;
+  if (improve) prefill = prefill || IMPROVE;
   // Périmètre : le projet de la note ouverte, sinon Général. La liste des tâches mêle tous les projets : jamais jointe.
   const sc = scope.of(n ? projectOfNote(n) : null), withLinear = scope.hasLinear(sc);
   const canCtx = !!n && !n.deletedAt && !n.todo && !store.isLocked(n) && ai.shareable(n);
+  if (improve && !canCtx) { toast('Cette note (chiffrée, #privé ou liste des tâches) n’est jamais envoyée à l’IA.'); return; }
+  // Notes que l'IA pourra lire : aucune par défaut, l'utilisateur les coche.
+  const pickable = store.index().live.filter(x => ai.shareable(x) && scope.noteIn(sc, x) && x.id !== n?.id).sort((a, b) => b.updated - a.updated).slice(0, 300);
+  const pickHTML = pickable.length ? `<details class="ask-pick"><summary>${icon('notes')}<span>Notes lues par l’IA : <b data-pick-count>aucune</b></span></summary><input class="field" type="search" placeholder="Filtrer…" aria-label="Filtrer les notes" data-pick-filter><div class="ask-pick-list">${pickable.map(x => `<label data-t="${esc(fold(titleOf(x)))}"><input type="checkbox" data-pick="${esc(x.id)}"> ${esc(titleOf(x))}</label>`).join('')}</div></details>` : '';
   const m = modal({ cls: 'ask', html: `<div class="cap-head">${icon('sparkle')}<span>Demander à l’IA</span><select class="ask-prov" aria-label="Fournisseur">${Object.entries(ai.PROVIDERS).map(([k, l]) => `<option value="${k}"${k === cfg.provider ? ' selected' : ''}>${l}${ai.ready(k as ai.Provider) ? '' : ' — à configurer'}</option>`).join('')}</select></div>
     <textarea rows="3" placeholder="Résume cette note, propose un plan d’action, crée les issues Linear correspondantes…" aria-label="Demande" autofocus>${esc(prefill)}</textarea>
     <p class="ask-scope">${icon('lock')}Périmètre : ${esc(scope.label(sc))}${sc.project ? '' : ' (hors projets)'}</p>
-    <div class="ask-opts"><label><input type="checkbox" data-o="ctx"${canCtx ? ' checked' : ' disabled'}> Note ouverte${n && !canCtx ? (n.todo ? ' (liste des tâches : jamais jointe)' : ' (chiffrée ou #privé : jamais envoyée)') : ''}</label><label><input type="checkbox" data-o="notes" checked> ${sc.project ? 'Notes du projet' : 'Notes hors projets'}</label><label title="${withLinear ? '' : 'Linear ne s’ouvre à l’IA que depuis un projet relié à Linear'}"><input type="checkbox" data-o="linear"${withLinear ? '' : ' disabled'}> Linear${sc.project?.linear ? ` · ${esc(sc.project.linear)}` : ''}</label><label><input type="checkbox" data-o="agents"> Mes agents</label>${ai.cc.onMac() ? '<label title="Ouvre, clique et lit les sites listés dans Réglages → Autorisations des agents"><input type="checkbox" data-o="navigateur"> Navigateur</label>' : ''}</div>
+    <div class="ask-opts"><label><input type="checkbox" data-o="ctx"${canCtx ? (improve ? ' checked' : '') : ' disabled'}> Note ouverte${n && !canCtx ? (n.todo ? ' (liste des tâches : jamais jointe)' : ' (chiffrée ou #privé : jamais envoyée)') : ''}</label><label title="${withLinear ? '' : 'Linear ne s’ouvre à l’IA que depuis un projet relié à Linear'}"><input type="checkbox" data-o="linear"${withLinear ? '' : ' disabled'}> Linear${sc.project?.linear ? ` · ${esc(sc.project.linear)}` : ''}</label><label><input type="checkbox" data-o="agents"> Mes agents</label>${ai.cc.onMac() ? '<label title="Ouvre, clique et lit les sites listés dans Réglages → Autorisations des agents"><input type="checkbox" data-o="navigateur"> Navigateur</label>' : ''}</div>
+    ${pickHTML}<p class="ask-scope">${icon('lock')}L’IA ne lit aucune note tant que tu ne l’as pas cochée.</p>
     <div class="ask-steps"></div><div class="ask-out md" hidden></div>
-    <div class="cap-foot"><span class="ask-status"></span><span class="ask-actions"><button class="btn" data-ins hidden>Ajouter à la note</button><button class="btn" data-new hidden>Nouvelle note</button><button class="btn btn-primary" data-go>Envoyer ${kbd('mod+enter')}</button></span></div>` });
+    <div class="cap-foot"><span class="ask-status"></span><span class="ask-actions"><button class="btn" data-rep hidden>Remplacer la note</button><button class="btn" data-ins hidden>Ajouter à la note</button><button class="btn" data-new hidden>Nouvelle note</button><button class="btn btn-primary" data-go>Envoyer ${kbd('mod+enter')}</button></span></div>` });
   const ta = need<HTMLTextAreaElement>('textarea', m.node), out = need('.ask-out', m.node), status = need('.ask-status', m.node), steps = need('.ask-steps', m.node);
   let text = '', busy = false;
   const go = async () => {
@@ -415,16 +424,30 @@ export function askAI(prefill = ''): void {
     try {
       const ctx = n && opt('ctx') ? `Note ouverte : « ${titleOf(n)} »\n\n${noteContext(store.getBody(n) ?? '')}` : '';
       void journal.record(ta.value, n && opt('ctx') ? `Demander à l’IA · ${titleOf(n)}` : 'Demander à l’IA');
-      const r = await ai.run({ prompt: ta.value, provider: p, context: ctx, tools: ['notes', 'linear', 'agents', 'navigateur'].filter(opt) },
-        { approve, scope: sc, onWrite: app.refreshNote, onStep: e => steps.insertAdjacentHTML('beforeend', `<div>${icon('bolt')}${esc(stepLabel(e))}</div>`) });
+      const picked = [...m.node.querySelectorAll<HTMLInputElement>('[data-pick]:checked')].map(c => c.dataset.pick ?? '');
+      if (n && opt('ctx')) picked.push(n.id);
+      const r = await ai.run({ prompt: ta.value, provider: p, context: ctx, tools: (improve ? [] : ['notes', 'linear', 'agents', 'navigateur']).filter(k => k === 'notes' || opt(k)) },
+        { approve, scope: sc, notes: picked, onWrite: app.refreshNote, onStep: e => steps.insertAdjacentHTML('beforeend', `<div>${icon('bolt')}${esc(stepLabel(e))}</div>`) });
       text = r.text; out.innerHTML = renderMarkdown(text || '*(réponse vide)*'); out.hidden = false;
       status.textContent = `Réponse de ${ai.PROVIDERS[p]}`;
       need('[data-ins]', m.node).hidden = !canCtx; need('[data-new]', m.node).hidden = false;
+      need('[data-rep]', m.node).hidden = !(improve && canCtx && text.trim());
     } catch (e) { status.innerHTML = `<span class="err">${esc(errMsg(e))}</span>`; }
     busy = false;
   };
   need('[data-go]', m.node).onclick = () => void go();
   ta.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void go(); } });
+  need('[data-rep]', m.node).onclick = async () => {
+    if (!n || !text.trim()) return;
+    await app.flush(n.id); store.touch(n); store.setBody(n, text.trim() + '\n'); n.updated = Date.now(); await store.saveNote(n);
+    app.refreshNote(n); m.close(); toast('Note remplacée (l’ancienne version reste dans l’historique)');
+  };
+  const countPick = () => { const k = m.node.querySelectorAll('[data-pick]:checked').length; const c = $('[data-pick-count]', m.node); if (c) c.textContent = k ? String(k) : 'aucune'; };
+  m.node.addEventListener('change', e => { if ((e.target as HTMLElement).matches('[data-pick]')) countPick(); });
+  $<HTMLInputElement>('[data-pick-filter]', m.node)?.addEventListener('input', e => {
+    const q = fold((e.target as HTMLInputElement).value.trim());
+    m.node.querySelectorAll<HTMLElement>('.ask-pick-list label').forEach(l => { l.hidden = !!q && !(l.dataset.t ?? '').includes(q); });
+  });
   need('[data-ins]', m.node).onclick = async () => { if (!n) return; await app.flush(n.id); await ai.appendTo(n, text); app.refreshNote(n); m.close(); toast('Ajouté à la note'); };
   need('[data-new]', m.node).onclick = async () => { const t = plain(text.split('\n').find(l => l.trim()) || 'Réponse IA').slice(0, 80); const nn = await store.createNote({ title: t, body: text }); m.close(); app.openNote(nn.id); };
 }

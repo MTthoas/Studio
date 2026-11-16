@@ -353,7 +353,7 @@ function mountNote(main: HTMLElement, n: Note, keep: Keep | null): void {
         ${n.expiresAt && !trashed ? `<button class="chip chip-warn" data-act="expire" title="Autodestruction le ${esc(full(n.expiresAt))}">${icon('hourglass')}${until(n.expiresAt)}</button>` : ''}
         ${n.enc && !trashed ? tb('lock', locked ? 'lock' : 'unlock', locked ? 'Note verrouillée' : 'Verrouiller maintenant', locked ? '' : SC.lock, 'on') : ''}
         ${ro ? '' : `<div class="seg" role="tablist" title="Changer de mode (${keys(SC.mode)})">${seg.map(([m, ic, l]) => `<button role="tab" data-mode="${m}" aria-selected="${m === mode}" aria-label="${l}" title="${l}">${icon(ic)}</button>`).join('')}</div>`}
-        ${ro ? '' : `<button class="btn btn-ghost" data-act="ask" title="Demander à l’IA (${keys(SC.ask)})">${icon('sparkle')}<span>Demander</span></button>`}
+        ${ro ? '' : `<button class="btn btn-ghost" data-act="improve" title="Améliorer cette note avec l’IA (elle ne lit que cette note)">${icon('sparkle')}<span>Améliorer</span></button><button class="btn btn-ghost" data-act="ask" title="Demander à l’IA (${keys(SC.ask)})">${icon('sparkle')}<span>Demander</span></button>`}
         ${ro || !projectsModel.projectOfNote(n) || !projectsPage.claudeAvailable() || !ai.shareable(n) ? '' : `<button class="btn btn-ghost" data-act="claude" title="Confier cette note à Claude Code, dans le projet ${esc(projectsModel.projectOfNote(n)?.name ?? '')}">${icon('terminal')}<span>Claude Code</span></button>`}
         ${ro ? '' : `<button class="btn btn-ghost pj-pick" data-act="project" title="Projet de la note">${icon('folder')}<span>${esc(projectsModel.projectOfNote(n)?.name ?? 'Projet')}</span></button>`}
         ${tb('more', 'more', 'Plus d’actions')}
@@ -876,6 +876,7 @@ function commands() {
     c('Boîte de réception', 'inbox', () => setView({ type: 'inbox' }), '', 'inbox'),
     c('Accueil', 'home', () => setView({ type: 'home' }), '', 'widgets tableau de bord dashboard'),
     c('Demander à l’IA', 'sparkle', () => hub.askAI(), SC.ask, 'claude chatgpt openai assistant question'),
+    ...(store.get(ui.id) ? [c('Améliorer la note avec l’IA', 'sparkle', () => hub.askAI('', { improve: true }), '', 'réécrire corriger orthographe clarifier ia')] : []),
     c('Automatisations', 'bot', () => setView({ type: 'agents' }), '', 'agents ia automatiser routine planifier déclencheur'),
     c('Nouvelle automatisation', 'bot', () => setView({ type: 'agents' }), '', 'créer agent modèle planifier'),
     c('Réglages : sécurité et chiffrement', 'shield', () => hub.openConnections('coffre'), '', 'sécurité mot de passe face id touch id passkey'),
@@ -1104,6 +1105,7 @@ async function onClick(e: MouseEvent): Promise<void> {
     else if (act === 'lock') await lockAction(n);
     else if (act === 'history') await openHistory(n);
     else if (act === 'ask') hub.askAI();
+    else if (act === 'improve') hub.askAI('', { improve: true });
     else if (act === 'focus') setFocus(!focusMode);
     else if (act === 'restore') { await store.restoreNote(n); await openNote(n.id); }
     else if (act === 'destroy') await destroy(n);
