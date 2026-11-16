@@ -17,7 +17,8 @@ import * as saved from './drafts.ts';
 import { paintPulse } from './pulse.ts';
 import * as permissions from '../permissions.ts';
 import * as voice from '../voice.ts';
-import { menu } from '../../ui/kit.ts';
+import { pickNotes } from './notepick.ts';
+import * as subagents from './subagents.ts';
 import type { Project } from './model.ts';
 
 interface Tokens { input: number; output: number; cacheRead: number; cacheWrite: number }
@@ -236,15 +237,20 @@ async function nameSession(p: Project, s: Nameable, actions?: Action[]): Promise
 // ---------- Notes jointes ----------
 // Une note du projet peut servir de contexte ou de cahier des charges : son contenu est ajouté à la consigne.
 // Les notes chiffrées ou marquées #privé ne sont jamais envoyées.
-let pending: { project: string; notes: string[]; prompt: string } | null = null;
+let pending: { project: string; notes: string[]; prompt: string; fan: string } | null = null;
 const titleOf = (id: string) => store.get(id)?.title.trim() || 'Sans titre';
 const chip = (id: string) => `<span class="ag-note" data-note-id="${esc(id)}">${icon('notes')}${esc(titleOf(id))}<button type="button" data-ag-unnote="${esc(id)}" aria-label="Retirer la note">×</button></span>`;
-/** Notes du projet qu'on peut joindre (lisibles, ni chiffrées ni privées). */
-function attachable(p: Project): { id: string; title: string }[] {
-  return model.notesOf(p).filter(n => n.id !== p.id && ai.shareable(n) && store.getBody(n) != null).map(n => ({ id: n.id, title: n.title.trim() || 'Sans titre' }));
+/** Pastilles des notes jointes, puis le bouton qui ouvre leur choix (notepick.ts). */
+const ctxHTML = (ids: string[]): string => `${ids.map(chip).join('')}<button type="button" class="ag-addnote" data-ag-note>${icon('plus')}${ids.length ? 'Notes…' : 'Joindre des notes'}</button>`;
+/** Remplace les notes jointes d'un formulaire : pastilles, brouillon et libellé du bouton suivent. */
+function setNotes(f: HTMLFormElement, ids: string[]): void {
+  f.dataset.notes = ids.join(',');
+  const ctx = f.querySelector('.ag-ctx'); if (ctx) ctx.innerHTML = ctxHTML(ids);
+  keepDraft(f); showFan(f);
 }
-/** Ouvre l'onglet Claude Code du projet avec des notes déjà jointes et, éventuellement, une consigne. */
-export function handoff(p: Project, { notes = [] as string[], prompt = '' } = {}): void { pending = { project: p.id, notes, prompt }; selected = null; sub = null; }
+/** Ouvre l'onglet Claude Code du projet avec des notes déjà jointes et, éventuellement, une consigne.
+ *  `fan: 'notes'` : le formulaire est réglé sur « Un agent par note » (rien n'est lancé sans le clic sur Lancer). */
+export function handoff(p: Project, { notes = [] as string[], prompt = '', fan = '' } = {}): void { pending = { project: p.id, notes, prompt, fan }; selected = null; sub = null; }
 /** Consigne finale : le texte de l'utilisateur, puis le contenu des notes jointes. */
 function withNotes(prompt: string, ids: string[]): { text: string; refused: string[] } {
   const parts: string[] = [], refused: string[] = []; let total = 0;
@@ -324,7 +330,7 @@ async function limitsAction(op: string): Promise<void> {
 
 // ---------- Consigne ----------
 const HINT_IDLE = `${icon('history')}Reprend la conversation là où elle s’est arrêtée, dans le même dossier.`;
-const HINT_BUSY = '<span class="spin"></span>Claude travaille : écris la suite, elle lui sera remise d’un bloc à la fin de son tour. Pour corriger le tir tout de suite, arrête-le.';
+const HINT_BUSY = '<span class="spin"></span>Claude travaille. « Mettre en attente » : il lit ta suite à la fin de son tour. « Intervenir » : son tour est coupé, il te lit tout de suite puis reprend.';
 const SEND_IDLE = `${icon('play')}Envoyer<kbd>⌘↩</kbd>`, SEND_BUSY = `${icon('history')}Mettre en attente<kbd>⌘↩</kbd>`;
 /** Zone de réponse d'une conversation : pendant que son agent travaille, on peut l'arrêter, ou lui écrire
  *  des messages secondaires qu'il lira ensemble à la fin de son tour. */
@@ -335,6 +341,7 @@ function syncStop(box: HTMLElement): void {
   f.dataset.busy = state;
   const stopBtn = $<HTMLButtonElement>('.ag-stop', f), send = $<HTMLButtonElement>('button.btn-primary', f), hint = $('[data-hint]', f);
   if (stopBtn) { stopBtn.hidden = !run; stopBtn.dataset.run = state; }
+  const cutBtn = $<HTMLButtonElement>('.ag-cut', f); if (cutBtn) cutBtn.hidden = !run;
   if (send && !send.disabled) send.innerHTML = run ? SEND_BUSY : SEND_IDLE;
   if (hint) hint.innerHTML = run ? HINT_BUSY : HINT_IDLE;
 }
@@ -351,6 +358,8 @@ function modelOptions(cur: string): string {
   for (const v of [...saved.extraModels(), cur]) if (v && !list.some(x => x[0] === v)) list.push([v, modelName(v)]);
   return list.map(([v, l]) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(l)}</option>`).join('') + `<option value="${OTHER}">Autre modèle…</option>`;
 }
+/** Bouton « Sous-agents » de la consigne : dit le réglage en cours et ouvre sa fenêtre (subagents.ts). */
+const subHTML = (): string => `<button type="button" class="btn ag-sub" data-ag-sub title="${esc(subagents.HINT)}">${icon('bot')}<span>${esc(subagents.label())}</span></button>`;
 const tuneHTML = (c: saved.Choice): string => `<select class="field" name="model" aria-label="Modèle" title="Modèle utilisé par Claude Code. Auto : le plus économe qui suffit à la consigne en cours" data-prev="${esc(c.model)}">${modelOptions(c.model)}</select><select class="field" name="effort" aria-label="Niveau d’effort" title="Niveau d’effort : plus il est élevé, plus Claude réfléchit, et plus il consomme">${EFFORTS.map(([v, l]) => `<option value="${v}"${v === c.effort ? ' selected' : ''}>${l}</option>`).join('')}</select><span class="ag-auto" data-auto hidden></span>`;
 /** Modèle et effort réellement envoyés : « Auto » est remplacé d'après la consigne ; un effort choisi à la main est gardé. */
 const autoOf = (f: HTMLFormElement) => autoPick(f.querySelector('textarea')?.value ?? '', {
@@ -368,6 +377,18 @@ function showAuto(f: HTMLFormElement): void {
   const hand = !!f.querySelector<HTMLSelectElement>('select[name=effort]')?.value, a = autoOf(f), l = autoLabel(a);
   box.innerHTML = `${icon('sparkle')}<b>${esc(l.model)}</b>${hand ? '' : ` · ${esc(l.effort)}`}`;
   box.title = `Choisi automatiquement : ${a.why}${hand ? ' · effort choisi à la main' : ''}`;
+}
+// Plusieurs agents d'un coup : la consigne se répartit en une par note jointe, ou une par ligne ; chaque agent
+// travaille en parallèle dans sa propre copie isolée. Le Mac en accepte FAN_MAX à la fois (maxRunning, Agents.swift).
+const FAN_MAX = 8, LAUNCH = `${icon('play')}Lancer<kbd>⌘↩</kbd>`;
+/** Une consigne par ligne non vide ; puces, numéros et cases à cocher de tête retirés. */
+const fanLines = (t: string): string[] => t.split('\n').map(l => l.replace(/^\s*(?:[-*+•]\s+(?:\[[ xX]\]\s+)?|\d+[.)]\s+)/, '').trim()).filter(Boolean);
+const fanOf = (f: HTMLFormElement): string => f.querySelector<HTMLSelectElement>('select[name=fan]')?.value ?? '';
+/** Le bouton annonce le nombre d'agents qui partiront. */
+function showFan(f: HTMLFormElement): void {
+  const btn = f.querySelector<HTMLButtonElement>('.ag-send'); if (!btn || btn.disabled || !f.querySelector('select[name=fan]')) return;
+  const fan = fanOf(f), n = fan === 'notes' ? (f.dataset.notes || '').split(',').filter(Boolean).length : fan === 'lines' ? fanLines(f.querySelector('textarea')?.value ?? '').length : 1;
+  btn.innerHTML = n > 1 ? `${icon('play')}Lancer ${n} agents<kbd>⌘↩</kbd>` : LAUNCH;
 }
 /** Le champ suit la hauteur du texte, sans limite. */
 function grow(ta: HTMLTextAreaElement): void { ta.style.height = 'auto'; ta.style.height = `${ta.scrollHeight + 2}px`; }
@@ -407,7 +428,7 @@ async function tune(f: HTMLFormElement, t: HTMLSelectElement): Promise<void> {
 function keepDraft(f: HTMLFormElement): void {
   const key = f.dataset.draft; if (!key) return;
   saved.saveDraft(key, { text: f.querySelector('textarea')?.value ?? '', notes: (f.dataset.notes || '').split(',').filter(Boolean),
-    mode: f.querySelector<HTMLInputElement>('[name=mode]:checked')?.value ?? 'edit', tests: !!f.querySelector<HTMLInputElement>('[name=tests]')?.checked });
+    mode: f.querySelector<HTMLInputElement>('[name=mode]:checked')?.value ?? 'edit', tests: !!f.querySelector<HTMLInputElement>('[name=tests]')?.checked, fan: fanOf(f) });
 }
 
 /** `server` : identifiant du serveur du projet visé quand `machine` vaut 'server' ("" : le premier). */
@@ -417,7 +438,7 @@ export function composerHTML(p: Project, { session = '', compact = false, machin
   // Chaque formulaire a son brouillon : un par conversation, un pour la nouvelle consigne, un pour celle de l'aperçu, un pour le serveur.
   const key = `${p.id}|${session ? `s:${session}` : machine === 'server' ? 'server' : compact ? 'quick' : 'new'}`, d = saved.draft(key);
   if (session) return `<form class="ag-compose ag-continue" data-draft="${esc(key)}" data-session="${esc(session)}"${machine ? ` data-machine="${esc(machine)}"` : ''}><textarea name="prompt" rows="2" placeholder="Réponds à Claude : précise, corrige, tranche, demande la suite…" aria-label="Répondre dans la session">${esc(d?.text ?? '')}</textarea>
-    <div class="ag-opts"><div class="ag-tools">${tuneHTML(saved.ofSession(session) ?? { model: '', effort: '' })}<span class="ag-hint" data-hint>${HINT_IDLE}</span></div><span class="ag-go">${voice.micHTML('Répondre à voix haute')}<button type="button" class="btn btn-danger ag-stop" data-ag="stop" hidden>${icon('stop')}Arrêter</button><button class="btn btn-primary ag-send">${SEND_IDLE}</button></span></div>${lims}</form>`;
+    <div class="ag-opts"><div class="ag-tools">${tuneHTML(saved.ofSession(session) ?? { model: '', effort: '' })}${subHTML()}<span class="ag-hint" data-hint>${HINT_IDLE}</span></div><span class="ag-go">${voice.micHTML('Répondre à voix haute')}<button type="button" class="btn btn-danger ag-stop" data-ag="stop" hidden>${icon('stop')}Arrêter</button><button type="button" class="btn ag-cut" data-ag-cut hidden title="Coupe le tour en cours : Claude lit ton message tout de suite, puis reprend là où il en était (⌘⇧↩)">${icon('bolt')}Intervenir</button><button class="btn btn-primary ag-send">${SEND_IDLE}</button></span></div>${lims}</form>`;
   const pre = pending?.project === p.id ? pending : null; if (pre && !compact) pending = null;
   // Une note ou une tâche confiée à Claude s'ajoute au brouillon en cours, sans l'effacer.
   const hand = pre && !compact ? pre : null;
@@ -425,16 +446,19 @@ export function composerHTML(p: Project, { session = '', compact = false, machin
   const mine = d?.text ?? '', given = hand?.prompt ?? '';
   const text = given && mine.trim() && !mine.includes(given) ? `${mine.trimEnd()}\n\n${given}` : given || mine;
   const read = d?.mode === 'read', inRead = permissions.commandsInRead(), tests = (!read || inRead) && !!d?.tests;
-  if (hand) saved.saveDraft(key, { text, notes, mode: read ? 'read' : 'edit', tests });
+  const fan = compact ? '' : hand?.fan || d?.fan || '';
+  if (hand) saved.saveDraft(key, { text, notes, mode: read ? 'read' : 'edit', tests, fan });
   return `<form class="ag-compose${compact ? ' compact' : ''}" data-draft="${esc(key)}" data-notes="${esc(notes.join(','))}"><textarea name="prompt" rows="${compact ? 1 : 3}" placeholder="Que doit faire Claude Code dans ${esc(p.name)} ? Ex. « Ajoute des tests au parseur de dates »" aria-label="Consigne pour Claude Code">${esc(text)}</textarea>
-    <div class="ag-ctx">${notes.map(chip).join('')}<button type="button" class="ag-addnote" data-ag-note>${icon('plus')}Joindre une note</button></div>
+    <div class="ag-ctx">${ctxHTML(notes)}</div>
     <div class="ag-opts"><div class="ag-tools">
       <div class="ag-seg" role="radiogroup" aria-label="Mode"><label><input type="radio" name="mode" value="edit"${read ? '' : ' checked'}><span>${icon('pencil')}Modifier</span></label><label><input type="radio" name="mode" value="read"${read ? ' checked' : ''}><span>${icon('search')}Analyser</span></label></div>
       ${bridge.local() && machine !== 'server' ? `<label class="ag-check" title="Autorise les commandes réglées dans Réglages → Autorisations (par défaut npm test et npm run …) : le code du projet peut alors s’exécuter"><input type="checkbox" name="tests"${tests ? ' checked' : ''}${read && !inRead ? ' disabled' : ''}>Commandes</label>` : ''}
       <select class="field" name="machine" aria-label="Où travailler"${machine === 'server' ? '' : ' hidden'}><option value="mac">Sur le Mac</option>${machine === 'server' ? `<option value="${server ? `server:${esc(server)}` : 'server'}" selected>Sur le serveur</option>` : ''}</select>
       ${tuneHTML(saved.defaults())}
+      ${compact ? '' : `<select class="field" name="fan" aria-label="Nombre d’agents" title="Plusieurs agents en parallèle, chacun dans sa copie isolée : un par note jointe, ou un par ligne de la consigne (${FAN_MAX} à la fois au plus)">${[['', 'Un agent'], ['notes', 'Un agent par note'], ['lines', 'Un agent par ligne']].map(([v, l]) => `<option value="${v}"${v === fan ? ' selected' : ''}>${l}</option>`).join('')}</select>`}
+      ${compact ? '' : subHTML()}
       <span class="ag-hint" data-hint>${read ? HINT_READ : HINT_EDIT}</span></div>
-      <span class="ag-go">${voice.micHTML('Dicter la consigne')}<button class="btn btn-primary ag-send">${icon('play')}Lancer<kbd>⌘↩</kbd></button></span></div>${lims}</form>`;
+      <span class="ag-go">${voice.micHTML('Dicter la consigne')}<button class="btn btn-primary ag-send">${LAUNCH}</button></span></div>${lims}</form>`;
 }
 
 /** Branche les formulaires de consigne présents dans `root` (lancement, reprise, raccourci ⌘↩). */
@@ -442,12 +466,12 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
   void loadLimits();
   permissions.preload();
   // Formulaires fraîchement rendus (brouillon repris) : hauteur du texte et choix « Auto » à jour.
-  requestAnimationFrame(() => root.querySelectorAll<HTMLFormElement>('.ag-compose').forEach(f => { const ta = f.querySelector('textarea'); if (ta) grow(ta); showAuto(f); }));
+  requestAnimationFrame(() => root.querySelectorAll<HTMLFormElement>('.ag-compose').forEach(f => { const ta = f.querySelector('textarea'); if (ta) grow(ta); showAuto(f); showFan(f); }));
   if (root.dataset.agBound) return;
   root.dataset.agBound = '1';
   root.addEventListener('input', e => {
     const t = e.target as HTMLElement, f = t.closest<HTMLFormElement>('.ag-compose');
-    if (f && t.tagName === 'TEXTAREA') { grow(t as HTMLTextAreaElement); keepDraft(f); showAuto(f); }
+    if (f && t.tagName === 'TEXTAREA') { grow(t as HTMLTextAreaElement); keepDraft(f); showAuto(f); showFan(f); }
   });
   root.addEventListener('focusin', e => { const t = e.target as HTMLElement; if (t.tagName === 'TEXTAREA' && t.closest('.ag-compose')) grow(t as HTMLTextAreaElement); });
   root.addEventListener('change', e => {
@@ -455,6 +479,7 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     if (t.name === 'model' || t.name === 'effort') { void tune(f, t as unknown as HTMLSelectElement).then(() => showAuto(f)); return; }
     if (t.name === 'mode') showAuto(f);
     if (t.name === 'tests') { keepDraft(f); return; }
+    if (t.name === 'fan') { keepDraft(f); showFan(f); return; }
     if (t.name !== 'mode') return;
     const hint = $('[data-hint]', f), tests = $<HTMLInputElement>('[name=tests]', f);
     if (hint) hint.innerHTML = t.value === 'edit' ? HINT_EDIT : HINT_READ;
@@ -467,26 +492,46 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     if (mic) { const ta = need<HTMLTextAreaElement>('textarea', f); voice.dictate(ta, mic, () => { keepDraft(f); grow(ta); showAuto(f); }); return; }
     const lim = t.closest<HTMLElement>('[data-ag-lim]');
     if (lim) { void limitsAction(lim.dataset.agLim ?? ''); return; }
+    // « Intervenir » : même envoi que le bouton principal, mais le tour en cours est coupé (voir `interrupt`, Agents.swift).
+    if (t.closest('[data-ag-cut]')) { f.dataset.cut = '1'; f.requestSubmit(); return; }
+    // Sous-agents : un seul réglage pour l'appareil, donc tous les boutons affichés suivent.
+    if (t.closest('[data-ag-sub]')) {
+      void subagents.edit().then(ok => { if (ok) document.querySelectorAll<HTMLElement>('[data-ag-sub] span').forEach(x => { x.textContent = subagents.label(); }); });
+      return;
+    }
     const ids = () => (f.dataset.notes || '').split(',').filter(Boolean);
     const un = t.closest<HTMLElement>('[data-ag-unnote]');
-    if (un) { f.dataset.notes = ids().filter(x => x !== un.dataset.agUnnote).join(','); un.closest('.ag-note')?.remove(); keepDraft(f); return; }
-    const add = t.closest<HTMLElement>('[data-ag-note]'); if (!add) return;
-    const have = new Set(ids()), list = attachable(p).filter(n => !have.has(n.id));
-    menu(add, list.length ? [{ label: 'Joindre une note du projet' }, ...list.map(n => ({ label: n.title, icon: 'notes', run: () => { f.dataset.notes = [...ids(), n.id].join(','); add.insertAdjacentHTML('beforebegin', chip(n.id)); keepDraft(f); } }))]
-      : [{ label: model.notesOf(p).length > 1 ? 'Toutes les notes lisibles sont déjà jointes' : `Aucune note dans ce projet : ajoute #${p.tag} à une note` }]);
+    if (un) { setNotes(f, ids().filter(x => x !== un.dataset.agUnnote)); return; }
+    if (!t.closest('[data-ag-note]')) return;
+    void pickNotes(p, ids()).then(next => { if (next && f.isConnected) setNotes(f, next); });
   });
   root.addEventListener('keydown', e => {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && (e.target as HTMLElement).closest('.ag-compose')) { e.preventDefault(); (e.target as HTMLElement).closest<HTMLFormElement>('form')?.requestSubmit(); }
+    if (!(e.key === 'Enter' && (e.metaKey || e.ctrlKey))) return;
+    const f = (e.target as HTMLElement).closest<HTMLFormElement>('form.ag-compose'); if (!f) return;
+    e.preventDefault();
+    // ⌘⇧↩ pendant que Claude travaille : intervenir au lieu de mettre en attente.
+    const cutBtn = f.querySelector<HTMLElement>('[data-ag-cut]');
+    if (e.shiftKey && cutBtn && !cutBtn.hidden) f.dataset.cut = '1';
+    f.requestSubmit();
   });
   root.addEventListener('submit', async e => {
     const f = (e.target as HTMLElement).closest<HTMLFormElement>('.ag-compose'); if (!f) return;
     e.preventDefault(); e.stopPropagation();
+    const cut = f.dataset.cut === '1'; delete f.dataset.cut;
     if (f.querySelector<HTMLButtonElement>('button.btn-primary')?.disabled) return; // envoi déjà parti
     if (f.querySelector('.vc-mic.live')) voice.cancel(); // sinon la dictée réécrirait le champ vidé après l'envoi
     const ta = need<HTMLTextAreaElement>('textarea', f), noteIds = (f.dataset.notes || '').split(',').filter(Boolean);
     if (!ta.value.trim() && !noteIds.length) { ta.focus(); return; }
-    const built = withNotes(ta.value.trim(), noteIds), prompt = built.text;
-    if (built.refused.length) toast(`Non jointe${built.refused.length > 1 ? 's' : ''} (verrouillée, privée ou trop longue) : ${built.refused.join(', ')}`);
+    const text = ta.value.trim();
+    // Répartition : une consigne par note jointe, ou par ligne ; sinon une seule (toujours une seule quand on répond).
+    const fan = f.dataset.session ? '' : fanOf(f), lines = fan === 'lines' ? fanLines(text) : [];
+    const units: { text: string; notes: string[] }[] = fan === 'notes' && noteIds.length > 1 ? noteIds.map(id => ({ text, notes: [id] }))
+      : lines.length > 1 ? lines.map(l => ({ text: l, notes: noteIds })) : [{ text, notes: noteIds }];
+    const many = units.length > 1;
+    if (units.length > FAN_MAX) { toast(`${units.length} agents demandés : ${FAN_MAX} à la fois au plus. Réduis la liste, ou lance-la en plusieurs fois.`); return; }
+    if (many && !await confirmBox({ title: `Lancer ${units.length} agents ?`, text: `Ils travaillent en parallèle, chacun dans sa propre copie isolée du dépôt, avec ${fan === 'notes' ? 'une des notes jointes' : 'une ligne de la consigne'}. Ils consomment ton abonnement Claude en même temps.`, ok: `Lancer ${units.length} agents` })) return;
+    const built = units.map(u => withNotes(u.text, u.notes)), refused = [...new Set(built.flatMap(b => b.refused))];
+    if (refused.length) toast(`Non jointe${refused.length > 1 ? 's' : ''} (verrouillée, privée ou trop longue) : ${refused.join(', ')}`);
     const btn = need<HTMLButtonElement>('button.btn-primary', f), label = btn.innerHTML;
     const val = (n: string) => (f.elements.namedItem(n) as HTMLInputElement | null);
     // Modèle et effort : envoyés aussi quand on répond, pour que la conversation garde (ou change) les siens.
@@ -494,25 +539,45 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     if (picked.model === OTHER) picked.model = '';
     // Tous les dépôts du projet : le Mac ouvre à l'agent ceux dont il trouve un clone (copie sœur dans chacun).
     // « Auto » n'est jamais envoyé : remplacé par le modèle (et l'effort) qui suffit à cette consigne.
-    const body: Record<string, unknown> = { project: p.id, prompt, ...resolveChoice(f, picked), repos: p.stack };
-    if (f.dataset.session) { body.session = f.dataset.session; if (f.dataset.machine) body.machine = f.dataset.machine; }
+    const body: Record<string, unknown> = { project: p.id, ...resolveChoice(f, picked), repos: p.stack };
+    // Sous-agents : le réglage de l'appareil part avec chaque consigne, reprise comprise (l'outil se donne à chaque tour).
+    const sub = subagents.body(); if (sub) body.subagents = sub;
+    if (f.dataset.session) { body.session = f.dataset.session; if (f.dataset.machine) body.machine = f.dataset.machine; if (cut) body.interrupt = true; }
     else { body.mode = f.querySelector<HTMLInputElement>('[name=mode]:checked')?.value ?? 'edit'; body.tests = !!val('tests')?.checked; const mc = val('machine'); if (mc && !mc.hidden) { const [m, s] = mc.value.split(':'); body.machine = m; if (s) body.server = s; } }
-    btn.disabled = true; btn.innerHTML = '<span class="spin"></span>Envoi…';
-    const r = await bridge.call('agent', 'start', body, 60000);
+    btn.disabled = true;
+    // Un lancement après l'autre : chaque appel revient dès que la session est créée, l'agent continue seul.
+    let last: Awaited<ReturnType<typeof bridge.call>> | null = null, started = 0, fail = '';
+    for (const b of built) {
+      btn.innerHTML = many ? `<span class="spin"></span>Agent ${started + 1}/${built.length}…` : '<span class="spin"></span>Envoi…';
+      const one = await bridge.call('agent', 'start', { ...body, prompt: b.text }, 60000);
+      if (!one.ok) { fail = one.message ?? 'Lancement impossible.'; break; }
+      started++; last = one;
+      // La conversation lancée garde le modèle et l'effort de sa première consigne : ils sont proposés pour la suite.
+      if (!f.dataset.session && typeof one.session === 'string' && one.session) saved.setSession(one.session, picked);
+    }
     btn.disabled = false; btn.innerHTML = label; delete f.dataset.busy;
     // En cas d'échec, le texte reste dans le formulaire et dans son brouillon.
-    if (!r.ok) { toast(r.message ?? 'Lancement impossible.'); return; }
-    ta.value = ''; grow(ta); showAuto(f); f.dataset.notes = ''; f.querySelectorAll('.ag-note').forEach(x => x.remove());
+    const r = last;
+    if (!r) { toast(fail); return; }
+    if (started < built.length) {
+      // Lancement groupé interrompu (limite d'agents, le plus souvent) : ce qui n'est pas parti reste dans le formulaire.
+      if (fan === 'notes') setNotes(f, noteIds.slice(started)); else { ta.value = lines.slice(started).join('\n'); grow(ta); keepDraft(f); }
+      showAuto(f); showFan(f);
+      toast(`${started} agent${started > 1 ? 's' : ''} sur ${built.length} au travail. ${fail} Le reste attend dans la consigne.`);
+      onStarted({ ...(r as unknown as AgentRun), session: '' });
+      return;
+    }
+    ta.value = ''; grow(ta); showAuto(f); f.dataset.notes = ''; f.querySelectorAll('.ag-note').forEach(x => x.remove()); showFan(f);
     if (f.dataset.draft) saved.dropDraft(f.dataset.draft);
-    // La conversation lancée garde le modèle et l'effort de sa première consigne : ils sont proposés pour la suite.
-    if (!f.dataset.session && typeof r.session === 'string' && r.session) saved.setSession(r.session, picked);
     // L'agent travaille encore : le message attend la fin de son tour (il apparaît dans le fil, « en attente »).
     if (typeof r.queued === 'number') {
       toast(r.queued > 1 ? `${r.queued} messages en attente : Claude les lira ensemble à la fin de son tour` : 'Message en attente : Claude le lira à la fin de son tour');
       if (cur) void paint(cur.box, cur.p);
       return;
     }
-    toast(f.dataset.session ? 'Session reprise' : 'Claude Code est au travail');
+    // Plusieurs agents : on reste sur la liste, où chacun a sa carte.
+    if (many) { toast(`${built.length} agents au travail, chacun dans sa copie`); onStarted({ ...(r as unknown as AgentRun), session: '' }); return; }
+    toast(cut ? 'Tour interrompu : Claude lit ton message' : f.dataset.session ? 'Session reprise' : 'Claude Code est au travail');
     onStarted(r as unknown as AgentRun);
   });
 }

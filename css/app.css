@@ -2180,6 +2180,64 @@ button.lv-chip:hover, .lv-chip.sel { color: var(--text); background: var(--btn);
 .pj-cc:hover { background: var(--hover); color: var(--text); }
 .pj-row:hover .pj-cc, .pj-cc:focus-visible { opacity: 1; }
 @media (hover: none) { .pj-cc { opacity: 1; } }
+/* Onglet Notes d'un projet : cases à cocher et barre de sélection (envoi à Claude ou à Claude Code). */
+.pj-pickbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 40px; margin: 0 0 8px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--text-3); font-size: var(--t-1); }
+.pj-pickbar:empty { display: none; }
+.pj-pickbar.on { position: sticky; top: 8px; z-index: 2; background: var(--surface); border-color: color-mix(in srgb, var(--c, var(--accent)) 45%, var(--border)); color: var(--text); }
+.pj-pickbar-t { display: inline-flex; align-items: center; gap: 6px; margin-right: 4px; }
+.pj-pickbar-t .ic { width: 13px; height: 13px; }
+.pj-pickbar .btn { height: 28px; padding: 0 10px; font-size: var(--t-1); }
+.pj-pickbar .btn .ic { width: 13px; height: 13px; }
+.pj-pickbar-end { display: inline-flex; gap: 12px; margin-left: auto; }
+.pj-noterow > .pj-pick { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 6px; color: var(--text-3); cursor: pointer; }
+.pj-noterow > span.pj-pick { cursor: default; }
+.pj-noterow > .pj-pick .ic { width: 12px; height: 12px; }
+.pj-noterow > .pj-pick:hover { background: var(--hover); }
+.pj-noterow > .w-row { flex: 1; min-width: 0; }
+.pj-noterow .pj-main { margin-left: 8px; padding: 1px 6px; border-radius: 5px; background: var(--btn); color: var(--text-3); font-style: normal; font-size: var(--t-1); }
+.pj-noteadd { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.pj-linked-h { margin: 18px 0 6px; color: var(--text-2); font-size: var(--t-1); font-weight: 600; }
+.pj-linked-h span { margin-left: 8px; color: var(--text-3); font-weight: 400; }
+.pj-noterow.sel > .w-row { background: color-mix(in srgb, var(--c, var(--accent)) 9%, transparent); }
+/* Choix des notes à joindre (notepick.ts). */
+.np .modal-body { display: flex; flex-direction: column; min-height: 0; }
+.np-bar { display: flex; align-items: center; gap: 14px; margin: 10px 0 6px; color: var(--text-3); font-size: var(--t-1); }
+.np-bar > span { margin-right: auto; }
+.np-list { display: grid; gap: 1px; max-height: min(46vh, 420px); overflow: auto; margin: 0 -6px; }
+.np-row { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 8px; border-radius: 6px; cursor: pointer; }
+.np-row[hidden] { display: none; }
+.np-row:hover { background: var(--hover); }
+.np-row:has(input:checked) { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.np-row .ic { flex: none; width: 13px; height: 13px; color: var(--text-3); }
+.np-row > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.np-row > span i { margin-left: 8px; color: var(--text-3); font-style: normal; font-size: var(--t-1); }
+.np-row > em { flex: none; color: var(--text-3); font-style: normal; font-size: var(--t-1); }
+/* « Intervenir » : coupe le tour en cours de Claude Code pour qu'il lise le message tout de suite. */
+.ag-opts .ag-cut { height: 32px; gap: 6px; }
+.ag-opts .ag-cut[hidden] { display: none; }
+.ag-opts .ag-cut .ic { width: 13px; height: 13px; color: var(--c-orange); }
+/* Sous-agents : le bouton de la consigne (réglage en cours) et sa fenêtre (subagents.ts). */
+.ag-tools .ag-sub { height: 30px; padding: 0 9px; border-radius: 8px; color: var(--text-2); font-size: var(--t-1); font-weight: 500; }
+.ag-tools .ag-sub:hover { color: var(--text); }
+.ag-tools .ag-sub .ic { width: 13px; height: 13px; color: var(--c-violet); }
+.modal.sa { width: min(600px, 100%); }
+.sa-seg { margin-bottom: 14px; }
+.sa [data-body].off { opacity: .45; pointer-events: none; }
+.sa-row { display: flex; flex-wrap: wrap; gap: 12px; }
+.sa-field { flex: 1; min-width: 180px; display: flex; flex-direction: column; gap: 5px; color: var(--text-2); font-size: var(--t-1); font-weight: 500; }
+.sa-h { margin: 18px 0 8px; font-size: var(--t-2); font-weight: 600; }
+.sa-h span { margin-left: 8px; color: var(--text-3); font-size: var(--t-1); font-weight: 400; }
+.sa-list { display: grid; gap: 8px; }
+.sa-card { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+.sa-top { display: flex; align-items: center; gap: 6px; }
+.sa-top [name=name] { flex: 1; min-width: 0; font-family: var(--mono, ui-monospace, monospace); }
+.sa-top select { flex: none; width: auto; max-width: 150px; }
+.sa-card textarea { resize: vertical; min-height: 52px; line-height: 1.5; }
+.sa-empty { margin: 0 0 8px; color: var(--text-3); font-size: var(--t-1); }
+.sa-empty[hidden] { display: none; }
+.sa-add { margin-top: 8px; }
+.sa-add .ic { width: 12px; height: 12px; }
+@media (max-width: 560px) { .sa-top { flex-wrap: wrap; } .sa-top [name=name] { flex-basis: 100%; } }
 
 /* ---------- Publier : message de commit et repli PR ---------- */
 .ag-pub .pj-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; color: var(--text-2); font-size: var(--t-1); font-weight: 500; }

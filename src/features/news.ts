@@ -53,6 +53,30 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'subagents-auto', date: '2026-11-17', icon: 'bot', hue: 'violet', mac: true,
+    title: 'Sous-agents automatiques',
+    lead: 'Pour une même consigne, Claude Code confie de lui-même des parties du travail à des sous-agents qui tournent en parallèle.',
+    bits: [
+      ['sparkle', 'Automatiques', 'exploration, parties indépendantes, relecture : Claude décide quand déléguer'],
+      ['bot', 'Spécialistes', 'ajoute les tiens : nom, rôle, consigne, modèle, lecture seule ou non'],
+      ['gear', 'Réglages', 'nombre en parallèle, modèle par défaut, ou tout couper'],
+      ['shield', 'Mêmes limites', 'un sous-agent a les droits de l’agent : même copie, même bulle'],
+    ],
+    where: ['Projets', 'un projet', 'Agents', 'Sous-agents'],
+    visual: { kind: 'flow', steps: [['Consigne', 'blue', 'terminal'], ['Sous-agents', 'violet', 'bot'], ['Compte rendu', 'green', 'check']] },
+    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
+  { id: 'notes-agents-intervene', date: '2026-11-17', icon: 'bolt', hue: 'orange',
+    title: 'Notes, agents et interventions',
+    lead: 'Les notes d’un projet se cochent pour partir vers Claude ou Claude Code, une consigne peut lancer plusieurs agents, et un agent au travail peut être interrompu.',
+    bits: [
+      ['check', 'Sélection', 'coche des notes dans l’onglet Notes d’un projet, puis envoie-les à Claude ou à Claude Code'],
+      ['notes', 'Notes jointes', 'fenêtre de choix avec filtre et « Tout cocher », dans la consigne et sur la page Claude'],
+      ['terminal', 'Plusieurs agents', 'un agent par note ou par ligne de la consigne, huit à la fois au plus'],
+      ['bolt', 'Intervenir', 'coupe le tour en cours : l’agent lit le message tout de suite, puis reprend (`⌘⇧↩`)'],
+    ],
+    where: ['Projets', 'un projet', 'Notes'],
+    visual: { kind: 'flow', steps: [['Notes cochées', 'amber', 'notes'], ['Un agent par note', 'orange', 'bolt'], ['Copies isolées', 'green', 'terminal']] },
+    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
   { id: 'docker-local', date: '2026-11-16', icon: 'container', hue: 'blue', mac: true,
     title: 'Les conteneurs de ton Mac, dans tes projets',
     lead: 'Un onglet Docker par projet : ce qui tourne sur ton Mac pour lui, reconnu à son dossier.',

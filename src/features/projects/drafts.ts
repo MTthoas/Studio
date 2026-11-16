@@ -1,11 +1,12 @@
 // Ce que le formulaire de consigne de Claude Code retient d'une visite à l'autre, sur cet appareil :
-//   - le brouillon de chaque consigne (texte, notes jointes, mode), pour ne rien perdre en naviguant ;
+//   - le brouillon de chaque consigne (texte, notes jointes, mode, répartition entre agents), pour ne rien perdre en naviguant ;
 //   - le modèle et le niveau d'effort choisis, par défaut et pour chaque conversation ;
 //   - les modèles ajoutés à la main à la liste.
 // Tout reste dans le stockage local du navigateur, comme les noms des conversations.
 
 // ---------- Brouillons ----------
-export interface Draft { text: string; notes: string[]; mode: string; tests: boolean; at: number }
+/** `fan` : répartition entre plusieurs agents ('' : un seul, 'notes' : un par note jointe, 'lines' : un par ligne). */
+export interface Draft { text: string; notes: string[]; mode: string; tests: boolean; fan?: string; at: number }
 const DRAFTS = 'studio.cc.drafts', MAX_DRAFTS = 40, MAX_TEXT = 100_000;
 
 function object(key: string): Record<string, unknown> {
@@ -16,7 +17,7 @@ function stored(): Record<string, Draft> {
   for (const [k, v] of Object.entries(object(DRAFTS))) {
     const d = v as Partial<Draft> | null;
     if (!d || typeof d.text !== 'string') continue;
-    out[k] = { text: d.text, notes: Array.isArray(d.notes) ? d.notes.filter(x => typeof x === 'string') : [], mode: d.mode === 'read' ? 'read' : 'edit', tests: d.tests === true, at: typeof d.at === 'number' ? d.at : 0 };
+    out[k] = { text: d.text, notes: Array.isArray(d.notes) ? d.notes.filter(x => typeof x === 'string') : [], mode: d.mode === 'read' ? 'read' : 'edit', tests: d.tests === true, fan: d.fan === 'notes' || d.fan === 'lines' ? d.fan : '', at: typeof d.at === 'number' ? d.at : 0 };
   }
   return out;
 }
@@ -89,4 +90,27 @@ export function forgetSession(id: string): void { if (prefs.sessions[id]) { dele
 export const extraModels = (): string[] => [...prefs.extra];
 export function addModel(id: string): void {
   prefs.extra = [...prefs.extra.filter(x => x !== id), id]; savePrefs();
+}
+
+// ---------- Sous-agents ----------
+/** Spécialiste proposé à Claude Code en plus de ses sous-agents d'origine (voir AgentTeam dans Agents.swift). */
+export interface Member { name: string; description: string; prompt: string; model: string; access: 'read' | 'all' }
+/** Sous-agents des consignes lancées depuis cet appareil. `on` : Claude Code reçoit l'outil Agent et délègue de lui-même. */
+export interface Team { on: boolean; max: number; model: string; members: Member[] }
+const TEAM = 'studio.cc.subagents';
+/** Mêmes bornes que le Mac, qui revalide tout. */
+export const MEMBER_RE = /^[a-z0-9][a-z0-9-]{0,39}$/, TEAM_SIZE = 8, TEAM_PARALLEL = 10;
+const member = (v: unknown): Member => {
+  const m = (v ?? {}) as Partial<Record<keyof Member, unknown>>;
+  return { name: str(m.name), description: str(m.description).slice(0, 400), prompt: str(m.prompt).slice(0, 4000), model: MODEL_RE.test(str(m.model)) ? str(m.model) : '', access: m.access === 'read' ? 'read' : 'all' };
+};
+let teamNow: Team = (() => {
+  const o = object(TEAM), max = typeof o.max === 'number' && Number.isInteger(o.max) ? o.max : 4;
+  return { on: o.on !== false, max: Math.min(TEAM_PARALLEL, Math.max(1, max)), model: MODEL_RE.test(str(o.model)) ? str(o.model) : '',
+    members: (Array.isArray(o.members) ? (o.members as unknown[]).map(member) : []).filter(m => MEMBER_RE.test(m.name) && m.description.trim()).slice(0, TEAM_SIZE) };
+})();
+export const team = (): Team => ({ ...teamNow, members: teamNow.members.map(m => ({ ...m })) });
+export function setTeam(t: Team): void {
+  teamNow = { ...t, members: t.members.map(m => ({ ...m })) };
+  try { localStorage.setItem(TEAM, JSON.stringify(teamNow)); } catch { /* stockage plein : le réglage vaut jusqu'au rechargement */ }
 }
