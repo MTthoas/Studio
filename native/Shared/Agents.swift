@@ -14,7 +14,7 @@
 //
 // Garde-fous : programme à un emplacement connu, aucun shell, --restricted (outils de fichiers confinés au
 // dossier de travail), --permission-mode dontAsk (tout ce qui n'est pas listé est refusé, sans question),
-// aucun réglage, hook ni serveur MCP de l'utilisateur, trois agents à la fois au plus, 90 minutes au plus.
+// aucun réglage, hook ni serveur MCP de l'utilisateur, huit agents à la fois au plus, 90 minutes au plus.
 // Sur ce Mac, bulle macOS autour de l'agent et de ses commandes (AgentSandbox.swift), qui lui ouvre le terminal en mode Modifier.
 // Un appareil lié ne peut jamais demander les commandes (voir link.ts), ni changer les autorisations.
 import Foundation
@@ -48,7 +48,7 @@ final class Agents {
     }
     private var runs: [String: Run] = [:]
     private let lock = NSLock()
-    private let maxRunning = 3
+    private let maxRunning = 8
     private let maxDuration: TimeInterval = 90 * 60
 
     /// Messages secondaires : écrits pendant que l'agent d'une discussion travaille (clé : projet|session).
@@ -56,6 +56,8 @@ final class Agents {
     /// remis ensemble, en une seule consigne, dès qu'il a fini son tour proprement.
     private struct Queued { let id: String, session: String, text: String, at: Date, machine: String }
     private var queues: [String: [Queued]] = [:]
+    /// Sous-agents de la dernière consigne de chaque conversation : un message en attente repart avec le même réglage.
+    private var teams: [String: [String: Any]] = [:]
     private let maxQueued = 10
     /// Les remises de messages se font une à une (deux fins d'agent simultanées ne relancent pas deux fois la même discussion).
     private let flushQueue = DispatchQueue(label: "studio.agents.queue")
@@ -139,17 +141,19 @@ final class Agents {
     func flushQueues() {
         flushQueue.async {
             self.lock.lock()
-            let ready: [(project: String, session: String, machine: String)] = self.queues.compactMap { key, q in
+            let ready: [(project: String, session: String, machine: String, team: [String: Any]?)] = self.queues.compactMap { key, q in
                 guard let first = q.first else { return nil }
                 let mine = self.runs.values.filter { $0.project + "|" + $0.session == key }
                 guard !mine.contains(where: { $0.status == "running" || $0.status == "starting" }),
                       mine.max(by: { $0.started < $1.started })?.status == "done" else { return nil }
-                return (String(key.prefix { $0 != "|" }), first.session, first.machine)
+                return (String(key.prefix { $0 != "|" }), first.session, first.machine, self.teams[key])
             }
             self.lock.unlock()
             for r in ready {
                 let sem = DispatchSemaphore(value: 0)
-                self.start(project: r.project, body: ["session": r.session, "prompt": "", "machine": r.machine]) { _ in sem.signal() }
+                var body: [String: Any] = ["session": r.session, "prompt": "", "machine": r.machine]
+                if let t = r.team { body["subagents"] = t }
+                self.start(project: r.project, body: body) { _ in sem.signal() }
                 _ = sem.wait(timeout: .now() + 60)
             }
         }
@@ -179,6 +183,19 @@ final class Agents {
             kill(p.processIdentifier, SIGKILL)
         }
         return ["ok": true]
+    }
+
+    /// « Intervenir » : arrête l'agent qui travaille dans cette discussion et attend la fin de son processus (8 s au plus),
+    /// pour que la reprise qui suit relise un journal de session complet. Faux si aucun agent n'y travaillait.
+    private func interrupt(project: String, session: String) -> Bool {
+        lock.lock()
+        let live = runs.values.filter { $0.project == project && $0.session == session && ($0.status == "running" || $0.status == "starting") }
+        let ids = live.map { $0.id }, procs = live.compactMap { $0.process }
+        lock.unlock()
+        guard !ids.isEmpty else { return false }
+        for id in ids { _ = stop(id) }
+        for _ in 0..<32 { if !procs.contains(where: { $0.isRunning }) { break }; usleep(250_000) }
+        return true
     }
 
     /// Envoie un signal à tous les descendants d'un processus (les plus profonds d'abord).
@@ -247,7 +264,16 @@ final class Agents {
         // à la reprise suivante, tous les messages en attente partent avec la consigne, en une seule fois.
         // Les reprises lancées par l'orchestrateur (résolution de conflits) n'y touchent pas.
         var taken: [String] = []
+        if !resume.isEmpty, body["internal"] as? Bool != true {
+            lock.lock(); teams[pid + "|" + resume] = body["subagents"] as? [String: Any]; lock.unlock()
+        }
+        var cut = false
         if !resume.isEmpty && body["internal"] as? Bool != true {
+            // « Intervenir » : l'utilisateur coupe le tour en cours pour être lu tout de suite, au lieu d'attendre sa fin.
+            if body["interrupt"] as? Bool == true, self.busy(project: pid, session: resume) {
+                guard !prompt.isEmpty, prompt.utf8.count <= 100_000 else { return done(["ok": false, "message": "Message vide ou trop long."]) }
+                cut = self.interrupt(project: pid, session: resume)
+            }
             if self.busy(project: pid, session: resume) {
                 guard !prompt.isEmpty, prompt.utf8.count <= 100_000 else { return done(["ok": false, "message": "Message vide ou trop long."]) }
                 return done(enqueue(project: pid, session: resume, text: prompt, machine: onServer ? "server" : "mac"))
@@ -255,10 +281,14 @@ final class Agents {
             lock.lock(); let q = queues[pid + "|" + resume] ?? []; lock.unlock()
             taken = q.map(\.id)
             prompt = Self.combine(q.map(\.text), prompt)
+            if cut {
+                prompt = "L'utilisateur a interrompu ton tour en cours pour intervenir. Ce que tu avais commencé reste en l'état : "
+                    + "lis son message, puis reprends en en tenant compte (ne recommence pas ce qui est déjà fait).\n\n" + prompt
+            }
         }
         guard !prompt.isEmpty, prompt.utf8.count <= 100_000 else { return done(["ok": false, "message": "Consigne vide ou trop longue."]) }
         lock.lock(); let full = runs.values.filter { $0.status == "running" || $0.status == "starting" }.count >= maxRunning; lock.unlock()
-        if full { return done(["ok": false, "message": "Trois agents tournent déjà : attends qu'un se termine ou arrête-en un."]) }
+        if full { return done(["ok": false, "message": "\(maxRunning) agents tournent déjà : attends qu'un se termine ou arrête-en un."]) }
 
         var cwd = dir, mode = body["mode"] as? String == "edit" ? "edit" : "read", newWorktree = "", restored = ""
         var args = ["-p", "--output-format", "stream-json", "--verbose", "--restricted", "--permission-mode", "dontAsk",
@@ -363,8 +393,12 @@ final class Agents {
         let bubble = onServer || !AgentPermissions.terminal ? nil
             : AgentSandbox.profile(project: pid, workDirs: [cwd] + extraDirs, readDirs: [dir])
         let shell = bubble != nil && mode == "edit" && body["internal"] as? Bool != true
-        let tools = AgentPermissions.tools(mode: mode, commands: tests, shell: shell)
+        // Sous-agents (outil Agent) : demandés par la consigne, jamais pour l'orchestrateur. Ils héritent des outils et
+        // des permissions de l'agent, et tournent dans le même processus, donc dans la même bulle.
+        let team = body["internal"] as? Bool == true ? nil : AgentTeam(body["subagents"])
+        let tools = AgentPermissions.tools(mode: mode, commands: tests, shell: shell) + (team == nil ? [] : ["Agent"])
         args += ["--tools", tools.joined(separator: ",")]
+        if let j = team?.json(tools: tools) { args += ["--agents", j] }
         // Navigateur : sur ce Mac seulement, jamais pour l'orchestrateur ; ses outils sont permis en bloc (`mcp__browser`).
         let browse = onServer || body["internal"] as? Bool == true ? nil : AgentPermissions.browserSetup(bubble: bubble != nil)
         if let b = browse { args += ["--mcp-config", b.config] }
@@ -376,7 +410,7 @@ final class Agents {
         if !extraDirs.isEmpty { args += ["--add-dir"] + extraDirs }
         // Notes et tâches du projet : permises par les réglages, jamais pour l'orchestrateur (résolution de conflits).
         let items = AgentPermissions.projectItems && body["internal"] as? Bool != true
-        let added = [AgentTuning.prompt(mode: mode, tests: tests, items: items, shell: shell), repoNote, browse?.prompt ?? ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        let added = [AgentTuning.prompt(mode: mode, tests: tests, items: items, shell: shell), team?.prompt(edit: mode == "edit") ?? "", repoNote, browse?.prompt ?? ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
         if !added.isEmpty { args += ["--append-system-prompt", added] }
         args += ["--allowedTools"] + AgentPermissions.allowed(tools: tools, commands: tests, shell: shell) + (browse == nil ? [] : ["mcp__\(AgentPermissions.browserServer)"])
 
@@ -400,7 +434,7 @@ final class Agents {
             }
             // Première ligne du flux : le numéro du processus distant (exec le conserve), pour pouvoir l'arrêter.
             let remote = "cd \(Servers.qPath(cwd)) && \(prep)echo \"{\\\"type\\\":\\\"studio_pid\\\",\\\"pid\\\":$$}\" && PATH=\"$HOME/.local/bin:$HOME/.claude/local:$PATH\" "
-                + AgentTuning.env().sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value) " }.joined() + "exec claude " + args.map(Servers.q).joined(separator: " ")
+                + AgentTuning.env().merging(team?.env ?? [:]) { $1 }.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value) " }.joined() + "exec claude " + args.map(Servers.q).joined(separator: " ")
             let l = Servers.shared.launch(server, remote, env: [:])
             if let e = l.error { return done(["ok": false, "message": e]) }
             p.arguments = l.args
@@ -417,6 +451,7 @@ final class Agents {
         var env = ProcessInfo.processInfo.environment
         env["DISABLE_AUTOUPDATER"] = "1"; env["NO_COLOR"] = "1"
         for (k, v) in AgentTuning.env() { env[k] = v }
+        for (k, v) in team?.env ?? [:] { env[k] = v }
         // Sur un serveur : l'agent SSH choisi par Servers.launch (celui de Studio pour une clé gardée par Studio).
         if onServer { env["SSH_AUTH_SOCK"] = sshSock }
         // Ouverte depuis le Dock, l'app n'a qu'un PATH minimal : les dossiers réglés passent devant (cargo, Homebrew…).
@@ -506,14 +541,16 @@ final class Agents {
         case "assistant":
             lock.lock(); run.turns += 1
             let now = ISO8601DateFormatter().string(from: Date())
+            // Message d'un sous-agent : ses outils comptent dans l'activité, son texte n'est pas la réponse de l'agent.
+            let sub = !((e["parent_tool_use_id"] as? String) ?? "").isEmpty
             if let m = e["message"] as? [String: Any] {
                 for b in m["content"] as? [[String: Any]] ?? [] {
-                    if b["type"] as? String == "text", let t = b["text"] as? String, !t.isEmpty {
+                    if !sub, b["type"] as? String == "text", let t = b["text"] as? String, !t.isEmpty {
                         run.lastText = String(t.prefix(300)); run.actions.append(["at": now, "kind": "text", "text": String(t.prefix(16000))])
                     }
                     if b["type"] as? String == "tool_use", let name = b["name"] as? String {
                         let input = b["input"] as? [String: Any] ?? [:]
-                        let detail = input["file_path"] as? String ?? input["path"] as? String ?? input["pattern"] as? String ?? input["command"] as? String ?? ""
+                        let detail = input["file_path"] as? String ?? input["path"] as? String ?? input["pattern"] as? String ?? input["command"] as? String ?? input["description"] as? String ?? ""
                         // `add`/`del` en texte : `actions` ne porte que des chaînes (la page les relit par Number).
                         var a = ["at": now, "kind": "tool:" + name, "text": String(detail.prefix(240))]
                         let delta = ClaudeSessions.lineDelta(name, input)
@@ -545,6 +582,70 @@ final class Agents {
             lock.unlock()
         default: break
         }
+    }
+}
+
+/// Sous-agents d'une consigne (`subagents` de `agent start`) : l'agent reçoit l'outil Agent et délègue de lui-même ;
+/// `members` sont des spécialistes en plus de ceux de Claude Code, passés par --agents. Tout est revalidé ici (la
+/// page peut être pilotée depuis un appareil lié). Absent ou `on: false` : pas d'outil Agent, comme avant.
+struct AgentTeam {
+    struct Member { let name, description, prompt, model: String; let readOnly: Bool }
+    let max: Int, model: String, members: [Member]
+    static let maxMembers = 8
+    private static let nameRe = try! NSRegularExpression(pattern: "^[a-z0-9][a-z0-9-]{0,39}$")
+    private static let modelRe = try! NSRegularExpression(pattern: "^[a-z0-9][a-z0-9.\\-]{0,40}$")
+    private static let readTools: Set<String> = ["Read", "Glob", "Grep", "WebSearch", "WebFetch"]
+    private static func ok(_ s: String, _ re: NSRegularExpression) -> Bool { re.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) != nil }
+    private static func clean(_ v: Any?, _ n: Int) -> String { String((v as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines).prefix(n)) }
+
+    init?(_ raw: Any?) {
+        guard let o = raw as? [String: Any], o["on"] as? Bool == true else { return nil }
+        max = min(10, Swift.max(1, o["max"] as? Int ?? 4))
+        let m = o["model"] as? String ?? ""
+        model = Self.ok(m, Self.modelRe) ? m : ""
+        var seen = Set<String>(), list: [Member] = []
+        for x in o["members"] as? [[String: Any]] ?? [] where list.count < Self.maxMembers {
+            let name = x["name"] as? String ?? "", desc = Self.clean(x["description"], 400), mm = x["model"] as? String ?? ""
+            guard Self.ok(name, Self.nameRe), !desc.isEmpty, seen.insert(name).inserted else { continue }
+            list.append(Member(name: name, description: desc, prompt: Self.clean(x["prompt"], 4000), model: Self.ok(mm, Self.modelRe) ? mm : "", readOnly: x["access"] as? String == "read"))
+        }
+        members = list
+    }
+
+    /// Valeur de --agents ; nil sans spécialiste. Un spécialiste « lecture seule » ne reçoit que les outils de lecture
+    /// de l'agent ; les autres héritent de tous ses outils. Sans consigne propre, son rôle en tient lieu.
+    func json(tools: [String]) -> String? {
+        if members.isEmpty { return nil }
+        var o: [String: Any] = [:]
+        for m in members {
+            var d: [String: Any] = ["description": m.description, "prompt": m.prompt.isEmpty ? m.description : m.prompt]
+            if !m.model.isEmpty { d["model"] = m.model }
+            if m.readOnly { d["tools"] = tools.filter { Self.readTools.contains($0) } }
+            o[m.name] = d
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: o, options: [.sortedKeys]) else { return nil }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// Les sous-agents sont attendus par l'agent (pas de tâche de fond : `claude -p` resterait ouvert après son
+    /// compte rendu), ne délèguent pas à leur tour, et `max` au plus tournent ensemble.
+    var env: [String: String] {
+        var e = ["CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS": String(max), "CLAUDE_CODE_MAX_SUBAGENT_SPAWN_DEPTH": "1", "CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"]
+        if !model.isEmpty { e["CLAUDE_CODE_SUBAGENT_MODEL"] = model }
+        return e
+    }
+
+    func prompt(edit: Bool) -> String {
+        "Tu peux déléguer à des sous-agents (outil Agent), \(max) à la fois au plus. Fais-le de toi-même quand cela fait gagner du temps "
+        + "ou du contexte : exploration large du code, recherches indépendantes, parties de la tâche qui ne partagent aucun fichier, "
+        + "relecture de ton travail une fois fini. Lance dans le même message ceux qui ne dépendent pas les uns des autres : ils "
+        + "travaillent en parallèle. Un sous-agent ne voit pas cette conversation : donne-lui une consigne complète (le but, les "
+        + "fichiers concernés, ce qu'il doit te rendre, sous quelle forme). "
+        + (edit ? "Ils travaillent dans la même copie que toi : deux sous-agents ne modifient jamais le même fichier. " : "")
+        + "Pour une tâche courte ou d'un seul tenant, travaille seul. Tu restes responsable du résultat : vérifie ce qu'ils "
+        + "rendent, et le compte rendu final est le tien."
+        + (members.isEmpty ? "" : " Spécialistes définis par l'utilisateur, à préférer quand leur rôle correspond : "
+            + members.map { "\($0.name) (\($0.description))" }.joined(separator: " ; ") + ".")
     }
 }
 

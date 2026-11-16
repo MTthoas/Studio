@@ -7,10 +7,12 @@
 // Les conversations sont gardées dans la base locale (magasin « chats »), chiffrées avec le reste quand le coffre
 // est ouvert. Le fournisseur est celui des réglages : ton abonnement via Claude Code sur Mac, ou une clé.
 import * as db from '../core/db.ts';
+import * as store from '../core/store.ts';
 import * as ai from '../integrations/ai.ts';
 import * as tuning from '../integrations/tuning.ts';
 import * as scope from '../integrations/scope.ts';
 import * as projects from './projects/model.ts';
+import { pickNotes } from './projects/notepick.ts';
 import * as hub from './hub.ts';
 import * as journal from './journal.ts';
 import { renderMarkdown, esc } from '../lib/markdown.ts';
@@ -42,7 +44,16 @@ const PROJECT_SUGGESTIONS = [
 /** Projet de la prochaine nouvelle conversation ('' : pas encore choisi, rien ne part). */
 let nextProject = '';
 /** Ouvre une nouvelle conversation bornée à un projet (depuis la page du projet). */
-export function startIn(projectId: string): void { nextProject = projectId; void app.setView({ type: 'claude' }); }
+/** Notes jointes à la conversation (clé : la conversation, '' pour celle qui n'est pas encore créée). Seules celles-ci sont lisibles par Claude. */
+const attached = new Map<string, string[]>();
+const titleOfNote = (id: string): string => store.get(id)?.title.trim() || 'Sans titre';
+const chipHTML = (id: string): string => `<span class="ag-note" data-note-id="${esc(id)}">${icon('notes')}${esc(titleOfNote(id))}<button type="button" data-cl="unnote" data-id="${esc(id)}" aria-label="Retirer la note">×</button></span>`;
+/** Ouvre Claude dans un projet, avec éventuellement des notes déjà jointes (depuis une note ou la fiche du projet). */
+export function startIn(projectId: string, notes: string[] = []): void {
+  nextProject = projectId;
+  if (notes.length) attached.set('', [...new Set(notes)]);
+  void app.setView({ type: 'claude' });
+}
 /** Périmètre d'une conversation ; null sans projet ou si son projet a disparu (elle ne peut plus rien envoyer). */
 function scopeOf(id: string | undefined): scope.Scope | null {
   if (!id) return null;
@@ -92,6 +103,7 @@ async function send(text: string): Promise<void> {
   } else drafts.delete(c.id);
   if (live.has(c.id)) return;
   const sc = scopeOf(c.project);
+  if (attached.has('')) { attached.set(c.id, attached.get('') ?? []); attached.delete(''); }
   if (!sc) { drafts.set(c.id, prompt); toast(c.project ? 'Le projet de cette conversation n’existe plus : ouvre une conversation depuis un projet.' : 'Conversation sans projet, fermée : ouvre Claude depuis un projet.'); return; }
   const context = history(c);
   c.messages.push({ role: 'user', text: prompt, at: Date.now() });
@@ -104,7 +116,7 @@ async function send(text: string): Promise<void> {
   const chat = c;
   try {
     const r = await ai.run({ prompt, tools: TOOLS, provider, context, chat: true }, {
-      approve: hub.approve, scope: sc, onWrite: app.refreshNote, signal: run.ctrl.signal,
+      approve: hub.approve, scope: sc, notes: (attached.get(chat.id) ?? []).filter(id => store.get(id)), onWrite: app.refreshNote, signal: run.ctrl.signal,
       onStep: e => { run.steps.push(hub.stepLabel(e)); if (shown(chat.id)) paint(); },
     });
     chat.messages.push({ role: 'ai', text: r.text || '*(réponse vide)*', at: Date.now(), provider: ai.PROVIDERS[r.provider], ...(run.steps.length ? { steps: run.steps } : {}) });
@@ -138,7 +150,7 @@ function emptyHTML(): string {
   const sc = scopeOf(nextProject), p = sc?.project ?? null;
   // Seules les conversations du projet choisi ; sans projet choisi, toutes (pour pouvoir supprimer les anciennes).
   const list = sorted().filter(c => !p || c.project === p.id);
-  const sees = p && sc ? `Claude voit les notes, les tâches${p.repos.length ? ', les dépôts' : ''}${scope.hasLinear(sc) ? ` et les tickets Linear (« ${p.linear ?? ''} »)` : ''} de ce projet, et rien d’autre.`
+  const sees = p && sc ? `Claude ne lit que les notes que tu joins ci-dessous (ou toutes celles du projet en un clic). Il voit aussi les tâches${p.repos.length ? ', les dépôts' : ''}${scope.hasLinear(sc) ? ` et les tickets Linear (« ${p.linear ?? ''} »)` : ''} de ce projet, et rien d’autre.`
     : 'Claude ne travaille que dans un projet, et n’y voit que ses données. Choisis-le pour commencer.';
   const pick = all.length ? `<label class="cl-scope">${icon('lock')}<span>Projet</span><select data-cl-scope aria-label="Projet de la conversation">${p ? '' : '<option value="" selected disabled>Choisis un projet</option>'}${all.map(x => `<option value="${esc(x.id)}"${x.id === nextProject ? ' selected' : ''}>${esc(x.name)}${x.linear ? ' · Linear' : ''}</option>`).join('')}</select></label>`
     : `<p class="cl-via"><button class="btn" data-view="projets">${icon('folder')}Créer un projet</button></p>`;
@@ -163,6 +175,14 @@ function threadHTML(c: Chat): string {
 }
 
 /** Redessine le fil sans toucher au champ de saisie (le texte en cours et le curseur restent en place). */
+/** Pastilles des notes jointes + bouton « Joindre une note », dans le champ de saisie. */
+function ctxPaint(root: ParentNode = document): void {
+  const box = root.querySelector<HTMLElement>('.cl-ctx'); if (!box) return;
+  const c = current(), p = projects.byId(c ? c.project ?? '' : nextProject);
+  const ids = (attached.get(c?.id ?? '') ?? []).filter(id => store.get(id));
+  box.innerHTML = ids.map(chipHTML).join('') + (p ? `<button type="button" class="ag-addnote" data-cl="note">${icon('plus')}${ids.length ? 'Notes…' : 'Joindre des notes'}</button>` : '');
+}
+
 function paint(): void {
   const box = $('#main .cl-in'), scroll = $('#main .cl-scroll'); if (!box || !scroll) return;
   const c = current(), atEnd = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 80;
@@ -189,6 +209,7 @@ export function mount(main: HTMLElement): void {
       <div class="cl-scroll"><div class="cl-in"></div></div>
       <div class="cl-foot"><form class="ag-compose cl-compose">
         <textarea name="prompt" rows="2" placeholder="${c ? 'Réponds à Claude…' : 'Demande n’importe quoi à Claude…'}" aria-label="Message pour Claude">${esc(drafts.get(key) ?? '')}</textarea>
+        <div class="ag-ctx cl-ctx"></div>
         <div class="cl-bar"><span class="cl-hint">${kbd('mod+enter')} pour envoyer</span>
           <button type="button" class="btn" data-cl="stop" hidden>${icon('stop')}Arrêter</button>
           <button type="submit" class="btn btn-primary" data-cl="send">Envoyer</button></div>
@@ -203,9 +224,10 @@ export function mount(main: HTMLElement): void {
   ta.addEventListener('input', () => { drafts.set(key, ta.value); grow(); });
   requestAnimationFrame(grow);
   need('.cl', main).addEventListener('click', e => void onClick(e, ta));
-  need('.cl', main).addEventListener('change', e => { const s = target(e).closest<HTMLSelectElement>('[data-cl-scope]'); if (s) { nextProject = s.value; paint(); } });
+  need('.cl', main).addEventListener('change', e => { const s = target(e).closest<HTMLSelectElement>('[data-cl-scope]'); if (s) { nextProject = s.value; attached.delete(''); ctxPaint(); paint(); } });
   need('[data-cl="stop"]', main).onclick = () => { if (c) live.get(c.id)?.ctrl.abort(); };
   $('[data-cl="delete"]', main)?.addEventListener('click', e => { const id = (e.currentTarget as HTMLElement).dataset.id; if (id) void remove(id); });
+  ctxPaint(main);
   paint();
   const scroll = need('.cl-scroll', main); scroll.scrollTop = scroll.scrollHeight;
   if (!matchMedia('(max-width: 900px)').matches) ta.focus();
@@ -219,6 +241,12 @@ async function onClick(e: MouseEvent, ta: HTMLTextAreaElement): Promise<void> {
     const m = current()?.messages[Number(b.dataset.i)];
     if (m) { try { await navigator.clipboard.writeText(m.text); toast('Réponse copiée'); } catch { toast('Copie impossible'); } }
   }
+  else if (act === 'unnote' && b.dataset.id) { const k = current()?.id ?? ''; attached.set(k, (attached.get(k) ?? []).filter(x => x !== b.dataset.id)); ctxPaint(); }
+  else if (act === 'note') {
+    const k = current()?.id ?? '', p = projects.byId(current() ? current()?.project ?? '' : nextProject); if (!p) return;
+    const next = await pickNotes(p, attached.get(k) ?? []);
+    if (next) { attached.set(k, next); ctxPaint(); }
+  }
   else if (act === 'delete' && b.dataset.id) await remove(b.dataset.id);
 }
 
@@ -226,7 +254,7 @@ async function remove(id: string): Promise<void> {
   const c = chats.get(id); if (!c) return;
   if (!await confirmBox({ title: 'Supprimer la conversation ?', text: `« ${c.title} » sera effacée de cet appareil.`, ok: 'Supprimer', danger: true })) return;
   live.get(id)?.ctrl.abort(); live.delete(id);
-  chats.delete(id); drafts.delete(id);
+  chats.delete(id); drafts.delete(id); attached.delete(id);
   await db.del('chats', id);
   if (app.viewState().chat === id) await app.setView({ type: 'claude' }); else { app.renderSidebar(); paint(); }
 }

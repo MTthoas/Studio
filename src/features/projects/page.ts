@@ -9,6 +9,7 @@ import * as todo from '../tasks.ts';
 import * as model from './model.ts';
 import { esc, plain } from '../../lib/markdown.ts';
 import { $, icon, menu, modal, need, rel, target, toast, errMsg, confirmBox } from '../../ui/kit.ts';
+import { pickFrom } from './notepick.ts';
 import type { AppShell, Note } from '../../types.ts';
 import type { Project, Repo, Role } from './model.ts';
 import * as flux from './flux.ts';
@@ -88,11 +89,35 @@ function taskRows(p: Project): string {
     <button class="hm-more" data-pj="kanban">${c.openCount > items.length ? `${c.openCount - items.length} de plus · ` : ''}Ouvrir en Kanban</button>`;
 }
 const taskBox = (p: Project) => `<form class="td-add pj-add"><span class="td-plus">${icon('plus')}</span><input placeholder="Nouvelle tâche du projet, ex. « Corriger la synchro vendredi »" aria-label="Nouvelle tâche du projet" autocomplete="off"></form><div class="pj-tasklist">${taskRows(p)}</div>`;
+// Notes cochées dans l'onglet Notes, par projet : la sélection part vers Claude Code (une consigne, ou un agent par
+// note) ou vers la page Claude, d'un clic. Seules les notes lisibles par l'IA se cochent (ni chiffrées, ni #privé).
+const pickedNotes = new Map<string, Set<string>>();
+function picksOf(p: Project): Set<string> { let s = pickedNotes.get(p.id); if (!s) { s = new Set(); pickedNotes.set(p.id, s); } return s; }
+const pickable = (p: Project): Note[] => model.notesOf(p).filter(n => shareable(n) && store.getBody(n) != null);
+/** Barre de sélection : une invitation tant que rien n'est coché, puis les envois possibles. */
+function pickBarHTML(p: Project): string {
+  const all = pickable(p), sel = picksOf(p), k = all.filter(n => sel.has(n.id)).length, cc = !!bridge.where();
+  if (!all.length) return '';
+  if (!k) return `<span class="pj-pickbar-t">${icon('check')}Coche des notes pour les envoyer à Claude${cc ? ' ou à Claude Code' : ''}.</span><span class="pj-pickbar-end"><button class="link-btn" data-pj="pick-all">Tout cocher (${all.length})</button></span>`;
+  return `<span class="pj-pickbar-t"><b>${k}</b> note${k > 1 ? 's' : ''} cochée${k > 1 ? 's' : ''}</span>
+    ${cc ? `<button class="btn btn-primary" data-pj="pick-cc" title="Une consigne Claude Code, avec ces notes jointes">${icon('terminal')}Claude Code</button>${k > 1 ? `<button class="btn" data-pj="pick-fan" title="Prépare un agent Claude Code par note : ils travaillent en parallèle, chacun dans sa copie">${icon('bolt')}Un agent par note</button>` : ''}` : ''}
+    <button class="btn" data-pj="pick-claude" title="Conversation du projet : Claude lit ces notes">${icon('sparkle')}Claude</button>
+    <span class="pj-pickbar-end">${k < all.length ? '<button class="link-btn" data-pj="pick-all">Tout cocher</button>' : ''}<button class="link-btn" data-pj="pick-none">Tout décocher</button></span>`;
+}
 function noteRows(p: Project): string {
-  const notes = model.notesOf(p).filter(n => n.id !== p.id).slice(0, 8);
-  const cc = bridge.where();
-  return `${notes.length ? notes.map(n => `<div class="pj-row"><button class="w-row" data-open-note="${n.id}">${icon('notes')}<span>${esc(titleOf(n))}</span><em>${esc(rel(n.updated))}</em></button>${cc && shareable(n) ? `<button class="pj-cc" data-pj-cc-note="${n.id}" title="Confier cette note à Claude Code">${icon('terminal')}Claude Code</button>` : ''}</div>`).join('') : '<p class="hm-empty">Aucune note dans ce projet. Ajoute <code>#' + esc(p.tag) + '</code> à une note, ou crée-la d’ici.</p>'}
-    <button class="hm-more" data-pj="new-note">${icon('plus')}Nouvelle note du projet</button>`;
+  // La note du projet d'abord, puis celles qui y sont rangées (tag #projet/… ou sous-note d'une note du projet).
+  const notes = model.notesOf(p), linked = model.linkedTo(p);
+  const cc = bridge.where(), sel = picksOf(p), ok = new Set(pickable(p).map(n => n.id));
+  // Une note supprimée, sortie du projet ou devenue privée quitte la sélection.
+  for (const id of [...sel]) if (!ok.has(id)) sel.delete(id);
+  const pick = (n: Note) => ok.has(n.id) ? `<label class="pj-pick" title="Cocher pour l’envoyer à l’IA"><input type="checkbox" data-pj-pick="${n.id}"${sel.has(n.id) ? ' checked' : ''} aria-label="Cocher la note ${esc(titleOf(n))}"></label>` : `<span class="pj-pick" title="Chiffrée ou #privé : jamais envoyée à l’IA">${icon('lock')}</span>`;
+  const ask = (n: Note) => ok.has(n.id) ? `<button class="pj-cc" data-pj-ask-note="${n.id}" title="Discuter de cette note avec Claude (conversation du projet)">${icon('sparkle')}Claude</button>` : '';
+  return `<div class="pj-pickbar${sel.size ? ' on' : ''}" data-pickbar>${pickBarHTML(p)}</div>
+    ${notes.length ? notes.map(n => `<div class="pj-row pj-noterow${sel.has(n.id) ? ' sel' : ''}">${pick(n)}<button class="w-row" data-open-note="${n.id}">${icon(n.id === p.id ? 'folder' : 'notes')}<span>${esc(titleOf(n))}${n.id === p.id ? '<i class="pj-main">Note du projet</i>' : ''}</span><em>${esc(rel(n.updated))}</em></button>${ask(n)}${cc && ok.has(n.id) ? `<button class="pj-cc" data-pj-cc-note="${n.id}" title="Confier cette note à Claude Code">${icon('terminal')}Claude Code</button>` : ''}</div>`).join('') : ''}
+    ${notes.length < 2 ? '<p class="hm-empty">Pour ranger une note dans ce projet : crée-la d’ici, range une note existante, fais-en une sous-note de la note du projet, ou ajoute-lui <code>#' + esc(p.tag) + '</code>.</p>' : ''}
+    <div class="pj-noteadd"><button class="hm-more" data-pj="new-note">${icon('plus')}Nouvelle note du projet</button><button class="hm-more" data-pj="adopt">${icon('folder')}Ranger une note existante…</button></div>
+    ${linked.length ? `<h3 class="pj-linked-h">Liées à la note du projet <span>citées par elle ou qui la citent, sans être rangées ici</span></h3>
+      ${linked.map(n => `<div class="pj-row pj-noterow"><span class="pj-pick">${icon('link')}</span><button class="w-row" data-open-note="${n.id}">${icon('notes')}<span>${esc(titleOf(n))}${model.projectOfNote(n) ? `<i class="pj-main">${esc(model.projectOfNote(n)?.name ?? '')}</i>` : ''}</span><em>${esc(rel(n.updated))}</em></button>${store.getBody(n) != null && !model.byId(n.id) ? `<button class="pj-cc" data-pj-adopt="${n.id}" title="Ajoute #${esc(p.tag)} à cette note">${icon('folder')}Ranger ici</button>` : ''}</div>`).join('')}` : ''}`;
 }
 const section = (id: string, title: string, ic: string, body: string, cls = '', meta = '') => `<section class="pj-sec ${cls}" data-sec="${esc(id)}"><h2>${icon(ic)}${esc(title)}${meta ? `<span class="pj-sec-meta">${meta}</span>` : ''}</h2><div class="pj-sec-body">${body}</div></section>`;
 
@@ -489,8 +514,8 @@ export function projectMenuItems(n: Note): { label: string; icon?: string; run?:
 /** Claude Code est joignable d'ici (sur ce Mac, ou un Mac lié qui l'autorise). */
 export const claudeAvailable = (): boolean => !!bridge.where();
 /** Ouvre l'onglet Claude Code du projet avec des notes jointes ou une consigne déjà écrite. */
-export function toClaude(p: Project, what: { notes?: string[]; prompt?: string }): Promise<void> {
-  sessions.handoff(p, { notes: what.notes ?? [], prompt: what.prompt ?? '' });
+export function toClaude(p: Project, what: { notes?: string[]; prompt?: string; fan?: string }): Promise<void> {
+  sessions.handoff(p, { notes: what.notes ?? [], prompt: what.prompt ?? '', fan: what.fan ?? '' });
   return go(p.id, 'sessions');
 }
 
@@ -559,6 +584,23 @@ export function mount(main: HTMLElement): void {
     if (open) { await go(open.dataset.pjOpen || null); return; }
     const tb = t.closest('[data-pj-tab]');
     if (tb && p) { await app.setView({ type: 'projets', project: p.id, tab: tb.dataset.pjTab ?? 'overview' }); return; }
+    // Case d'une note : la sélection suit, la barre se met à jour sans redessiner la liste.
+    const pk = t.closest('[data-pj-pick]') as HTMLInputElement | null;
+    if (pk && p) {
+      const sel = picksOf(p), id = pk.dataset.pjPick ?? '';
+      if (pk.checked) sel.add(id); else sel.delete(id);
+      pk.closest('.pj-row')?.classList.toggle('sel', pk.checked);
+      const bar = $('[data-pickbar]', root); if (bar) { bar.innerHTML = pickBarHTML(p); bar.classList.toggle('on', sel.size > 0); }
+      return;
+    }
+    const askNote = t.closest('[data-pj-ask-note]');
+    if (askNote && p) { const id = p.id, nid = askNote.dataset.pjAskNote ?? ''; void import('../chat.ts').then(m => m.startIn(id, [nid])); return; }
+    const adopt = t.closest<HTMLElement>('[data-pj-adopt]');
+    if (adopt && p) {
+      const n = store.get(adopt.dataset.pjAdopt ?? '');
+      if (n) { await model.setNoteProject(n, p); toast(`« ${titleOf(n)} » rangée dans ${p.name}`); refresh(); }
+      return;
+    }
     const ccNote = t.closest('[data-pj-cc-note]'), ccTask = t.closest('[data-pj-cc-task]');
     if ((ccNote || ccTask) && p) { await toClaude(p, ccNote ? { notes: [ccNote.dataset.pjCcNote ?? ''] } : { prompt: ccTask?.dataset.pjCcTask ?? '' }); return; }
     if (p && t.closest('.sv-box') && specs.click(t, p)) return;
@@ -588,8 +630,30 @@ export function mount(main: HTMLElement): void {
     if (act === 'new') { void createDialog(); return; }
     if (!p) return;
     if (act === 'edit') app.openNote(p.id);
+    if (act === 'pick-all' || act === 'pick-none') {
+      const sel = picksOf(p); sel.clear(); if (act === 'pick-all') for (const n of pickable(p)) sel.add(n.id);
+      const box = $('[data-sec="notes"] .pj-sec-body', root); if (box) box.innerHTML = noteRows(p);
+      return;
+    }
+    if (act === 'pick-cc' || act === 'pick-fan' || act === 'pick-claude') {
+      // Dans l'ordre de la liste (les plus récentes d'abord) ; la sélection est consommée par l'envoi.
+      const sel = picksOf(p), ids = pickable(p).filter(n => sel.has(n.id)).map(n => n.id); if (!ids.length) return;
+      sel.clear();
+      if (act === 'pick-claude') { const id = p.id; void import('../chat.ts').then(m => m.startIn(id, ids)); return; }
+      await toClaude(p, { notes: ids, ...(act === 'pick-fan' ? { fan: 'notes' } : {}) }); return;
+    }
     if (act === 'claude') { const id = p.id; void import('../chat.ts').then(m => m.startIn(id)); return; }
     if (act === 'kanban') { todo.showProject(p.id); await app.setView({ type: 'tasks' }); }
+    if (act === 'adopt') {
+      const ids = await pickFrom(model.adoptable(p), [], { title: `Ranger dans ${p.name}`, ok: 'Ranger', sub: n => model.projectOfNote(n)?.name ?? '',
+        hint: `${icon('folder')}Chaque note cochée reçoit <code>#${esc(p.tag)}</code> ; une note déjà rangée ailleurs change de projet.`,
+        empty: 'Toutes tes notes lisibles sont déjà dans ce projet.' });
+      if (!ids?.length) return;
+      let k = 0;
+      for (const id of ids) { const n = store.get(id); if (n) { await model.setNoteProject(n, p); k++; } }
+      toast(`${k} note${k > 1 ? 's' : ''} rangée${k > 1 ? 's' : ''} dans ${p.name}`); refresh();
+      return;
+    }
     if (act === 'new-note') { const n = await store.createNote({ title: '', body: `\n\n#${p.tag}` }); app.openNote(n.id); }
     if (act === 'pick' || act === 'home') {
       const r = await native.call('project', act, { project: p.id, repos: p.stack }, 600000);

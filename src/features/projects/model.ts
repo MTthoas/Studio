@@ -122,6 +122,13 @@ function ensure(): { list: Project[]; ofNote: Map<string, Project | null> } {
     if (!p && !n.todo) for (const t of store.meta(n).tags) { if (t.startsWith('projet/')) { p = bySlug.get(t.slice(7).split('/')[0] ?? '') ?? null; if (p) break; } }
     ofNote.set(n.id, p);
   }
+  // Sous-notes : sans tag à elles, elles suivent le projet de leur parente la plus proche qui en a un
+  // (une sous-note de la note du projet est donc une note du projet).
+  for (const n of idx.live) {
+    if (ofNote.get(n.id) || n.todo || !n.parent) continue;
+    const up = store.ancestors(n);
+    for (let i = up.length - 1; i >= 0; i--) { const p = ofNote.get(up[i]?.id ?? ''); if (p) { ofNote.set(n.id, p); break; } }
+  }
   cache = { idx, list, ofNote };
   return cache;
 }
@@ -131,13 +138,29 @@ export const projects = (): Project[] => ensure().list;
 export const byId = (id: string | null | undefined): Project | null => (id ? projects().find(p => p.id === id) ?? null : null);
 export const bySlug = (slug: string | null | undefined): Project | null => (slug ? projects().find(p => p.slug === slug) ?? null : null);
 
-/** Projet d'une note : la note du projet elle-même, ou le premier tag #projet/… qui correspond à un projet. */
+/** Projet d'une note : la note du projet elle-même, le premier tag #projet/… qui correspond à un projet, ou à
+ *  défaut le projet de la note dont elle est une sous-note. */
 export const projectOfNote = (n: Note): Project | null => ensure().ofNote.get(n.id) ?? null;
 
 /** Notes du projet (la note du projet en premier). */
 export function notesOf(p: Project): Note[] {
   return store.index().live.filter(n => n.id === p.id || projectOfNote(n)?.id === p.id)
     .sort((a, b) => (a.id === p.id ? -1 : b.id === p.id ? 1 : b.updated - a.updated));
+}
+
+/** Notes que la note du projet cite (`[[Titre]]`) ou qui la citent, sans être rangées dans le projet : l'onglet
+ *  Notes les propose à côté, avec de quoi les y ranger. */
+export function linkedTo(p: Project): Note[] {
+  const seen = new Set<string>(), out: Note[] = [];
+  for (const n of [...store.meta(p.note).links.map(l => store.findByTitle(l)), ...store.backlinks(p.note)]) {
+    if (!n || n.deletedAt || n.todo || seen.has(n.id) || n.id === p.id || projectOfNote(n)?.id === p.id) continue;
+    seen.add(n.id); out.push(n);
+  }
+  return out.sort((a, b) => b.updated - a.updated);
+}
+/** Notes qu'on peut ranger dans le projet : celles qui n'y sont pas, lisibles (le rangement réécrit leur tag), hors notes de projet. */
+export function adoptable(p: Project): Note[] {
+  return store.index().live.filter(n => !n.todo && !byId(n.id) && projectOfNote(n)?.id !== p.id && store.getBody(n) != null).sort((a, b) => b.updated - a.updated);
 }
 
 /** Retire tout tag #projet/… d'un texte (une ligne de tâche, le corps d'une note). */
