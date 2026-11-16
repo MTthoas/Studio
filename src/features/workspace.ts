@@ -8,7 +8,7 @@
 import * as bridge from '../integrations/remote.ts';
 import * as projects from './projects/model.ts';
 import * as subagents from './projects/subagents.ts';
-import { feedBlocks, syncFeed, nameOf, live, STATUS, modelName, agentCount, COUNT_HINT } from './projects/sessions.ts';
+import { feedBlocks, syncFeed, nameOf, live, STATUS, modelName, agentCount, COUNT_HINT, newGroup } from './projects/sessions.ts';
 import type { AgentRun, Session, Action, Queued } from './projects/sessions.ts';
 import type { Project } from './projects/model.ts';
 import { esc } from '../lib/markdown.ts';
@@ -239,9 +239,11 @@ async function launch(f: HTMLFormElement, i: number): Promise<void> {
   // « 3× … » : chaque agent dans sa vue, celle-ci d'abord puis les vues vides suivantes (les autres restent dans la liste).
   const free = [i, ...panes().map((x, k) => (!x && k !== i ? k : -1)).filter(k => k >= 0)];
   let ok = 0, fail = '';
+  // Plusieurs agents qui modifient : une branche mère commune, une sous-branche par agent (voir l'onglet Claude Code du projet).
+  const group = n > 1 && mode === 'edit' ? newGroup(text) : '';
   for (let k = 0; k < n; k++) {
     if (n > 1) btn.innerHTML = `<span class="spin"></span>Agent ${k + 1}/${n}…`;
-    const r = await startAgent(p, text, mode);
+    const r = await startAgent(p, text, mode, group ? { group, slot: k + 1, of: n } : undefined);
     if (!r.ok) { fail = r.message; break; }
     ok++;
     const at = free[k]; if (at !== undefined) st.panes[at] = { project: pid, session: r.session, run: r.run };
@@ -252,8 +254,8 @@ async function launch(f: HTMLFormElement, i: number): Promise<void> {
   toast(n > 1 ? `${ok} agent${ok > 1 ? 's' : ''} sur ${n} au travail${fail ? ` · ${fail}` : ''}` : 'Agent lancé'); void refresh();
   void loadSessions(p).then(paintList);
 }
-async function startAgent(p: Project, prompt: string, mode = 'edit'): Promise<{ ok: true; session: string; run: string } | { ok: false; message: string }> {
-  const body: Record<string, unknown> = { project: p.id, prompt, mode, repos: p.stack };
+async function startAgent(p: Project, prompt: string, mode = 'edit', group?: { group: string; slot: number; of: number }): Promise<{ ok: true; session: string; run: string } | { ok: false; message: string }> {
+  const body: Record<string, unknown> = { project: p.id, prompt, mode, repos: p.stack, ...group };
   const sub = subagents.body(); if (sub) body.subagents = sub;
   const r = await bridge.call('agent', 'start', body, 60000);
   return r.ok ? { ok: true, session: typeof r.session === 'string' ? r.session : '', run: typeof r.run === 'string' ? r.run : '' } : { ok: false, message: r.message ?? 'Lancement impossible.' };

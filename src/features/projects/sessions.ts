@@ -8,6 +8,7 @@ import * as ai from '../../integrations/ai.ts';
 import * as tuning from '../../integrations/tuning.ts';
 import * as github from '../../integrations/github/api.ts';
 import { esc, renderMarkdown } from '../../lib/markdown.ts';
+import { fold } from '../../lib/fuzzy.ts';
 import { icon, rel, modal, need, toast, confirmBox, errMsg, $ } from '../../ui/kit.ts';
 import * as review from './review.ts';
 import * as store from '../../core/store.ts';
@@ -391,6 +392,17 @@ export function agentCount(text: string): { n: number; text: string } {
   const n = m ? Number(m[1] ?? m[2] ?? m[3]) : 1;
   return m && n >= 1 ? { n, text: text.slice(m[0].length).trim() } : { n: 1, text: text.trim() };
 }
+/** Groupe d'agents : nom de la copie mère (`studio-<sujet>-<date>-<id>`), et groupe + numéro d'une copie `<groupe>-aN`. */
+export function newGroup(text: string): string {
+  const slug = fold(text).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 24).replace(/-+$/, '') || 'agents';
+  const d = new Date(), pad = (n: number) => String(n).padStart(2, '0');
+  return `studio-${slug}-${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}-${Math.random().toString(36).slice(2, 5).replace(/[^a-z0-9]/g, 'x')}`;
+}
+/** Agents déjà rapatriés dans leur branche mère (le Mac le sait aussi : refaire la fusion ne change rien). */
+const MERGED = 'studio.cc.mergedkids';
+const mergedKids = new Set<string>((() => { try { const v = JSON.parse(localStorage.getItem(MERGED) || '[]') as unknown; return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []; } catch { return []; } })());
+const keepMerged = (wt: string) => { mergedKids.add(wt); try { localStorage.setItem(MERGED, JSON.stringify([...mergedKids].slice(-200))); } catch { /* plein */ } };
+export const groupOfCopy = (name: string): { group: string; slot: number } | null => { const m = name.match(/^(studio-[a-z0-9-]+?)-a([1-8])$/); return m ? { group: m[1] ?? '', slot: Number(m[2]) } : null; };
 export const COUNT_HINT = 'Commence par « 3× » pour lancer 3 agents en parallèle.';
 /** Le bouton annonce le nombre d'agents qui partiront. */
 function showFan(f: HTMLFormElement): void {
@@ -558,9 +570,11 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     btn.disabled = true;
     // Un lancement après l'autre : chaque appel revient dès que la session est créée, l'agent continue seul.
     let last: Awaited<ReturnType<typeof bridge.call>> | null = null, started = 0, fail = '';
+    // Plusieurs agents qui modifient : une branche mère commune, une sous-branche par agent (rapatriées ensuite dans la mère).
+    const group = many && body.mode === 'edit' && body.machine !== 'server' ? newGroup(counted.text || text) : '';
     for (const b of built) {
       btn.innerHTML = many ? `<span class="spin"></span>Agent ${started + 1}/${built.length}…` : '<span class="spin"></span>Envoi…';
-      const one = await bridge.call('agent', 'start', { ...body, prompt: b.text }, 60000);
+      const one = await bridge.call('agent', 'start', { ...body, prompt: b.text, ...(group ? { group, slot: started + 1, of: built.length } : {}) }, 60000);
       if (!one.ok) { fail = one.message ?? 'Lancement impossible.'; break; }
       started++; last = one;
       // La conversation lancée garde le modèle et l'effort de sa première consigne : ils sont proposés pour la suite.
@@ -658,11 +672,11 @@ function runCard(r: AgentRun): string {
 function treeTitle(w: Worktree, list: Session[]): string {
   const s = list.filter(x => x.worktree === w.name).sort((a, b) => ms(b.updated) - ms(a.updated))[0];
   const run = runs.find(r => r.worktree === w.name && r.prompt);
-  return (s ? nameOf(s) : '') || (run ? neat(run.prompt) : '') || neat(w.name.replace(/^studio-|-\d{4}-\d{4}$/g, '').replace(/-/g, ' ')) || w.name;
+  return (s ? nameOf(s) : '') || (run ? neat(run.prompt) : '') || neat(w.name.replace(/^studio-|-\d{4}-\d{4}(-[a-z0-9]{3})?(-a[1-8])?$/g, '').replace(/-/g, ' ')) || w.name;
 }
 
 /** `badge` : la ligne est seule (fil d'une conversation), elle porte donc son étape ; dans la liste, c'est le groupe qui la dit. */
-function treeRow(w: Worktree, list: Session[], badge = false): string {
+function treeRow(w: Worktree, list: Session[], badge = false, role: '' | 'mother' | number = ''): string {
   const st = stageOf(w), job = jobs.find(j => j.worktree === w.name), busy = job?.status === 'running';
   const conflicts = w.conflicts?.length ? `<span class="err"> · conflits : ${esc(w.conflicts.join(', '))}</span>` : '';
   const state = busy ? ` · <span class="spin"></span>${esc(job.step)}` : job?.status === 'error' || job?.status === 'blocked' ? `<span class="err"> · ${esc(job.step)}</span>` : conflicts;
@@ -675,8 +689,14 @@ function treeRow(w: Worktree, list: Session[], badge = false): string {
   // Copies sœurs (autres dépôts du projet) : une pastille par dépôt, avec ce qui l'attend.
   const sisState = (s: Sister) => s.conflicts?.length ? 'conflits' : s.changes ? `${s.changes} fichier${s.changes > 1 ? 's' : ''} modifié${s.changes > 1 ? 's' : ''}` : hasWork(s) ? `${s.ahead} commit${s.ahead > 1 ? 's' : ''}` : s.merged ? 'fusionnée' : s.pushed ? 'PR en attente' : 'sans changement';
   const sis = w.sisters?.length ? `<span class="ag-hist">${w.sisters.map(s => `<span class="ag-hist-b${s.merged && !hasWork(s) ? ' ok' : ''}" title="Copie de ${esc(s.repo)}${s.branch ? ` · ${esc(s.branch)}` : ''}">${icon('folder')}<code>${esc(s.repo.split('/')[1] ?? s.repo)}</code>${esc(sisState(s))}</span>`).join('')}</span>` : '';
-  return `<div class="ag-tree st-${st}" style="${stageVar(st)}"><span class="ag-tree-main"><span class="ag-tree-title">${badge ? stageBadge(st) : ''}<b title="${esc(w.branch || w.name)}">${esc(treeTitle(w, list))}</b></span>${w.branch && !w.branch.startsWith('worktree-') ? `<code>${esc(w.branch)}</code>` : ''}${w.subject && !badge && (w.ahead > 0 || w.pushed) ? `<strong>${esc(w.subject)}</strong>` : ''}<em>${w.changes ? `${w.changes} fichier${w.changes > 1 ? 's' : ''} modifié${w.changes > 1 ? 's' : ''}` : 'aucun changement en attente'}${w.ahead && !w.merged ? ` · ${w.ahead} commit${w.ahead > 1 ? 's' : ''}` : ''}${where}${w.behind && !w.merged && (w.changes || pending) ? ` · ${w.behind} commit${w.behind > 1 ? 's' : ''} de retard sur la branche principale` : ''}${state}</em>${sis}${hist}</span>
-    <span class="ag-tree-act">${remote ? '<em class="ag-onmac">sur le Mac</em>' : `${canSync ? `<button class="btn" data-ag="sync" data-wt="${esc(w.name)}" title="Remettre la copie sur la dernière version de la branche principale ; l'agent résout les conflits éventuels">${icon('refresh')}Mettre à jour</button>` : ''}<button class="btn" data-ag="review" data-wt="${esc(w.name)}">${icon('sparkle')}Revue</button><button class="btn" data-ag="vscode" data-wt="${esc(w.name)}">${icon('code')}VS Code</button><button class="btn" data-ag="push" data-wt="${esc(w.name)}"${fresh && !busy ? '' : ' disabled'} title="${fresh ? 'Publier le nouveau travail de l’agent' : w.merged ? 'Déjà fusionné : rien de nouveau à publier' : pending ? 'Déjà poussé : rien de nouveau à publier' : 'Rien à publier'}">${icon('upload')}Publier</button>${pending ? `<button class="btn" data-ag="pr" data-wt="${esc(w.name)}" title="Ouvrir la page de la pull request sur GitHub">${icon('github')}PR${w.pr?.state === 'open' ? ` #${w.pr.number}` : ''}</button>` : ''}${pending && !w.changes && !busy ? `<button class="btn" data-ag="newbranch" data-wt="${esc(w.name)}" title="Garder cette branche pour sa PR et repartir de la dernière version de la branche principale, sur une nouvelle branche, dans la même discussion">${icon('plus')}Nouvelle branche</button>` : ''}<button class="icon-btn" data-ag="discard" data-wt="${esc(w.name)}" title="Supprimer la copie" aria-label="Supprimer la copie">${icon('trash')}</button>`}</span></div>`;
+  const label = role === 'mother' ? 'Branche mère' : typeof role === 'number' ? `Agent ${role}` : treeTitle(w, list);
+  // Agent d'un groupe : son travail se rapatrie dans la branche mère (pas tant qu'il travaille, ni s'il n'a rien fait).
+  // Après une fusion, de nouveaux changements de l'agent (il a continué) se fusionnent à nouveau.
+  const inMother = typeof role === 'number' && mergedKids.has(w.name) && !w.changes;
+  const merge = typeof role !== 'number' || remote ? '' : inMother ? `<span class="ag-in-mother">${icon('check')}Dans la mère</span>`
+    : `<button class="btn" data-ag="mergechild" data-wt="${esc(w.name)}"${(w.changes > 0 || (w.ahead > 0 && !w.merged)) && !busy && !runs.some(r => live(r) && r.worktree === w.name) ? '' : ' disabled'} title="Commiter le travail de cet agent et le fusionner dans la branche mère du groupe">${icon('pr')}Fusionner dans la mère</button>`;
+  return `<div class="ag-tree st-${st}${role === 'mother' ? ' ag-mother' : typeof role === 'number' ? ' ag-child' : ''}" style="${stageVar(st)}"><span class="ag-tree-main"><span class="ag-tree-title">${badge ? stageBadge(st) : ''}<b title="${esc(w.branch || w.name)}">${esc(label)}</b></span>${w.branch && !w.branch.startsWith('worktree-') ? `<code>${esc(w.branch)}</code>` : ''}${w.subject && !badge && (w.ahead > 0 || w.pushed) ? `<strong>${esc(w.subject)}</strong>` : ''}<em>${w.changes ? `${w.changes} fichier${w.changes > 1 ? 's' : ''} modifié${w.changes > 1 ? 's' : ''}` : 'aucun changement en attente'}${w.ahead && !w.merged ? ` · ${w.ahead} commit${w.ahead > 1 ? 's' : ''}` : ''}${where}${w.behind && !w.merged && (w.changes || pending) ? ` · ${w.behind} commit${w.behind > 1 ? 's' : ''} de retard sur la branche principale` : ''}${state}</em>${sis}${hist}</span>
+    <span class="ag-tree-act">${remote ? '<em class="ag-onmac">sur le Mac</em>' : `${merge}${canSync ? `<button class="btn" data-ag="sync" data-wt="${esc(w.name)}" title="Remettre la copie sur la dernière version de la branche principale ; l'agent résout les conflits éventuels">${icon('refresh')}Mettre à jour</button>` : ''}<button class="btn" data-ag="review" data-wt="${esc(w.name)}">${icon('sparkle')}Revue</button><button class="btn" data-ag="vscode" data-wt="${esc(w.name)}">${icon('code')}VS Code</button>${typeof role === 'number' ? '' : `<button class="btn" data-ag="push" data-wt="${esc(w.name)}"${fresh && !busy ? '' : ' disabled'} title="${fresh ? 'Publier le nouveau travail de l’agent' : w.merged ? 'Déjà fusionné : rien de nouveau à publier' : pending ? 'Déjà poussé : rien de nouveau à publier' : 'Rien à publier'}">${icon('upload')}Publier</button>${pending ? `<button class="btn" data-ag="pr" data-wt="${esc(w.name)}" title="Ouvrir la page de la pull request sur GitHub">${icon('github')}PR${w.pr?.state === 'open' ? ` #${w.pr.number}` : ''}</button>` : ''}${pending && !w.changes && !busy ? `<button class="btn" data-ag="newbranch" data-wt="${esc(w.name)}" title="Garder cette branche pour sa PR et repartir de la dernière version de la branche principale, sur une nouvelle branche, dans la même discussion">${icon('plus')}Nouvelle branche</button>` : ''}`}<button class="icon-btn" data-ag="discard" data-wt="${esc(w.name)}" title="Supprimer la copie" aria-label="Supprimer la copie">${icon('trash')}</button>`}</span></div>`;
 }
 
 function listHTML(list: Session[]): string {
@@ -684,7 +704,18 @@ function listHTML(list: Session[]): string {
   const canClean = !remote && list.some(s => idle(s));
   const tot =list.reduce((t, s) => ({ input: t.input + s.tokens.input + s.tokens.cacheWrite, output: t.output + s.tokens.output, cacheRead: t.cacheRead + s.tokens.cacheRead }), { input: 0, output: 0, cacheRead: 0 });
   // Copies rangées par étape : ce qui demande une action d'abord, ce qui est livré ensuite.
-  const staged = trees.map(w => ({ w, st: stageOf(w) }));
+  // Groupes d'agents (« 3× … ») : la branche mère et ses agents, ensemble, à part des autres copies.
+  const families = new Map<string, Worktree[]>();
+  for (const w of trees) { const g = groupOfCopy(w.name); if (g) { const l = families.get(g.group) ?? []; l.push(w); families.set(g.group, l); } }
+  const inFamily = (w: Worktree) => families.has(w.name) || families.has(groupOfCopy(w.name)?.group ?? '');
+  const familyHTML = [...families].map(([g, kids]) => {
+    const mother = trees.find(t => t.name === g), sorted = [...kids].sort((a, b) => (groupOfCopy(a.name)?.slot ?? 0) - (groupOfCopy(b.name)?.slot ?? 0));
+    const title = sorted.map(k => treeTitle(k, list)).find(Boolean) ?? g;
+    const merged = mother ? mother.ahead : 0;
+    return `<section class="ag-family"><h4>${icon('pr')}<b>${esc(title)}</b><span>${sorted.length} agent${sorted.length > 1 ? 's' : ''} sur la même branche mère${merged ? ` · ${merged} commit${merged > 1 ? 's' : ''} déjà dans la mère` : ' · compare-les, puis fusionne le meilleur dans la mère'}</span></h4>
+      <div class="ag-trees">${mother ? treeRow(mother, list, true, 'mother') : ''}${sorted.map(k => treeRow(k, list, true, groupOfCopy(k.name)?.slot ?? 0)).join('')}</div></section>`;
+  }).join('');
+  const staged = trees.filter(w => !inFamily(w)).map(w => ({ w, st: stageOf(w) }));
   const count = (st: Stage) => st === 'work' ? Math.max(running.length, staged.filter(x => x.st === st).length) : staged.filter(x => x.st === st).length;
   const flow = `<div class="ag-flow" role="list" aria-label="Où en est le travail des agents">${STAGE_ORDER.filter(st => st !== 'idle').map(st => { const n = count(st); return `<span role="listitem" class="ag-flow-s st-${st}${n ? '' : ' none'}" style="${stageVar(st)}">${icon(STAGES[st].ic)}<b>${n}</b>${esc(STAGES[st].l)}</span>`; }).join(`<i class="ag-flow-arrow" aria-hidden="true">→</i>`)}</div>`;
   const groups = STAGE_ORDER.map(st => ({ st, list: staged.filter(x => x.st === st) })).filter(g => g.list.length)
@@ -692,7 +723,7 @@ function listHTML(list: Session[]): string {
   return `${running.length || trees.length ? flow : ''}
     ${running.length ? `<h3 class="ss-h"><span class="ss-h-dot" style="${stageVar('work')}"></span>Au travail <span>${running.length} agent${running.length > 1 ? 's' : ''} en cours</span></h3><div class="ag-runs">${running.map(runCard).join('')}</div>` : ''}
     ${recent.length ? `<h3 class="ss-h">Terminés récemment <span>lancés depuis Studio</span>${recent.length > 1 ? `<button class="link-btn ss-h-act" data-ag="hide-runs">Retirer les terminés</button>` : ''}</h3><div class="ag-runs">${recent.map(runCard).join('')}</div>` : ''}
-    ${trees.length ? `<h3 class="ss-h">Copies des agents <span>travail isolé de ton dossier, rangé par étape</span>${!remote && trees.some(treeIdle) ? `<button class="link-btn ss-h-act" data-ag="clean-trees" title="Supprimer plusieurs copies d’un coup">Faire le ménage</button>` : ''}</h3><div class="ag-groups">${groups}</div>` : ''}
+    ${trees.length ? `<h3 class="ss-h">Copies des agents <span>travail isolé de ton dossier, rangé par étape</span>${!remote && trees.some(treeIdle) ? `<button class="link-btn ss-h-act" data-ag="clean-trees" title="Supprimer plusieurs copies d’un coup">Faire le ménage</button>` : ''}</h3><div class="ag-groups">${familyHTML}${groups}</div>` : ''}
     <h3 class="ss-h">Sessions <span>tout ce que Claude Code a fait dans ce projet</span>${canClean ? `<button class="link-btn ss-h-act" data-ag="clean" title="Supprimer plusieurs conversations terminées d’un coup">Faire le ménage</button>` : ''}</h3>
     <div class="ss-totals"><div><strong>${list.length}</strong><span>session${list.length > 1 ? 's' : ''}</span></div><div><strong>${usage.fmt(tot.output)}</strong><span>tokens écrits</span></div><div><strong>${usage.fmt(tot.input)}</strong><span>tokens lus</span></div><div><strong>${usage.fmt(tot.cacheRead)}</strong><span>relus du cache</span></div></div>
     <div class="ss-list">${list.map(s => {
@@ -1509,6 +1540,15 @@ export function mount(box: HTMLElement, p: Project, folder: string | null): void
       await refreshTrees(p); void paint(box, p);
     }
     if (b.dataset.ag === 'pr') { const w = trees.find(x => x.name === wt); if (w) await openPR(p, w); }
+    if (b.dataset.ag === 'mergechild') {
+      const g = groupOfCopy(wt);
+      (b as HTMLButtonElement).disabled = true;
+      const r = await native.call('agent', 'mergechild', { project: p.id, worktree: wt }, 120000);
+      if (r.ok) keepMerged(wt);
+      toast(r.ok ? String(r.message ?? `Agent ${g?.slot ?? ''} fusionné dans la branche mère`) : r.message === 'Action inconnue.' ? 'Mets à jour l’app Studio pour Mac.' : r.message ?? 'Fusion impossible.');
+      await refreshTrees(p); void paint(box, p);
+      return;
+    }
     if (b.dataset.ag === 'newbranch') {
       const w = trees.find(x => x.name === wt);
       if (!await confirmBox({ title: 'Repartir sur une nouvelle branche ?', text: `${w?.branch ? `La branche ${w.branch} reste poussée avec sa PR. ` : ''}La copie repart de la dernière version de la branche principale : la discussion avec l’agent continue, et son prochain travail sera publié sur une nouvelle branche.`, ok: 'Nouvelle branche' })) return;

@@ -257,6 +257,14 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
             let name = body["worktree"] as? String ?? ""
             if Orchestrator.shared.busy(project: pid, worktree: name) { send(["ok": false, "message": "Une publication est en cours sur cette copie."]); return }
             bg { folders.removeWorktree(pid, name: name) }
+        // Groupe d'agents : fusionne le travail d'un agent (copie `<groupe>-aN`) dans la branche mère du groupe.
+        case "mergechild":
+            let name = body["worktree"] as? String ?? ""
+            guard let g = ProjectFolders.groupOf(name) else { send(["ok": false, "message": "Cette copie n'appartient pas à un groupe d'agents."]); return }
+            for w in [name, g.group] where Orchestrator.shared.busy(project: pid, worktree: w) || Agents.shared.busy(project: pid, worktree: w) {
+                send(["ok": false, "message": w == name ? "L'agent travaille encore dans cette copie : attends la fin de son tour." : "Une publication ou un agent travaille dans la branche mère."]); return
+            }
+            bg { folders.mergeChild(pid, child: name) }
         case "newbranch":
             let name = body["worktree"] as? String ?? ""
             if Orchestrator.shared.busy(project: pid, worktree: name) || Agents.shared.busy(project: pid, worktree: name) { send(["ok": false, "message": "Un agent ou une publication travaille encore dans cette copie."]); return }

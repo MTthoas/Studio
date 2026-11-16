@@ -255,11 +255,15 @@ export interface FlowItem {
 }
 export interface Flow { repo: string; base: string; items: FlowItem[]; baseCi: CiState; releases: { tag: string; url: string; at: string }[]; /** Dernières exécutions de CI sur la branche principale, de la plus ancienne à la plus récente. */ history: { at: string; state: 'success' | 'failure' | 'pending'; label: string; url: string }[]; actions: Workflow[] }
 /** Un workflow GitHub Actions : sa dernière exécution (toutes branches) et ses précédentes, de la plus ancienne à la plus récente. */
-export interface Workflow { name: string; last: ActionRun; runs: { at: string; state: 'success' | 'failure' | 'pending'; label: string; url: string }[] }
-export interface ActionRun { id: number; state: CiState; status: string; conclusion: string | null; branch: string; title: string; event: string; at: string; url: string; seconds: number | null }
+export interface Workflow { name: string; last: ActionRun; runs: RunPoint[] }
+/** Une exécution passée, pour l'historique : état, durée (null tant qu'elle tourne), branche. */
+export interface RunPoint { id: number; at: string; state: 'success' | 'failure' | 'pending'; label: string; url: string; seconds: number | null; branch: string; number: number; conclusion: string | null; path: string; sha: string }
+export interface ActionRun { id: number; state: CiState; status: string; conclusion: string | null; branch: string; title: string; event: string; at: string; url: string; seconds: number | null; path: string; sha: string; number: number }
 
-interface RawRun { id: number; head_branch: string; status: string; conclusion: string | null; created_at: string; updated_at?: string; run_started_at?: string; name: string; html_url?: string; display_title?: string; event?: string }
+interface RawRun { id: number; head_branch: string; status: string; conclusion: string | null; created_at: string; updated_at?: string; run_started_at?: string; name: string; html_url?: string; display_title?: string; event?: string; path?: string; head_sha?: string; run_number?: number }
 interface RawPullAll extends RawPull { state: 'open' | 'closed'; merged_at: string | null; closed_at: string | null; created_at: string }
+/** Durée d'une exécution terminée (de son démarrage à sa fin), null sinon. */
+const runSeconds = (r: RawRun): number | null => { const from = Date.parse(r.run_started_at ?? r.created_at), to = Date.parse(r.updated_at ?? ''); return r.status === 'completed' && to >= from ? Math.round((to - from) / 1000) : null; };
 const runState = (r?: RawRun): CiState => !r ? 'none' : r.status !== 'completed' ? 'pending' : ['success', 'skipped', 'neutral'].includes(r.conclusion ?? '') ? 'success' : 'failure';
 const flowCache = new Map<string, { at: number; flow: Flow }>();
 
@@ -302,14 +306,60 @@ export async function flow(repo: string, { fresh = false } = {}): Promise<Flow> 
   const byWf = new Map<string, RawRun[]>();
   for (const r of runs.workflow_runs) { const l = byWf.get(r.name); if (l) l.push(r); else byWf.set(r.name, [r]); }
   const actions: Workflow[] = [...byWf].map(([name, list]) => {
-    const r = list[0] as RawRun, from = Date.parse(r.run_started_at ?? r.created_at), to = Date.parse(r.updated_at ?? '');
+    const r = list[0] as RawRun;
     return {
       name,
-      last: { id: r.id, state: runState(r), status: r.status, conclusion: r.conclusion, branch: r.head_branch, title: r.display_title || '', event: r.event ?? '', at: r.created_at, url: r.html_url ?? '', seconds: r.status === 'completed' && to >= from ? Math.round((to - from) / 1000) : null },
-      runs: list.slice(0, 12).reverse().map(x => { const st = runState(x); return { at: x.created_at, state: st === 'none' ? 'pending' as const : st, label: `${x.display_title || x.name} · ${x.head_branch}`, url: x.html_url ?? '' }; }),
+      last: { id: r.id, state: runState(r), status: r.status, conclusion: r.conclusion, branch: r.head_branch, title: r.display_title || '', event: r.event ?? '', at: r.created_at, url: r.html_url ?? '', seconds: runSeconds(r), path: r.path ?? '', sha: r.head_sha ?? '', number: r.run_number ?? 0 },
+      runs: list.slice(0, 20).reverse().map((x): RunPoint => { const st = runState(x); return { id: x.id, at: x.created_at, state: st === 'none' ? 'pending' : st, label: `${x.display_title || x.name} · ${x.head_branch}`, url: x.html_url ?? '', seconds: runSeconds(x), branch: x.head_branch, number: x.run_number ?? 0, conclusion: x.conclusion, path: x.path ?? '', sha: x.head_sha ?? '' }; }),
     };
   }).sort((a, b) => b.last.at.localeCompare(a.last.at));
   const flow: Flow = { repo, base, items, baseCi: runState(lastRun.get(base)), releases: rels.slice(-5).reverse().map(r => ({ tag: r.tag_name, url: r.html_url, at: r.published_at })), history, actions };
   flowCache.set(repo, { at: Date.now(), flow });
   return flow;
+}
+
+// ---------- Graphe d'une exécution : ses jobs et leurs dépendances ----------
+export interface JobStep { name: string; status: string; conclusion: string | null; number: number; started_at: string | null; completed_at: string | null }
+export interface Job { id: number; name: string; status: string; conclusion: string | null; created_at: string; started_at: string | null; completed_at: string | null; html_url: string; runner_name: string | null; labels: string[]; steps: JobStep[] }
+/** Jobs d'une exécution (toutes tentatives confondues : la dernière de chaque job l'emporte). */
+export async function runJobs(repo: string, runId: number, { fresh = false } = {}): Promise<Job[]> {
+  if (!REPO_RE.test(repo)) throw new Error(`Dépôt invalide : ${repo}`);
+  const r = await api<{ jobs: Job[] }>(`/repos/${repo}/actions/runs/${runId}/jobs?per_page=100&filter=latest`, vault.secret('github'), fresh ? { maxAge: 0 } : {});
+  return r.jobs ?? [];
+}
+export interface WfJob { key: string; name: string; needs: string[] }
+const wfCache = new Map<string, WfJob[]>();
+/** Jobs déclarés dans le fichier du workflow, avec leurs `needs` (au commit de l'exécution ; gardés en mémoire). */
+export async function workflowJobs(repo: string, path: string, sha: string): Promise<WfJob[]> {
+  if (!REPO_RE.test(repo) || !/^\.github\/workflows\/[\w.-]+\.ya?ml$/.test(path)) return [];
+  const k = `${repo}@${sha}:${path}`, hit = wfCache.get(k); if (hit) return hit;
+  const f = await api<{ content?: string; encoding?: string }>(`/repos/${repo}/contents/${path}${sha ? `?ref=${encodeURIComponent(sha)}` : ''}`).catch(() => null);
+  const text = f?.content && f.encoding === 'base64' ? new TextDecoder().decode(Uint8Array.from(atob(f.content.replace(/\n/g, '')), c => c.charCodeAt(0))) : '';
+  const jobs = parseWorkflowJobs(text);
+  wfCache.set(k, jobs);
+  return jobs;
+}
+/** Lecture minimale du YAML d'un workflow : les clés sous `jobs:`, et pour chacune `name:` et `needs:` (texte, [a, b] ou liste). */
+export function parseWorkflowJobs(yaml: string): WfJob[] {
+  const lines = yaml.split('\n'), out: WfJob[] = [];
+  const clean = (v: string) => v.replace(/\s+#.*$/, '').trim().replace(/^['"]|['"]$/g, '');
+  let i = lines.findIndex(l => /^jobs:\s*(#.*)?$/.test(l)); if (i < 0) return out;
+  let jobIndent = -1, cur: WfJob | null = null, inNeeds = false, childIndent = -1;
+  for (i++; i < lines.length; i++) {
+    const l = lines[i] ?? ''; if (!l.trim() || /^\s*#/.test(l)) continue;
+    const ind = l.length - l.trimStart().length;
+    if (ind === 0) break; // fin du bloc jobs
+    if (jobIndent < 0) jobIndent = ind;
+    const m = l.match(/^\s*([\w-]+):\s*(.*)$/);
+    if (ind === jobIndent && m) { cur = { key: m[1] ?? '', name: m[1] ?? '', needs: [] }; out.push(cur); inNeeds = false; childIndent = -1; continue; }
+    if (!cur) continue;
+    if (childIndent < 0 && ind > jobIndent) childIndent = ind;
+    if (inNeeds && ind > childIndent && /^\s*-\s+/.test(l)) { cur.needs.push(clean(l.replace(/^\s*-\s+/, ''))); continue; }
+    inNeeds = false;
+    if (ind !== childIndent || !m) continue;
+    const v = clean(m[2] ?? '');
+    if (m[1] === 'name' && v) cur.name = v;
+    else if (m[1] === 'needs') { if (!v) inNeeds = true; else cur.needs = v.replace(/^\[|\]$/g, '').split(',').map(clean).filter(Boolean); }
+  }
+  return out;
 }

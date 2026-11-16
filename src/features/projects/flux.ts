@@ -6,6 +6,7 @@ import * as native from '../../core/native.ts';
 import { esc } from '../../lib/markdown.ts';
 import { icon, rel, errMsg, avatar, toast } from '../../ui/kit.ts';
 import * as chart from '../../ui/chart.ts';
+import * as ci from './ci.ts';
 import * as model from './model.ts';
 import type { Project } from './model.ts';
 
@@ -43,13 +44,13 @@ const canRerun = (a: github.ActionRun) => a.status === 'completed' && a.id > 0 &
 function actionsHTML(f: github.Flow): string {
   if (!f.actions.length) return '';
   return `<div class="fx-acts"><header class="fx-acts-head">${icon('bolt')}<span>Actions</span><em class="kb-count">${f.actions.length}</em><a class="link-btn" href="https://github.com/${esc(f.repo)}/actions" target="_blank" rel="noopener">Tout voir sur GitHub</a></header>
-    ${f.actions.map(w => {
+    ${f.actions.map((w, wi) => {
       const [hue, txt] = runLabel(w.last), live = w.last.state === 'pending', d = took(w.last.seconds);
       return `<div class="fx-act${live ? ' live' : ''}" style="--c:var(--c-${hue})"><i class="pj-ci"></i>
         <a class="fx-act-name" href="${esc(w.last.url)}" target="_blank" rel="noopener" title="${esc(w.last.title)}">${esc(w.name)}</a>
         <span class="fx-act-st">${txt}</span><code title="Branche">${esc(w.last.branch)}</code><span class="fx-act-ev">${EVENT[w.last.event] ? `<em class="pj-badge">${EVENT[w.last.event]}</em>` : ''}</span>
         ${chart.strip(w.runs)}<time>${esc(rel(Date.parse(w.last.at)))}${d ? ` · ${d}` : ''}</time>
-        ${canRerun(w.last) ? `<button class="btn btn-ghost fx-rerun" data-fx-rerun="${w.last.id}" data-repo="${esc(f.repo)}" data-failed="${FAILED_JOBS.has(w.last.conclusion ?? '') ? '1' : ''}" title="${FAILED_JOBS.has(w.last.conclusion ?? '') ? 'Relancer les jobs en échec' : 'Relancer l’exécution'} (même commit)">${icon('refresh')}Relancer</button>` : '<span></span>'}</div>`;
+        ${canRerun(w.last) ? `<button class="btn btn-ghost fx-rerun" data-fx-rerun="${w.last.id}" data-repo="${esc(f.repo)}" data-failed="${FAILED_JOBS.has(w.last.conclusion ?? '') ? '1' : ''}" title="${FAILED_JOBS.has(w.last.conclusion ?? '') ? 'Relancer les jobs en échec' : 'Relancer l’exécution'} (même commit)">${icon('refresh')}Relancer</button>` : '<span></span>'}${ci.toggleHTML(f.repo, w, wi === 0)}</div>${ci.panelHTML(f.repo, w, wi === 0)}`;
     }).join('')}</div>`;
 }
 
@@ -60,7 +61,9 @@ export async function mount(box: HTMLElement, p: Project, fresh = false): Promis
   const me = (gen.get(box) ?? 0) + 1; gen.set(box, me);
   if (!bound.has(box)) {
     bound.add(box);
+    box.addEventListener('keydown', e => ci.onKey(e, box));
     box.addEventListener('click', e => {
+      if (ci.onClick(e, box)) return;
       const b = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-fx-rerun]'); if (!b || b.disabled) return;
       b.disabled = true;
       github.rerun(b.dataset.repo ?? '', Number(b.dataset.fxRerun), { failedOnly: b.dataset.failed === '1' })
@@ -72,7 +75,7 @@ export async function mount(box: HTMLElement, p: Project, fresh = false): Promis
   }
   for (; ; fresh = true) {
     let live = false;
-    try { const r = await render(p, fresh); if (gen.get(box) !== me) return; box.innerHTML = r.html; live = r.live; }
+    try { const r = await render(p, fresh); if (gen.get(box) !== me) return; box.innerHTML = r.html; live = r.live; void ci.hydrate(box); }
     catch (e) { if (gen.get(box) === me) box.innerHTML = `<p class="nf-empty">${esc(errMsg(e))}</p>`; return; }
     if (!live) return;
     await new Promise(ok => setTimeout(ok, 30e3));
