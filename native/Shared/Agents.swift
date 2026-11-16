@@ -29,6 +29,8 @@ final class Agents {
         var finished: Date?
         var quota: [String: Any]?
         var machine = "mac", host = ""
+        /// Serveur de l'agent (machine "server") : pour l'arrêter par la même connexion.
+        var server: Servers.Server?
         /// Modèle et niveau d'effort de ce tour ("" : ceux de Claude Code par défaut).
         var model = "", effort = ""
         /// Commandes autorisées pour ce tour (case « Commandes ») : une réponse dans la discussion les garde.
@@ -153,13 +155,14 @@ final class Agents {
         lock.lock(); let r = runs[id]; let p = r?.process
         guard let r, let p, p.isRunning else { lock.unlock(); return ["ok": false, "message": "Cet agent ne tourne plus."] }
         r.status = "stopped"; if r.result.isEmpty { r.result = "Arrêté à ta demande." }
-        let remotePid = r.remotePid, host = r.host, onServer = r.machine == "server"
+        let remotePid = r.remotePid, server = r.server, onServer = r.machine == "server"
         lock.unlock()
-        if onServer, remotePid > 0 {
+        if onServer, remotePid > 0, let server {
+            let l = Servers.shared.launch(server, "pkill -TERM -P \(remotePid) 2>/dev/null; kill -TERM \(remotePid) 2>/dev/null; true", env: Servers.baseEnv)
             let k = Process(); k.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
-            k.arguments = Servers.shared.sshArgs(host, "pkill -TERM -P \(remotePid) 2>/dev/null; kill -TERM \(remotePid) 2>/dev/null; true")
+            k.arguments = l.args; k.environment = l.env
             k.standardOutput = FileHandle.nullDevice; k.standardError = FileHandle.nullDevice
-            try? k.run()
+            if l.error == nil { try? k.run() }
         } else {
             Self.signalTree(p.processIdentifier, SIGTERM)
         }
@@ -225,7 +228,10 @@ final class Agents {
     func start(project pid: String, body: [String: Any], done: @escaping ([String: Any]) -> Void) {
         let folders = ProjectFolders.shared
         let onServer = body["machine"] as? String == "server"
-        let server = onServer ? Servers.shared.config(pid) : nil
+        // Plusieurs serveurs par projet : celui choisi (`server`), ou, pour une reprise, celui de la session d'origine.
+        let resumeId = body["session"] as? String ?? ""
+        let previous: Servers.Server? = onServer && !resumeId.isEmpty ? { lock.lock(); defer { lock.unlock() }; return runs.values.first { $0.session == resumeId && $0.machine == "server" && $0.project == pid }?.server }() : nil
+        let server = onServer ? previous ?? Servers.shared.config(Servers.ref(pid, body["server"] as? String ?? "")) : nil
         if onServer && server == nil { return done(["ok": false, "message": "Aucun serveur configuré pour ce projet (onglet Serveur)."]) }
         guard let dir = onServer ? server?.path : folders.path(pid) else { return done(["ok": false, "message": "Choisis d'abord le dossier du projet sur ce Mac."]) }
         let bin = onServer ? "/usr/bin/ssh" : (ClaudeCode.shared.binary() ?? "")
@@ -291,6 +297,47 @@ final class Agents {
                 cwd = path
             }
         }
+        // Autres dépôts du projet (site, API…) : en mode « modifier », une copie sœur dans chacun, du même nom et partant
+        // aussi de la dernière version de sa branche principale ; en mode « analyser », leur dossier. L'agent les reçoit
+        // par --add-dir et sait lequel est lequel ; publier pousse la même branche dans chaque dépôt modifié.
+        if let r = body["repos"] { folders.rememberRepos(pid, r) }
+        var extraDirs: [String] = [], repoNote = ""
+        if !onServer {
+            let others = folders.otherRepos(pid)
+            let name = cwd.range(of: "/.claude/worktrees/").map { String(cwd[$0.upperBound...]) } ?? ""
+            var lines: [String] = [], failed: [String] = others.missing.map(\.name)
+            for o in others.found {
+                var target = o.dir
+                if mode == "edit" && !name.isEmpty {
+                    let wt = o.dir + "/.claude/worktrees/" + name
+                    var isDir: ObjCBool = false
+                    if FileManager.default.fileExists(atPath: wt, isDirectory: &isDir) && isDir.boolValue { target = wt }
+                    else if resume.isEmpty {
+                        let made = folders.createWorktree(o.dir, name: name)
+                        guard let p = made.path else { failed.append(o.repo.name); continue }
+                        target = p
+                    } else {
+                        let made = folders.restoreWorktree(o.dir, name: name, branch: folders.currentBranch(cwd) ?? "")
+                        guard made.branch != nil else { failed.append(o.repo.name); continue }
+                        target = wt
+                    }
+                }
+                extraDirs.append(target)
+                lines.append("- \(o.repo.name)\(o.repo.role.isEmpty ? "" : " (\(o.repo.role))") : \(target)")
+            }
+            if !lines.isEmpty || !failed.isEmpty {
+                let here = folders.remote(dir).map { " (dépôt \($0))" } ?? ""
+                var note = "Ce projet a plusieurs dépôts GitHub. Ton dossier de travail\(here) est \(cwd)."
+                if !lines.isEmpty {
+                    note += mode == "edit"
+                        ? " Les autres dépôts du projet te sont ouverts, chacun dans sa propre copie isolée, avec les mêmes règles (pas de commit : Studio publie une branche et une pull request dans chaque dépôt que tu modifies). Travaille dans celui que la demande concerne, avec des chemins absolus :\n"
+                        : " Les autres dépôts du projet te sont ouverts en lecture :\n"
+                    note += lines.joined(separator: "\n")
+                }
+                if !failed.isEmpty { note += "\nIntrouvables sur ce Mac (aucun clone à côté du dossier du projet, ou copie impossible) : \(failed.joined(separator: ", ")). Si la demande les concerne, dis-le : l'utilisateur peut les cloner depuis l'onglet du projet." }
+                repoNote = note
+            }
+        }
         // Modèle, effort et commandes : ceux de la demande. Une reprise qui n'en précise pas (réponse dans la discussion,
         // messages en attente, orchestrateur) garde ceux du dernier tour de la discussion, tant que Studio s'en souvient.
         var model = body["model"] as? String, effort = body["effort"] as? String, asked = body["tests"] as? Bool
@@ -312,7 +359,8 @@ final class Agents {
         let effortOK = Self.efforts.contains(useEffort)
         if modelOK { args += ["--model", useModel] }
         if effortOK { args += ["--effort", useEffort] }
-        let added = AgentTuning.prompt(mode: mode, tests: tests)
+        if !extraDirs.isEmpty { args += ["--add-dir"] + extraDirs }
+        let added = [AgentTuning.prompt(mode: mode, tests: tests), repoNote].filter { !$0.isEmpty }.joined(separator: "\n\n")
         if !added.isEmpty { args += ["--append-system-prompt", added] }
         args += ["--allowedTools"] + AgentPermissions.allowed(tools: tools, commands: tests)
 
@@ -322,9 +370,10 @@ final class Agents {
         run.actions.append(["at": ISO8601DateFormatter().string(from: Date()), "kind": "prompt", "text": String(prompt.prefix(4000))])
         let p = Process()
         p.executableURL = URL(fileURLWithPath: bin)
+        var sshSock: String?
         if let server {
             // Sur le serveur : modèle de commande fixe, chaque argument protégé, Claude Code cherché aux emplacements usuels.
-            run.machine = "server"; run.host = server.host
+            run.machine = "server"; run.host = server.dest; run.server = server
             var prep = ""
             if !newWorktree.isEmpty {
                 // Même règle que sur le Mac : copie isolée partant de la dernière version de la branche principale distante.
@@ -336,7 +385,10 @@ final class Agents {
             // Première ligne du flux : le numéro du processus distant (exec le conserve), pour pouvoir l'arrêter.
             let remote = "cd \(Servers.qPath(cwd)) && \(prep)echo \"{\\\"type\\\":\\\"studio_pid\\\",\\\"pid\\\":$$}\" && PATH=\"$HOME/.local/bin:$HOME/.claude/local:$PATH\" "
                 + AgentTuning.env().sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value) " }.joined() + "exec claude " + args.map(Servers.q).joined(separator: " ")
-            p.arguments = Servers.shared.sshArgs(server.host, remote)
+            let l = Servers.shared.launch(server, remote, env: [:])
+            if let e = l.error { return done(["ok": false, "message": e]) }
+            p.arguments = l.args
+            sshSock = l.env["SSH_AUTH_SOCK"]
             p.currentDirectoryURL = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
         } else {
             p.arguments = args
@@ -345,6 +397,8 @@ final class Agents {
         var env = ProcessInfo.processInfo.environment
         env["DISABLE_AUTOUPDATER"] = "1"; env["NO_COLOR"] = "1"
         for (k, v) in AgentTuning.env() { env[k] = v }
+        // Sur un serveur : l'agent SSH choisi par Servers.launch (celui de Studio pour une clé gardée par Studio).
+        if onServer { env["SSH_AUTH_SOCK"] = sshSock }
         // Ouverte depuis le Dock, l'app n'a qu'un PATH minimal : les dossiers réglés passent devant (cargo, Homebrew…).
         if !onServer, !AgentPermissions.path.isEmpty {
             env["PATH"] = (AgentPermissions.path + [env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"]).joined(separator: ":")
@@ -372,6 +426,7 @@ final class Agents {
                 if !wt.isEmpty && wt.contains("/.claude/worktrees/")
                     && !Orchestrator.shared.busy(project: run.project, worktree: name) && !self.busy(project: run.project, worktree: name) {
                     ProjectFolders.shared.recycleIfDelivered(wt, fetch: true)
+                    for s in ProjectFolders.shared.sisterCopies(run.project, name) { ProjectFolders.shared.recycleIfDelivered(s.wt, fetch: true) }
                 }
                 self.flushQueues()
             }
@@ -435,7 +490,11 @@ final class Agents {
                     if b["type"] as? String == "tool_use", let name = b["name"] as? String {
                         let input = b["input"] as? [String: Any] ?? [:]
                         let detail = input["file_path"] as? String ?? input["path"] as? String ?? input["pattern"] as? String ?? input["command"] as? String ?? ""
-                        run.actions.append(["at": now, "kind": "tool:" + name, "text": String(detail.prefix(240))])
+                        // `add`/`del` en texte : `actions` ne porte que des chaînes (la page les relit par Number).
+                        var a = ["at": now, "kind": "tool:" + name, "text": String(detail.prefix(240))]
+                        let delta = ClaudeSessions.lineDelta(name, input)
+                        if delta.add > 0 { a["add"] = String(delta.add) }; if delta.del > 0 { a["del"] = String(delta.del) }
+                        run.actions.append(a)
                     }
                 }
                 if run.actions.count > 150 { run.actions.removeFirst(run.actions.count - 150) }

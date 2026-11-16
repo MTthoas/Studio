@@ -6,8 +6,8 @@
 // et Studio ne peut ni lancer, ni arrêter, ni supprimer quoi que ce soit.
 //
 // Un conteneur appartient à un projet quand son dossier de travail Compose (com.docker.compose.project.working_dir),
-// celui d'un devcontainer (devcontainer.local_folder) ou l'un de ses dossiers montés est le dossier du projet sur ce
-// Mac, ou se trouve dedans — y compris la copie isolée d'un agent (.claude/worktrees/…). Une image appartient au
+// celui d'un devcontainer (devcontainer.local_folder) ou l'un de ses dossiers montés est le dossier d'un des dépôts
+// du projet sur ce Mac, ou se trouve dedans — y compris la copie isolée d'un agent (.claude/worktrees/…). Une image appartient au
 // projet quand un de ses conteneurs l'utilise, ou quand Compose l'a construite pour lui (étiquette
 // com.docker.compose.project : celle de ses conteneurs, ou le nom que Compose déduit du dossier).
 import Foundation
@@ -74,7 +74,8 @@ enum Docker {
     private static func inside(_ path: String, _ dir: String) -> Bool { path == dir || path.hasPrefix(dir + "/") }
     private static let tilde = { (p: String) -> String in p.hasPrefix(NSHomeDirectory() + "/") ? "~" + p.dropFirst(NSHomeDirectory().count) : p }
 
-    /// Conteneurs et images de ce Mac ; `projects` : identifiants des projets Studio et leur dossier, pour les rattacher.
+    /// Conteneurs et images de ce Mac ; `projects` : identifiants des projets Studio et leurs dossiers (un couple par
+    /// dépôt du projet sur ce Mac), pour les rattacher.
     static func status(projects: [(id: String, dir: String)]) -> [String: Any] {
         guard let sock = sockets.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
             return ["ok": true, "available": false, "reason": "missing"]
@@ -94,7 +95,8 @@ enum Docker {
             // Docker Desktop préfixe les dossiers du Mac montés par « /host_mnt ».
             let mounts = (c["Mounts"] as? [[String: Any]] ?? []).filter { $0["Type"] as? String == "bind" }
                 .compactMap { $0["Source"] as? String }.map { $0.hasPrefix("/host_mnt/") ? String($0.dropFirst(9)) : $0 }
-            let owners = dirs.filter { d in (!workdir.isEmpty && inside(workdir, d.dir)) || mounts.contains { inside($0, d.dir) } }.map(\.id)
+            var owners: [String] = []
+            for d in dirs where !owners.contains(d.id) && ((!workdir.isEmpty && inside(workdir, d.dir)) || mounts.contains { inside($0, d.dir) }) { owners.append(d.id) }
             let compose = labels["com.docker.compose.project"] ?? ""
             for id in owners {
                 if let img = c["ImageID"] as? String { imageProjects[img, default: []].insert(id) }

@@ -89,7 +89,7 @@ function containerRow(c: Container, { project = false } = {}): string {
 function imageRow(i: Image): string {
   const name = i.tags[0] ?? `<sans nom> ${i.id}`;
   const what = [i.tags.length > 1 ? esc(i.tags.slice(1).join(', ')) : '', i.compose ? `construite par Compose${i.service ? ` (service ${esc(i.service)})` : ''}` : '', i.created ? esc(rel(i.created * 1000)) : ''].filter(Boolean).join(' · ');
-  return `<div class="dk-row"><i class="dk-ic">${icon('box')}</i><div class="dk-main"><span class="dk-name"><strong>${esc(name)}</strong></span>
+  return `<div class="dk-row"><i class="dk-ic">${icon('container')}</i><div class="dk-main"><span class="dk-name"><strong>${esc(name)}</strong></span>
       <span class="dk-sub">${what || `<code>${esc(i.id)}</code>`}</span></div><span class="dk-size">${esc(size(i.size))}</span></div>`;
 }
 
@@ -97,12 +97,12 @@ function imageRow(i: Image): string {
 export function projectHTML(p: Project, st: Status | null, folder: string | null): string {
   if (!st?.available) return unavailable(st);
   const { containers, images } = ofProject(st, p), up = containers.filter(running).length;
-  const engine = st.engine ? `<p class="dk-engine">${icon('box')}${esc(st.engine.name || 'Docker')}${st.engine.version ? ` · moteur ${esc(st.engine.version)}` : ''}<button class="link-btn" data-dk="refresh">${icon('refresh')}Actualiser</button></p>` : '';
+  const engine = st.engine ? `<p class="dk-engine">${icon('container')}Ce Mac · ${esc(st.engine.name || 'Docker')}${st.engine.version ? ` · moteur ${esc(st.engine.version)}` : ''}<button class="link-btn" data-dk="refresh">${icon('refresh')}Actualiser</button></p>` : '';
   const how = folder
-    ? `Studio reconnaît les conteneurs de ce projet quand ils sont lancés par Docker Compose ou un devcontainer depuis son dossier (ou la copie d’un agent), ou qu’ils en montent un dossier.`
+    ? `Studio reconnaît les conteneurs de ce projet quand ils sont lancés par Docker Compose ou un devcontainer depuis son dossier (ou la copie d’un agent), ou qu’ils en montent un dossier. Ceux du serveur du projet sont dans l’onglet Serveur.`
     : `Choisis d’abord le dossier du projet sur ce Mac (onglet Vue d’ensemble) : c’est à lui que Studio reconnaît ses conteneurs.`;
   return `${engine}
-    <section class="pj-sec"><h2>${icon('box')}Conteneurs <span class="dk-count">${containers.length ? `${up} en cours sur ${containers.length}` : ''}</span></h2><div class="pj-sec-body">
+    <section class="pj-sec"><h2>${icon('container')}Conteneurs <span class="dk-count">${containers.length ? `${up} en cours sur ${containers.length}` : ''}</span></h2><div class="pj-sec-body">
       ${containers.length ? containers.map(c => containerRow(c, { project: true })).join('') : `<p class="hm-empty">Aucun conteneur pour ce projet. ${how}</p>`}</div></section>
     <section class="pj-sec"><h2>${icon('download')}Images <span class="dk-count">${images.length ? `${images.length} · ${esc(size(images.reduce((s, i) => s + i.size, 0)))}` : ''}</span></h2><div class="pj-sec-body">
       ${images.length ? images.map(imageRow).join('') : '<p class="hm-empty">Aucune image construite ou utilisée par ce projet.</p>'}</div></section>`;

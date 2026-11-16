@@ -49,7 +49,7 @@ Studio est un carnet de notes Markdown reliées entre elles, qui réunit aussi t
 | Plateforme | Prérequis | Installation |
 | --- | --- | --- |
 | **Web** | Node.js ≥ 22.18 | `npm install && npm run serve` |
-| **Mac** | macOS 13+, outils en ligne de commande d'Apple | `./native/build-mac.sh --install`, ou `Studio-macOS.zip` depuis les [Releases](https://github.com/MTthoas/Studio/releases/latest) |
+| **Mac** | macOS 13+ (rien d'autre) | `curl -fsSL https://mtthoas.github.io/Studio/install.sh \| sh` dans le Terminal ([détails](#mac)) ; depuis les sources : `./native/build-mac.sh --install` (outils en ligne de commande d'Apple) |
 | **iPhone / iPad** | iOS 16+, Xcode avec la plateforme iOS | `./native/iphone.sh` |
 
 ### Web
@@ -68,11 +68,34 @@ L'app s'installe comme une application à part entière et fonctionne hors ligne
 
 ### Mac
 
+**Le plus simple, en trente secondes, sans rien installer d'autre :**
+
+1. Ouvre le **Terminal** : ⌘ Espace, tape « Terminal », Entrée.
+2. Colle cette ligne, puis Entrée :
+
+   ```bash
+   curl -fsSL https://mtthoas.github.io/Studio/install.sh | sh
+   ```
+
+3. Studio s'ouvre. Il est rangé dans `/Applications` (ou `~/Applications` si ton compte n'est pas administrateur) et apparaît dans le Launchpad.
+
+Pour **mettre à jour**, relance la même ligne : elle remplace l'app par la dernière version publiée et garde tes données. Le script ([`site/install.sh`](site/install.sh), à lire avant si tu préfères) télécharge `Studio-macOS.zip` depuis les [Releases](https://github.com/MTthoas/Studio/releases/latest), vérifie que c'est bien une app Studio intacte (identifiant et signature), puis l'installe. L'app (binaire universel Apple Silicon et Intel, ~1 Mo) embarque ses fichiers : rien n'est mis en ligne, aucun serveur.
+
+**Pourquoi pas un simple téléchargement du zip ?** Tant que l'app publiée n'est pas notarisée par Apple (voir [Signature et notarisation](#signature-et-notarisation)), macOS refuse d'ouvrir une app téléchargée avec un navigateur et affiche « Apple n'a pas pu vérifier que Studio ne contenait pas de logiciel malveillant ». L'app n'est pas en cause : macOS bloque toute app qui n'est pas passée par Apple. Un fichier récupéré par `curl` n'est pas mis en quarantaine, d'où la commande ci-dessus. Si tu as déjà téléchargé le zip :
+
+- tente d'ouvrir l'app une fois, puis Réglages Système → Confidentialité et sécurité → tout en bas, « Ouvrir quand même » ;
+- ou lève la quarantaine : `xattr -dr com.apple.quarantine /Applications/Studio.app`.
+
+**Pour les agents Claude Code**, installe aussi [Claude Code](https://docs.anthropic.com/claude-code) et connecte-toi une fois (`claude` dans le Terminal). Le reste de l'app s'en passe.
+
+**Depuis les sources** (développeurs, outils en ligne de commande d'Apple : `xcode-select --install`) :
+
 ```bash
+git clone https://github.com/MTthoas/Studio.git && cd Studio
 ./native/build-mac.sh --install
 ```
 
-Construit `Studio.app` (binaire universel Apple Silicon et Intel, ~1 Mo) et l'installe dans `/Applications`. L'app embarque ses fichiers : rien n'est mis en ligne, aucun serveur. Chaque push produit aussi l'app dans l'onglet *Actions* de GitHub, et chaque version est publiée dans les *Releases*.
+Chaque push produit aussi l'app dans l'onglet *Actions* de GitHub, et chaque version est publiée dans les *Releases*.
 
 ### iPhone / iPad
 
@@ -132,11 +155,13 @@ Un **projet** réunit son dossier sur le Mac, son ou ses dépôts GitHub, son pr
 ````markdown
 ```projet
 nom: Studio
-dépôts: MTthoas/Studio
+dépôts: MTthoas/Studio (app), MTthoas/studio-site (site), MTthoas/studio-api (api)
 linear: Studio
 site: https://studio.exemple.com
 ```
 ````
+
+**Plusieurs dépôts** : un projet peut réunir l'app, son site, son API… Chaque dépôt a un **rôle** (`app`, `site`, `api`, `mobile`, `docs`, `infra`, `lib`, `autre`), écrit entre parenthèses ou deviné de son nom (`…-site`, `…-api`, `…-ios`). Le premier est le principal. La vue d'ensemble montre une carte par dépôt (rôle, CI de la branche principale, PR ouvertes, dernière version) ; on y ajoute un dépôt, change son rôle, le passe en principal ou le retire. Le flux et les PR sont affichés pour chaque dépôt, et la publication d'un agent vise le dépôt du dossier choisi sur le Mac.
 
 Une note ou une tâche y appartient avec le tag `#projet/studio` — posé par le bouton **Projet** de l'éditeur, le menu d'une tâche, ou en créant depuis la page du projet. Chaque projet a ses onglets, aussi listés dans la barre latérale :
 
@@ -145,25 +170,27 @@ Une note ou une tâche y appartient avec le tag `#projet/studio` — posé par l
 | **Vue d'ensemble** | Une carte par onglet, des graphiques (commits par jour, tokens Claude Code par jour, santé de la CI, avancement des tâches), une barre de consigne rapide et les agents en cours |
 | **Claude Code** | Les agents et les sessions menées dans le dossier, en direct : ce qu'elles font, fichiers modifiés, tokens consommés. Chaque conversation porte un nom court qui la résume (rédigé par l'IA branchée dans Studio, remis à jour quand elle avance), apparaît dans la barre latérale et le fil d'Ariane, et peut être arrêtée ou supprimée (son journal part à la corbeille du Mac). Sous la consigne, ce qu'il reste de ton abonnement Claude en pourcentage (session de 5 heures, semaine) et le délai avant réinitialisation |
 | **Code** | Dossier local, branches locales (avance / retard), PR et activité, **revue IA** des changements en cours ou de la branche ; ouverture dans VS Code, le Finder ou le Terminal |
-| **Flux** | Le parcours de chaque branche façon gitflow : en cours → PR ouverte → prête à fusionner → fusionnée → publiée (Release), avec CI et revues |
+| **Flux** | Le parcours de chaque branche façon gitflow : en cours → PR ouverte → prête à fusionner → fusionnée → publiée (Release), avec CI et revues ; au-dessus, l'état de chaque workflow GitHub Actions (dernière exécution, branche, durée, précédentes), relu toutes les 30 s tant qu'une exécution tourne ; **Relancer** sur une exécution en échec ou annulée relance ses jobs en échec (même commit ; jeton avec le droit Actions en écriture) |
 | **Serveur** | L'état du VPS ou de la VM du projet, joint en SSH, et ses agents |
-| **Docker** | Les conteneurs du projet sur ce Mac (en cours ou arrêtés, ports cliquables, ceux lancés par un agent) et ses images (app Mac) |
+| **Docker** | Les conteneurs du projet sur ce Mac (en cours ou arrêtés, ports cliquables, ceux lancés par un agent) et ses images (app Mac) ; ceux du serveur sont dans l'onglet Serveur |
 | **Tâches · Notes** | Ce qui est tagué `#projet/<nom>` |
-| **Site** | Le site du projet : lancé **en local** depuis le Mac (adresse, pages vues, requêtes), et vérifié **en ligne** (code, temps de réponse) |
+| **Site** | Le site du projet : lancé **en local** depuis le Mac (adresse, pages vues, requêtes), **construit** (`build` et ses variantes `build:prod`…, notification à la fin), et vérifié **en ligne** (code, temps de réponse) |
 
 - Le **dossier local** est choisi dans le sélecteur de macOS et reste dans les réglages de l'app Mac : il n'est jamais écrit dans une note ni synchronisé. L'app n'en lit l'état Git qu'en lecture seule.
 - **Revue IA** : le diff est lu en local, montré, puis envoyé à l'IA branchée seulement après ton clic ; la revue peut être enregistrée comme note du projet.
 - **Sessions** : l'app Mac lit les journaux locaux de Claude Code (`~/.claude/projects/…`), en lecture seule ; rien ne quitte la machine.
 - **Site en local** (app Mac) : l'onglet Site cherche un site dans le dossier du projet (racine, `site/`, `web/`, `docs/`, `dist/`…). Un dossier avec un `index.html` est servi par Studio lui-même, sur `127.0.0.1` uniquement, avec le compte des pages vues, des requêtes et des données servies. Un projet Next.js, Astro, Vite, Nuxt ou SvelteKit est lancé avec son script (`npm run dev`, ou pnpm, yarn, bun selon le fichier de verrou) : Studio affiche l'adresse annoncée et la sortie du serveur. Tout s'arrête d'un clic, et à la fermeture de l'app. Le suivi du site en production (monitoring, consommation, visiteurs) viendra avec le serveur du projet.
-- **Docker** (app Mac, lecture seule) : Studio lit le moteur Docker par sa socket (Docker Desktop, OrbStack, Colima, Rancher Desktop), sans lancer `docker` ni aucun shell, et ne peut ni lancer, ni arrêter, ni supprimer quoi que ce soit. Un conteneur appartient au projet quand il a été lancé par Docker Compose ou un devcontainer depuis son dossier, ou depuis la copie isolée d'un agent (marqué « agent »), ou qu'il en monte un dossier ; une image, quand un de ses conteneurs l'utilise ou que Compose l'a construite pour lui. L'onglet se relit toutes les 5 secondes, la vue d'ensemble a sa carte, et l'**accueil** liste les conteneurs en cours du Mac avec leur projet.
+- **Docker** (app Mac, lecture seule) : Studio lit le moteur Docker par sa socket (Docker Desktop, OrbStack, Colima, Rancher Desktop), sans lancer `docker` ni aucun shell, et ne peut ni lancer, ni arrêter, ni supprimer quoi que ce soit. Un conteneur appartient au projet quand il a été lancé par Docker Compose ou un devcontainer depuis le dossier d'un de ses dépôts, ou depuis la copie isolée d'un agent (marqué « agent »), ou qu'il en monte un dossier ; une image, quand un de ses conteneurs l'utilise ou que Compose l'a construite pour lui. L'onglet se relit toutes les 5 secondes, la vue d'ensemble a sa carte, et l'**accueil** liste les conteneurs en cours du Mac avec leur projet.
 
 ### Agents Claude Code
 
 Dans l'onglet **Claude Code** d'un projet, tu écris une consigne, Claude Code travaille dans le dépôt, et tu suis tout en direct (app Mac).
 
 - **Modifier** : l'agent travaille dans une **copie isolée** du dépôt (worktree Git dans `.claude/worktrees/`, exclue de `git status`). Ton dossier n'est jamais touché. Ensuite : **Revue** IA, **VS Code**, **Publier** ou **Supprimer**.
+- **Plusieurs dépôts** (l'app, son site, son API…) : l'agent les voit tous. Chaque dépôt a son dossier sur le Mac, affiché sur sa carte avec un bouton **Changer**. Studio retrouve seul les clones rangés à côté du dossier du projet (d'après leur remote GitHub) ; pour les autres, **Cloner** ou **Choisir son dossier** depuis la carte. En mode Modifier, chaque dépôt reçoit sa copie isolée, du même nom ; **Publier** pousse la même branche et ouvre une pull request dans chaque dépôt modifié, les PR se citant entre elles.
 - **Étapes** : le panneau range les copies par étape, chacune de sa couleur — **au travail** (ambre), **à publier** (orange), **PR ouverte** (bleu), **fusionné** (violet) — avec un bandeau de compteurs en tête ; les sessions et la barre latérale reprennent la même couleur, et ce qui est livré s’efface.
 - **Analyser** : lecture seule, Claude Code explore et propose.
+- **À voix haute** : le bouton micro, à côté de **Lancer** ou de **Envoyer**, dicte la consigne ou la réponse dans le champ (à la suite du texte déjà écrit) ; un second clic termine, tu relis et tu envoies. La transcription est faite sur l'appareil (app Mac ou iPhone).
 - **Notes et tâches** : joins des notes du projet à une consigne (« Joindre une note »), ou confie directement une note (bouton **Claude Code** de l'éditeur, onglet Notes) ou une tâche (onglet Tâches).
 - **Sessions** : toutes les sessions Claude Code du projet, y compris celles lancées hors de Studio, avec leur fil, les fichiers touchés et les tokens ; chacune peut être **reprise**, ou **supprimée** depuis la liste (corbeille de la ligne, ou **Faire le ménage** pour en supprimer plusieurs d'un coup ; les journaux partent dans la corbeille du Mac). Les cartes des agents terminés se retirent d'une croix.
 - **Sous-agents** : les tâches que Claude délègue pendant une conversation apparaissent dans son en-tête. Un clic ouvre le fil du sous-agent (lecture seule), le fil d'Ariane suit (… › conversation › sous-agent), on passe d'un sous-agent à l'autre, et **Épingler** le garde dans la barre latérale, sous sa conversation.
@@ -196,7 +223,20 @@ Ces réglages restent sur le Mac. Un appareil lié ne peut ni les lire ni les mo
 
 ### Serveurs et pilotage à distance
 
-**Serveur** (VPS, VM) : relie un hôte SSH (alias de `~/.ssh/config` ou `utilisateur@hôte`) et le dossier du projet sur ce serveur. Studio affiche son état (charge, mémoire, disque, dépôt, Claude Code), ouvre un terminal SSH, et y lance des agents Claude Code avec les mêmes garde-fous. Connexion par clé uniquement (`BatchMode`) : Studio ne stocke ni ne voit aucune clé. Les commandes distantes sont fixes et protégées, et la configuration reste dans l'app Mac.
+**Serveur** (VPS, VM) : relie un hôte SSH (alias de `~/.ssh/config` ou `utilisateur@hôte`), l'utilisateur au besoin (champ **Utilisateur**, prioritaire sur le `User` de `~/.ssh/config`) et le dossier du projet sur ce serveur. Studio affiche son état (charge, mémoire, disque, dépôt, Claude Code), ouvre un terminal SSH, et y lance des agents Claude Code avec les mêmes garde-fous. Connexion par clé uniquement (`BatchMode`), au choix :
+
+- **ta configuration SSH** (`~/.ssh/config`, agent SSH), dont Studio ne voit rien ;
+- **une clé gardée par Studio**, créée dans l'app (Ed25519) ou importée d'un fichier : la clé privée est chiffrée dans le trousseau macOS de ce Mac (jamais synchronisée), ne passe jamais par la page ni par le disque en clair, et n'est chargée que dans un agent SSH privé à Studio, le temps que l'app est ouverte. Elle seule est proposée au serveur. Studio affiche la commande qui installe sa clé publique sur le serveur. Après chaque reconstruction de l'app, macOS redemande une fois l'accès à la clé.
+
+Un serveur jamais vu n'est accepté qu'après confirmation de son empreinte, ajoutée alors à `~/.ssh/known_hosts` ; une empreinte changée est refusée.
+
+**Plusieurs serveurs par projet** (production, préproduction…) : chacun a son nom, sa connexion, ses extensions et son onglet ; **Ajouter un serveur** en relie un de plus, et le choix de machine d'une consigne propose chacun d'eux. **Tester la connexion**, dans le formulaire, essaie les champs saisis avant d'enregistrer : connexion SSH, empreinte (à confirmer sur place), clé acceptée, dossier du projet, Git et Claude Code.
+
+**Fiche Machine** : Studio lit le serveur comme on le ferait dans une console, sans rien y installer. Emplacement (ville, pays et région d'après les métadonnées de l'hébergeur : Hetzner, AWS, Google Cloud, Azure, DigitalOcean, Scaleway, Vultr, Oracle ; fuseau, adresse publique), puissance (vCPU, cœurs et modèle du processeur, fréquence, cache, mémoire et swap, disques SSD ou NVMe, débit de la carte réseau) et capacités (volumes et leur remplissage, virtualisation, jeux d'instructions, carte graphique, sudo, logiciels installés). **Localiser l'adresse IP** demande, sur un clic seulement, à ipinfo.io où se trouve l'adresse publique : la requête part du serveur.
+
+**Extensions du serveur**, à cocher une par une : **Docker** (conteneurs, projets Compose, processeur et mémoire, journaux ; démarrer, arrêter, redémarrer) et **Kubernetes** (`kubectl`, `k3s` ou `microk8s` : nœuds, déploiements, pods, journaux ; redémarrage d'un déploiement, suppression d'un pod). Chaque action demande confirmation. Depuis un appareil lié, on ne fait que lire leur état.
+
+Les commandes distantes sont fixes et protégées, et la configuration reste dans l'app Mac.
 
 **À distance** : depuis l'iPhone (ou un autre ordinateur) lié au Mac, tu suis les agents, lances une consigne, reprends ou arrêtes une session — via la liaison chiffrée de bout en bout. Sur le Mac, chaque appareil doit être autorisé (Réglages → Appareils → « Peut piloter Claude Code sur ce Mac ») ; seules ces actions passent, jamais les commandes ni la publication, et chacune est signalée sur le Mac. Studio doit rester ouvert sur le Mac.
 
@@ -341,8 +381,10 @@ native/             apps Mac et iPhone (Swift) et leurs scripts de build
     Agents.swift        agents Claude Code et leurs garde-fous
     Orchestrator.swift  publication : mise à jour, conflits, commit, push
     Sessions.swift      lecture des sessions Claude Code locales
-    Servers.swift       serveurs joints en SSH
-    Sites.swift         site d'un projet en local : détection, serveur de fichiers, script dev
+    Servers.swift       serveurs joints en SSH : options, port, empreinte de l'hôte
+    SSHKeys.swift       clés SSH de Studio : trousseau, agent SSH privé
+    ServerExtensions.swift  extensions du serveur : Docker, Kubernetes
+    Sites.swift         site d'un projet en local : détection, serveur de fichiers, script dev, builds notifiés
     Docker.swift        conteneurs et images Docker du Mac (lecture seule, par la socket du moteur)
   macOS/, iOS/        points d'entrée de chaque plateforme
 site/               site vitrine de Studio : HTML, CSS et JS statiques, sans build ni dépendance
@@ -375,11 +417,25 @@ La CI ([`.github/workflows/build.yml`](.github/workflows/build.yml)) tourne à c
 | Job | Rôle |
 | --- | --- |
 | **Vérifications** | Types TypeScript stricts, build, cache hors ligne complet, aucune clé d'API dans le code |
-| **App Mac** | Construit `Studio.app` (Apple Silicon et Intel) et vérifie sa signature |
+| **App Mac** | Construit `Studio.app` (Apple Silicon et Intel) et vérifie sa signature ; la notarise si les secrets Apple existent |
 | **App iPhone** | Vérifie que l'app compile pour le simulateur |
 | **Publication** | Sur `main` et sur les tags `v…` : crée la Release et publie le paquet |
 
 Chaque push sur `main` publie une Release `v1.0.<n>` avec `Studio-macOS.zip` et `Studio-web.zip`, ainsi que le paquet `@mtthoas/studio` (l'app web compilée) dans GitHub Packages. Un tag `v…` fait de même avec son propre nom.
+
+### Signature et notarisation
+
+Par défaut, l'app est signée « ad hoc » : elle fonctionne, mais macOS refuse de l'ouvrir après un téléchargement par navigateur. Pour que le zip des Releases s'ouvre d'un double-clic, il faut un compte [Apple Developer Program](https://developer.apple.com/programs/) (payant) et cinq secrets dans le dépôt (Settings → Secrets and variables → Actions). La CI signe et notarise alors chaque version publiée ; sans eux, rien ne change.
+
+| Secret | Contenu |
+| --- | --- |
+| `MACOS_CERTIFICATE` | Le certificat **Developer ID Application** et sa clé privée, exportés en `.p12` depuis Trousseaux d'accès, puis encodés : `base64 -i certificat.p12 \| pbcopy` |
+| `MACOS_CERTIFICATE_PWD` | Le mot de passe choisi à l'export du `.p12` |
+| `APPLE_ID` | L'adresse du compte Apple Developer |
+| `APPLE_TEAM_ID` | L'identifiant d'équipe (10 caractères, visible dans le compte développeur, rubrique Membership) |
+| `APPLE_APP_PASSWORD` | Un mot de passe d'app créé sur [account.apple.com](https://account.apple.com) (Connexion et sécurité → Mots de passe pour app) |
+
+En local, `SIGN_IDENTITY="Developer ID Application: … (ÉQUIPE)" ./native/build-mac.sh` signe de la même façon (droits dans [`native/macOS/Studio.entitlements`](native/macOS/Studio.entitlements)). Sans cette variable, la signature reste locale.
 
 ### Héberger la version web
 
@@ -387,7 +443,7 @@ Sers le dossier `dist/` produit par `npm run build` (ou le contenu de `Studio-we
 
 ### Site vitrine
 
-Le dossier `site/` contient la page de présentation de Studio : trois fichiers statiques (`index.html`, `site.css`, `site.js`), sans build, sans police ni script extérieur, avec sa propre politique de sécurité (aucune requête sortante). `npm run site` le sert en local ; dans l'app Mac, l'onglet **Site** du projet le lance d'un clic.
+Le dossier `site/` contient la page de présentation de Studio : des fichiers statiques, sans build, sans bibliothèque ni script extérieur, avec sa propre politique de sécurité (aucune requête sortante). Les polices sont servies depuis le dossier lui-même (`site/fonts/`, avec leur licence). `npm run site` le sert en local ; dans l'app Mac, l'onglet **Site** du projet le lance d'un clic.
 
 Il est publié sur **GitHub Pages** ([mtthoas.github.io/Studio](https://mtthoas.github.io/Studio/)) par [`.github/workflows/pages.yml`](.github/workflows/pages.yml) : chaque push sur `main` qui touche `site/` envoie le dossier tel quel (ou à la main : Actions → Site → Run workflow). À faire une seule fois dans le dépôt : Settings → Pages → Source « GitHub Actions ». Tous les chemins sont relatifs, le site fonctionne donc aussi dans un sous-dossier ou sur un autre hébergement statique.
 

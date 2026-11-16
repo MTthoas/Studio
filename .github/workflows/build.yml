@@ -1,6 +1,7 @@
 # Studio : vérifications, builds et publication.
 #   check   → types TypeScript stricts, build, cache hors ligne complet, aucun secret dans le code
-#   macos   → construit Studio.app (Apple Silicon + Intel)
+#   macos   → construit Studio.app (Apple Silicon + Intel) ; signée Developer ID et notarisée pour une
+#             publication si les secrets Apple sont renseignés, sinon signée « ad hoc »
 #   ios     → vérifie que l'app iPhone compile (sans signature : non installable, voir README)
 #   release → à chaque push sur main (et sur un tag v…), publie une Release avec l'app Mac et l'app web,
 #             et le paquet @mtthoas/studio (app web compilée) dans les Packages du dépôt
@@ -72,12 +73,52 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci --no-audit --no-fund
+      # Signature Developer ID : seulement pour ce qui sera publié (push sur main ou tag), et seulement si les
+      # secrets existent. Sinon l'app reste signée « ad hoc » : elle marche, mais macOS la bloque après un
+      # téléchargement par navigateur (voir README, « Signature et notarisation »).
+      - name: Certificat Developer ID
+        if: github.event_name == 'push'
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+        run: |
+          if [ -z "$MACOS_CERTIFICATE" ]; then echo "Pas de certificat : signature ad hoc."; exit 0; fi
+          KEYCHAIN="$RUNNER_TEMP/signature.keychain-db"
+          KEYCHAIN_PWD="$(uuidgen)"
+          printf '%s' "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificat.p12"
+          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/certificat.p12" -P "$MACOS_CERTIFICATE_PWD" -f pkcs12 -k "$KEYCHAIN" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/certificat.p12"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PWD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" | awk -F'"' '/Developer ID Application/ { print $2; exit }')"
+          if [ -z "$IDENTITY" ]; then echo "::error::MACOS_CERTIFICATE ne contient pas de certificat « Developer ID Application »."; exit 1; fi
+          echo "SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
       - name: Construire Studio.app
         run: ./native/build-mac.sh
       - name: Vérifier le binaire
         run: |
           lipo -archs native/build/Studio.app/Contents/MacOS/Studio
-          codesign --verify --verbose native/build/Studio.app
+          codesign --verify --deep --strict --verbose native/build/Studio.app
+      # Notarisation : Apple analyse l'app et délivre un ticket, agrafé dans l'app pour qu'elle s'ouvre même hors ligne.
+      - name: Notariser
+        if: env.SIGN_IDENTITY != ''
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          if [ -z "$APPLE_ID" ] || [ -z "$APPLE_TEAM_ID" ] || [ -z "$APPLE_APP_PASSWORD" ]; then
+            echo "::error::App signée mais secrets de notarisation absents (APPLE_ID, APPLE_TEAM_ID, APPLE_APP_PASSWORD)."; exit 1
+          fi
+          ditto -c -k --keepParent native/build/Studio.app "$RUNNER_TEMP/notarisation.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/notarisation.zip" --wait --timeout 15m \
+            --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD"
+          xcrun stapler staple native/build/Studio.app
+          # Ce que fera Gatekeeper chez l'utilisateur : doit répondre « accepted, source=Notarized Developer ID ».
+          spctl --assess --type execute --verbose=2 native/build/Studio.app
       - name: Archiver
         run: ditto -c -k --keepParent native/build/Studio.app Studio-macOS.zip
       - uses: actions/upload-artifact@v7

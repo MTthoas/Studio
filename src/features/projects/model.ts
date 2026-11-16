@@ -2,7 +2,9 @@
 //
 //   ```projet
 //   nom: Studio
-//   dépôts: MTthoas/Studio, MTthoas/studio-site     (le premier est le principal)
+//   dépôts: MTthoas/Studio (app), MTthoas/studio-site (site), MTthoas/studio-api (api)
+//                                                   (le premier est le principal ; le rôle entre
+//                                                    parenthèses est facultatif, deviné du nom sinon)
 //   linear: Studio                                  (projet Linear, facultatif)
 //   site: https://studio.example.com                (site web du projet, facultatif)
 //   ```
@@ -11,7 +13,7 @@
 // une note qui le porte). Le dossier local du projet n'est jamais écrit dans les notes : il reste sur le Mac.
 import * as store from '../../core/store.ts';
 import { fold } from '../../lib/fuzzy.ts';
-import { hue } from '../../ui/kit.ts';
+import { hue, icon } from '../../ui/kit.ts';
 import type { Note } from '../../types.ts';
 
 export interface Project {
@@ -24,12 +26,63 @@ export interface Project {
   tag: string;
   /** Dépôts GitHub « propriétaire/nom » ; le premier est le principal. */
   repos: string[];
+  /** Les mêmes dépôts, avec leur rôle dans le projet (même ordre que `repos`). */
+  stack: Repo[];
   /** Nom du projet Linear associé, s'il y en a un. */
   linear: string | null;
   /** Site web du projet (https uniquement). */
   site: string | null;
   hue: string;
 }
+
+/** Rôle d'un dépôt dans le projet : l'app, son site, son API… */
+export type Role = 'app' | 'site' | 'api' | 'mobile' | 'docs' | 'infra' | 'lib' | 'autre';
+export interface Repo { name: string; role: Role }
+export const ROLES: Record<Role, { label: string; icon: string; hue: string; hint: string }> = {
+  app: { label: 'App', icon: 'code', hue: 'indigo', hint: 'le produit lui-même' },
+  site: { label: 'Site', icon: 'link', hue: 'teal', hint: 'site web, vitrine, front' },
+  api: { label: 'API', icon: 'plug', hue: 'orange', hint: 'backend, serveur' },
+  mobile: { label: 'Mobile', icon: 'phone', hue: 'pink', hint: 'iOS, Android' },
+  docs: { label: 'Docs', icon: 'notes', hue: 'amber', hint: 'documentation' },
+  infra: { label: 'Infra', icon: 'server', hue: 'gray', hint: 'déploiement, CI, config' },
+  lib: { label: 'Bibliothèque', icon: 'bolt', hue: 'violet', hint: 'SDK, paquet partagé' },
+  autre: { label: 'Autre', icon: 'github', hue: 'blue', hint: '' },
+};
+export const ROLE_ORDER = Object.keys(ROLES) as Role[];
+const ALIASES: [RegExp, Role][] = [
+  [/^(app|application|produit|core)$/, 'app'], [/^(site|web|www|vitrine|front|frontend|landing)$/, 'site'],
+  [/^(api|back|backend|serveur|server)$/, 'api'], [/^(mobile|ios|android)$/, 'mobile'], [/^(docs?|documentation)$/, 'docs'],
+  [/^(infra|ops|deploy|devops|ci)$/, 'infra'], [/^(lib|bibliotheque|sdk|paquet|package)$/, 'lib'], [/^(autre|other)$/, 'autre'],
+];
+/** Lit un rôle écrit à la main (« web », « backend »…), null s'il n'est pas reconnu. */
+export function roleOf(word: string): Role | null { const w = fold(word.trim()); return ALIASES.find(([re]) => re.test(w))?.[1] ?? null; }
+/** Devine le rôle d'un dépôt à son nom : …-site, …-api, …-ios… ; sinon le principal est l'app, les autres « autre ». */
+export function guessRole(repo: string, main: boolean): Role {
+  const n = fold(repo.split('/')[1] ?? repo);
+  if (/(^|[-_.])(site|web|www|landing|vitrine|front(end)?)([-_.]|$)|\.github\.io$/.test(n)) return 'site';
+  if (/(^|[-_.])(api|back(end)?|server|serveur)([-_.]|$)/.test(n)) return 'api';
+  if (/(^|[-_.])(ios|android|mobile)([-_.]|$)/.test(n)) return 'mobile';
+  if (/(^|[-_.])docs?([-_.]|$)/.test(n)) return 'docs';
+  if (/(^|[-_.])(infra|ops|deploy|terraform|k8s|helm)([-_.]|$)/.test(n)) return 'infra';
+  if (/(^|[-_.])(sdk|lib|core|shared|ui)([-_.]|$)/.test(n)) return 'lib';
+  return main ? 'app' : 'autre';
+}
+const ENTRY_RE = /(?:https:\/\/github\.com\/)?([\w.-]+\/[\w.-]+?)(?:\.git)?(?:\s*\(\s*([^)]*?)\s*\))?(?=[\s,;]|$)/g;
+/** Lit la valeur du champ dépôts : « a/b (site), c/d ». */
+export function parseRepos(v: string): Repo[] {
+  const out: Repo[] = [];
+  for (const m of v.matchAll(ENTRY_RE)) {
+    const name = m[1] ?? ''; if (!REPO_RE.test(name) || out.some(r => r.name.toLowerCase() === name.toLowerCase())) continue;
+    out.push({ name, role: (m[2] && roleOf(m[2])) || guessRole(name, !out.length) });
+  }
+  return out;
+}
+/** Écrit la valeur du champ dépôts, rôle toujours explicite pour qu'il se lise dans la note. */
+export const formatRepos = (list: Repo[]): string => list.map(r => `${r.name} (${r.role})`).join(', ');
+/** Pastille teintée d'un rôle (« ⌁ API »), partout où un dépôt est nommé. */
+export const roleTag = (role: Role, cls = ''): string => { const r = ROLES[role]; return `<span class="pj-role${cls ? ` ${cls}` : ''}" style="--c:var(--c-${r.hue})">${icon(r.icon)}${r.label}</span>`; };
+/** Le dépôt d'un projet qui correspond à un nom « propriétaire/nom » (casse ignorée). */
+export const repoNamed = (p: Project, name: string | null | undefined): Repo | null => (name ? p.stack.find(r => r.name.toLowerCase() === name.toLowerCase()) ?? null : null);
 
 const BLOCK_RE = /^```projet[ \t]*\n([\s\S]*?)\n```[ \t]*$/m;
 const REPO_RE = /^[\w.-]+\/[\w.-]+$/;
@@ -41,18 +94,18 @@ export const slugify = (s: string): string => fold(s).replace(/[^a-z0-9]+/g, '-'
 export function parse(n: Note): Project | null {
   const body = store.getBody(n); if (!body || !body.includes('```projet')) return null;
   const m = body.match(BLOCK_RE); if (!m) return null;
-  let name = n.title.trim(), repos: string[] = [], linear: string | null = null, site: string | null = null;
+  let name = n.title.trim(), stack: Repo[] = [], linear: string | null = null, site: string | null = null;
   for (const line of (m[1] ?? '').split('\n')) {
     const kv = line.match(/^\s*([\p{L}]+)\s*:\s*(.*)$/u); if (!kv) continue;
     const k = fold(kv[1] ?? ''), v = (kv[2] ?? '').trim();
     if (k === 'nom' || k === 'name') name = v || name;
-    else if (k === 'depot' || k === 'depots' || k === 'repo' || k === 'repos' || k === 'github') repos = v.split(/[,\s]+/).map(r => r.replace(/^https:\/\/github\.com\//, '').replace(/\.git$/, '')).filter(r => REPO_RE.test(r));
+    else if (k === 'depot' || k === 'depots' || k === 'repo' || k === 'repos' || k === 'github') stack = parseRepos(v);
     else if (k === 'linear') linear = v || null;
     else if (k === 'site' || k === 'url' || k === 'web') site = /^https:\/\/[^\s]+$/i.test(v) ? v : null;
   }
   name = name || 'Projet';
   const slug = slugify(name);
-  return { id: n.id, note: n, name, slug, tag: `projet/${slug}`, repos, linear, site, hue: hue(slug) };
+  return { id: n.id, note: n, name, slug, tag: `projet/${slug}`, repos: stack.map(r => r.name), stack, linear, site, hue: hue(slug) };
 }
 
 let cache: { idx: object; list: Project[]; ofNote: Map<string, Project | null> } | null = null;
@@ -115,9 +168,12 @@ export async function setField(p: Project, key: 'dépôts' | 'linear' | 'site', 
 }
 
 /** Crée la note d'un projet. */
-export async function createProject({ name, repos, linear, site, description }: { name: string; repos: string[]; linear: string | null; site?: string | null; description?: string }): Promise<Project> {
-  const clean = repos.map(r => r.trim()).filter(r => REPO_RE.test(r));
-  const block = ['```projet', `nom: ${name.trim()}`, ...(clean.length ? [`dépôts: ${clean.join(', ')}`] : []), ...(linear ? [`linear: ${linear}`] : []), ...(site && /^https:\/\//.test(site) ? [`site: ${site}`] : []), '```'].join('\n');
+/** Remplace la liste des dépôts du projet (ordre, rôles). */
+export const setRepos = (p: Project, list: Repo[]): Promise<void> => setField(p, 'dépôts', formatRepos(list));
+
+export async function createProject({ name, repos, linear, site, description }: { name: string; repos: Repo[]; linear: string | null; site?: string | null; description?: string }): Promise<Project> {
+  const clean = repos.filter((r, i) => REPO_RE.test(r.name) && repos.findIndex(x => x.name.toLowerCase() === r.name.toLowerCase()) === i);
+  const block = ['```projet', `nom: ${name.trim()}`, ...(clean.length ? [`dépôts: ${formatRepos(clean)}`] : []), ...(linear ? [`linear: ${linear}`] : []), ...(site && /^https:\/\//.test(site) ? [`site: ${site}`] : []), '```'].join('\n');
   const n = await store.createNote({ title: name.trim(), body: `${description?.trim() || 'Ce que ce projet doit accomplir, ses liens utiles, ses décisions.'}\n\n${block}\n` });
   const p = parse(n);
   if (!p) throw new Error('Projet invalide.');

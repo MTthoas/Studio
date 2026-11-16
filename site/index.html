@@ -13,255 +13,647 @@
   <meta property="og:url" content="https://mtthoas.github.io/Studio/">
   <link rel="canonical" href="https://mtthoas.github.io/Studio/">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="fonts/inter.woff2" as="font" type="font/woff2" crossorigin>
+  <script src="boot.js"></script>
   <link rel="stylesheet" href="site.css">
+  <link rel="stylesheet" href="maquette.css">
 </head>
 <body>
-  <a class="skip" href="#notes">Aller au contenu</a>
+  <!-- Icônes de l'app (src/ui/kit.ts), dessinées une fois et reprises par <use> : viewBox 24, trait 1.6 -->
+  <svg class="sprite" aria-hidden="true" focusable="false">
+    <symbol id="s-home" viewBox="0 0 24 24"><path d="M4 10.5L12 4l8 6.5V20h-5.5v-5.5h-5V20H4z"/></symbol>
+    <symbol id="s-inbox" viewBox="0 0 24 24"><path d="M3.5 13.5l3-8.5h11l3 8.5v5.5h-17z"/><path d="M3.5 13.5h5l1 2.5h5l1-2.5h5"/></symbol>
+    <symbol id="s-today" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M2.5 12h2M19.5 12h2M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></symbol>
+    <symbol id="s-journal" viewBox="0 0 24 24"><path d="M6.5 3.5h11a1.5 1.5 0 011.5 1.5v14a1.5 1.5 0 01-1.5 1.5h-11A1.5 1.5 0 015 19V5a1.5 1.5 0 011.5-1.5z"/><path d="M9 3.5v17M12 8h4M12 11.5h4"/></symbol>
+    <symbol id="s-notes" viewBox="0 0 24 24"><path d="M6 3.5h8.5L19 8v12.5H6z"/><path d="M14 3.5V8.5h5M9.5 13h5.5M9.5 16.5h5.5"/></symbol>
+    <symbol id="s-folder" viewBox="0 0 24 24"><path d="M3.5 7.5a2 2 0 012-2h4l2 2h7a2 2 0 012 2v7.5a2 2 0 01-2 2h-13a2 2 0 01-2-2z"/></symbol>
+    <symbol id="s-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+    <symbol id="s-bot" viewBox="0 0 24 24"><circle cx="6" cy="6.5" r="2.5"/><circle cx="18" cy="17.5" r="2.5"/><path d="M8.5 6.5H14a4 4 0 014 4V15"/><path d="M15.6 12.6L18 15l2.4-2.4"/></symbol>
+    <symbol id="s-linear" viewBox="0 0 24 24"><path d="M4.2 13.6l6.2 6.2M3.6 10.2l10.2 10.2M4.8 6.9l12.3 12.3M7.5 4.5l12 12M11 3.6l9.4 9.4"/></symbol>
+    <symbol id="s-github" viewBox="0 0 24 24"><path d="M9.5 20.5v-3c-3.5 1-4.5-1.5-5.5-2M14.5 20.5v-3.2c0-1 .1-1.6-.5-2.3 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 00-1.3-3.2 4.2 4.2 0 00-.1-3.2s-1-.3-3.4 1.3a11.8 11.8 0 00-6 0C6.3 2.3 5.3 2.6 5.3 2.6a4.2 4.2 0 00-.1 3.2A4.6 4.6 0 004 9c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2.3"/></symbol>
+    <symbol id="s-graph" viewBox="0 0 24 24"><circle cx="6" cy="7" r="2.3"/><circle cx="18" cy="9" r="2.3"/><circle cx="11" cy="18" r="2.3"/><path d="M8.3 7.4l7.4 1.2M7 9.1l3 6.8M16.5 10.8l-4 5.4"/></symbol>
+    <symbol id="s-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M10 11v6M14 11v6M6.5 7l1 13h9l1-13M9.5 7V4.5h5V7"/></symbol>
+    <symbol id="s-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M9.6 9.5a2.5 2.5 0 014.9.7c0 1.7-2.5 2.2-2.5 3.6M12 16.8h.01"/></symbol>
+    <symbol id="s-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.3"/><path d="M15.8 15.8l4.7 4.7"/></symbol>
+    <symbol id="s-compose" viewBox="0 0 24 24"><path d="M11.5 5H5v14h14v-6.5"/><path d="M18.3 3.7a1.9 1.9 0 012.7 2.7l-9 9-3.6.9.9-3.6z"/></symbol>
+    <symbol id="s-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="s-chevron" viewBox="0 0 24 24"><path d="M8 10l4 4 4-4"/></symbol>
+    <symbol id="s-chevronRight" viewBox="0 0 24 24"><path d="M10 8l4 4-4 4"/></symbol>
+    <symbol id="s-back" viewBox="0 0 24 24"><path d="M14.5 5.5L8 12l6.5 6.5"/></symbol>
+    <symbol id="s-sidebar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.8"/><path d="M9 5v14"/></symbol>
+    <symbol id="s-split" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2.8"/><path d="M12 5v14"/></symbol>
+    <symbol id="s-pencil" viewBox="0 0 24 24"><path d="M4.5 19.5l1-4L16.6 4.4a2 2 0 012.9 2.9L8.5 18.5z"/></symbol>
+    <symbol id="s-eye" viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="2.8"/></symbol>
+    <symbol id="s-more" viewBox="0 0 24 24"><circle cx="5.5" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="18.5" cy="12" r="1.4" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="s-sparkle" viewBox="0 0 24 24"><path d="M4.5 6.5a2 2 0 012-2h11a2 2 0 012 2v8a2 2 0 01-2 2H11l-4.5 3.5V16.5a2 2 0 01-2-2z"/><path d="M9 10.5h.01M12 10.5h.01M15 10.5h.01"/></symbol>
+    <symbol id="s-shield" viewBox="0 0 24 24"><path d="M12 3.5l7 2.8v5.4c0 4.4-3 7.6-7 8.8-4-1.2-7-4.4-7-8.8V6.3z"/><path d="M9 12l2.2 2.2L15.5 10"/></symbol>
+    <symbol id="s-devices" viewBox="0 0 24 24"><rect x="2.5" y="5" width="13" height="9.5" rx="1.5"/><path d="M1.5 18h15"/><rect x="17" y="8" width="5.5" height="11" rx="1.3"/></symbol>
+    <symbol id="s-phone" viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M10.5 18.5h3"/></symbol>
+    <symbol id="s-pin" viewBox="0 0 24 24"><path d="M9 4h6l-.8 5.5L17 12.5v2H7v-2l2.8-3z"/><path d="M12 14.5v6"/></symbol>
+    <symbol id="s-link" viewBox="0 0 24 24"><path d="M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1"/></symbol>
+    <symbol id="s-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></symbol>
+    <symbol id="s-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0013 0M12 18v3"/></symbol>
+    <symbol id="s-history" viewBox="0 0 24 24"><path d="M4 12a8 8 0 102.5-5.8L4 8.5"/><path d="M4 4.5v4h4M12 8v4.3l2.8 1.8"/></symbol>
+    <symbol id="s-bolt" viewBox="0 0 24 24"><path d="M13 2.5L5.5 13.5h5.5l-1 8 7.5-11H12z"/></symbol>
+    <symbol id="s-list" viewBox="0 0 24 24"><path d="M8.5 7h11M8.5 12h11M8.5 17h11"/><circle cx="4.5" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="17" r="1" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="s-board" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="5" height="15" rx="1.5"/><rect x="9.5" y="4.5" width="5" height="10" rx="1.5"/><rect x="15.5" y="4.5" width="5" height="12.5" rx="1.5"/></symbol>
+  </svg>
 
-  <header class="nav" data-nav>
-    <div class="wrap nav-in">
-      <a class="brand" href="#top" aria-label="Studio, retour en haut">
-        <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="4.2" cy="10" r="2.7" fill="currentColor"/><rect x="10" y="1" width="2.4" height="18" rx="1.2" fill="#F04A23"/></svg>
-        <span>Studio</span>
-      </a>
-      <nav class="nav-links" aria-label="Sections">
-        <a href="#notes">Notes</a>
-        <a href="#ia">IA</a>
+  <a class="skip" href="#ecrire">Aller au contenu</a>
+
+  <!-- Barre fixe : transparente en haut de page, givrée dès qu'on défile ; le lien de la section à l'écran s'allume (site.js) -->
+  <div class="bar" data-nav>
+    <div class="wrap">
+      <nav class="nav" aria-label="Sections">
+        <a class="brand" href="#top" aria-label="Studio, retour en haut">
+          <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="4.2" cy="10" r="2.7" fill="currentColor"/><rect x="10" y="1" width="2.4" height="18" rx="1.2" fill="#F04A23"/></svg>
+          <span>Studio</span>
+        </a>
+        <a href="#ecrire">Écrire</a>
+        <a href="#taches">Tâches</a>
         <a href="#agents">Agents</a>
         <a href="#securite">Sécurité</a>
-        <a href="#faq">FAQ</a>
+        <a href="#installer">Installer</a>
+        <a href="https://github.com/MTthoas/Studio" rel="noopener">GitHub</a>
+        <a class="go sm" href="https://github.com/MTthoas/Studio/releases/latest" rel="noopener">Télécharger</a>
       </nav>
-      <div class="nav-cta">
-        <a class="btn btn-ghost" href="https://github.com/MTthoas/Studio" rel="noopener">GitHub</a>
-        <a class="btn btn-primary" href="https://github.com/MTthoas/Studio/releases/latest" rel="noopener">Télécharger</a>
+    </div>
+  </div>
+
+  <header class="top" id="top">
+    <!-- Le fond : une mer en grain et, loin sur l'horizon, le logo dans son halo. Shader WebGL de sea.js ; sans WebGL, le dégradé de .sea reste seul. -->
+    <div class="sea" aria-hidden="true"><canvas data-sea="hero"></canvas></div>
+    <div class="wrap">
+
+      <!-- Le message, puis la fiche technique sur une ligne -->
+      <div class="hero">
+        <div class="hero-txt">
+          <h1><span class="ln"><span>Des notes qui passent</span></span> <span class="ln"><span>à l’action<i class="caret" aria-hidden="true"></i></span></span></h1>
+          <p class="lead">Studio est un carnet Markdown où l’IA travaille avec toi. Elle lit ce que tu écris, range tes captures, exécute tes routines et confie le code à Claude Code. Tout est chiffré et reste sur tes appareils.</p>
+          <p class="acts">
+            <a class="go" href="https://github.com/MTthoas/Studio/releases/latest" rel="noopener">Télécharger pour Mac</a>
+            <a class="wl" href="https://github.com/MTthoas/Studio" rel="noopener">Voir le code</a>
+          </p>
+          <p class="sys">macOS 13 ou plus · Apple Silicon et Intel · environ 1 Mo</p>
+        </div>
       </div>
+      <dl class="facts">
+        <div><dt>Prix</dt><dd>Gratuit, sans compte</dd></div>
+        <div><dt>Licence</dt><dd>AGPL-3.0, code ouvert</dd></div>
+        <div><dt>Données</dt><dd>Sur tes appareils, chiffrées</dd></div>
+        <div><dt>IA</dt><dd>Claude, OpenAI ou local</dd></div>
+        <div><dt>Plateformes</dt><dd>Mac, iPhone, iPad, web</dd></div>
+      </dl>
+
+      <!-- Maquette fidèle de l'app (maquette.css) : l'Accueil, tel que src/features/home.ts le dessine.
+           Penchée en arrière à l'ouverture, elle se redresse au défilement (site.js, [data-unfold]). -->
+      <figure class="shot shot-hero" data-unfold>
+        <div class="studio-fit" data-fit>
+          <div class="studio dark" role="img" aria-label="L’accueil de Studio : la date, une phrase de situation, la capture rapide, puis les tâches à faire, les notes à reprendre, les nouveautés Linear et GitHub, les automatisations et les connexions">
+            <div class="sidebar">
+              <div class="side-head">
+                <span class="ws"><svg class="logo" viewBox="0 0 20 20"><circle cx="4.2" cy="10" r="2.7" fill="currentColor"/><rect x="10" y="1" width="2.4" height="18" rx="1.2" fill="#F04A23"/></svg><span>Studio</span><svg class="ic"><use href="#s-chevron"/></svg></span>
+                <span class="icon-btn"><svg class="ic"><use href="#s-search"/></svg></span>
+                <span class="icon-btn"><svg class="ic"><use href="#s-compose"/></svg></span>
+              </div>
+              <div class="side-scroll">
+                <div class="side-group">
+                  <span class="side-item sel h-gray"><svg class="ic"><use href="#s-home"/></svg><span>Accueil</span></span>
+                </div>
+                <div class="side-group"><span class="side-label">Notes</span>
+                  <span class="side-item h-blue"><svg class="ic"><use href="#s-inbox"/></svg><span>Boîte de réception</span><span class="side-count">3</span></span>
+                  <span class="side-item h-amber"><svg class="ic"><use href="#s-today"/></svg><span>Aujourd’hui</span></span>
+                  <span class="side-item h-pink"><svg class="ic"><use href="#s-journal"/></svg><span>Journal</span></span>
+                  <span class="side-item h-gray"><svg class="ic"><use href="#s-notes"/></svg><span>Toutes les notes</span></span>
+                </div>
+                <div class="side-group"><span class="side-label">Organisation</span>
+                  <span class="side-item h-orange"><svg class="ic"><use href="#s-folder"/></svg><span>Projets</span></span>
+                  <span class="side-item side-sub h-blue"><i class="tag-dot"></i><span>Atlas</span></span>
+                  <span class="side-item side-sub h-teal"><i class="tag-dot"></i><span>Site perso</span></span>
+                  <span class="side-item h-green"><svg class="ic"><use href="#s-check"/></svg><span>Tâches</span><span class="side-count">6</span></span>
+                  <span class="side-item h-violet"><svg class="ic"><use href="#s-bot"/></svg><span>Automatisations</span></span>
+                </div>
+                <div class="side-group"><span class="side-label">Connexions</span>
+                  <span class="side-item h-indigo"><svg class="ic"><use href="#s-linear"/></svg><span>Linear</span><span class="side-count">2</span></span>
+                  <span class="side-item h-gray"><svg class="ic"><use href="#s-github"/></svg><span>GitHub</span><span class="side-count">4</span></span>
+                </div>
+                <div class="side-group"><span class="side-label">Tags<svg class="ic"><use href="#s-chevronRight"/></svg></span></div>
+                <div class="side-group"><span class="side-label">Explorer</span>
+                  <span class="side-item h-teal"><svg class="ic"><use href="#s-graph"/></svg><span>Graphe</span></span>
+                  <span class="side-item h-gray"><svg class="ic"><use href="#s-trash"/></svg><span>Corbeille</span></span>
+                  <span class="side-item h-blue"><svg class="ic"><use href="#s-help"/></svg><span>Aide</span></span>
+                </div>
+              </div>
+              <div class="side-foot"><svg class="ic"><use href="#s-shield"/></svg><span>Chiffré de bout en bout</span><span class="side-count"><svg class="ic"><use href="#s-devices"/></svg>2</span></div>
+            </div>
+            <div class="main">
+              <div class="toolbar">
+                <div class="tb-side"><span class="icon-btn"><svg class="ic"><use href="#s-sidebar"/></svg></span></div>
+                <div class="crumb"><span class="crumb-cur">Accueil</span></div>
+                <div class="tb-side tb-right">
+                  <span class="btn btn-ghost"><svg class="ic"><use href="#s-help"/></svg><span>Aide</span></span>
+                  <span class="btn btn-ghost"><svg class="ic"><use href="#s-sparkle"/></svg><span>Demander</span></span>
+                </div>
+              </div>
+              <div class="home"><div class="home-in">
+                <p class="hm-date">jeudi 12 novembre</p>
+                <p class="hm-hello">Bonjour.</p>
+                <p class="hm-sum"><span class="late">1 tâche en retard</span><i>·</i><span>2 pour aujourd’hui</span><i>·</i><span>2 notifications Linear</span><i>·</i><span>4 nouveautés GitHub</span></p>
+                <div class="hm-capture"><span>Note une idée ou une tâche… (#todo pour une tâche, #tag pour ranger)</span><span class="icon-btn"><svg class="ic"><use href="#s-mic"/></svg></span><kbd>↵</kbd></div>
+                <div class="hm-grid">
+                  <div class="hm-col">
+                    <div class="hm-sec">
+                      <header><span class="hm-h h-green">À faire</span></header>
+                      <div class="hm-task"><i class="cb"></i><span>Relancer Paul pour le devis</span><em class="td-due late">hier</em></div>
+                      <div class="hm-task"><i class="cb"></i><span>Écrire l’annonce de la bêta</span><em>1/3</em><em class="td-due today">aujourd’hui</em></div>
+                      <div class="hm-task"><i class="cb"></i><span>Export CSV des écritures</span><em class="hm-ticket">ATL-42</em><em class="td-due today">aujourd’hui</em></div>
+                      <div class="hm-task"><i class="cb"></i><span>Relire le schéma de la base</span><em>Lancement Atlas</em></div>
+                      <div class="hm-task"><i class="cb"></i><span>Réserver le train pour Lyon</span><em class="td-due">lundi</em></div>
+                      <span class="hm-more">1 de plus</span>
+                    </div>
+                    <div class="hm-sec">
+                      <header><span class="hm-h">Reprendre</span></header>
+                      <div class="hm-notes">
+                        <div class="hm-note"><strong><svg class="ic"><use href="#s-pin"/></svg>Lancement Atlas</strong><p>Décidé avec Paul : la bêta sort le 26. Reste l’export CSV et l’annonce à écrire.</p><span>il y a 2 min</span></div>
+                        <div class="hm-note"><strong>Revue du 9 novembre</strong><p>Trois sujets : la pagination des comptes, le thème sombre, le site.</p><span>hier</span></div>
+                        <div class="hm-note"><strong>Idées d’annonce</strong><p>Une vidéo de trente secondes, puis un billet plus long sur le chiffrement.</p><span>mardi</span></div>
+                        <div class="hm-note"><strong>Paul Martin</strong><p>Responsable produit. Préfère un message court à un appel.</p><span>5 nov.</span></div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="hm-col">
+                    <div class="hm-sec">
+                      <header><span class="hm-h">Quoi de neuf</span></header>
+                      <div class="hm-feed"><svg class="ic"><use href="#s-linear"/></svg><span>Paul t’a assigné ATL-51 : Revoir la page des tarifs</span><em>il y a 20 min</em></div>
+                      <div class="hm-feed read"><svg class="ic"><use href="#s-github"/></svg><span>paul-m a ouvert la pull request #45 <small>atlas</small></span><em>il y a 1 h</em></div>
+                      <div class="hm-feed read"><svg class="ic"><use href="#s-linear"/></svg><span>ATL-39 est passé à « En cours »</span><em>hier</em></div>
+                    </div>
+                    <div class="hm-sec">
+                      <header><span class="hm-h">Automatisations</span></header>
+                      <div class="hm-agent"><i class="st ok"></i><span>Revue du matin</span><em>jours ouvrés 8h30</em><span class="icon-btn"><svg class="ic"><use href="#s-play"/></svg></span></div>
+                      <div class="hm-agent"><i class="st ok"></i><span>Tri des captures</span><em>hier</em><span class="icon-btn"><svg class="ic"><use href="#s-play"/></svg></span></div>
+                    </div>
+                    <div class="hm-sec">
+                      <header><span class="hm-h">Connexions</span><span class="hm-meta">Synchroniser</span></header>
+                      <div class="hm-conn"><svg class="ic"><use href="#s-linear"/></svg><div><strong>Linear</strong><span>Tickets, projets, notifications</span></div><i class="st ok"></i></div>
+                      <div class="hm-conn"><svg class="ic"><use href="#s-github"/></svg><div><strong>GitHub</strong><span>Actualité de tes dépôts</span></div><i class="st ok"></i></div>
+                      <div class="hm-conn"><svg class="ic"><use href="#s-phone"/></svg><div><strong>Téléphone</strong><span>iPhone</span></div><i class="st ok"></i></div>
+                    </div>
+                  </div>
+                </div>
+              </div></div>
+            </div>
+          </div>
+        </div>
+        <figcaption class="cap">L’accueil de Studio, en thème sombre. Les données sont des exemples.</figcaption>
+      </figure>
     </div>
   </header>
 
-  <main id="top">
-    <!-- Héros -->
-    <section class="hero">
+  <main>
+    <!-- Écrire -->
+    <section class="sec" id="ecrire">
       <div class="wrap">
-        <h1>Des notes qui passent<br>à l’action.</h1>
-        <p class="lead">Studio est un carnet Markdown où l’IA travaille avec toi. Elle lit ce que tu écris, range tes captures, exécute tes routines et confie le code à Claude Code. Tout est chiffré et reste sur tes appareils.</p>
-        <div class="cta">
-          <a class="btn btn-primary btn-lg" href="https://github.com/MTthoas/Studio/releases/latest" rel="noopener">Télécharger pour Mac</a>
-          <a class="btn btn-lg" href="#notes">Découvrir <span aria-hidden="true">→</span></a>
-        </div>
-        <p class="hero-note">Gratuit et libre · Mac, iPhone et web · Sans compte</p>
-      </div>
+        <div class="rail"><p class="rail-k"><i>##</i>Écrire</p></div>
+        <div>
+          <h2 data-reveal>Du texte simple, rien à apprendre.</h2>
+          <p class="lead" data-reveal>Écris à gauche : quelques signes suffisent à donner vie au texte. Coche une case à droite, la note se réécrit.</p>
 
-      <!-- Maquette du produit, dessinée en HTML : une note, et Claude à côté -->
-      <div class="wrap">
-        <div class="mock" aria-hidden="true">
-          <aside class="mock-list">
-            <small>Notes</small>
-            <p class="sel">Lancement Atlas<span>il y a 2 min</span></p>
-            <p>Revue du 3 novembre<span>hier</span></p>
-            <p>Paul Martin<span>lundi</span></p>
-            <p>Idées d’annonce<span>28 oct.</span></p>
-            <small>Automatisations</small>
-            <p>Revue du matin<span>jours ouvrés 9h</span></p>
-            <p>Tri des captures<span>à chaque capture</span></p>
-          </aside>
-          <article class="mock-note">
-            <h2>Lancement Atlas</h2>
-            <p class="tags"><b>#projet/atlas</b><b>#réunion</b></p>
-            <p>Décidé avec <a>[[Paul Martin]]</a> : la bêta sort le 12.</p>
-            <ul>
-              <li><i class="box done"></i><s>Figer le périmètre</s></li>
-              <li><i class="box doing"></i>Export CSV des écritures</li>
-              <li><i class="box"></i>Écrire l’annonce</li>
-            </ul>
-            <p>Budget sur l’année : <code>= 1200 * 12</code> <em>14 400</em></p>
-            <p class="muted">Cité par <a>[[Revue du 3 novembre]]</a></p>
-          </article>
-          <aside class="mock-ai">
-            <div class="ai-h"><i class="live"></i>Claude<span>Atlas</span></div>
-            <p class="you">Qu’est-ce qui bloque la bêta ?</p>
-            <p class="bot">Deux points restent ouverts : l’export CSV, en cours, et l’annonce, pas commencée. La CI est au vert depuis la revue du 3.</p>
-            <p class="src"><span>Lancement Atlas</span><span>Revue du 3 novembre</span></p>
-            <div class="ask">
-              <p>Créer la tâche « Écrire l’annonce » pour jeudi ?</p>
-              <div><b>Accepter</b><span>Refuser</span></div>
+          <div class="block" data-reveal>
+            <div class="pad">
+              <div class="pad-col">
+                <p class="pad-k">lancement-atlas.md<span>Markdown</span></p>
+                <div class="pad-edit"><pre class="pad-hl" data-pad-hl aria-hidden="true"></pre><textarea data-pad-src spellcheck="false" aria-label="Note en Markdown, modifiable"># Lancement Atlas
+Décidé avec [[Paul Martin]] : la bêta sort le 12. #réunion #projet/atlas
+
+- [x] Figer le périmètre
+- [ ] Export CSV des écritures
+- [ ] Écrire l’annonce
+
+Budget sur l’année : `= 1200 * 12`
+Pause : [timer 25m]</textarea></div>
+              </div>
+              <div class="pad-col">
+                <p class="pad-k">Rendu</p>
+                <div class="pad-out" data-pad-out>
+                  <p class="o-h">Lancement Atlas</p>
+                  <p class="o-p">Décidé avec <span class="o-link">Paul Martin</span> : la bêta sort le 12. <span class="o-tag">#réunion</span> <span class="o-tag">#projet/atlas</span></p>
+                </div>
+              </div>
+              <p class="pad-stat" data-pad-stat>2 tâches à faire · 1 lien · 2 tags</p>
             </div>
-          </aside>
+            <div class="pad-chips">
+              <span>Ajoute à la note</span>
+              <button type="button" data-pad-add="Voir aussi [[Revue du 3 novembre]]">[[Lien]]</button>
+              <button type="button" data-pad-add="- [ ] Appeler Paul demain">- [ ] Tâche</button>
+              <button type="button" data-pad-add="#idées">#tag</button>
+              <button type="button" data-pad-add="Par mois : `= 14400 / 12`">`= calcul`</button>
+              <button type="button" data-pad-add="[timer 5m]">[timer]</button>
+              <button type="button" data-pad-add="**Important** : prévenir l’équipe">**gras**</button>
+            </div>
+          </div>
+
+          <!-- Maquette fidèle : la liste des notes et une note ouverte en lecture -->
+          <figure class="shot block" data-reveal>
+            <div class="studio-fit" data-fit="1040">
+              <div class="studio dark no-side short" role="img" aria-label="Une note ouverte dans Studio : la liste des notes, puis la note avec ses tags, ses liens, ses tâches, un calcul, un minuteur et ses rétroliens">
+                <div class="list">
+                  <div class="list-head"><p class="lh h-gray"><svg class="ic"><use href="#s-notes"/></svg>Toutes les notes</p><span>7 notes</span><span class="icon-btn"><svg class="ic"><use href="#s-plus"/></svg></span></div>
+                  <div class="list-scroll">
+                    <div class="note-item sel"><div class="ni-row"><span class="ni-title"><svg class="ic"><use href="#s-pin"/></svg>Lancement Atlas</span><span class="ni-date">2 min</span></div><span class="ni-sub">Décidé avec Paul : la bêta sort le 26. Reste l’export CSV…</span></div>
+                    <div class="note-item"><div class="ni-row"><span class="ni-title">Revue du 9 novembre</span><span class="ni-date">hier</span></div><span class="ni-sub">Trois sujets : la pagination des comptes, le thème sombre…</span></div>
+                    <div class="note-item"><div class="ni-row"><span class="ni-title">Idées d’annonce</span><span class="ni-date">mardi</span></div><span class="ni-sub">Une vidéo de trente secondes, puis un billet plus long…</span></div>
+                    <div class="note-item"><div class="ni-row"><span class="ni-title">Paul Martin</span><span class="ni-date">5 nov.</span></div><span class="ni-sub">Responsable produit. Préfère un message court à un appel.</span></div>
+                    <div class="note-item"><div class="ni-row"><span class="ni-title">Schéma de la base</span><span class="ni-date">3 nov.</span></div><span class="ni-sub">Deux tables : comptes et écritures. Les montants sont en…</span></div>
+                    <div class="note-item"><div class="ni-row"><span class="ni-title">Lectures</span><span class="ni-date">28 oct.</span></div><span class="ni-sub">À lire cet hiver, dans l’ordre où on me les a conseillés.</span></div>
+                    <div class="note-item"><div class="ni-row"><span class="ni-title">Recette du pain</span><span class="ni-date">19 oct.</span></div><span class="ni-sub">500 g de farine, 350 g d’eau, 10 g de sel, 100 g de levain.</span></div>
+                  </div>
+                </div>
+                <div class="main">
+                  <div class="toolbar">
+                    <div class="tb-side"><span class="icon-btn"><svg class="ic"><use href="#s-sidebar"/></svg></span></div>
+                    <div class="crumb"><span>Toutes les notes</span><svg class="ic"><use href="#s-chevronRight"/></svg><span class="crumb-cur">Lancement Atlas</span></div>
+                    <div class="tb-side tb-right">
+                      <div class="seg"><span><svg class="ic"><use href="#s-pencil"/></svg></span><span><svg class="ic"><use href="#s-split"/></svg></span><span class="sel"><svg class="ic"><use href="#s-eye"/></svg></span></div>
+                      <span class="btn btn-ghost"><svg class="ic"><use href="#s-sparkle"/></svg><span>Demander</span></span>
+                      <span class="btn btn-ghost"><svg class="ic"><use href="#s-folder"/></svg><span>Atlas</span></span>
+                      <span class="icon-btn"><svg class="ic"><use href="#s-more"/></svg></span>
+                    </div>
+                  </div>
+                  <div class="note">
+                    <div class="note-head"><p class="title">Lancement Atlas</p></div>
+                    <div class="pane-read"><div class="md">
+                      <p><span class="tag">#atlas</span> <span class="tag">#réunion</span></p>
+                      <p>Décidé avec <span class="wikilink">Paul Martin</span> : la bêta sort le 26. Le périmètre est figé, voir <span class="wikilink">Schéma de la base</span>.</p>
+                      <p class="md-h2">Reste à faire</p>
+                      <ul>
+                        <li class="task done"><div class="task-row"><i class="cb on"></i><span>Figer le périmètre</span></div></li>
+                        <li class="task"><div class="task-row"><i class="cb doing"></i><span>Export CSV des écritures</span></div></li>
+                        <li class="task"><div class="task-row"><i class="cb"></i><span>Écrire l’annonce de la bêta</span></div></li>
+                      </ul>
+                      <p class="md-h2">Budget</p>
+                      <p>Hébergement sur l’année : <span class="calc"><span class="calc-expr">12 * 19</span><span class="calc-res">228</span></span></p>
+                      <p>Point hebdomadaire : <span class="timer"><span class="timer-toggle"><svg class="ic"><use href="#s-play"/></svg></span>25:00</span></p>
+                      <div class="backlinks">
+                        <p class="bl-h"><svg class="ic"><use href="#s-link"/></svg>2 rétroliens</p>
+                        <div class="backlink"><strong>Revue du 9 novembre</strong><span>…on garde la date fixée dans Lancement Atlas…</span></div>
+                        <div class="backlink"><strong>Idées d’annonce</strong><span>…à publier le jour du Lancement Atlas…</span></div>
+                      </div>
+                    </div></div>
+                    <div class="status"><span class="save-state">Enregistré sur cet appareil</span><span>2 rétroliens</span><span>41 mots</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <figcaption class="cap">La même note dans l’app : la liste, la lecture, les rétroliens en bas de page.</figcaption>
+          </figure>
         </div>
       </div>
     </section>
 
-    <!-- Notes -->
-    <section class="sec" id="notes">
+    <!-- Faire -->
+    <section class="sec" id="taches">
       <div class="wrap">
-        <header class="sec-h" data-reveal>
-          <div><span class="eyebrow">Notes</span><h2>Du texte simple.<br>Rien à apprendre.</h2></div>
-          <p>Tes notes sont du Markdown, reliées entre elles comme un wiki personnel. Pas de dossiers à ranger, pas de base à configurer : tu écris, et quelques signes suffisent à donner vie au texte.</p>
-        </header>
+        <div class="rail"><p class="rail-k"><i>##</i>Faire</p></div>
+        <div>
+          <h2 data-reveal>Une case dans une note est déjà une tâche.</h2>
+          <p class="lead" data-reveal>Les cases de tes notes et tes tickets Linear se retrouvent au même endroit, en liste ou en Kanban. Chaque tâche garde son échéance, son projet et la note d’où elle vient.</p>
 
-        <dl class="syntax" data-reveal>
-          <div><dt><code>[[Titre]]</code></dt><dd>Un lien vers une autre note. Chacune montre qui la cite, et le graphe dessine l’ensemble.</dd></div>
-          <div><dt><code>#tag</code></dt><dd>Range la note, sans dossier. Une capture sans tag arrive dans la boîte de réception.</dd></div>
-          <div><dt><code>- [ ]</code></dt><dd>Une case à cocher, qui remonte toute seule dans la page Tâches.</dd></div>
-          <div><dt><code>`= 1200 * 12`</code></dt><dd>Un calcul, résolu dans le texte.</dd></div>
-          <div><dt><code>[timer 25m]</code></dt><dd>Un minuteur, dans la note.</dd></div>
-          <div><dt><code>```sql</code></dt><dd>Un diagramme entité-association, exportable en SQL, Mermaid ou SVG.</dd></div>
-          <div><dt><code>```agent</code></dt><dd>Une routine confiée à l’IA, à lancer ou à planifier.</dd></div>
-          <div><dt><code>```projet</code></dt><dd>Un projet : son dossier, ses dépôts GitHub, son projet Linear, son site.</dd></div>
-        </dl>
-
-        <ul class="cols three" data-reveal>
-          <li><h3>Historique</h3><p>Chaque note garde ses versions. Tu reviens en arrière quand tu veux.</p></li>
-          <li><h3>Éphémères</h3><p>Une note peut s’effacer seule, à la date que tu choisis.</p></li>
-          <li><h3>À la voix</h3><p>Sur iPhone, tu dictes et la note s’écrit. La transcription se fait sur l’appareil.</p></li>
-        </ul>
+          <!-- Maquette fidèle : la vue Tâches en Kanban (src/features/board.ts) -->
+          <figure class="shot block" data-reveal>
+            <div class="studio-fit" data-fit="920">
+              <div class="studio dark solo short" role="img" aria-label="La vue Tâches en Kanban : trois colonnes, à faire, en cours et terminées, avec pour chaque tâche son échéance, son projet, son ticket Linear ou sa note d’origine">
+                <div class="main">
+                  <div class="toolbar">
+                    <div class="tb-side"><span class="icon-btn"><svg class="ic"><use href="#s-sidebar"/></svg></span></div>
+                    <div class="crumb"><span class="crumb-cur">Tâches</span></div>
+                  </div>
+                  <div class="todo"><div class="todo-in">
+                    <div class="td-head td-headbar">
+                      <div><p class="td-h1">Tâches</p><p class="td-sub">6 à faire · 2 en cours · 1 en retard</p></div>
+                      <div class="td-tools"><div class="seg td-layout"><span><svg class="ic"><use href="#s-list"/></svg></span><span class="sel"><svg class="ic"><use href="#s-board"/></svg></span></div></div>
+                    </div>
+                    <div class="td-add"><span class="td-plus"><svg class="ic"><use href="#s-plus"/></svg></span><span>Nouvelle tâche, ex. « Appeler Paul demain »</span></div>
+                    <div class="kb">
+                      <div class="kb-col">
+                        <div class="kb-head"><i class="kb-dot h-gray"></i><span>À faire</span><em class="kb-count">4</em></div>
+                        <div class="kb-cards">
+                          <div class="kb-card"><p>Relancer Paul pour le devis</p><footer><span class="td-due late">hier</span></footer></div>
+                          <div class="kb-card"><p>Écrire l’annonce de la bêta</p><footer><span class="td-due today">aujourd’hui</span><span class="pj-chip h-blue">Atlas</span><span class="td-prog">1/3</span></footer></div>
+                          <div class="kb-card"><p>Relire le schéma de la base</p><footer><span class="td-src">Lancement Atlas</span></footer></div>
+                          <div class="kb-card"><p>Réserver le train pour Lyon</p><footer><span class="td-due">lundi</span></footer></div>
+                        </div>
+                      </div>
+                      <div class="kb-col">
+                        <div class="kb-head"><i class="kb-dot h-amber"></i><span>En cours</span><em class="kb-count">2</em></div>
+                        <div class="kb-cards">
+                          <div class="kb-card"><p>Export CSV des écritures</p><footer><span class="td-due today">aujourd’hui</span><span class="pj-chip h-blue">Atlas</span><span class="td-ticket"><svg class="ic"><use href="#s-linear"/></svg>ATL-42</span></footer></div>
+                          <div class="kb-card"><p>Refaire la page d’accueil</p><footer><span class="pj-chip h-teal">Site perso</span></footer></div>
+                        </div>
+                      </div>
+                      <div class="kb-col">
+                        <div class="kb-head"><i class="kb-dot h-green"></i><span>Terminées</span><em class="kb-count">3</em></div>
+                        <div class="kb-cards">
+                          <div class="kb-card done"><p>Figer le périmètre</p><footer><span class="pj-chip h-blue">Atlas</span></footer></div>
+                          <div class="kb-card done"><p>Thème sombre</p><footer><span class="td-src">Revue du 9 novembre</span></footer></div>
+                          <div class="kb-card done"><p>Appeler la banque</p><footer></footer></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div></div>
+                </div>
+              </div>
+            </div>
+            <figcaption class="cap">La vue Tâches, en Kanban.</figcaption>
+          </figure>
+        </div>
       </div>
     </section>
 
-    <!-- IA -->
-    <section class="sec" id="ia">
+    <!-- Déléguer : les étapes de la marge s'allument au fil de la conversation rejouée plus bas (site.js, [data-stages]).
+         Le schéma en trois plans est fixe : avec l'écran du héros, c'est la seule 3D de la page. -->
+    <section class="sec" id="agents" data-stage-host>
       <div class="wrap">
-        <header class="sec-h" data-reveal>
-          <div><span class="eyebrow">Intelligence artificielle</span><h2>L’IA travaille<br>dans tes notes.</h2></div>
-          <p>Pas un chat posé à côté de ton travail : une IA qui lit le projet où tu te trouves, propose, et n’écrit rien sans ton accord.</p>
-        </header>
+        <div class="rail">
+          <p class="rail-k"><i>##</i>Déléguer</p>
+          <ol class="flow" data-stages>
+            <li><b>Consigne</b><p>Écris ce que tu veux, joins une note ou une tâche. Choisis Modifier ou Analyser.</p></li>
+            <li><b>Copie isolée</b><p>Un worktree Git dédié. Outils listés un à un, aucune commande sans ta case cochée.</p></li>
+            <li><b>Revue</b><p>Fichiers modifiés, tokens consommés, revue IA du diff, en direct.</p></li>
+            <li><b>Pull request</b><p>Mise à jour, résolution des conflits, commit conventionnel, push, PR. Seul.</p></li>
+          </ol>
+        </div>
+        <div>
+          <h2 data-reveal>Ton dossier n’est jamais touché.</h2>
+          <p class="lead" data-reveal>L’agent Claude Code travaille dans une copie isolée du dépôt, et rien n’est publié sans ton clic.</p>
+          <figure class="block" data-reveal>
+            <div class="wt" role="img" aria-label="Schéma en trois plans. Au fond, ton dossier sur la branche main : aucun fichier modifié. Devant, la copie isolée où l’agent a créé un fichier et en a modifié deux. Au premier plan, la pull request ouverte vers main.">
+            <div class="wt-world">
+              <div class="wt-plane wt-main">
+                <header><b>~/code/atlas</b><span class="wt-br">main</span><em>ton dossier</em></header>
+                <ul class="wt-tree">
+                  <li><i>├─</i>src/export/index.ts</li>
+                  <li><i>├─</i>src/export/pdf.ts</li>
+                  <li><i>├─</i>tests/export.test.ts</li>
+                  <li><i>└─</i>package.json</li>
+                </ul>
+                <footer><span>0 fichier modifié</span><span>intact</span></footer>
+              </div>
+              <div class="wt-plane wt-copy">
+                <header><b>.claude/worktrees/export-csv</b><span class="wt-pill">PR ouverte</span></header>
+                <ul class="wt-tree">
+                  <li class="f-mod"><i>├─</i>src/export/index.ts<s>modifié</s></li>
+                  <li class="f-add"><i>├─</i>src/export/csv.ts<s>nouveau</s></li>
+                  <li><i>├─</i>src/export/pdf.ts</li>
+                  <li class="f-mod"><i>├─</i>tests/export.test.ts<s>modifié</s></li>
+                  <li><i>└─</i>package.json</li>
+                </ul>
+                <footer><span>copie isolée · worktree-export-csv</span><span>6 tests passent</span></footer>
+              </div>
+              <div class="wt-plane wt-pr">
+                <header><svg class="ic"><use href="#s-github"/></svg><b>Pull request</b><em>feat/export-csv → main</em></header>
+                <p>feat(export): add CSV export of entries</p>
+                <p>1 commit · ouverte par ton clic sur Publier</p>
+              </div>
+            </div>
+            </div>
+            <figcaption class="cap">Ton dossier au fond, intact. Devant, la copie isolée où l’agent travaille. Au premier plan, la pull request.</figcaption>
+          </figure>
 
-        <ul class="cols four" data-reveal>
-          <li><h3>Discuter</h3><p>Une conversation Claude par projet. Il n’y lit que les notes, les tâches, les dépôts et les tickets de ce projet.</p></li>
-          <li><h3>Automatiser</h3><p>Décris une routine dans une note. L’IA l’exécute à heure fixe, ou à chaque capture, ticket Linear ou événement GitHub.</p></li>
-          <li><h3>Coder</h3><p>Confie une note ou une tâche à Claude Code. Il travaille dans une copie isolée du dépôt, jusqu’à la pull request.</p></li>
-          <li><h3>Se souvenir</h3><p>Le Journal garde chaque demande faite à l’IA, rangée par journée, avec le résumé du jour.</p></li>
-        </ul>
+          <!-- Maquette fidèle : un projet, onglet Claude Code, une conversation (src/features/projects/sessions.ts) -->
+          <figure class="shot block" data-reveal>
+            <div class="studio-fit" data-fit="920" data-seq data-loop>
+              <div class="studio dark solo tall" role="img" aria-label="Une conversation Claude Code dans le projet Atlas : la consigne, les actions de l’agent dans sa copie isolée, sa réponse, puis la zone pour lui répondre">
+                <div class="main">
+                  <div class="toolbar">
+                    <div class="tb-side"><span class="icon-btn"><svg class="ic"><use href="#s-sidebar"/></svg></span></div>
+                    <div class="crumb"><span>Projets</span><svg class="ic"><use href="#s-chevronRight"/></svg><span class="crumb-cur">Atlas</span></div>
+                  </div>
+                  <div class="projets"><div class="pj-in">
+                    <div class="pj-head h-blue">
+                      <span class="lv-back"><svg class="ic"><use href="#s-back"/></svg>Projets</span>
+                      <div class="pj-title"><span class="pj-dot"></span><p class="pj-h1">Atlas</p><span class="btn"><svg class="ic"><use href="#s-notes"/></svg>Note du projet</span><span class="btn"><svg class="ic"><use href="#s-sparkle"/></svg>Claude</span></div>
+                      <div class="pj-links"><span class="lv-chip"><svg class="ic"><use href="#s-github"/></svg>atlas-app/atlas</span><span class="lv-chip"><svg class="ic"><use href="#s-linear"/></svg>Atlas</span><span class="lv-chip">#atlas</span></div>
+                      <div class="lv-tabs pj-tabs"><span>Vue d’ensemble</span><span class="sel">Claude Code</span><span>Code</span><span>Flux</span><span>Serveur</span><span>Tâches</span><span>Notes</span><span>Site</span></div>
+                    </div>
+                    <div class="ss-dhead"><i class="ss-live on"></i><p class="ss-h2">Export CSV des écritures</p><span class="ag-pill" data-pill>Au travail</span><span class="icon-btn"><svg class="ic"><use href="#s-trash"/></svg></span></div>
+                    <p class="ss-meta"><svg class="ic"><use href="#s-pencil"/></svg>copie isolée <code>worktree-export-csv</code> · 4 min · 1 demande</p>
+                    <div class="ss-feed">
+                      <div class="ss-msg user" data-step="700" data-stage="1"><header><strong>Toi</strong><time>14:02</time></header><p data-step="200" data-type>Ajoute un export CSV des écritures, avec les tests.</p></div>
+                      <div class="ss-tools" data-step="900" data-stage="2">
+                        <div class="sum"><svg class="ic"><use href="#s-bolt"/></svg><strong>5 actions</strong><span>Read 1 · Grep 1 · Write 1</span><svg class="ic"><use href="#s-chevron"/></svg></div>
+                        <ul>
+                          <li data-step="500"><b>Read</b><span>src/export/index.ts</span></li>
+                          <li data-step="650"><b>Grep</b><span>toCents</span></li>
+                          <li data-step="900"><b>Write</b><span>src/export/csv.ts</span></li>
+                          <li data-step="800"><b>Edit</b><span>src/export/index.ts</span></li>
+                          <li data-step="1100"><b>Bash</b><span>npm test</span></li>
+                        </ul>
+                      </div>
+                      <div class="ss-msg ai" data-step="900" data-stage="3"><header><strong>Claude</strong><time>14:06</time></header><div class="md"><p>L’export est prêt dans <code>src/export/csv.ts</code> : séparateur configurable, montants en centimes. J’ai ajouté six tests, ils passent tous. Rien n’est publié : relis le changement, puis publie-le quand tu veux.</p></div></div>
+                      <i hidden data-step="2400" data-stage="4"></i>
+                    </div>
+                    <div class="ag-compose ag-continue">
+                      <p>Réponds à Claude : précise, corrige, tranche, demande la suite…</p>
+                      <div class="ag-opts"><span class="ag-hint"><svg class="ic"><use href="#s-history"/></svg>Reprend la conversation là où elle s’est arrêtée, dans le même dossier.</span><span class="field">Modèle par défaut<svg class="ic"><use href="#s-chevron"/></svg></span><span class="field">Effort par défaut<svg class="ic"><use href="#s-chevron"/></svg></span><span class="btn btn-primary"><svg class="ic"><use href="#s-play"/></svg>Envoyer<kbd>⌘↩</kbd></span></div>
+                      <div class="ag-lims">Afficher ce qu’il reste de mon abonnement</div>
+                    </div>
+                  </div></div>
+                </div>
+              </div>
+            </div>
+            <figcaption class="cap">Une conversation Claude Code dans un projet. La séquence est rejouée, l’écran est celui de l’app.</figcaption>
+          </figure>
 
-        <div class="duo" data-reveal>
-          <pre class="code" aria-label="Exemple d’automatisation écrite dans une note"><b>```agent</b>
-nom: Tri des captures
-outils: notes
-déclencheur: capture
-<b>---</b>
-Range la capture sous les bons tags
-et ajoute les actions à mes tâches.
-<b>```</b></pre>
-          <ul class="rules">
-            <li><strong>Ton accord avant toute écriture.</strong> Créer une note, une tâche ou un ticket passe toujours par toi.</li>
-            <li><strong>Un périmètre par projet.</strong> Les données d’un projet ne se mélangent jamais à celles d’un autre.</li>
-            <li><strong>Jamais les notes <code>#privé</code>.</strong> Elles ne sont envoyées à aucun modèle.</li>
-            <li><strong>Le modèle que tu choisis.</strong> Claude, OpenAI ou un modèle local. Sur Mac, ton abonnement Claude Code suffit, sans clé d’API.</li>
+          <ul class="guards" data-reveal>
+            <li><span><code>--restricted</code> : fichiers confinés au dossier de travail</span></li>
+            <li><span><code>dontAsk</code> : tout ce qui n’est pas listé est refusé</span></li>
+            <li>Trois agents et 90 minutes au plus</li>
+            <li>Ni hooks ni serveurs MCP de l’utilisateur</li>
           </ul>
         </div>
       </div>
     </section>
 
-    <!-- Agents Claude Code -->
-    <section class="sec" id="agents">
+    <!-- Autour : un bento dont chaque case montre un vrai morceau de l'app -->
+    <section class="sec" id="autour">
       <div class="wrap">
-        <header class="sec-h" data-reveal>
-          <div><span class="eyebrow">Agents Claude Code</span><h2>De la consigne<br>à la pull request.</h2></div>
-          <p>L’agent travaille dans une copie isolée du dépôt : ton dossier n’est jamais touché. Tu suis tout en direct, tu relis, et un clic publie le travail.</p>
-        </header>
-        <ol class="cols four steps" data-reveal>
-          <li><h3>Consigne</h3><p>Écris ce que tu veux, joins une note ou une tâche du projet. Choisis Modifier ou Analyser.</p></li>
-          <li><h3>Copie isolée</h3><p>Un worktree Git dédié. Fichiers confinés, outils listés un à un, aucune commande sans ta case cochée.</p></li>
-          <li><h3>Revue</h3><p>Fichiers modifiés, tokens consommés, revue IA du diff. Tu continues à lui écrire pendant qu’il travaille.</p></li>
-          <li><h3>Pull request</h3><p>Mise à jour sur la branche principale, résolution des conflits, commit conventionnel, push, PR. Seul.</p></li>
-        </ol>
-        <p class="aside" data-reveal>Garde-fous par défaut : fichiers confinés au dossier de travail, tout ce qui n’est pas listé est refusé, trois agents et 90 minutes au plus, ni hooks ni serveurs MCP de l’utilisateur.</p>
+        <div class="rail"><p class="rail-k"><i>##</i>Autour</p></div>
+        <div>
+          <h2 data-reveal>Et tout ce qui vit autour de la note.</h2>
+          <div class="bento block">
+            <article class="cell c6 duo" data-reveal>
+              <div class="cell-txt">
+                <h3>Une automatisation est une note.</h3>
+                <p>Écris la consigne une fois, en français, dans un bloc <code>agent</code>. L’IA l’exécute à heure fixe ou à chaque événement, et te demande ton accord avant toute écriture.</p>
+                <div class="piece"><div class="studio dark frag" role="img" aria-label="Deux automatisations : la revue du matin, les jours ouvrés à 8 h 30, et le tri des captures">
+                  <div class="hm-agent"><i class="st ok"></i><span>Revue du matin</span><em>jours ouvrés 8h30</em><span class="icon-btn"><svg class="ic"><use href="#s-play"/></svg></span></div>
+                  <div class="hm-agent"><i class="st ok"></i><span>Tri des captures</span><em>hier</em><span class="icon-btn"><svg class="ic"><use href="#s-play"/></svg></span></div>
+                </div></div>
+              </div>
+              <pre class="code" aria-label="Le bloc agent de la note Revue du matin"><i>```agent</i>
+<b>nom:</b> Revue du matin
+<b>outils:</b> notes, linear, github
+<b>projet:</b> Atlas
+<b>planning:</b> jours ouvrés 8h30
+<b>sortie:</b> journal
+<i>---</i>
+Prépare ma revue du matin sur ce projet : les tâches en retard et celles du jour, les tickets Linear en cours, ce qui a bougé sur GitHub depuis hier. Termine par mes trois priorités, en cases à cocher.
+<i>```</i></pre>
+            </article>
+            <article class="cell c3" data-reveal>
+              <h3>Linear et GitHub à côté du texte</h3>
+              <p>Tes tickets, tes notifications et l’actualité de tes dépôts arrivent sur l’accueil, sans changer d’app.</p>
+              <div class="piece"><div class="studio dark frag" role="img" aria-label="Deux nouveautés : un ticket Linear assigné et une pull request ouverte sur GitHub">
+                <div class="hm-feed"><svg class="ic"><use href="#s-linear"/></svg><span>Paul t’a assigné ATL-51 : Revoir la page des tarifs</span><em>il y a 20 min</em></div>
+                <div class="hm-feed read"><svg class="ic"><use href="#s-github"/></svg><span>paul-m a ouvert la pull request #45 <small>atlas</small></span><em>il y a 1 h</em></div>
+              </div></div>
+            </article>
+            <article class="cell c3" data-reveal>
+              <h3>Capture en une ligne</h3>
+              <p>Une idée, une tâche, une note vocale transcrite sur l’iPhone : tout part de la même ligne.</p>
+              <div class="piece"><div class="studio dark frag" role="img" aria-label="La ligne de capture de l’accueil">
+                <div class="hm-capture"><span>Note une idée ou une tâche… (#todo pour une tâche, #tag pour ranger)</span><span class="icon-btn"><svg class="ic"><use href="#s-mic"/></svg></span><kbd>↵</kbd></div>
+              </div></div>
+            </article>
+            <article class="cell" data-reveal>
+              <h3>Liens et rétroliens</h3>
+              <p>Écris <code>[[un titre]]</code> : la note liée sait qu’on parle d’elle.</p>
+              <div class="piece"><div class="studio dark frag" role="img" aria-label="Deux rétroliens vers la note Lancement Atlas">
+                <div class="backlink"><strong>Revue du 9 novembre</strong><span>…on garde la date fixée dans Lancement Atlas…</span></div>
+                <div class="backlink"><strong>Idées d’annonce</strong><span>…à publier le jour du Lancement Atlas…</span></div>
+              </div></div>
+            </article>
+            <article class="cell" data-reveal>
+              <h3>Calculs et minuteurs</h3>
+              <p>Un calcul se résout dans la phrase. Un minuteur se lance depuis la note.</p>
+              <div class="piece"><div class="studio dark frag" role="img" aria-label="Un calcul, 12 fois 19 égale 228, et un minuteur de 25 minutes"><div class="md">
+                <p>Hébergement : <span class="calc"><span class="calc-expr">12 * 19</span><span class="calc-res">228</span></span></p>
+                <p>Point hebdo : <span class="timer"><span class="timer-toggle"><svg class="ic"><use href="#s-play"/></svg></span>25:00</span></p>
+              </div></div></div>
+            </article>
+            <article class="cell light" data-reveal>
+              <h3>Clair ou sombre</h3>
+              <p>Le même carnet, encre sur papier ou l’inverse.</p>
+              <div class="piece"><div class="studio frag" role="img" aria-label="Trois tâches dans le thème clair">
+                <div class="hm-task"><i class="cb"></i><span>Relancer Paul pour le devis</span><em class="td-due late">hier</em></div>
+                <div class="hm-task"><i class="cb"></i><span>Écrire l’annonce de la bêta</span><em class="td-due today">aujourd’hui</em></div>
+                <div class="hm-task"><i class="cb"></i><span>Réserver le train pour Lyon</span><em class="td-due">lundi</em></div>
+              </div></div>
+            </article>
+            <article class="cell c6 duo" data-reveal>
+              <div class="cell-txt">
+                <h3>Tes appareils se parlent en direct.</h3>
+                <p>Un secret de 128 bits passe d’un écran à l’autre, puis les notes voyagent d’appareil à appareil, chiffrées de bout en bout. Sans réseau, un paquet chiffré part par AirDrop ou Messages.</p>
+              </div>
+              <div>
+                <div class="link" aria-hidden="true"><svg class="ic"><use href="#s-devices"/></svg><i class="link-wire"><span>WebRTC · chiffré · aucun serveur</span></i><svg class="ic"><use href="#s-phone"/></svg></div>
+                <div class="piece"><div class="studio dark frag" role="img" aria-label="Un téléphone lié, synchronisé">
+                  <div class="hm-conn"><svg class="ic"><use href="#s-phone"/></svg><div><strong>Téléphone</strong><span>iPhone</span></div><i class="st ok"></i></div>
+                </div></div>
+              </div>
+            </article>
+          </div>
+        </div>
       </div>
     </section>
 
-    <!-- Autour des notes -->
-    <section class="sec">
-      <div class="wrap">
-        <header class="sec-h" data-reveal>
-          <div><span class="eyebrow">Autour des notes</span><h2>Le reste suit.</h2></div>
-          <p>Ce que tu dois faire et ce que vit ton code se posent à côté de ce que tu écris, sans changer d’app.</p>
-        </header>
-        <ul class="cols three" data-reveal>
-          <li><h3>Tâches</h3><p>« Appeler Paul demain » devient une tâche datée. En liste ou en Kanban, avec tes tickets Linear sur le même tableau.</p></li>
-          <li><h3>Projets</h3><p>Dossier local, dépôts, pull requests, CI, serveur, site : chaque projet réunit ses notes, ses tâches et son code.</p></li>
-          <li><h3>Synchronisation</h3><p>Un QR code lie deux appareils. Les notes circulent ensuite en direct de l’un à l’autre, chiffrées de bout en bout.</p></li>
-        </ul>
-      </div>
-    </section>
-
-    <!-- Sécurité -->
+    <!-- Protéger -->
     <section class="sec" id="securite">
       <div class="wrap">
-        <header class="sec-h" data-reveal>
-          <div><span class="eyebrow">Sécurité et vie privée</span><h2>Rien ne quitte<br>tes appareils.</h2></div>
-          <p>Nous ne pouvons pas lire tes données : nous ne les avons pas. Pas de compte, pas de serveur, aucune télémétrie. <a class="link" href="https://github.com/MTthoas/Studio#sécurité-et-vie-privée" rel="noopener">Lire le modèle de sécurité →</a></p>
-        </header>
-        <dl class="cols three vault" data-reveal>
-          <div><dt>Coffre</dt><dd>Une clé maîtresse AES-GCM de 256 bits chiffre chaque note, son historique, tes clés d’API et tes appareils liés.</dd></div>
-          <div><dt>Déverrouillage</dt><dd>Mot de passe jamais stocké (PBKDF2, 600 000 itérations), passkey, Touch ID ou Face ID. Verrouillage automatique.</dd></div>
-          <div><dt>Réseau</dt><dd>Une liste fermée de domaines. Une clé ne peut pas partir ailleurs, même en cas de faille.</dd></div>
-          <div><dt>IA cloisonnée</dt><dd>L’IA ne voit que le projet où tu travailles, et jamais les notes chiffrées ou <code>#privé</code>.</dd></div>
-          <div><dt>Synchronisation</dt><dd>Chiffrée de bout en bout. Le relais ne voit que du chiffré, et ne stocke rien.</dd></div>
-          <div><dt>Code ouvert</dt><dd>AGPL-3.0. Chaque ligne se lit, se vérifie et se reconstruit depuis les sources.</dd></div>
-        </dl>
+        <div class="rail"><p class="rail-k"><i>##</i>Protéger</p></div>
+        <div>
+          <h2 data-reveal>Nous ne pouvons pas lire tes données.</h2>
+          <p class="lead" data-reveal>Nous ne les avons pas : pas de compte, pas de serveur, aucune télémétrie. Essaie ci-dessous : ta phrase est chiffrée dans cette page, comme dans l’app, et rien n’est envoyé.</p>
+          <!-- Chiffrement réel, calculé dans la page par WebCrypto avec les réglages de src/core/crypto.ts. Sans script : un exemple figé. -->
+          <div class="vault block" data-vault data-reveal>
+            <div class="vault-top">
+              <label class="vault-f"><span>note</span><input type="text" data-vault-text value="La bêta d’Atlas sort le 26. Budget : 228 € par an." spellcheck="false" autocomplete="off" maxlength="120"></label>
+              <label class="vault-f pw"><span>mot de passe</span><input type="text" data-vault-pass value="corail-nacre-1987" spellcheck="false" autocomplete="off" maxlength="64"></label>
+            </div>
+            <div class="vault-view" data-vault-view>
+              <div class="vault-clear"><p data-vault-clear>La bêta d’Atlas sort le 26. Budget : 228 € par an.</p></div>
+              <div class="vault-cipher" aria-hidden="true"><p data-vault-cipher><b>9f 3a c1 07 5e d2 88 4b 10 f6 a9 3c</b> 7d e4 02 bb 61 9a 55 c8 0e 73 d1 2f 96 4a b7 08 e3 5c 1d 90 6f a2 34 cb 87 19 f0 4e 62 d5 0b a8 3e 71 c6 9d 25 fa 58 03 b4 6c e9 17 80 dd 4f 2a 93 c0 76 1e ab 59 f4 0d 68 b1 3f e6 82 2c 97 45 d8 0a 7b ce 31 a4 5f f9 16 6d 8c 23 ba 50 e7 04 79 c3 1b 9e</p></div>
+              <i class="vault-bar" aria-hidden="true"></i>
+              <input type="range" class="vault-range" data-vault-cut min="4" max="96" value="46" aria-label="Part de la note affichée en clair, le reste montre son chiffré">
+            </div>
+            <p class="vault-stat" data-vault-stat><span><b>PBKDF2-SHA-256</b> · 600 000 itérations</span><span><b>AES-256-GCM</b> · IV de 96 bits</span><span>Exemple figé : active JavaScript pour chiffrer ta propre phrase.</span></p>
+          </div>
+
+          <dl class="spec block" data-reveal>
+            <div><dt><code>AES-256-GCM</code><span>Coffre</span></dt><dd>Une clé maîtresse chiffre chaque note, son historique, tes clés d’API et tes appareils liés.</dd></div>
+            <div><dt><code>PBKDF2 · 600 000</code><span>Déverrouillage</span></dt><dd>Mot de passe jamais stocké, passkey, Touch ID ou Face ID. Verrouillage automatique.</dd></div>
+            <div><dt><code>CSP · liste fermée</code><span>Réseau</span></dt><dd>Une liste fermée de domaines. Une clé ne peut pas partir ailleurs, même en cas de faille.</dd></div>
+            <div><dt><code>Périmètre · projet</code><span>IA cloisonnée</span></dt><dd>L’IA ne voit que le projet où tu travailles, jamais les notes chiffrées ou <code>#privé</code>, et n’écrit rien sans ton accord.</dd></div>
+            <div><dt><code>E2EE · WebRTC</code><span>Synchronisation</span></dt><dd>Chiffrée de bout en bout. Le relais ne voit que du chiffré, et ne stocke rien.</dd></div>
+            <div><dt><code>AGPL-3.0</code><span>Code ouvert</span></dt><dd>Chaque ligne se lit, se vérifie et se reconstruit depuis les sources.</dd></div>
+          </dl>
+          <p class="more" data-reveal><a class="wl" href="https://github.com/MTthoas/Studio#sécurité-et-vie-privée" rel="noopener">Lire le modèle de sécurité</a></p>
+        </div>
       </div>
     </section>
 
     <!-- Installer -->
     <section class="sec" id="installer">
       <div class="wrap">
-        <header class="sec-h" data-reveal>
-          <div><span class="eyebrow">Installer</span><h2>Gratuit. Libre.<br>Partout.</h2></div>
-          <p>Toutes les fonctions, sans palier ni compte. Tu paies seulement l’IA que tu choisis de brancher, directement à son fournisseur, dans la limite du budget que tu fixes.</p>
-        </header>
-        <ul class="plats" data-reveal>
-          <li><h3>Mac</h3><p>Binaire universel, Apple Silicon et Intel. Touch ID, agents Claude Code, mises à jour automatiques.</p><a href="https://github.com/MTthoas/Studio/releases/latest" rel="noopener">Télécharger <span aria-hidden="true">→</span></a></li>
-          <li><h3>iPhone et iPad</h3><p>Face ID, notes vocales transcrites sur l’appareil, pilotage à distance des agents de ton Mac.</p><a href="https://github.com/MTthoas/Studio#iphone--ipad" rel="noopener">Installer depuis les sources <span aria-hidden="true">→</span></a></li>
-          <li><h3>Web</h3><p>S’installe comme une application, fonctionne hors ligne, se pose sur n’importe quel hébergement statique.</p><a href="https://github.com/MTthoas/Studio#web" rel="noopener">Lancer en local <span aria-hidden="true">→</span></a></li>
-        </ul>
-      </div>
-    </section>
-
-    <!-- FAQ -->
-    <section class="sec" id="faq">
-      <div class="wrap">
-        <header class="sec-h" data-reveal>
-          <div><span class="eyebrow">Questions fréquentes</span><h2>Avant de te lancer.</h2></div>
-        </header>
-        <div class="faq" data-reveal>
-          <details><summary>Où sont stockées mes notes ?</summary><p>Sur tes appareils, dans la base locale de l’app. Avec le coffre activé, chaque enregistrement est chiffré en AES-GCM par une clé qui ne quitte jamais l’appareil. Un export JSON chiffré sert de sauvegarde.</p></details>
-          <details><summary>Que voit l’IA de mes notes ?</summary><p>Seulement celles du projet où tu travailles, et uniquement quand tu la sollicites. Les notes chiffrées et celles taguées <code>#privé</code> ne sont jamais envoyées. Les appels partent directement de l’app vers le fournisseur que tu as choisi.</p></details>
-          <details><summary>Faut-il une clé d’API pour utiliser l’IA ?</summary><p>Non. Sur Mac, Studio peut passer par le Claude Code déjà installé sur ta machine, avec ton abonnement. Tu peux aussi brancher Claude, OpenAI ou un modèle local avec ta propre clé.</p></details>
-          <details><summary>Un agent peut-il casser mon dépôt ?</summary><p>En mode Modifier, il travaille dans une copie isolée : ton dossier n’est jamais touché, et rien n’est publié sans ton clic. Aucune commande ne s’exécute tant que tu ne l’as pas autorisée.</p></details>
-          <details><summary>Comment mes appareils se synchronisent-ils sans serveur ?</summary><p>Ils se parlent en direct (WebRTC), après une courte poignée de main chiffrée. Sans réseau, un paquet chiffré s’envoie par AirDrop ou Messages.</p></details>
-          <details><summary>Puis-je en faire un produit fermé ?</summary><p>Non, c’est le sens de l’AGPL : toute version modifiée ou proposée comme service doit publier son code. Une double licence est possible sur demande.</p></details>
+        <div class="rail"><p class="rail-k"><i>##</i>Installer</p></div>
+        <div>
+          <h2 data-reveal>Gratuit. Libre. Partout.</h2>
+          <p class="price lead" data-reveal><span class="o-calc"><code>= 12 × 0</code><b>0 €</b></span>Toutes les fonctions, sur tous tes appareils, sans palier ni compte.</p>
+          <ul class="plats block" data-reveal>
+            <li><h3>Mac</h3><p>Binaire universel d’environ 1 Mo, Apple Silicon et Intel. Touch ID, agents Claude Code, mises à jour automatiques.</p><span class="cmd"><code>curl -fsSL https://mtthoas.github.io/Studio/install.sh | sh</code><button type="button" data-copy>Copier</button></span><a class="go sm" href="https://github.com/MTthoas/Studio/releases/latest" rel="noopener">Télécharger</a></li>
+            <li><h3>iPhone et iPad</h3><p>Face ID, notes vocales transcrites sur l’appareil, pilotage à distance des agents de ton Mac.</p><span class="cmd"><code>./native/iphone.sh</code><button type="button" data-copy>Copier</button></span><a class="go quiet sm" href="https://github.com/MTthoas/Studio#iphone--ipad" rel="noopener">Depuis les sources</a></li>
+            <li><h3>Web</h3><p>S’installe comme une application, fonctionne hors ligne, se pose sur n’importe quel hébergement statique.</p><span class="cmd"><code>npm install &amp;&amp; npm run serve</code><button type="button" data-copy>Copier</button></span><a class="go quiet sm" href="https://github.com/MTthoas/Studio#web" rel="noopener">Lancer en local</a></li>
+          </ul>
+          <p class="fine" data-reveal>Tu paies seulement l’IA que tu choisis de brancher, directement à son fournisseur, dans la limite du budget que tu fixes. Sur Mac, ton abonnement Claude Code suffit, sans clé d’API.</p>
+          <p class="fine" data-reveal>Sur Mac, passe par la commande : l’app n’est pas encore notarisée par Apple, et macOS refuse d’ouvrir un zip téléchargé par le navigateur. Si c’est déjà fait : Réglages Système, Confidentialité et sécurité, « Ouvrir quand même ». <a class="wl" href="https://github.com/MTthoas/Studio#mac" rel="noopener">Le détail</a></p>
         </div>
       </div>
     </section>
 
-    <!-- Appel final -->
-    <section class="final">
-      <div class="wrap" data-reveal>
-        <h2>Ouvre une note.</h2>
-        <p>Studio s’installe en une minute. Tes notes restent chez toi.</p>
-        <div class="cta">
-          <a class="btn btn-primary btn-lg" href="https://github.com/MTthoas/Studio/releases/latest" rel="noopener">Télécharger pour Mac</a>
-          <a class="btn btn-lg" href="https://github.com/MTthoas/Studio" rel="noopener">Voir le code source</a>
+    <!-- Questions -->
+    <section class="sec" id="questions">
+      <div class="wrap">
+        <div class="rail"><p class="rail-k"><i>##</i>Questions</p></div>
+        <div class="qa">
+          <div data-reveal><h3>Où sont stockées mes notes ?</h3><p>Sur tes appareils, dans la base locale de l’app. Avec le coffre activé, chaque enregistrement est chiffré en AES-GCM par une clé qui ne quitte jamais l’appareil. Un export JSON chiffré sert de sauvegarde.</p></div>
+          <div data-reveal><h3>Que voit l’IA de mes notes ?</h3><p>Seulement celles du projet où tu travailles, et uniquement quand tu la sollicites. Les notes chiffrées et celles taguées <code>#privé</code> ne sont jamais envoyées. Les appels partent directement de l’app vers le fournisseur que tu as choisi.</p></div>
+          <div data-reveal><h3>Faut-il une clé d’API pour utiliser l’IA ?</h3><p>Non. Sur Mac, Studio peut passer par le Claude Code déjà installé sur ta machine, avec ton abonnement. Tu peux aussi brancher Claude, OpenAI ou un modèle local avec ta propre clé.</p></div>
+          <div data-reveal><h3>Un agent peut-il casser mon dépôt ?</h3><p>En mode Modifier, il travaille dans une copie isolée : ton dossier n’est jamais touché, et rien n’est publié sans ton clic. Aucune commande ne s’exécute tant que tu ne l’as pas autorisée.</p></div>
+          <div data-reveal><h3>Comment mes appareils se synchronisent-ils sans serveur ?</h3><p>Ils se parlent en direct (WebRTC), après une courte poignée de main chiffrée. Sans réseau, un paquet chiffré s’envoie par AirDrop ou Messages.</p></div>
+          <div data-reveal><h3>Puis-je en faire un produit fermé ?</h3><p>Non, c’est le sens de l’AGPL : toute version modifiée ou proposée comme service doit publier son code. Une double licence est possible sur demande.</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Fin -->
+    <section class="end">
+      <div class="sea" aria-hidden="true"><canvas data-sea="end"></canvas></div>
+      <div class="wrap">
+        <h2 data-reveal>Ouvre une note. <span>Le reste suit<i class="caret" aria-hidden="true"></i></span></h2>
+        <div data-reveal>
+          <p>Studio s’installe en une minute. Tes notes restent chez toi.</p>
+          <p class="acts">
+            <a class="go" href="https://github.com/MTthoas/Studio/releases/latest" rel="noopener">Télécharger pour Mac</a>
+            <a class="wl" href="https://github.com/MTthoas/Studio" rel="noopener">Voir le code source</a>
+          </p>
         </div>
       </div>
     </section>
   </main>
 
+  <!-- Le pied de page est la barre d'état de l'app -->
   <footer class="foot">
-    <div class="wrap foot-in">
-      <a class="brand" href="#top">
-        <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="4.2" cy="10" r="2.7" fill="currentColor"/><rect x="10" y="1" width="2.4" height="18" rx="1.2" fill="#F04A23"/></svg>
-        <span>Studio</span>
-      </a>
-      <nav aria-label="Liens">
-        <a href="https://github.com/MTthoas/Studio" rel="noopener">GitHub</a>
-        <a href="https://github.com/MTthoas/Studio/releases" rel="noopener">Versions</a>
-        <a href="https://github.com/MTthoas/Studio/blob/main/LICENSE" rel="noopener">Licence AGPL-3.0</a>
-        <a href="https://github.com/MTthoas/Studio/blob/main/CONTRIBUTING.md" rel="noopener">Contribuer</a>
-      </nav>
+    <div class="wrap">
       <p>© 2026 Matthias. Ce site ne dépose aucun cookie et ne charge rien d’ailleurs.</p>
+      <a href="https://github.com/MTthoas/Studio" rel="noopener">GitHub</a>
+      <a href="https://github.com/MTthoas/Studio/releases" rel="noopener">Versions</a>
+      <a href="https://github.com/MTthoas/Studio/blob/main/LICENSE" rel="noopener">Licence AGPL-3.0</a>
+      <a href="https://github.com/MTthoas/Studio/blob/main/CONTRIBUTING.md" rel="noopener">Contribuer</a>
     </div>
   </footer>
 
+  <script src="sea.js" defer></script>
   <script src="site.js" defer></script>
 </body>
 </html>

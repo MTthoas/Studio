@@ -10,6 +10,10 @@
 // Le serveur de fichiers n'écoute que sur 127.0.0.1, ne sort jamais du dossier servi (liens symboliques compris)
 // et refuse les fichiers cachés (.env, .git…). Lancer un script de développement exécute le code du projet : seul
 // le Mac peut le demander (« project.local » n'est pas dans REMOTE_ALLOWED, link.ts). Tout s'arrête avec l'app.
+//
+// Builds : chaque package.json de ces emplacements (racine comprise) propose ses scripts « build » et ses variantes
+// (build:prod, build-staging…). Un build par projet à la fois, à côté du site qui tourne ; sa fin (réussite ou
+// échec, pas l'arrêt manuel) envoie une notification système (Notifier, fil « build »).
 import Foundation
 #if os(macOS)
 import Network
@@ -47,6 +51,32 @@ final class Sites {
         var server: StaticServer?
         init(rel: String, kind: String, label: String) { self.rel = rel; self.kind = kind; self.label = label }
     }
+
+    /// Un dossier qui se construit : un package.json avec un script « build » ou ses variantes (build:prod, build-staging…).
+    struct Buildable {
+        let rel: String
+        let dir: String
+        let tool: String
+        let scripts: [String]
+    }
+
+    /// Un build en cours, ou terminé et pas encore refermé. Indépendant du site qui tourne : on peut construire pendant
+    /// que le serveur de développement reste ouvert.
+    final class Build {
+        let rel: String
+        let script: String
+        let tool: String
+        let name: String
+        let started = Date()
+        var ended: Date?
+        /// « building », « done », « failed » ou « stopped ».
+        var status = "building"
+        var code: Int32 = 0
+        var log = ""
+        var process: Process?
+        init(rel: String, script: String, tool: String, name: String) { self.rel = rel; self.script = script; self.tool = tool; self.name = name }
+    }
+    private var jobs: [String: Build] = [:]
 
     private static let places = ["", "site", "website", "web", "www", "landing", "docs", "frontend", "client",
                                  "apps/web", "apps/site", "apps/www", "apps/landing", "packages/web", "packages/site",
@@ -101,6 +131,28 @@ final class Sites {
         return out
     }
 
+    /// Variantes de build reconnues : « build » seul, ou suivi de « : », « - », « _ » ou « . » et d'un nom.
+    private static let buildScript = try! NSRegularExpression(pattern: "^build(?:[:._-][A-Za-z0-9:._-]{1,40})?$")
+    private static func isBuild(_ s: String) -> Bool {
+        buildScript.firstMatch(in: s, range: NSRange(s.startIndex..., in: s)) != nil
+    }
+
+    /// Dossiers à construire, aux mêmes emplacements que les sites, racine comprise.
+    func buildables(_ root: String) -> [Buildable] {
+        var out: [Buildable] = []
+        for rel in Self.places {
+            let dir = rel.isEmpty ? root : root + "/" + rel
+            guard let data = FileManager.default.contents(atPath: dir + "/package.json"), data.count < 2_000_000,
+                  let pkg = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  let scripts = pkg["scripts"] as? [String: Any] else { continue }
+            // « build » d'abord, puis les variantes par ordre alphabétique.
+            let names = scripts.keys.filter { scripts[$0] is String && Self.isBuild($0) }
+                .sorted { $0 == "build" ? true : $1 == "build" ? false : $0 < $1 }
+            if !names.isEmpty { out.append(Buildable(rel: rel, dir: dir, tool: Self.tool(dir, root), scripts: names)) }
+        }
+        return out
+    }
+
     /// Où chercher npm, pnpm… : les dossiers réglés pour les agents, puis les emplacements habituels, puis le PATH de l'app.
     private static func searchPath() -> [String] {
         let home = NSHomeDirectory()
@@ -137,8 +189,19 @@ final class Sites {
         let found: [[String: String]] = candidates(root).map { c in
             ["rel": c.rel, "kind": c.kind, "label": c.label, "command": c.kind == "dev" ? c.tool + " run " + c.script : ""]
         }
-        var r: [String: Any] = ["ok": true, "folder": true, "sites": found]
+        let makers: [[String: Any]] = buildables(root).map { b in
+            ["rel": b.rel, "scripts": b.scripts.map { ["name": $0, "command": b.tool + " run " + $0] }]
+        }
+        var r: [String: Any] = ["ok": true, "folder": true, "sites": found, "builds": makers]
         lock.lock(); defer { lock.unlock() }
+        if let b = jobs[pid] {
+            var info: [String: Any] = [
+                "rel": b.rel, "script": b.script, "command": b.tool + " run " + b.script, "status": b.status, "code": Int(b.code),
+                "since": Int(b.started.timeIntervalSince1970 * 1000), "log": String(b.log.suffix(4000)),
+            ]
+            if let e = b.ended { info["ended"] = Int(e.timeIntervalSince1970 * 1000) }
+            r["build"] = info
+        }
         if let l = live[pid] {
             let info: [String: Any] = [
                 "rel": l.rel, "kind": l.kind, "label": l.label, "status": l.status, "url": l.url, "port": l.port,
@@ -222,10 +285,81 @@ final class Sites {
         return ["ok": true]
     }
 
-    /// À la fermeture de l'app : aucun serveur ne doit lui survivre.
+    /// Lance une variante de build détectée dans le dossier du projet ; une notification système en annonce la fin.
+    /// `name` (nom du projet) ne sert qu'au texte de la notification.
+    func build(_ pid: String, rel: String, script: String, name: String) -> [String: Any] {
+        guard let root = ProjectFolders.shared.path(pid) else { return ["ok": false, "message": "Choisis d'abord le dossier du projet."] }
+        guard let b = buildables(root).first(where: { $0.rel == rel }), b.scripts.contains(script) else {
+            return ["ok": false, "message": "Ce build n'existe pas (ou plus) dans le package.json."]
+        }
+        guard let exe = Self.find(b.tool) else {
+            return ["ok": false, "message": "« \(b.tool) » est introuvable sur ce Mac. Ajoute son dossier dans Réglages → Autorisations des agents → Dossiers des outils."]
+        }
+        stopBuild(pid)
+        let job = Build(rel: rel, script: script, tool: b.tool, name: String(name.prefix(80)))
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: exe)
+        p.arguments = ["run", script]
+        p.currentDirectoryURL = URL(fileURLWithPath: b.dir, isDirectory: true)
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = Self.searchPath().joined(separator: ":")
+        env["NO_COLOR"] = "1"; env["FORCE_COLOR"] = "0"
+        p.environment = env
+        let out = Pipe()
+        p.standardOutput = out; p.standardError = out; p.standardInput = FileHandle.nullDevice
+        out.fileHandleForReading.readabilityHandler = { [weak self, weak job] handle in
+            let data = handle.availableData
+            guard !data.isEmpty, let self = self, let job = job else { handle.readabilityHandler = nil; return }
+            let text = Sites.clean(String(decoding: data, as: UTF8.self))
+            self.lock.lock(); job.log = String((job.log + text).suffix(12000)); self.lock.unlock()
+        }
+        p.terminationHandler = { [weak self, weak job] proc in
+            guard let self = self, let job = job else { return }
+            self.lock.lock()
+            let wasRunning = job.status == "building"
+            if wasRunning { job.status = proc.terminationStatus == 0 ? "done" : "failed" }
+            job.code = proc.terminationStatus; job.ended = Date(); job.process = nil
+            let status = job.status, code = job.code, took = Sites.duration(Date().timeIntervalSince(job.started))
+            self.lock.unlock()
+            // Arrêté à la main : pas de notification, l'utilisateur est déjà devant.
+            guard wasRunning else { return }
+            let who = job.name.isEmpty ? "" : " · \(job.name)"
+            let title = status == "done" ? "Build terminé\(who)" : "Build en échec\(who)"
+            let body = status == "done" ? "\(job.tool) run \(job.script) a réussi en \(took)."
+                : "\(job.tool) run \(job.script) s'est arrêté sur une erreur (code \(code)) après \(took)."
+            Notifier.shared.post(title: title, body: body, url: nil, thread: "build")
+        }
+        do { try p.run() } catch { return ["ok": false, "message": "Impossible de lancer « \(b.tool) run \(script) »."] }
+        job.process = p
+        lock.lock(); jobs[pid] = job; lock.unlock()
+        return state(pid)
+    }
+
+    /// Arrête le build en cours et oublie son résultat (bouton Arrêter ou Fermer).
+    @discardableResult
+    func stopBuild(_ pid: String) -> [String: Any] {
+        lock.lock()
+        let job = jobs.removeValue(forKey: pid)
+        if job?.status == "building" { job?.status = "stopped" }
+        let process = job?.process
+        lock.unlock()
+        if let p = process, p.isRunning {
+            for child in Self.descendants(of: p.processIdentifier) { kill(child, SIGTERM) }
+            p.terminate()
+        }
+        return ["ok": true]
+    }
+
+    private static func duration(_ s: TimeInterval) -> String {
+        let n = max(0, Int(s.rounded()))
+        return n < 60 ? "\(n) s" : "\(n / 60) min \(String(format: "%02d", n % 60))"
+    }
+
+    /// À la fermeture de l'app : aucun serveur ni build ne doit lui survivre.
     func stopAll() {
-        lock.lock(); let ids = Array(live.keys); lock.unlock()
+        lock.lock(); let ids = Array(live.keys), running = Array(jobs.keys); lock.unlock()
         for id in ids { stop(id) }
+        for id in running { stopBuild(id) }
     }
 
     private static func descendants(of root: Int32) -> [Int32] {
