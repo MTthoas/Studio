@@ -53,6 +53,18 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'docker-local', date: '2026-11-16', icon: 'container', hue: 'blue', mac: true,
+    title: 'Les conteneurs de ton Mac, dans tes projets',
+    lead: 'Un onglet Docker par projet : ce qui tourne sur ton Mac pour lui, reconnu à son dossier.',
+    bits: [
+      ['container', 'Conteneurs', 'en cours ou arrêtés, état, ports à ouvrir d’un clic ; ceux lancés par un agent sont marqués'],
+      ['download', 'Images', 'construites par Compose ou utilisées par ses conteneurs'],
+      ['home', 'Accueil', 'les conteneurs qui tournent sur le Mac, avec leur projet'],
+      ['shield', 'Lecture seule', 'Studio lit le moteur Docker sans rien lancer ni arrêter'],
+    ],
+    where: ['Projets', 'un projet', 'Docker'],
+    visual: { kind: 'stack', rows: [[['api', 'green', 'container'], 'en cours · :3000'], [['db', 'green', 'container'], 'en cours · :5432'], [['worker', 'red', 'container'], 'arrêté (code 137)']] },
+    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
   { id: 'agent-project-items', date: '2026-11-16', icon: 'check', hue: 'green', mac: true,
     title: 'Tes agents ajoutent des tâches et des notes',
     lead: 'Demande à un agent de noter une suite à donner ou une décision : il l’ajoute au projet d’où il est lancé.',

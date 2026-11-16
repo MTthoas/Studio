@@ -15,6 +15,7 @@ import * as flux from './flux.ts';
 import * as sessions from './sessions.ts';
 import * as review from './review.ts';
 import * as site from './site.ts';
+import * as docker from './docker.ts';
 import * as infra from './infra.ts';
 import * as specs from './specs.ts';
 import * as chart from '../../ui/chart.ts';
@@ -97,7 +98,7 @@ const section = (id: string, title: string, ic: string, body: string, cls = '', 
 
 /** Sous-menus d'un projet (aussi affichés dans la barre latérale). */
 export const TABS: [string, string, string][] = [
-  ['overview', 'Vue d’ensemble', 'home'], ['sessions', 'Claude Code', 'terminal'], ['code', 'Code', 'code'], ['flux', 'Flux', 'pr'], ['server', 'Serveur', 'server'],
+  ['overview', 'Vue d’ensemble', 'home'], ['sessions', 'Claude Code', 'terminal'], ['code', 'Code', 'code'], ['flux', 'Flux', 'pr'], ['server', 'Serveur', 'server'], ['docker', 'Docker', 'container'],
   ['tasks', 'Tâches', 'check'], ['notes', 'Notes', 'notes'], ['site', 'Site', 'link'],
 ];
 const curTab = (): string => { const t = app.viewState().tab; return t && TABS.some(x => x[0] === t) ? t : 'overview'; };
@@ -119,6 +120,7 @@ function tabBody(p: Project, tab: string): string {
   if (tab === 'flux') return '<div class="pj-flux"><p class="nf-empty">Chargement du flux…</p></div>';
   if (tab === 'sessions') return '<div class="ss-box"></div>';
   if (tab === 'server') return '<div class="sv-box"><div class="pj-skel"></div></div>';
+  if (tab === 'docker') return '<div class="dk-box"><p class="nf-empty">Lecture de Docker…</p></div>';
   if (tab === 'tasks') return `${section('tasks', 'Tâches', 'check', taskBox(p))}${panelsHTML(p, 'tasks')}`;
   if (tab === 'notes') return section('notes', 'Notes', 'notes', noteRows(p));
   if (tab === 'site') return `${section('site-local', 'En local', 'terminal', site.localHTML())}${section('site', 'En ligne', 'link', siteHTML(p))}${section('site-prod', 'En production', 'server', site.soonHTML())}`;
@@ -135,7 +137,8 @@ function tabBody(p: Project, tab: string): string {
     ${section('shortcuts', 'Raccourcis', 'bolt', `<div class="pj-ovs">
       ${card('code', 'Pull requests', 'pr', 'blue', p.repos.length ? 'Lecture des PR…' : 'Aucun dépôt associé')}
       ${card('site', 'Site', 'link', 'teal', p.site ? esc(p.site.replace(/^https:\/\//, '')) : 'Ajouter le site du projet')}
-      ${card('notes', 'Notes', 'notes', 'amber', `<b>${notes}</b> note${notes > 1 ? 's' : ''}`)}</div>`)}${panelsHTML(p, 'overview')}`;
+      ${card('notes', 'Notes', 'notes', 'amber', `<b>${notes}</b> note${notes > 1 ? 's' : ''}`)}
+      ${card('docker', 'Docker', 'container', 'blue', docker.supported() ? 'Lecture des conteneurs…' : 'Visible dans l’app Mac')}</div>`)}${panelsHTML(p, 'overview')}`;
 }
 
 // ---------- Serveur (VPS, VM) ----------
@@ -294,8 +297,9 @@ async function hydrate(root: HTMLElement, p: Project, tab: string): Promise<void
   if (tab === 'site') site.mount(root, p);
   if (tab === 'site' && p.site && native.available()) void checkSite(root, p);
   if (tab === 'server') void server(root, p);
+  if (tab === 'docker') { const box = $('.dk-box', root); if (box) docker.mount(box, p, f?.path ?? null); }
   if (tab === 'overview') {
-    void overview(root, p, f); void dashboard(root, p, f); void agentsStrip(root, p);
+    void overview(root, p, f); void dashboard(root, p, f); void agentsStrip(root, p); void docker.fillCard(root, p);
     sessions.bindComposer(root, p, r => { sessions.select(r.session || null, p.id); void go(p.id, 'sessions'); });
   }
 }

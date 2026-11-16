@@ -95,6 +95,7 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
         if type == "project", let action = body["action"] as? String, let id = body["id"] as? Int { project(action, id: id, body: body) }
         if type == "agent", let action = body["action"] as? String, let id = body["id"] as? Int { agent(action, id: id, body: body) }
         if type == "claude", let action = body["action"] as? String, let id = body["id"] as? Int { claude(action, id: id, body: body) }
+        if type == "docker", let action = body["action"] as? String, let id = body["id"] as? Int { docker(action, id: id, body: body) }
         if type == "browser", let action = body["action"] as? String, let id = body["id"] as? Int { browser(action, id: id, body: body) }
         if type == "update", let action = body["action"] as? String, let id = body["id"] as? Int { update(action, id: id) }
         if type == "voice", let action = body["action"] as? String {
@@ -202,6 +203,26 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
             ClaudeSessions.shared.delete(project: dir, session: sid) { var r = $0; if forgotten > 0 { r["ok"] = true }; r["id"] = id; self.answer(r) }
         default:
             answer(["id": id, "ok": false, "message": "Action inconnue."])
+        }
+        #else
+        answer(["id": id, "ok": false, "message": "Disponible dans l'app Mac."])
+        #endif
+    }
+
+    /// Docker sur ce Mac, en lecture seule : conteneurs et images, rattachés aux projets dont la page donne l'identifiant
+    /// (voir Docker.swift). Les dossiers de chaque projet (tous ses dépôts) sont lus ici, jamais fournis par la page.
+    private func docker(_ action: String, id: Int, body: [String: Any]) {
+        #if os(macOS)
+        guard action == "status" else { answer(["id": id, "ok": false, "message": "Action inconnue."]); return }
+        // Chaque dépôt du projet sur ce Mac : le principal, et les autres retrouvés (gardés 30 s par ProjectFolders).
+        let folders = ProjectFolders.shared
+        let ids = Array((body["projects"] as? [String] ?? []).prefix(60))
+        DispatchQueue.global(qos: .userInitiated).async {
+            let list = ids.flatMap { p -> [(id: String, dir: String)] in
+                guard let main = folders.path(p) else { return [] }
+                return [(id: p, dir: main)] + folders.otherRepos(p).found.map { (id: p, dir: $0.dir) }
+            }
+            var r = Docker.status(projects: list); r["id"] = id; self.answer(r)
         }
         #else
         answer(["id": id, "ok": false, "message": "Disponible dans l'app Mac."])
