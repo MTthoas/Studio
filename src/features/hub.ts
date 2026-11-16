@@ -21,6 +21,7 @@ import * as scope from '../integrations/scope.ts';
 import { projectOfNote } from './projects/model.ts';
 import * as tuningUI from './tuning.ts';
 import * as permissionsUI from './permissions.ts';
+import * as savedCommands from './commands.ts';
 import * as pluginsUI from './plugins.ts';
 import * as registry from '../plugins/registry.ts';
 import type { AppEvent } from '../core/events.ts';
@@ -195,6 +196,7 @@ export function fenceFor(note: Note): (lang: string, code: string, idx: number) 
     if (lang === 'sql' || lang === 'schema' || lang === 'erd') return erBlock(note, lang, code, idx);
     if (lang === 'agent') return agentBlock(note, code, idx);
     if (lang === 'linear') return linBlock(code);
+    if (savedCommands.LANGS.has(lang)) return savedCommands.blockHTML(code);
     return registry.fence(lang, code);
   };
 }

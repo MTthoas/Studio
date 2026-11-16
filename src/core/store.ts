@@ -95,6 +95,20 @@ export function index(): Index {
 export const findByTitle = (title: string): Note | null => { const id = index().byTitle.get(fold(title.trim())); return (id && notes.get(id)) || null; };
 export const backlinks = (n: Note): Note[] => [...(index().back.get(n.id) || [])].flatMap(id => notes.get(id) ?? []);
 
+// ---------- Sous-notes ----------
+/** Parente vivante d'une note (une parente supprimée ou à la corbeille ne compte pas). */
+export const parentOf = (n: Note): Note | null => { const p = n.parent ? notes.get(n.parent) : null; return p && !p.deletedAt && p.id !== n.id ? p : null; };
+/** Sous-notes vivantes, par titre. */
+export const childrenOf = (id: string): Note[] => index().live.filter(n => n.parent === id && n.id !== id).sort((a, b) => a.title.localeCompare(b.title, 'fr', { numeric: true }) || a.created - b.created);
+/** Ancêtres, du plus haut au plus proche (s'arrête sur une boucle). */
+export function ancestors(n: Note): Note[] {
+  const out: Note[] = [], seen = new Set([n.id]);
+  for (let p = parentOf(n); p && !seen.has(p.id); p = parentOf(p)) { seen.add(p.id); out.unshift(p); }
+  return out;
+}
+/** Vrai si `n` est `of` ou l'une de ses sous-notes (à n'importe quelle profondeur). */
+export const within = (n: Note, of: Note): boolean => n.id === of.id || ancestors(n).some(a => a.id === of.id);
+
 // ---------- Écriture ----------
 export function touch(n: Note) { // à appeler avant toute modification : mémorise l'état d'avant pour l'historique
   if (!pre.has(n.id)) pre.set(n.id, { title: n.title, body: getBody(n), ts: n.updated });

@@ -406,6 +406,24 @@ input[type="radio"] { accent-color: var(--text); margin: 0; }
 .backlink:hover { background: var(--hover); }
 .backlink strong { font-weight: 500; }
 .backlink span { color: var(--text-3); font-size: var(--t-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.subnotes + .backlinks { margin-top: 18px; }
+.subnotes h4 .sn-add { margin-left: auto; display: inline-flex; align-items: center; gap: 3px; font-size: var(--t-1); }
+/* Bloc ```commandes (src/features/commands.ts) */
+.cmds { margin: 12px 0; border: 1px solid var(--border); border-radius: var(--r); background: var(--code); overflow: hidden; }
+.cmds-head { display: flex; align-items: center; gap: 6px; padding: 6px 10px; font-size: var(--t-1); font-weight: 500; color: var(--text-3); border-bottom: 1px solid var(--border); }
+.cmds-head .ic { width: 13px; height: 13px; }
+.cmds-hint { margin: 0; padding: 8px 10px; font-size: var(--t-1); color: var(--text-3); }
+.cmds-sec { padding: 8px 10px 2px; font-size: var(--t-1); font-weight: 600; color: var(--text-2); }
+.cmd-row { display: flex; align-items: center; gap: 8px; padding: 5px 6px 5px 10px; }
+.cmd-row + .cmd-row { border-top: 1px solid var(--border); }
+.cmd-row:hover { background: var(--hover); }
+.cmd-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cmd-label { font-size: var(--t-1); color: var(--text-2); }
+.md .cmd-code { display: block; padding: 0; background: none; border: 0; font: .86em/1.5 var(--mono); color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; cursor: copy; }
+.cmd-copy { flex: none; opacity: .5; }
+.cmd-row:hover .cmd-copy { opacity: 1; }
+.pick-list { margin-top: 8px; padding: 0; }
+.pick-list .pal-item:hover { background: var(--hover); }
 
 /* ---------- États vides, verrous ---------- */
 .empty, .lock-pane { flex: 1; display: grid; place-items: center; padding: 24px; }
@@ -1290,6 +1308,13 @@ button.lv-chip:hover, .lv-chip.sel { color: var(--text); background: var(--btn);
 .side-sub4 { height: 22px; gap: 8px; padding-left: 72px; font-weight: 400; font-size: var(--t-1); color: var(--text-3); }
 .side-sub4 .ss-live { width: 5px; height: 5px; }
 .side-sub4.sel { color: var(--text); font-weight: 500; }
+/* Arborescence des sous-notes (`treeHTML`) : --d = profondeur */
+.side-tree { gap: 6px; height: 26px; padding-left: calc(4px + var(--d, 0) * 14px); font-weight: 400; font-size: var(--t-2); }
+.side-tree .ic { width: 13px; height: 13px; }
+.side-tree .tree-tog { flex: none; display: grid; place-items: center; width: 16px; height: 16px; border-radius: 4px; color: var(--text-3); }
+.side-tree .tree-tog .ic { width: 11px; height: 11px; color: inherit; transform: rotate(-90deg); transition: transform .12s; }
+.side-tree .tree-tog.open .ic { transform: none; }
+.side-tree .tree-tog[data-tree-toggle]:hover { background: var(--active); color: var(--text); }
 .crumb > button[data-pj-talk] { min-width: 0; max-width: 26ch; }
 /* Sous-agents d'une conversation : une pastille par fil, celle affichée en surbrillance */
 .ss-subs { display: flex; flex-wrap: wrap; gap: 6px; max-height: 132px; margin: 0 0 14px; overflow-y: auto; }

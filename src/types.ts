@@ -21,6 +21,8 @@ export interface Note {
   enc: SaltedBox | null;
   /** Note « Tâches » qui reçoit les tâches rapides. */
   todo?: boolean;
+  /** Note parente (sous-note) ; une parente absente ou dans la corbeille fait de la note une racine. */
+  parent?: string | null;
 }
 
 export interface Version { id: string; noteId: string; ts: number; title: string; body?: string; enc?: Box }
