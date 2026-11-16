@@ -355,10 +355,14 @@ src/                               TypeScript strict
     hub.ts            réglages, coffre, agents, blocs spéciaux, liaison d'appareils
     projects/         model.ts (bloc ```projet, tags), page.ts (cockpit), flux.ts,
                       review.ts (revue IA), sessions.ts (agents Claude Code, publication),
-                      items.ts (notes et tâches créées par les agents), site.ts (site du projet lancé en local), docker.ts (conteneurs et images)
+                      items.ts (notes et tâches créées par les agents), site.ts (site du projet lancé en local), docker.ts (conteneurs et images),
+                      infra.ts (serveurs : formulaire, clés SSH, extensions), specs.ts (fiche Machine), pulse.ts (tableau de bord d'une session),
+                      autopick.ts (modèle « Auto » d'après la consigne), drafts.ts (brouillons et choix de modèle du formulaire d'agent)
     news.ts           nouveautés présentées après une mise à jour, fenêtre « mise à jour prête »
-    permissions.ts    réglages des autorisations des agents Claude Code (commandes, web, notes et tâches, PATH), gardés sur le Mac
-    automations.ts, help.ts, onboarding.ts
+    permissions.ts    réglages des autorisations des agents Claude Code (commandes, web, navigateur, notes et tâches, PATH), gardés sur le Mac
+    tuning.ts         réglages des consignes et limites de l'IA (Consignes et contexte)
+    plugins.ts        page des extensions (Réglages → Extensions), générée depuis le registre
+    automations.ts, journal.ts, help.ts, onboarding.ts
   integrations/     services extérieurs, appelés directement depuis l'app
     ai.ts             Claude, OpenAI, modèle local : boucle d'agent et outils
     scope.ts          périmètres de l'IA : ce que ses outils voient d'un projet (ou de Général)
@@ -382,7 +386,9 @@ native/             apps Mac et iPhone (Swift) et leurs scripts de build
     ClaudeUsage.swift   utilisation de l'abonnement Claude
     Updater.swift       mise à jour de l'app Mac depuis les Releases
     Projects.swift      dossiers de projet, état Git, copies isolées
-    Agents.swift        agents Claude Code et leurs garde-fous
+    Agents.swift        agents Claude Code et leurs garde-fous, autorisations (AgentPermissions)
+    AgentSandbox.swift  bulle macOS (Seatbelt) dans laquelle tourne chaque agent
+    Browser.swift       navigateur (Playwright MCP) partagé entre l'IA de Studio et les agents
     Orchestrator.swift  publication : mise à jour, conflits, commit, push
     Sessions.swift      lecture des sessions Claude Code locales
     Servers.swift       serveurs joints en SSH : options, port, empreinte de l'hôte
@@ -390,6 +396,8 @@ native/             apps Mac et iPhone (Swift) et leurs scripts de build
     ServerExtensions.swift  extensions du serveur : Docker, Kubernetes
     Sites.swift         site d'un projet en local : détection, serveur de fichiers, script dev, builds notifiés
     Docker.swift        conteneurs et images Docker du Mac (lecture seule, par la socket du moteur)
+    Monitor.swift       suivi en direct d'un serveur (processeur, mémoire, réseau, disque) par une connexion SSH
+    Terminals.swift     terminal SSH intégré, dans un pseudo-terminal sur le Mac
   macOS/, iOS/        points d'entrée de chaque plateforme
 site/               site vitrine de Studio : HTML, CSS et JS statiques, sans build ni dépendance
 scripts/            build.ts (esbuild), check.ts et site.ts, exécutés directement par Node
