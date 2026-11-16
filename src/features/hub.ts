@@ -21,6 +21,7 @@ import * as scope from '../integrations/scope.ts';
 import { projectOfNote } from './projects/model.ts';
 import * as tuningUI from './tuning.ts';
 import * as permissionsUI from './permissions.ts';
+import * as savedCommands from './commands.ts';
 import * as pluginsUI from './plugins.ts';
 import * as registry from '../plugins/registry.ts';
 import type { AppEvent } from '../core/events.ts';
@@ -123,12 +124,26 @@ export function gate(): Promise<void> {
     };
     $('[data-bio]', form)?.addEventListener('click', unlockBio);
     let manual = false; try { manual = sessionStorage.getItem('studio.manualLock') === '1'; sessionStorage.removeItem('studio.manualLock'); } catch { /* ignoré */ }
-    if (vault.hasBiometric() && !manual) setTimeout(unlockBio, 250);
+    // Seulement quand la fenêtre est devant toi : le verrouillage automatique tombe souvent app en arrière-plan,
+    // et la demande d'empreinte surgissait alors par-dessus les autres apps.
+    if (vault.hasBiometric() && !manual) whenInFront(() => { if (node.isConnected) setTimeout(unlockBio, 250); });
     $('[data-pk]', form)?.addEventListener('click', async () => {
       try { await vault.unlockPasskey(); done(); } catch (e) { fail(e instanceof Error && e.name === 'NotAllowedError' ? 'Authentification annulée.' : errMsg(e)); }
     });
     input.focus();
   });
+}
+
+/** Lance `fn` une fois, dès que la page est visible et que sa fenêtre a le focus. */
+function whenInFront(fn: () => void): void {
+  const front = () => document.visibilityState === 'visible' && document.hasFocus();
+  if (front()) return fn();
+  const check = () => {
+    if (!front()) return;
+    removeEventListener('focus', check); document.removeEventListener('visibilitychange', check);
+    fn();
+  };
+  addEventListener('focus', check); document.addEventListener('visibilitychange', check);
 }
 
 function askPassword({ title, text, confirm = false, ok = 'Valider' }: { title: string; text: string; confirm?: boolean; ok?: string }): Promise<string | null> {
@@ -181,6 +196,7 @@ export function fenceFor(note: Note): (lang: string, code: string, idx: number) 
     if (lang === 'sql' || lang === 'schema' || lang === 'erd') return erBlock(note, lang, code, idx);
     if (lang === 'agent') return agentBlock(note, code, idx);
     if (lang === 'linear') return linBlock(code);
+    if (savedCommands.LANGS.has(lang)) return savedCommands.blockHTML(code);
     return registry.fence(lang, code);
   };
 }
@@ -385,7 +401,7 @@ export function askAI(prefill = ''): void {
   const m = modal({ cls: 'ask', html: `<div class="cap-head">${icon('sparkle')}<span>Demander à l’IA</span><select class="ask-prov" aria-label="Fournisseur">${Object.entries(ai.PROVIDERS).map(([k, l]) => `<option value="${k}"${k === cfg.provider ? ' selected' : ''}>${l}${ai.ready(k as ai.Provider) ? '' : ' — à configurer'}</option>`).join('')}</select></div>
     <textarea rows="3" placeholder="Résume cette note, propose un plan d’action, crée les issues Linear correspondantes…" aria-label="Demande" autofocus>${esc(prefill)}</textarea>
     <p class="ask-scope">${icon('lock')}Périmètre : ${esc(scope.label(sc))}${sc.project ? '' : ' (hors projets)'}</p>
-    <div class="ask-opts"><label><input type="checkbox" data-o="ctx"${canCtx ? ' checked' : ' disabled'}> Note ouverte${n && !canCtx ? (n.todo ? ' (liste des tâches : jamais jointe)' : ' (chiffrée ou #privé : jamais envoyée)') : ''}</label><label><input type="checkbox" data-o="notes" checked> ${sc.project ? 'Notes du projet' : 'Notes hors projets'}</label><label title="${withLinear ? '' : 'Linear ne s’ouvre à l’IA que depuis un projet relié à Linear'}"><input type="checkbox" data-o="linear"${withLinear ? '' : ' disabled'}> Linear${sc.project?.linear ? ` · ${esc(sc.project.linear)}` : ''}</label><label><input type="checkbox" data-o="agents"> Mes agents</label></div>
+    <div class="ask-opts"><label><input type="checkbox" data-o="ctx"${canCtx ? ' checked' : ' disabled'}> Note ouverte${n && !canCtx ? (n.todo ? ' (liste des tâches : jamais jointe)' : ' (chiffrée ou #privé : jamais envoyée)') : ''}</label><label><input type="checkbox" data-o="notes" checked> ${sc.project ? 'Notes du projet' : 'Notes hors projets'}</label><label title="${withLinear ? '' : 'Linear ne s’ouvre à l’IA que depuis un projet relié à Linear'}"><input type="checkbox" data-o="linear"${withLinear ? '' : ' disabled'}> Linear${sc.project?.linear ? ` · ${esc(sc.project.linear)}` : ''}</label><label><input type="checkbox" data-o="agents"> Mes agents</label>${ai.cc.onMac() ? '<label title="Ouvre, clique et lit les sites listés dans Réglages → Autorisations des agents"><input type="checkbox" data-o="navigateur"> Navigateur</label>' : ''}</div>
     <div class="ask-steps"></div><div class="ask-out md" hidden></div>
     <div class="cap-foot"><span class="ask-status"></span><span class="ask-actions"><button class="btn" data-ins hidden>Ajouter à la note</button><button class="btn" data-new hidden>Nouvelle note</button><button class="btn btn-primary" data-go>Envoyer ${kbd('mod+enter')}</button></span></div>` });
   const ta = need<HTMLTextAreaElement>('textarea', m.node), out = need('.ask-out', m.node), status = need('.ask-status', m.node), steps = need('.ask-steps', m.node);
@@ -399,7 +415,7 @@ export function askAI(prefill = ''): void {
     try {
       const ctx = n && opt('ctx') ? `Note ouverte : « ${titleOf(n)} »\n\n${noteContext(store.getBody(n) ?? '')}` : '';
       void journal.record(ta.value, n && opt('ctx') ? `Demander à l’IA · ${titleOf(n)}` : 'Demander à l’IA');
-      const r = await ai.run({ prompt: ta.value, provider: p, context: ctx, tools: ['notes', 'linear', 'agents'].filter(opt) },
+      const r = await ai.run({ prompt: ta.value, provider: p, context: ctx, tools: ['notes', 'linear', 'agents', 'navigateur'].filter(opt) },
         { approve, scope: sc, onWrite: app.refreshNote, onStep: e => steps.insertAdjacentHTML('beforeend', `<div>${icon('bolt')}${esc(stepLabel(e))}</div>`) });
       text = r.text; out.innerHTML = renderMarkdown(text || '*(réponse vide)*'); out.hidden = false;
       status.textContent = `Réponse de ${ai.PROVIDERS[p]}`;

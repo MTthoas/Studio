@@ -23,6 +23,7 @@ import * as automations from './features/automations.ts';
 import * as help from './features/help.ts';
 import * as onboarding from './features/onboarding.ts';
 import * as news from './features/news.ts';
+import * as savedCommands from './features/commands.ts';
 import * as projectsPage from './features/projects/page.ts';
 import * as projectsModel from './features/projects/model.ts';
 import * as agentItems from './features/projects/items.ts';
@@ -42,7 +43,11 @@ import type { Graph, GraphInput } from './lib/graph.ts';
 
 // ---------- Préférences ----------
 /** État d'interface mémorisé entre deux visites. */
-interface UiState { view: ViewState; id: string | null; mode: 'edit' | 'split' | 'read'; side: boolean; theme: string; tagsOpen: boolean }
+interface UiState {
+  view: ViewState; id: string | null; mode: 'edit' | 'split' | 'read'; side: boolean; theme: string; tagsOpen: boolean;
+  /** Section « Arborescence » de la barre latérale dépliée, et notes dont les sous-notes y sont affichées. */
+  treeSec: boolean; treeOpen: string[];
+}
 /** Note ouverte dans l'éditeur et ses éléments. */
 interface Editor {
   note: Note; title: HTMLInputElement;
@@ -67,7 +72,7 @@ const editing = (): OpenEditor | null => (ed && ed.ta ? ed as OpenEditor : null)
 
 const read = <T>(k: string, d: T): T => { try { return (JSON.parse(localStorage.getItem(k) || 'null') as T | null) ?? d; } catch { return d; } };
 const write = (k: string, v: unknown): void => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* stockage indisponible */ } };
-const ui: UiState = Object.assign({ view: { type: 'home' }, id: null, mode: 'split', side: true, theme: 'auto', tagsOpen: true } as UiState, read<Partial<UiState>>('carnet.ui', {}));
+const ui: UiState = Object.assign({ view: { type: 'home' }, id: null, mode: 'split', side: true, theme: 'auto', tagsOpen: true, treeSec: true, treeOpen: [] } as UiState, read<Partial<UiState>>('carnet.ui', {}));
 const saveUI = () => write('carnet.ui', ui);
 let focusMode = false, ed: Editor | null = null, graph: Graph | null = null;
 
@@ -153,6 +158,7 @@ async function openNote(id: string, { edit = false } = {}) {
   if (ui.id && ui.id !== id) await flush(ui.id);
   const n = store.get(id); if (!n) return;
   ui.id = id;
+  for (const a of store.ancestors(n)) if (!ui.treeOpen.includes(a.id)) ui.treeOpen.push(a.id); // la note ouverte est visible dans l'arborescence
   const t = ui.view.type;
   if (WIDE.has(t) || (t !== 'today' && !viewNotes().some(x => x.id === id))) ui.view = { type: n.deletedAt ? 'trash' : 'all' };
   document.body.classList.add('pane-main');
@@ -193,6 +199,7 @@ function renderSidebar() {
       <div class="side-group">${item('home')}</div>
       <div class="side-label">Notes</div>
       <div class="side-group">${item('inbox')}${item('today')}${item('journal')}${item('all')}${count.ephemeral || v.type === 'ephemeral' ? item('ephemeral') : ''}</div>
+      ${treeHTML(idx.live)}
       <div class="side-label">Organisation</div>
       <div class="side-group">${item('projets')}${projectsModel.projects().slice(0, 8).map(p => {
         const open = v.type === 'projets' && v.project === p.id, tab = v.tab ?? 'overview';
@@ -219,6 +226,24 @@ function renderSidebar() {
     <button class="side-foot" data-open-conn="${vault.enabled() ? 'appareils' : 'coffre'}" title="Réglages (${keys(SC.settings)})">${icon(vault.isOpen() ? 'shield' : 'unlock')}<span>${vault.isOpen() ? 'Chiffré de bout en bout' : 'Non chiffré'}</span>${devs ? `<span class="side-count">${icon('devices')}${devs}</span>` : ''}</button>`;
 }
 
+// Arborescence des sous-notes : chaque note qui en a, à partir des racines, dépliable (ui.treeOpen).
+const byTitle = (a: Note, b: Note) => titleOf(a).localeCompare(titleOf(b), 'fr', { numeric: true }) || a.created - b.created;
+function treeHTML(live: Note[]): string {
+  const kids = new Map<string, Note[]>();
+  for (const n of live) { const p = store.parentOf(n); if (p) { let a = kids.get(p.id); if (!a) kids.set(p.id, a = []); a.push(n); } }
+  const roots = live.filter(n => kids.has(n.id) && !store.parentOf(n)).sort(byTitle);
+  if (!roots.length) return '';
+  const noteOpen = !WIDE.has(ui.view.type) ? ui.id : null;
+  const branch = (n: Note, d: number): string => {
+    const ch = (kids.get(n.id) ?? []).sort(byTitle), open = ch.length > 0 && ui.treeOpen.includes(n.id);
+    return `<button class="side-item side-tree${n.id === noteOpen ? ' sel' : ''}" data-open-note="${n.id}" style="--d:${d}" title="${esc(titleOf(n))}">`
+      + (ch.length ? `<i class="tree-tog${open ? ' open' : ''}" data-tree-toggle="${n.id}" role="button" aria-label="${open ? 'Replier' : 'Déplier'}">${icon('chevron')}</i>` : '<i class="tree-tog"></i>')
+      + `${icon(n.enc ? 'lock' : 'notes')}<span>${esc(titleOf(n))}</span>${ch.length ? `<span class="side-count">${ch.length}</span>` : ''}</button>`
+      + (open ? ch.map(c => branch(c, d + 1)).join('') : '');
+  };
+  return `<button class="side-label" data-act="tree" aria-expanded="${ui.treeSec}">${icon('chevron')}Arborescence</button>${ui.treeSec ? `<div class="side-group">${roots.map(r => branch(r, 0)).join('')}</div>` : ''}`;
+}
+
 function workspaceMenu(anchor: HTMLElement) {
   menu(anchor, [
     { label: 'Réglages', icon: 'gear', keys: SC.settings, run: () => hub.openConnections('coffre') },
@@ -240,7 +265,7 @@ function workspaceMenu(anchor: HTMLElement) {
 // ---------- Rendu : liste ----------
 function noteItem(n: Note) {
   const m = store.meta(n), locked = store.isLocked(n);
-  const sub = locked ? 'Note chiffrée' : (m.snippet || 'Aucun contenu');
+  const p = store.parentOf(n), sub = (p ? `${titleOf(p)} › ` : '') + (locked ? 'Note chiffrée' : (m.snippet || 'Aucun contenu'));
   return `<button class="note-item${n.id === ui.id ? ' sel' : ''}" data-id="${n.id}">
     <span class="ni-row"><span class="ni-title">${n.pinned ? icon('pin') : ''}${n.enc ? icon(locked ? 'lock' : 'unlock') : ''}<span>${esc(titleOf(n))}</span></span><span class="ni-date">${rel(n.deletedAt || n.updated)}</span></span>
     <span class="ni-sub">${esc(sub)}</span>
@@ -323,7 +348,7 @@ function mountNote(main: HTMLElement, n: Note, keep: Keep | null): void {
   const seg = [['edit', 'pencil', 'Écrire'], ['split', 'split', 'Côte à côte'], ['read', 'eye', 'Lire']];
   main.innerHTML = `
     <header class="toolbar">
-      ${tbLeft()}${crumb(titleOf(n))}
+      ${tbLeft()}${crumb(titleOf(n), store.ancestors(n).map((a): [string, string] => [titleOf(a),`data-open-note="${esc(a.id)}"`]))}
       <div class="tb-side tb-right">
         ${n.expiresAt && !trashed ? `<button class="chip chip-warn" data-act="expire" title="Autodestruction le ${esc(full(n.expiresAt))}">${icon('hourglass')}${until(n.expiresAt)}</button>` : ''}
         ${n.enc && !trashed ? tb('lock', locked ? 'lock' : 'unlock', locked ? 'Note verrouillée' : 'Verrouiller maintenant', locked ? '' : SC.lock, 'on') : ''}
@@ -340,7 +365,7 @@ function mountNote(main: HTMLElement, n: Note, keep: Keep | null): void {
       ${locked ? `<div class="lock-pane"><form class="lock-card">${icon('lock')}<h3>Note chiffrée</h3><p>Le contenu est chiffré dans ce navigateur. Saisis le mot de passe pour le lire.</p><input type="password" placeholder="Mot de passe" autocomplete="off" aria-label="Mot de passe"><button class="btn btn-primary">Déverrouiller</button><p class="lock-err" role="alert"></p></form></div>`
       : `<div class="panes">
           <div class="pane pane-edit"><textarea class="body" placeholder="Écris en Markdown…  [[ pour lier une note, # pour un tag" spellcheck="true" aria-label="Contenu"></textarea></div>
-          <div class="pane pane-read"><article class="md"></article><section class="backlinks"></section></div>
+          <div class="pane pane-read"><article class="md"></article><section class="backlinks subnotes"></section><section class="backlinks"></section></div>
         </div>`}
     </div>
     <footer class="status"><span class="save-state"><i></i><span>Enregistré sur cet appareil</span></span><span class="status-right"></span></footer>`;
@@ -403,8 +428,10 @@ function renderPreview() {
   const sorts = ed.sorts;
   $$<HTMLTableElement>('table.sortable', ed.preview).forEach((t, i) => { const s = sorts.get(i); if (s) sortTable(t, s.col, s.dir); });
   paintTimers();
+  const kids = n.deletedAt ? [] : store.childrenOf(n.id);
+  const sn = ed.read && $('.subnotes', ed.read); if (sn) sn.innerHTML = kids.length ? `<h4>${icon('notes')}Sous-notes · ${kids.length}<button class="link-btn sn-add" data-act="subnote">${icon('plus')}Ajouter</button></h4>${kids.map(k => `<button class="backlink" data-id="${k.id}"><strong>${esc(titleOf(k))}</strong><span>${esc(store.isLocked(k) ? 'Note chiffrée' : store.meta(k).snippet || 'Aucun contenu')}</span></button>`).join('')}` : '';
   const back = n.deletedAt ? [] : store.backlinks(n);
-  const bl = ed.read && $('.backlinks', ed.read); if (bl) bl.innerHTML = back.length ? `<h4>${icon('link')}Rétroliens · ${back.length}</h4>${back.map(b => {
+  const bl = ed.read && $('.backlinks:not(.subnotes)', ed.read); if (bl) bl.innerHTML = back.length ? `<h4>${icon('link')}Rétroliens · ${back.length}</h4>${back.map(b => {
     const key = fold(n.title.trim());
     const line = (store.getBody(b) || '').split('\n').find(l => [...l.matchAll(LINK_RE)].some(m => fold(m[1].trim()) === key)) || '';
     return `<button class="backlink" data-id="${b.id}"><strong>${esc(titleOf(b))}</strong><span>${esc(plain(line).slice(0, 140))}</span></button>`;
@@ -681,6 +708,39 @@ async function removeEncryption(n: Note) {
   await flush(n.id); await store.decryptNote(n); renderMain(); toast('Chiffrement retiré');
 }
 
+// ---------- Sous-notes ----------
+async function newSubNote(p: Note): Promise<void> {
+  onboarding.mark('note');
+  await flush(p.id);
+  const n = await store.createNote({ parent: p.id });
+  await openNote(n.id, { edit: true });
+}
+async function setParent(n: Note, parent: Note | null): Promise<void> {
+  if (parent && store.within(parent, n)) { toast('Une note ne peut pas être rangée sous l’une de ses sous-notes.'); return; }
+  n.parent = parent?.id ?? null;
+  if (parent && !ui.treeOpen.includes(parent.id)) ui.treeOpen.push(parent.id);
+  await store.saveNote(n, { version: false });
+  saveUI(); render();
+  toast(parent ? `Rangée sous « ${titleOf(parent)} »` : 'Sortie de sa note parente');
+}
+/** Choix de la note parente : recherche parmi les notes, sauf la note elle-même et ses sous-notes. */
+function parentDialog(n: Note): void {
+  const m = modal({ title: 'Ranger sous une note', cls: 'small', html: `<input class="field" placeholder="Rechercher une note…" aria-label="Note parente" autocomplete="off" spellcheck="false" autofocus><div class="pal-list pick-list"></div>` });
+  const input = need<HTMLInputElement>('input', m.node), list = need('.pick-list', m.node);
+  const paint = () => {
+    const q = input.value.trim();
+    const found = store.index().live.flatMap(x => {
+      if (x.id === n.parent || store.within(x, n)) return [];
+      const f = q ? fuzzy(q, titleOf(x)) : { score: x.updated / 1e12, pos: [] as number[] };
+      return f ? [{ x, f }] : [];
+    }).sort((a, b) => b.f.score - a.f.score).slice(0, 30);
+    list.innerHTML = found.length ? found.map(({ x, f }) => { const path = store.ancestors(x).map(titleOf).join(' › '); return `<button class="pal-item" data-pick="${x.id}">${icon('notes')}<span class="pal-main"><span class="pal-title">${hl(titleOf(x), f.pos)}</span>${path ? `<span class="pal-sub">${esc(path)}</span>` : ''}</span></button>`; }).join('') : `<div class="pal-empty">Aucune note</div>`;
+  };
+  input.addEventListener('input', paint); paint();
+  input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); $<HTMLElement>('[data-pick]', list)?.click(); } });
+  list.addEventListener('click', e => { const b = target(e).closest('[data-pick]'), p = store.get(b?.dataset.pick); if (!p) return; m.close(); void setParent(n, p); });
+}
+
 function moreMenu(anchor: Anchor, n: Note): void {
   if (n.deletedAt) { menu(anchor, [{ label: 'Restaurer', icon: 'restore', run: () => store.restoreNote(n).then(() => openNote(n.id)) }, { label: 'Supprimer définitivement', icon: 'trash', danger: true, run: () => destroy(n) }]); return; }
   const locked = store.isLocked(n);
@@ -689,6 +749,10 @@ function moreMenu(anchor: Anchor, n: Note): void {
       { label: 'Historique des versions', icon: 'history', keys: SC.history, run: () => openHistory(n) },
       { label: 'Mode focus', icon: 'focus', keys: SC.focus, run: () => setFocus(!focusMode) },
       '-']),
+    { label: 'Nouvelle sous-note', icon: 'plus', run: () => newSubNote(n) },
+    { label: 'Ranger sous une note…', icon: 'notes', run: () => parentDialog(n) },
+    ...(store.parentOf(n) ? [{ label: `Sortir de « ${titleOf(store.parentOf(n) as Note)} »`, icon: 'back', run: () => setParent(n, null) }] : []),
+    '-',
     { label: n.pinned ? 'Désépingler' : 'Épingler en haut', icon: 'pin', run: () => togglePin(n) },
     { label: n.expiresAt ? 'Modifier l’autodestruction…' : 'Rendre éphémère…', icon: 'hourglass', run: () => expireMenu(anchor, n) },
     ...(n.enc ? (locked ? [] : [{ label: 'Retirer le chiffrement', icon: 'unlock', run: () => removeEncryption(n) }]) : [{ label: 'Chiffrer…', icon: 'lock', run: () => encryptDialog(n) }]),
@@ -832,10 +896,13 @@ function commands() {
       c('Exporter cette note en Markdown', 'download', () => exportNote(n), '', 'md télécharger'),
       c('Insérer un agent', 'bot', () => insertBlock(hub.AGENT_TEMPLATE), '', 'bloc automatisation'),
       c('Insérer un schéma de base de données', 'db', () => insertBlock(hub.SCHEMA_TEMPLATE), '', 'sql erd tables diagramme'),
+      c('Insérer un bloc de commandes', 'terminal', () => insertBlock(savedCommands.TEMPLATE), '', 'commandes shell terminal bash cli snippet mémo'),
       c('Insérer une liste Linear', 'linear', () => insertBlock('```linear\nassigné: moi\nétat: en cours, à faire\nlimite: 10\n```\n'), '', 'issues'),
       c('Linear : créer une issue depuis la sélection', 'linear', hub.issueFromSelection, '', 'ticket tâche'),
     ] : []),
     ...(live ? [
+      c('Nouvelle sous-note', 'plus', () => newSubNote(n), '', 'sous-page enfant arborescence imbriquer'),
+      c('Ranger la note sous une autre note…', 'notes', () => parentDialog(n), '', 'parente sous-note déplacer arborescence imbriquer'),
       c(n.pinned ? 'Désépingler la note' : 'Épingler la note', 'pin', () => togglePin(n), '', 'pin favori'),
       c(n.expiresAt ? 'Modifier l’autodestruction' : 'Rendre la note éphémère', 'hourglass', () => { const a = $('[data-act=more]'); if (a) expireMenu(a, n); }, '', 'éphémère expiration autodestruction date'),
       n.enc ? c(store.isLocked(n) ? 'Déverrouiller la note' : 'Verrouiller la note', 'lock', () => lockAction(n), SC.lock, 'chiffrement mot de passe')
@@ -894,6 +961,14 @@ function paletteResults(raw: string): PaletteSection[] {
   const cmds: PaletteItem[] = found.slice(0, q ? 7 : 40).map(x => ({ score: x.f.score, icon: x.c.icon, title: hl(x.c.label, x.f.pos), keys: x.c.keys, run: x.c.run }));
   const sn = { label: q ? 'Notes' : 'Récentes', items: notes }, sc = { label: 'Commandes', items: cmds };
   if (q && (cmds[0]?.score ?? -Infinity) > (notes[0]?.score ?? -Infinity) && notes.length) out.push(sc, sn); else out.push(sn, sc);
+  // Commandes enregistrées dans les blocs ```commandes : Entrée les copie.
+  if (q && !cmdOnly) {
+    const saved = savedCommands.all().flatMap(({ note, c }) => {
+      const label = c.label || c.cmd.split('\n')[0] || '', fl = fuzzy(q, label), f = fl || fuzzy(q, c.cmd);
+      return f ? [{ note, c, f, label, pos: fl ? fl.pos : [] }] : [];
+    }).sort((a, b) => b.f.score - a.f.score).slice(0, 6);
+    if (saved.length) out.splice(1, 0, { label: 'Commandes enregistrées', items: saved.map(x => ({ icon: 'terminal', title: hl(x.label, x.pos), sub: `<code>${esc(x.c.cmd.replace(/\\\n\s*/g, ' '))}</code>`, hint: [titleOf(x.note), x.c.section].filter(Boolean).join(' · '), run: () => savedCommands.copy(x.c.cmd) })) });
+  }
   if (q && !cmdOnly && !store.findByTitle(q)) out.push({ label: 'Créer', items: [{ icon: 'plus', title: `Créer la note « ${esc(q)} »`, run: () => newNote({ title: q }) }] });
   return out.filter(s => s.items.length);
 }
@@ -1003,8 +1078,17 @@ store.onChange((kind, id, remote) => {
 // Clics délégués : une seule écoute pour toute l'application.
 async function onClick(e: MouseEvent): Promise<void> {
   const t = target(e);
+  const toggle = t.closest('[data-tree-toggle]');
+  if (toggle) { // replier ou déplier une branche de l'arborescence, sans ouvrir la note
+    const id = toggle.dataset.treeToggle ?? '', on = ui.treeOpen.includes(id);
+    ui.treeOpen = ui.treeOpen.filter(x => x !== id && store.notes.has(x)).concat(on ? [] : [id]);
+    saveUI(); renderSidebar(); return;
+  }
+  const cmd = t.closest('[data-cmd-copy]');
+  if (cmd) { await savedCommands.copy(cmd.dataset.cmdCopy ?? ''); return; }
   const anchor = t.closest('[data-act]'), act = anchor?.dataset.act, n = store.get(ui.id);
   if (anchor && act) {
+    if (act === 'tree') { ui.treeSec = !ui.treeSec; saveUI(); renderSidebar(); return; }
     if (act === 'new') { await newNote(); return; }
     if (act === 'workspace') { workspaceMenu(anchor); return; }
     if (act === 'tags') { ui.tagsOpen = !ui.tagsOpen; saveUI(); renderSidebar(); return; }
@@ -1015,6 +1099,7 @@ async function onClick(e: MouseEvent): Promise<void> {
     if (act === 'back') { document.body.classList.remove('pane-main'); return; }
     if (!n) return;
     if (act === 'more') moreMenu(anchor, n);
+    else if (act === 'subnote') await newSubNote(n);
     else if (act === 'expire') expireMenu(anchor, n);
     else if (act === 'lock') await lockAction(n);
     else if (act === 'history') await openHistory(n);

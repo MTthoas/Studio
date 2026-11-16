@@ -417,7 +417,7 @@ export function composerHTML(p: Project, { session = '', compact = false, machin
   // Chaque formulaire a son brouillon : un par conversation, un pour la nouvelle consigne, un pour celle de l'aperçu, un pour le serveur.
   const key = `${p.id}|${session ? `s:${session}` : machine === 'server' ? 'server' : compact ? 'quick' : 'new'}`, d = saved.draft(key);
   if (session) return `<form class="ag-compose ag-continue" data-draft="${esc(key)}" data-session="${esc(session)}"${machine ? ` data-machine="${esc(machine)}"` : ''}><textarea name="prompt" rows="2" placeholder="Réponds à Claude : précise, corrige, tranche, demande la suite…" aria-label="Répondre dans la session">${esc(d?.text ?? '')}</textarea>
-    <div class="ag-opts"><span class="ag-hint" data-hint>${HINT_IDLE}</span>${tuneHTML(saved.ofSession(session) ?? { model: '', effort: '' })}<span class="ag-go">${voice.micHTML('Répondre à voix haute')}<button type="button" class="btn btn-danger ag-stop" data-ag="stop" hidden>${icon('stop')}Arrêter</button><button class="btn btn-primary ag-send">${SEND_IDLE}</button></span></div>${lims}</form>`;
+    <div class="ag-opts"><div class="ag-tools">${tuneHTML(saved.ofSession(session) ?? { model: '', effort: '' })}<span class="ag-hint" data-hint>${HINT_IDLE}</span></div><span class="ag-go">${voice.micHTML('Répondre à voix haute')}<button type="button" class="btn btn-danger ag-stop" data-ag="stop" hidden>${icon('stop')}Arrêter</button><button class="btn btn-primary ag-send">${SEND_IDLE}</button></span></div>${lims}</form>`;
   const pre = pending?.project === p.id ? pending : null; if (pre && !compact) pending = null;
   // Une note ou une tâche confiée à Claude s'ajoute au brouillon en cours, sans l'effacer.
   const hand = pre && !compact ? pre : null;
@@ -428,12 +428,12 @@ export function composerHTML(p: Project, { session = '', compact = false, machin
   if (hand) saved.saveDraft(key, { text, notes, mode: read ? 'read' : 'edit', tests });
   return `<form class="ag-compose${compact ? ' compact' : ''}" data-draft="${esc(key)}" data-notes="${esc(notes.join(','))}"><textarea name="prompt" rows="${compact ? 1 : 3}" placeholder="Que doit faire Claude Code dans ${esc(p.name)} ? Ex. « Ajoute des tests au parseur de dates »" aria-label="Consigne pour Claude Code">${esc(text)}</textarea>
     <div class="ag-ctx">${notes.map(chip).join('')}<button type="button" class="ag-addnote" data-ag-note>${icon('plus')}Joindre une note</button></div>
-    <div class="ag-opts">
+    <div class="ag-opts"><div class="ag-tools">
       <div class="ag-seg" role="radiogroup" aria-label="Mode"><label><input type="radio" name="mode" value="edit"${read ? '' : ' checked'}><span>${icon('pencil')}Modifier</span></label><label><input type="radio" name="mode" value="read"${read ? ' checked' : ''}><span>${icon('search')}Analyser</span></label></div>
       ${bridge.local() && machine !== 'server' ? `<label class="ag-check" title="Autorise les commandes réglées dans Réglages → Autorisations (par défaut npm test et npm run …) : le code du projet peut alors s’exécuter"><input type="checkbox" name="tests"${tests ? ' checked' : ''}${read && !inRead ? ' disabled' : ''}>Commandes</label>` : ''}
       <select class="field" name="machine" aria-label="Où travailler"${machine === 'server' ? '' : ' hidden'}><option value="mac">Sur le Mac</option>${machine === 'server' ? `<option value="${server ? `server:${esc(server)}` : 'server'}" selected>Sur le serveur</option>` : ''}</select>
       ${tuneHTML(saved.defaults())}
-      <span class="ag-hint" data-hint>${read ? HINT_READ : HINT_EDIT}</span>
+      <span class="ag-hint" data-hint>${read ? HINT_READ : HINT_EDIT}</span></div>
       <span class="ag-go">${voice.micHTML('Dicter la consigne')}<button class="btn btn-primary ag-send">${icon('play')}Lancer<kbd>⌘↩</kbd></button></span></div>${lims}</form>`;
 }
 
