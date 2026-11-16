@@ -1,9 +1,15 @@
 // Bulle macOS des agents Claude Code lancés sur ce Mac (réglage « Terminal isolé », Réglages → Autorisations).
 // L'agent part par `sandbox-exec -p <profil> claude …` : le profil Seatbelt vaut pour Claude Code et pour tout ce qu'il
 // lance (Bash, git, npm, serveur MCP du navigateur), sans qu'aucun ne puisse en sortir.
-// - Lecture : tout, sauf les données de Studio (notes, coffre, réglages : ~/Library/*/app.carnet.notes*), les dossiers
-//   des autres projets de Studio, les journaux des autres sessions de Claude Code, l'agent SSH de Studio et quelques
-//   dossiers de secrets. Le projet lui-même (dépôt, copies, .git) reste lisible même s'il est rangé sous un autre.
+// - Lecture : le système (/System, /usr, /opt, /Library, /tmp…) reste lisible ; tout ce qui est sous /Users (le
+//   dossier personnel et ceux des autres utilisateurs, /Users/Shared) et /Volumes (disques externes) est fermé. Dans le
+//   dossier personnel ne se rouvrent que le projet (dépôt, copies, leur .git commun, les journaux de la session) et une
+//   liste blanche de quoi faire tourner les outils (git, gh, node/npm, claude… : leurs réglages, caches et binaires, les
+//   dossiers ajoutés au PATH). Les réglages du shell (.zshrc, .bashrc, .profile…) restent illisibles exprès : ils
+//   contiennent souvent des jetons. Par-dessus la liste blanche, restent fermés : les données de Studio (notes, coffre,
+//   réglages : ~/Library/*/app.carnet.notes*), les dossiers des autres projets de Studio, les journaux des autres
+//   sessions de Claude Code, l'agent SSH de Studio et quelques dossiers de secrets. Le projet reste lisible même s'il
+//   est rangé sous un autre ; des dossiers au-dessus, seuls les attributs (stat) se lisent.
 // - Écriture dans le dossier personnel : la copie de l'agent (et ses copies sœurs), le .git de leurs dépôts (sauf
 //   hooks/), ~/.claude (sauf réglages, hooks, commandes…), les caches des outils et le trousseau. Hors du dossier
 //   personnel (/tmp, dossiers temporaires) : permis.
@@ -46,6 +52,23 @@ enum AgentSandbox {
                       ".rustup", ".gradle", ".m2", "go/pkg", ".node-gyp", ".swiftpm", "Library/org.swift.swiftpm",
                       "Library/Developer/Xcode/DerivedData", "Library/Caches", "Library/Keychains", ".config/gh", ".claude", ".local/share/claude", ".local/state/claude"].map { home + "/" + $0 }
 
+        // Liste blanche de lecture dans le dossier personnel : ce qu'il faut pour faire tourner les outils, rien de plus.
+        // Pas de .zshrc, .bashrc, .profile… : ils contiennent souvent des jetons, et l'agent ne lance pas de shell de connexion.
+        let tools = [".config/git", ".config/gh", ".nvm", ".volta", ".fnm", ".asdf", ".local/bin", ".bun", ".deno",
+                     ".cargo/bin", ".rustup", ".pyenv", "go/bin", ".npm-global", ".claude", ".local/share/claude",
+                     ".local/state/claude", "Library/Keychains", "Library/Caches", "Library/pnpm", "Library/Preferences"].map { home + "/" + $0 }
+        // Fichiers seuls (sans ce qui serait rangé à côté) : jamais les clés SSH, seulement les hôtes connus et la config.
+        let toolFiles = [".gitconfig", ".gitignore_global", ".npmrc", ".yarnrc", ".yarnrc.yml", ".ssh/known_hosts", ".ssh/config",
+                         ".CFUserTextEncoding"].map { home + "/" + $0 }
+        // Dossiers ajoutés au PATH (Réglages → Autorisations) et dossier du programme claude réellement lancé.
+        // Jamais le dossier personnel lui-même ni un de ses parents : ce serait tout rouvrir.
+        var extra = AgentPermissions.path.map(real)
+        if let bin = ClaudeCode.shared.binary() {
+            extra += [(bin as NSString).deletingLastPathComponent, (real(bin) as NSString).deletingLastPathComponent]
+        }
+        let opened = unique(extra.filter { $0 != home && $0 != "/" && !home.hasPrefix($0 + "/") })
+        let readable = unique(caches + tools + opened)
+
         guard let homeRx = rx(home), let studioRx = rx(studio) else { return nil }
         let studioData = "(regex #\"^\(homeRx)/Library/[^/]+/\(studioRx)\")"
         let claudeConfig = "(regex #\"^\(homeRx)/\\.claude/(settings[^/]*\\.json|CLAUDE\\.md|commands|agents|hooks|plugins|skills|output-styles)(/|$)\")"
@@ -57,12 +80,27 @@ enum AgentSandbox {
         }
         guard let pOthers = paths(others + secrets + [sshAgent, logs]), let pMine = paths(mine + ownLogs), let pHome = paths([home]),
               let pWrite = paths(work + commons + caches), let pHooks = paths(commons.map { $0 + "/hooks" } + [logs]),
-              let pOwnLogs = paths(ownLogs), let pSsh = paths([sshAgent]) else { return nil }
+              let pOwnLogs = paths(ownLogs), let pSsh = paths([sshAgent]), let pTools = paths(readable),
+              let pHomeRead = paths([home, "/Volumes", "/Users/Shared"]) else { return nil }
+        let pToolFiles = toolFiles.compactMap(literal).joined(separator: " ")
+        // Attributs des dossiers au-dessus du projet et de la liste blanche (~/.local, ~/.config, ~/Library…).
+        let up = unique((mine + readable + toolFiles).flatMap(ancestors)).compactMap(literal)
+        let pUp = up.isEmpty ? "(literal \"/\")" : up.joined(separator: " ")
 
         var rules = ["(version 1)", "(allow default)",
-                     // Lecture : données de Studio, autres projets, autres sessions, secrets ; puis le projet, rouvert.
+                     // Lecture : fermé sous /Users (dossier personnel, autres utilisateurs, /Users/Shared) et /Volumes…
+                     // Même dossiers par leur autre chemin (`/System/Volumes/Data/…`, le volume des données de macOS).
+                     "(deny file-read* \(pHomeRead) (regex #\"^/Users/\") (regex #\"^/System/Volumes/Data/(Users|Volumes)/\"))",
+                     // … rouvert pour les outils (réglages, caches, binaires) …
+                     "(allow file-read* \(pTools) \(pToolFiles) \(claudeState))",
+                     // … sauf données de Studio, autres projets, autres sessions, secrets ; puis le projet (et les
+                     // journaux de sa session), rouvert même s'il est rangé sous l'un d'eux.
                      "(deny file-read* \(studioData) \(pOthers))",
                      "(allow file-read* \(pMine))",
+                     // Les dossiers au-dessus du projet : seulement leurs attributs (stat, realpath), jamais leur contenu.
+                     // Sans ça, git et node échouent sur « Operation not permitted » quand le projet est rangé dans
+                     // le dossier d'un autre projet (ils remontent l'arborescence en résolvant les chemins).
+                     "(allow file-read-metadata \(pUp))",
                      // Écriture : rien dans le dossier personnel, sauf la copie, le .git, les caches et l'état de Claude Code.
                      "(deny file-write* \(pHome))",
                      "(allow file-write* \(pWrite) \(claudeState))",
@@ -116,6 +154,17 @@ enum AgentSandbox {
     private static func subpath(_ p: String) -> String? {
         guard p.hasPrefix("/"), p != "/", p.rangeOfCharacter(from: CharacterSet(charactersIn: "\"\\").union(.controlCharacters)) == nil else { return nil }
         return "(subpath \"\(p)\")"
+    }
+    /// `(literal "…")` : ce chemin seul, sans ce qu'il contient.
+    private static func literal(_ p: String) -> String? {
+        guard p.hasPrefix("/"), p.rangeOfCharacter(from: CharacterSet(charactersIn: "\"\\").union(.controlCharacters)) == nil else { return nil }
+        return "(literal \"\(p)\")"
+    }
+    /// Dossiers parents d'un chemin, jusqu'à « / » compris (`/a/b/c` → `/a/b`, `/a`, `/`).
+    private static func ancestors(_ p: String) -> [String] {
+        var out: [String] = [], cur = p
+        while cur != "/" && !cur.isEmpty { cur = (cur as NSString).deletingLastPathComponent; out.append(cur) }
+        return out
     }
     /// Texte littéral pour une expression rationnelle du profil (chaîne brute `#"…"`, donc sans guillemet).
     private static func rx(_ s: String) -> String? {

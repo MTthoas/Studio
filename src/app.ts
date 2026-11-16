@@ -30,6 +30,8 @@ import * as agentItems from './features/projects/items.ts';
 import { registerBuiltins } from './plugins/builtin.ts';
 import * as plugins from './plugins/registry.ts';
 import * as caret from './ui/caret.ts';
+import * as selask from './ui/selask.ts';
+import * as noteai from './features/noteai.ts';
 import * as biometric from './core/biometric.ts';
 import * as native from './core/native.ts';
 import * as update from './core/update.ts';
@@ -353,25 +355,26 @@ function mountNote(main: HTMLElement, n: Note, keep: Keep | null): void {
         ${n.expiresAt && !trashed ? `<button class="chip chip-warn" data-act="expire" title="Autodestruction le ${esc(full(n.expiresAt))}">${icon('hourglass')}${until(n.expiresAt)}</button>` : ''}
         ${n.enc && !trashed ? tb('lock', locked ? 'lock' : 'unlock', locked ? 'Note verrouillée' : 'Verrouiller maintenant', locked ? '' : SC.lock, 'on') : ''}
         ${ro ? '' : `<div class="seg" role="tablist" title="Changer de mode (${keys(SC.mode)})">${seg.map(([m, ic, l]) => `<button role="tab" data-mode="${m}" aria-selected="${m === mode}" aria-label="${l}" title="${l}">${icon(ic)}</button>`).join('')}</div>`}
-        ${ro ? '' : `<button class="btn btn-ghost" data-act="improve" title="Améliorer cette note avec l’IA (elle ne lit que cette note)">${icon('sparkle')}<span>Améliorer</span></button><button class="btn btn-ghost" data-act="ask" title="Demander à l’IA (${keys(SC.ask)})">${icon('sparkle')}<span>Demander</span></button>`}
+        ${ro ? '' : `<button class="btn btn-ghost nai-btn" data-act="ai" aria-pressed="${noteai.opened()}" title="Panneau IA : demander, améliorer, réécrire la sélection (${keys(SC.ask)})">${icon('sparkle')}<span>IA</span></button>`}
         ${ro || !projectsModel.projectOfNote(n) || !projectsPage.claudeAvailable() || !ai.shareable(n) ? '' : `<button class="btn btn-ghost" data-act="claude" title="Confier cette note à Claude Code, dans le projet ${esc(projectsModel.projectOfNote(n)?.name ?? '')}">${icon('terminal')}<span>Claude Code</span></button>`}
         ${ro ? '' : `<button class="btn btn-ghost pj-pick" data-act="project" title="Projet de la note">${icon('folder')}<span>${esc(projectsModel.projectOfNote(n)?.name ?? 'Projet')}</span></button>`}
         ${tb('more', 'more', 'Plus d’actions')}
       </div>
     </header>
     ${trashed ? `<div class="banner">${icon('trash')}<span>Cette note est dans la corbeille.</span><button class="btn" data-act="restore">Restaurer</button><button class="btn btn-danger" data-act="destroy">Supprimer définitivement</button></div>` : ''}
-    <div class="note" data-mode="${mode}">
+    <div class="note-wrap"><div class="note" data-mode="${mode}">
       <div class="note-head"><input class="title" placeholder="Sans titre" value="${esc(n.title)}" ${trashed ? 'disabled' : ''} aria-label="Titre" spellcheck="false" autocomplete="off"></div>
       ${locked ? `<div class="lock-pane"><form class="lock-card">${icon('lock')}<h3>Note chiffrée</h3><p>Le contenu est chiffré dans ce navigateur. Saisis le mot de passe pour le lire.</p><input type="password" placeholder="Mot de passe" autocomplete="off" aria-label="Mot de passe"><button class="btn btn-primary">Déverrouiller</button><p class="lock-err" role="alert"></p></form></div>`
       : `<div class="panes">
           <div class="pane pane-edit"><textarea class="body" placeholder="Écris en Markdown…  [[ pour lier une note, # pour un tag" spellcheck="true" aria-label="Contenu"></textarea></div>
           <div class="pane pane-read"><article class="md"></article><section class="backlinks subnotes"></section><section class="backlinks"></section></div>
         </div>`}
-    </div>
+    </div><aside class="nai" hidden></aside></div>
     <footer class="status"><span class="save-state"><i></i><span>Enregistré sur cet appareil</span></span><span class="status-right"></span></footer>`;
 
   const E: Editor = { note: n, title: need<HTMLInputElement>('.title', main), ta: $<HTMLTextAreaElement>('.body', main), preview: $('.md', main), read: $('.pane-read', main), sorts: new Map(), titleAtFocus: n.title };
   ed = E;
+  noteai.mount(ro ? null : E.ta);
   E.title.addEventListener('focus', () => { E.titleAtFocus = n.title; });
   E.title.addEventListener('input', () => { store.touch(n); n.title = E.title.value; n.updated = Date.now(); scheduleSave(n); const c = $('.crumb-cur', main); if (c) c.textContent = titleOf(n); });
   E.title.addEventListener('blur', async () => {
@@ -394,6 +397,12 @@ function mountNote(main: HTMLElement, n: Note, keep: Keep | null): void {
   }
   const ta = E.ta, rd = E.read; if (!ta) return;
   caret.attach(ta);
+  selask.attach(ta, {
+    enabled: () => noteai.canSend(n) && !noteai.opened(), // panneau ouvert : la sélection s'y joint d'elle-même
+    run: (s, prompt) => noteai.quick(n, s, prompt),
+    more: (s, prompt, answer) => noteai.adopt(n, s, prompt, answer),
+    replace: (s, e, t) => replaceRange(ta, s, e, t),
+  });
   ta.value = store.getBody(n) ?? '';
   ta.readOnly = trashed;
   ta.addEventListener('input', onBodyInput);
@@ -453,6 +462,8 @@ function setFocus(on: boolean) {
   if (on) { ed?.ta?.focus(); toast(`Mode focus — ${keys('esc')} pour quitter`); }
 }
 
+/** « Demander à l'IA » : le panneau de la note quand une note est ouverte à l'écran, la fenêtre générale sinon. */
+function askAI(): void { if (ed && !ed.note.deletedAt && $('.nai')) noteai.open(); else hub.askAI(); }
 function toggleSidebar() { ui.side = !ui.side; saveUI(); document.body.classList.toggle('no-side', !ui.side); document.body.classList.toggle('side-open', ui.side); }
 
 // ---------- Éditeur : confort d'écriture ----------
@@ -875,8 +886,8 @@ function commands() {
     c('Notes', 'notes', () => setView({ type: 'all' }), '', 'liste toutes'),
     c('Boîte de réception', 'inbox', () => setView({ type: 'inbox' }), '', 'inbox'),
     c('Accueil', 'home', () => setView({ type: 'home' }), '', 'widgets tableau de bord dashboard'),
-    c('Demander à l’IA', 'sparkle', () => hub.askAI(), SC.ask, 'claude chatgpt openai assistant question'),
-    ...(store.get(ui.id) ? [c('Améliorer la note avec l’IA', 'sparkle', () => hub.askAI('', { improve: true }), '', 'réécrire corriger orthographe clarifier ia')] : []),
+    c('Demander à l’IA', 'sparkle', askAI, SC.ask, 'claude chatgpt openai assistant question panneau'),
+    ...(store.get(ui.id) ? [c('Améliorer la note avec l’IA', 'sparkle', () => (ed?.ta ? noteai.improve() : hub.askAI('', { improve: true })), '', 'réécrire corriger orthographe clarifier ia')] : []),
     c('Automatisations', 'bot', () => setView({ type: 'agents' }), '', 'agents ia automatiser routine planifier déclencheur'),
     c('Nouvelle automatisation', 'bot', () => setView({ type: 'agents' }), '', 'créer agent modèle planifier'),
     c('Réglages : sécurité et chiffrement', 'shield', () => hub.openConnections('coffre'), '', 'sécurité mot de passe face id touch id passkey'),
@@ -1104,8 +1115,9 @@ async function onClick(e: MouseEvent): Promise<void> {
     else if (act === 'expire') expireMenu(anchor, n);
     else if (act === 'lock') await lockAction(n);
     else if (act === 'history') await openHistory(n);
-    else if (act === 'ask') hub.askAI();
-    else if (act === 'improve') hub.askAI('', { improve: true });
+    else if (act === 'ai') noteai.toggle();
+    else if (act === 'ask') askAI();
+    else if (act === 'improve') noteai.improve();
     else if (act === 'focus') setFocus(!focusMode);
     else if (act === 'restore') { await store.restoreNote(n); await openNote(n.id); }
     else if (act === 'destroy') await destroy(n);
@@ -1161,7 +1173,7 @@ document.addEventListener('keydown', e => {
   }
   if (matches(e, SC.palette) || (isMac && e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === 'k')) { e.preventDefault(); return openPalette(); }
   if (matches(e, SC.capture)) { e.preventDefault(); return openCapture(); }
-  if (matches(e, SC.ask)) { e.preventDefault(); return hub.askAI(); }
+  if (matches(e, SC.ask)) { e.preventDefault(); return askAI(); }
   if (matches(e, SC.settings)) { e.preventDefault(); return hub.openConnections('coffre'); }
   if (matches(e, SC.tasks)) { e.preventDefault(); return setView({ type: 'tasks' }); }
   if (matches(e, SC.notifs)) { e.preventDefault(); return setView({ type: 'linear' }); }
@@ -1298,6 +1310,11 @@ async function start() {
   registerBuiltins();
   home.init(shared); journal.init(shared); chat.init({ ...shared, refreshNote }); automations.init(shared); projectsPage.init(shared); help.init({ ...shared, shortcuts: shortcutRows }); voice.init(shared); linearView.init(shared); githubPage.init(shared);
 
+  noteai.init({
+    editor: () => (ed && $('.nai') && !ed.note.deletedAt && !store.isLocked(ed.note) ? { note: ed.note, ta: ed.ta } : null),
+    replace: (s, e, t) => { if (ed?.ta) replaceRange(ed.ta, s, e, t); },
+    flush, openNote: id => void openNote(id),
+  });
   hub.init({
     openNote, setView, renderMain, flush, flushAll, refreshNote, capture: quickCapture, crumb,
     theme: () => ui.theme, setTheme, exportJSON, exportZip, pickFiles: () => need('#file').click(), openHelp,
