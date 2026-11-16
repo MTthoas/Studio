@@ -53,6 +53,17 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'agent-project-items', date: '2026-11-16', icon: 'check', hue: 'green', mac: true,
+    title: 'Tes agents ajoutent des tâches et des notes',
+    lead: 'Demande à un agent de noter une suite à donner ou une décision : il l’ajoute au projet d’où il est lancé.',
+    bits: [
+      ['check', 'Tâches', 'dans l’onglet Tâches du projet, avec leur échéance (« vendredi », `@2026-12-01`)'],
+      ['notes', 'Notes', 'avec le tag du projet ; rien d’existant n’est modifié ni supprimé'],
+      ['shield', 'Interrupteur', '« Notes et tâches du projet », activé par défaut'],
+    ],
+    where: ['Réglages', 'Autorisations des agents'],
+    visual: { kind: 'flow', steps: [['Agent', 'violet', 'terminal'], ['Compte rendu', 'blue', 'notes'], ['Tâches et notes', 'green', 'check']] },
+    go: { label: 'Voir les autorisations', view: { type: 'settings', tab: 'autorisations' } } },
   { id: 'subnotes-commands', date: '2026-11-16', icon: 'notes', hue: 'teal',
     title: 'Sous-notes et commandes',
     lead: 'Une note peut en contenir d’autres, rangées en arbre dans la barre latérale, et garder des commandes à copier.',

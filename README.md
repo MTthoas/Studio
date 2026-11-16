@@ -217,6 +217,7 @@ Si l'agent ne parvient pas à résoudre, la publication s'arrête et te donne la
 - **Toutes les commandes** (terminal sans restriction) et **Aussi en mode Analyser** (qui travaille dans le dossier du projet, pas dans une copie) : désactivés par défaut, avec un avertissement.
 - **Web** : recherche et lecture de pages (`WebSearch`, `WebFetch`), désactivé par défaut.
 - **Navigateur** : l'agent pilote un navigateur ([Playwright MCP](https://github.com/microsoft/playwright-mcp), lancé par `npx`, sans fenêtre, profil vide à chaque lancement) pour ouvrir des pages, cliquer, remplir des formulaires et faire des captures, sur les seuls sites listés (une origine par ligne : `exemple.fr`, `http://localhost:5173`). Désactivé par défaut, sur le Mac seulement ; il faut Node.js et Google Chrome. Le même navigateur sert à l'IA de Studio quel que soit son fournisseur (Claude, OpenAI, modèle local) : page Claude, « Demander à l'IA » (case **Navigateur**) et automatisations avec `outils: navigateur` (`native/Shared/Browser.swift`, client MCP sur stdio).
+- **Notes et tâches du projet** : activé par défaut. L'agent peut ajouter des tâches et des notes au projet d'où il est lancé : il les écrit à la fin de son compte rendu, dans un bloc `studio-tâches` (une tâche par ligne, échéance facultative comme « demain » ou `@2026-12-01`) ou `studio-note Titre`, et Studio les crée quand il a fini, avec le tag du projet. Les blocs sont retirés du compte rendu, la carte de l'agent dit ce qui a été ajouté, et rien d'existant n'est modifié ni supprimé. Au plus 20 tâches et 5 notes par tour. Cela ne donne aucun outil de plus à Claude Code. Si la note « Tâches » est verrouillée, elles attendent son déverrouillage.
 - **Dossiers des outils** : ajoutés en tête du `PATH` des agents. Ouvert depuis le Dock, Studio n'a qu'un PATH minimal : un agent ne trouverait pas `cargo` ni les outils de Homebrew.
 
 Ces réglages restent sur le Mac. Un appareil lié ne peut ni les lire ni les modifier, ni demander les commandes ; un agent lancé sur un serveur n'a jamais de commandes.
@@ -352,9 +353,9 @@ src/                               TypeScript strict
     hub.ts            réglages, coffre, agents, blocs spéciaux, liaison d'appareils
     projects/         model.ts (bloc ```projet, tags), page.ts (cockpit), flux.ts,
                       review.ts (revue IA), sessions.ts (agents Claude Code, publication),
-                      site.ts (site du projet lancé en local)
+                      items.ts (notes et tâches créées par les agents), site.ts (site du projet lancé en local)
     news.ts           nouveautés présentées après une mise à jour, fenêtre « mise à jour prête »
-    permissions.ts    réglages des autorisations des agents Claude Code (commandes, web, PATH), gardés sur le Mac
+    permissions.ts    réglages des autorisations des agents Claude Code (commandes, web, notes et tâches, PATH), gardés sur le Mac
     automations.ts, help.ts, onboarding.ts
   integrations/     services extérieurs, appelés directement depuis l'app
     ai.ts             Claude, OpenAI, modèle local : boucle d'agent et outils
