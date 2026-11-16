@@ -19,6 +19,7 @@ import * as voice from './features/voice.ts';
 import * as home from './features/home.ts';
 import * as journal from './features/journal.ts';
 import * as chat from './features/chat.ts';
+import * as workspace from './features/workspace.ts';
 import * as automations from './features/automations.ts';
 import * as help from './features/help.ts';
 import * as onboarding from './features/onboarding.ts';
@@ -81,18 +82,18 @@ let focusMode = false, ed: Editor | null = null, graph: Graph | null = null;
 const SC = {
   palette: 'mod+k', ask: 'mod+shift+i', settings: 'mod+,', tasks: 'mod+shift+t', notifs: 'mod+shift+l', capture: 'mod+j', newNote: 'mod+alt+n', mode: 'mod+e', focus: 'mod+shift+f',
   today: 'mod+shift+d', graph: 'mod+shift+g', history: 'mod+shift+h', lock: 'mod+shift+l',
-  sidebar: isMac ? 'ctrl+mod+s' : 'mod+alt+s', task: 'mod+enter', bold: 'mod+b', italic: 'mod+i',
+  workspace: 'mod+shift+a', sidebar: isMac ? 'ctrl+mod+s' : 'mod+alt+s', task: 'mod+enter', bold: 'mod+b', italic: 'mod+i',
 };
 const VIEWS: Record<string, { label: string; icon: string }> = {
-  home: { label: 'Accueil', icon: 'home' }, claude: { label: 'Claude', icon: 'sparkle' }, agents: { label: 'Automatisations', icon: 'bot' }, help: { label: 'Aide', icon: 'help' }, projets: { label: 'Projets', icon: 'folder' }, settings: { label: 'Réglages', icon: 'gear' },
+  home: { label: 'Accueil', icon: 'home' }, workspace: { label: 'Espace agents', icon: 'board' }, claude: { label: 'Claude', icon: 'sparkle' }, agents: { label: 'Automatisations', icon: 'bot' }, help: { label: 'Aide', icon: 'help' }, projets: { label: 'Projets', icon: 'folder' }, settings: { label: 'Réglages', icon: 'gear' },
   today: { label: 'Aujourd’hui', icon: 'today' }, journal: { label: 'Journal', icon: 'journal' }, tasks: { label: 'Tâches', icon: 'check' }, linear: { label: 'Linear', icon: 'linear' }, github: { label: 'GitHub', icon: 'github' }, all: { label: 'Toutes les notes', icon: 'notes' },
   inbox: { label: 'Boîte de réception', icon: 'inbox' }, ephemeral: { label: 'Éphémères', icon: 'hourglass' },
   graph: { label: 'Graphe', icon: 'graph' }, trash: { label: 'Corbeille', icon: 'trash' },
 };
 /** Teinte de l'icône de chaque section dans la barre latérale. */
-const SIDE_HUE: Record<string, string> = { home: 'gray', claude: 'orange', inbox: 'blue', today: 'amber', journal: 'pink', all: 'gray', ephemeral: 'orange', tasks: 'green', agents: 'violet', help: 'blue', projets: 'orange', linear: 'indigo', github: 'gray', graph: 'teal', trash: 'gray' };
+const SIDE_HUE: Record<string, string> = { home: 'gray', workspace: 'violet', claude: 'orange', inbox: 'blue', today: 'amber', journal: 'pink', all: 'gray', ephemeral: 'orange', tasks: 'green', agents: 'violet', help: 'blue', projets: 'orange', linear: 'indigo', github: 'gray', graph: 'teal', trash: 'gray' };
 const titleOf = (n: Note) => n.title.trim() || 'Sans titre';
-const WIDE = new Set(['graph', 'home', 'claude', 'settings', 'tasks', 'linear', 'github', 'agents', 'help', 'projets', 'journal']); // vues sans colonne de liste
+const WIDE = new Set(['workspace', 'graph', 'home', 'claude', 'settings', 'tasks', 'linear', 'github', 'agents', 'help', 'projets', 'journal']); // vues sans colonne de liste
 
 function applyTheme() {
   const dark = ui.theme === 'dark' || (ui.theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
@@ -203,7 +204,7 @@ function renderSidebar() {
       <div class="side-group">${item('inbox')}${item('today')}${item('journal')}${item('all')}${count.ephemeral || v.type === 'ephemeral' ? item('ephemeral') : ''}</div>
       ${treeHTML(idx.live)}
       <div class="side-label">Organisation</div>
-      <div class="side-group">${item('projets')}${projectsModel.projects().slice(0, 8).map(p => {
+      <div class="side-group">${projectsPage.claudeAvailable() ? item('workspace') : ''}${item('projets')}${projectsModel.projects().slice(0, 8).map(p => {
         const open = v.type === 'projets' && v.project === p.id, tab = v.tab ?? 'overview';
         // Sous « Claude Code » : les conversations récentes du projet, celle qui est ouverte en surbrillance.
         const talks = open ? projectsPage.sideSessions(p.id) : [], talking = tab === 'sessions' && talks.some(s => s.sel);
@@ -332,6 +333,7 @@ function renderMain() {
   if (ui.view.type === 'settings') return hub.mountSettings(main, ui.view.tab || 'coffre');
   if (ui.view.type === 'tasks') return todo.mount(main);
   if (ui.view.type === 'agents') return automations.mount(main);
+  if (ui.view.type === 'workspace') return workspace.mount(main, tbLeft());
   if (ui.view.type === 'projets') return projectsPage.mount(main);
   if (ui.view.type === 'help') return help.mount(main);
   if (ui.view.type === 'linear') return linearView.mount(main);
@@ -873,6 +875,7 @@ function commands() {
     c('Aujourd’hui', 'today', () => setView({ type: 'today' }), SC.today, 'note du jour quotidienne daily'),
     c('Journal des demandes', 'journal', () => setView({ type: 'journal' }), '', 'journal prompts demandes résumé journée claude code historique'),
     c('Projets', 'folder', () => setView({ type: 'projets', project: null }), '', 'dossier dépôt github vscode cockpit'),
+    c('Espace agents', 'board', () => setView({ type: 'workspace' }), SC.workspace, 'agents claude code vues split grille parallèle diffuser'),
     c('Nouveau projet', 'plus', () => projectsPage.createDialog(), '', 'créer projet dossier dépôt'),
     ...(open && n ? [c('Ranger la note dans un projet…', 'folder', () => { const a = $('[data-act=project]'); if (a) menu(a, projectsPage.projectMenuItems(n)); }, '', 'projet déplacer tag')] : []),
     ...projectsModel.projects().map(p => c(`Projet : ${p.name}`, 'folder', () => setView({ type: 'projets', project: p.id }), '', 'projet ouvrir ' + p.repos.join(' '))),
@@ -1174,6 +1177,7 @@ document.addEventListener('keydown', e => {
   if (matches(e, SC.palette) || (isMac && e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === 'k')) { e.preventDefault(); return openPalette(); }
   if (matches(e, SC.capture)) { e.preventDefault(); return openCapture(); }
   if (matches(e, SC.ask)) { e.preventDefault(); return askAI(); }
+  if (matches(e, SC.workspace)) { e.preventDefault(); return setView({ type: 'workspace' }); }
   if (matches(e, SC.settings)) { e.preventDefault(); return hub.openConnections('coffre'); }
   if (matches(e, SC.tasks)) { e.preventDefault(); return setView({ type: 'tasks' }); }
   if (matches(e, SC.notifs)) { e.preventDefault(); return setView({ type: 'linear' }); }

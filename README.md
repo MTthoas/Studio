@@ -226,6 +226,17 @@ Si l'agent ne parvient pas à résoudre, la publication s'arrête et te donne la
 
 Ces réglages restent sur le Mac. Un appareil lié ne peut ni les lire ni les modifier, ni demander les commandes ; un agent lancé sur un serveur n'a jamais de commandes.
 
+#### Espace agents
+
+**Espace agents** (barre latérale, ou ⇧⌘A) réunit les agents de **tous** les projets, organisés comme Linear :
+
+- **À gauche, la liste** des conversations, regroupées par état : **En cours**, **À relire** (elles ont avancé depuis la dernière fois que tu les as regardées), **En erreur**, **Récentes**. Le champ de filtre cherche dans les titres et les noms de projet ; le numéro à droite d'une ligne indique la vue qui l'affiche.
+- **À droite, 1, 2, 3, 4, 6 ou 8 vues** côte à côte. Chacune suit un agent en direct (fil, actions, réponses) et a son propre champ pour lui répondre : ⌘↵ envoie, ⇧⌘↵ interrompt le tour en cours. Une vue vide lance un nouvel agent dans le projet choisi (Modifier ou Analyser). On y ouvre une conversation d'un clic (⌘clic : dans la première vue vide) ou en la glissant depuis la liste.
+- **Diffuser** envoie la même consigne à plusieurs vues à la fois : une réponse pour chaque agent affiché, un nouvel agent pour chaque vue vide cochée.
+- **Clavier**, hors champ de saisie : 1–8 choisit une vue, J/K parcourt la liste, Entrée l'ouvre dans la vue choisie, C crée un agent, R répond, F agrandit la vue, X la vide, L change de disposition, D diffuse, / filtre.
+
+La disposition et ce que montre chaque vue sont gardés sur l'appareil.
+
 ### Serveurs et pilotage à distance
 
 **Serveur** (VPS, VM) : relie un hôte SSH (alias de `~/.ssh/config` ou `utilisateur@hôte`), l'utilisateur au besoin (champ **Utilisateur**, prioritaire sur le `User` de `~/.ssh/config`) et le dossier du projet sur ce serveur. Studio affiche son état (charge, mémoire, disque, dépôt, Claude Code), ouvre un terminal SSH, et y lance des agents Claude Code avec les mêmes garde-fous. Connexion par clé uniquement (`BatchMode`), au choix :
@@ -350,6 +361,7 @@ src/                               TypeScript strict
   features/         pages et fonctions de l'app
     home.ts           accueil
     chat.ts           page Claude : conversation avec les outils de l'IA, ouverte depuis un projet et bornée à lui
+    workspace.ts      Espace agents : les agents de tous les projets, liste à la Linear et grille de 1 à 8 vues
     tasks.ts          tâches, sous-tâches, échéances, tickets Linear
     board.ts          Kanban générique (glisser-déposer, clavier, tactile)
     voice.ts          notes vocales (transcription sur l'appareil)

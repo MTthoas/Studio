@@ -22,10 +22,10 @@ import * as subagents from './subagents.ts';
 import type { Project } from './model.ts';
 
 interface Tokens { input: number; output: number; cacheRead: number; cacheWrite: number }
-interface Session { id: string; title: string; /** Titre écrit par Claude Code lui-même, s'il y en a un. */ aiTitle?: string; firstPrompt?: string; branch: string; worktree: string; started: string; updated: string; /** Dernier vrai échange (absent avec une app Mac ancienne). */ active?: string; live: boolean; models: string[]; prompts: number; lastPrompt: string; tokens: Tokens; tools: Record<string, number>; files: string[]; /** Lignes ajoutées et retirées sur la session (absent avec une app Mac ancienne). */ lines?: { add: number; del: number } }
+export interface Session { id: string; title: string; /** Titre écrit par Claude Code lui-même, s'il y en a un. */ aiTitle?: string; firstPrompt?: string; branch: string; worktree: string; started: string; updated: string; /** Dernier vrai échange (absent avec une app Mac ancienne). */ active?: string; live: boolean; models: string[]; prompts: number; lastPrompt: string; tokens: Tokens; tools: Record<string, number>; files: string[]; /** Lignes ajoutées et retirées sur la session (absent avec une app Mac ancienne). */ lines?: { add: number; del: number } }
 interface Quota { status?: string; resetsAt?: number; rateLimitType?: string; isUsingOverage?: boolean }
 /** `add`/`del` : lignes ajoutées et retirées par une écriture (nombre, ou texte pour les agents sur serveur). */
-interface Action { at: string; kind: string; text: string; add?: number | string; del?: number | string }
+export interface Action { at: string; kind: string; text: string; add?: number | string; del?: number | string }
 export interface AgentRun { machine?: string; host?: string; run: string; mode: string; prompt: string; status: string; session: string; worktree: string; started: string; finished: string; result: string; lastText: string; turns: number; denials: string[]; quota?: Quota | null; /** Notes et tâches envoyées au projet par ce tour (features/projects/items.ts). */ items?: { tasks?: number; notes?: number } }
 interface Worktree {
   name: string; branch: string; /** Commit de la copie (absent avec une app Mac ancienne). */ head?: string; changes: number; ahead: number; behind?: number; pushed: boolean; conflicts?: string[];
@@ -47,7 +47,7 @@ const hasWork = (c: Pick<Worktree, 'changes' | 'ahead' | 'merged' | 'upToDate'>)
 
 let selected: string | null = null, timer: ReturnType<typeof setInterval> | undefined, tick = 0;
 /** Message secondaire : écrit pendant que l'agent travaillait, remis à la fin de son tour (voir Agents.swift). */
-interface Queued { id: string; session: string; text: string; at: string }
+export interface Queued { id: string; session: string; text: string; at: string }
 let runs: AgentRun[] = [], trees: Worktree[] = [], jobs: Job[] = [], queued: Queued[] = [];
 /** La liste des copies a été lue au moins une fois (sinon une copie absente n'est pas forcément supprimée). */
 let treesRead = false;
@@ -55,10 +55,10 @@ let treesRead = false;
 let treesFor = '';
 const ms = (iso: string) => Date.parse(iso) || 0;
 const short = (path: string, root: string | null) => root && path.includes('/.claude/worktrees/') ? path.replace(/^.*\/\.claude\/worktrees\/[^/]+\//, '') : root && path.startsWith(root + '/') ? path.slice(root.length + 1) : path.replace(/^\/Users\/[^/]+/, '~');
-const modelName = (m: string) => m.replace(/^claude-/, '').replace(/-(\d)-(\d)$/, ' $1.$2').replace(/-/g, ' ');
-const live = (r: AgentRun) => r.status === 'running' || r.status === 'starting';
-const elapsed = (r: AgentRun) => { const s = Math.max(0, Math.round(((r.finished ? ms(r.finished) : Date.now()) - ms(r.started)) / 1000)); return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')}`; };
-const STATUS: Record<string, [string, string]> = { starting: ['amber', 'Démarrage'], running: ['amber', 'En cours'], done: ['green', 'Terminé'], error: ['red', 'Erreur'], stopped: ['gray', 'Arrêté'] };
+export const modelName = (m: string) => m.replace(/^claude-/, '').replace(/-(\d)-(\d)$/, ' $1.$2').replace(/-/g, ' ');
+export const live = (r: AgentRun) => r.status === 'running' || r.status === 'starting';
+export const elapsed = (r: AgentRun) => { const s = Math.max(0, Math.round(((r.finished ? ms(r.finished) : Date.now()) - ms(r.started)) / 1000)); return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')}`; };
+export const STATUS: Record<string, [string, string]> = { starting: ['amber', 'Démarrage'], running: ['amber', 'En cours'], done: ['green', 'Terminé'], error: ['red', 'Erreur'], stopped: ['gray', 'Arrêté'] };
 const pill = (s: string) => { const [c, l] = STATUS[s] ?? ['gray', s]; return `<span class="ag-pill${s === 'running' || s === 'starting' ? ' live' : ''}" style="--c:var(--c-${c})">${l}</span>`; };
 
 // ---------- Conversation ouverte, et ce qu'en montrent la barre latérale et le fil d'Ariane ----------
@@ -198,7 +198,7 @@ function neat(text: string, max = 60): string {
   return `${(sp > max / 2 ? cut.slice(0, sp) : cut).replace(/[\s,;:.]+$/, '')}…`;
 }
 type Nameable = Pick<Session, 'id' | 'title' | 'aiTitle' | 'firstPrompt' | 'prompts'>;
-const nameOf = (s: Nameable): string => titles[s.id]?.t || s.aiTitle || (s.firstPrompt ? neat(s.firstPrompt) : '') || neat(s.title) || 'Conversation';
+export const nameOf = (s: Nameable): string => titles[s.id]?.t || s.aiTitle || (s.firstPrompt ? neat(s.firstPrompt) : '') || neat(s.title) || 'Conversation';
 
 // La consigne du nom, le modèle utilisé et la fréquence se règlent dans Réglages → Consignes et contexte (tuning.ts).
 let naming = false;
@@ -695,7 +695,7 @@ function listHTML(list: Session[]): string {
 
 // ---------- Fil d'une session ----------
 type Detail = Session & { actions: Action[] };
-interface Block { key: string; html: string }
+export interface Block { key: string; html: string }
 const FEED_MAX = 80; // nombre d'étapes renvoyées par le Mac (voir Sessions.swift)
 
 /** Heure d'une étape ; avec la date si ce n'est pas aujourd'hui. */
@@ -711,7 +711,7 @@ const answerHTML = (text: string): string => renderMarkdown(text)
   .replace(/<input type="checkbox"/g, '<input type="checkbox" disabled');
 
 /** Découpe les étapes en blocs de conversation : demandes, réponses, et outils consécutifs regroupés. */
-function feedBlocks(actions: Action[], root: string | null, working: boolean, waiting: Queued[] = [], stalled = false, sidechain = false): Block[] {
+export function feedBlocks(actions: Action[], root: string | null, working: boolean, waiting: Queued[] = [], stalled = false, sidechain = false): Block[] {
   // Dans le fil d'un sous-agent, c'est Claude qui donne la consigne et le sous-agent qui répond.
   const asker = sidechain ? 'Claude' : 'Toi', answerer = sidechain ? 'Sous-agent' : 'Claude';
   const out: Block[] = [], seen = new Map<string, number>();
@@ -750,7 +750,7 @@ function feedBlocks(actions: Action[], root: string | null, working: boolean, wa
 
 /** Met le fil à jour bloc par bloc : ce qui n'a pas changé n'est pas redessiné (sélection, blocs dépliés et défilement conservés). */
 const drawn = new WeakMap<Element, string>();
-function syncFeed(feed: HTMLElement, blocks: Block[]): boolean {
+export function syncFeed(feed: HTMLElement, blocks: Block[]): boolean {
   const old = new Map<string, HTMLElement>();
   for (const el of Array.from(feed.children) as HTMLElement[]) old.set(el.dataset.k ?? '', el);
   let changed = false;
