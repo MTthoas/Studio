@@ -246,7 +246,10 @@ function linBlock(code: string) {
   return `<div class="lin" data-lin="${esc(k)}"><div class="lin-head">${icon('linear')}<span>Linear · ${esc(linDesc(o))}</span><button class="icon-btn" data-lin-refresh title="Actualiser" aria-label="Actualiser">${icon('refresh')}</button></div><div class="lin-list">${linHTML.get(k) || '<div class="lin-empty">Chargement…</div>'}</div></div>`;
 }
 const PRIO = ['', '🔴', '🟠', '🟡', '🔵'];
-const issueRow = (i: linear.Issue) => `<a class="lin-issue" href="${esc(i.url)}" target="_blank" rel="noopener noreferrer"><i class="lin-dot" style="--c:${esc(i.state?.color || '#999')}" title="${esc(i.state?.name || '')}"></i><span class="lin-id">${esc(i.identifier)}</span><span class="lin-title">${esc(i.title)}</span><span class="lin-meta">${PRIO[i.priority] || ''}${i.dueDate ? ` ${esc(new Date(i.dueDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }))}` : ''}${i.assignee ? ` · ${esc(i.assignee.name)}` : ''}</span></a>`;
+// Données de l'API Linear : lien limité à linear.app, couleur limitée à un code hexadécimal.
+const linearURL = (u: string): string => /^https:\/\/linear\.app\//.test(u) ? u : '#';
+const hexColor = (c: string | undefined): string => /^#[0-9a-f]{3,8}$/i.test(c || '') ? c as string : '#999';
+const issueRow = (i: linear.Issue) => `<a class="lin-issue" href="${esc(linearURL(i.url))}" target="_blank" rel="noopener noreferrer"><i class="lin-dot" style="--c:${hexColor(i.state?.color)}" title="${esc(i.state?.name || '')}"></i><span class="lin-id">${esc(i.identifier)}</span><span class="lin-title">${esc(i.title)}</span><span class="lin-meta">${PRIO[i.priority] || ''}${i.dueDate ? ` ${esc(new Date(i.dueDate).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }))}` : ''}${i.assignee ? ` · ${esc(i.assignee.name)}` : ''}</span></a>`;
 
 export async function hydrate(root: ParentNode, fresh = false): Promise<void> {
   for (const box of $$('.lin', root)) {

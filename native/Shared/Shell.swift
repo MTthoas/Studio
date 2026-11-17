@@ -85,10 +85,9 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
 
     // Messages envoyés par la page : window.webkit.messageHandlers.carnet.postMessage({...})
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-        // Le pont est installé dans tous les cadres : seule la page de Studio elle-même y a droit,
-        // jamais un cadre intégré (Figma…) ni un document chargé hors de carnet://.
-        guard message.frameInfo.isMainFrame, message.frameInfo.securityOrigin.protocol.lowercased() == Shell.scheme else { return }
-        guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
+        // Le pont est installé dans tous les cadres : seule la page de Studio elle-même (carnet://app) y a droit,
+        // jamais un cadre intégré (Figma…) ni un document chargé hors de carnet://app.
+        guard Self.trusted(message.frameInfo), let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
         if type == "theme", let dark = body["dark"] as? Bool { onTheme?(dark) }
         if type == "notify", let title = body["title"] as? String {
             Notifier.shared.post(title: String(title.prefix(200)), body: String((body["body"] as? String ?? "").prefix(500)), url: body["url"] as? String)
@@ -408,6 +407,12 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { onLoad?() }
 
+    /// Message du pont venu du cadre principal de carnet://app (les cadres et autres origines sont ignorés).
+    static func trusted(_ frame: WKFrameInfo) -> Bool {
+        let origin = frame.securityOrigin
+        return frame.isMainFrame && origin.protocol.lowercased() == Shell.scheme && origin.host.lowercased() == "app"
+    }
+
     /// Sites qu'un cadre de la page peut afficher (frame-src de index.html) : leur navigation reste dans le cadre.
     private static func framable(_ url: URL) -> Bool {
         guard url.scheme?.lowercased() == "https", let host = url.host?.lowercased() else { return false }
@@ -419,12 +424,20 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         if action.shouldPerformDownload { decisionHandler(.download); return }
         guard let url = action.request.url else { decisionHandler(.cancel); return }
-        if let frame = action.targetFrame, !frame.isMainFrame, Self.framable(url) { decisionHandler(.allow); return }
-        switch url.scheme?.lowercased() {
-        case Shell.scheme, "about", "blob":
+        let scheme = url.scheme?.lowercased()
+        if let frame = action.targetFrame, !frame.isMainFrame {
+            // Un cadre : sites autorisés, ou documents internes à ces sites (about:, blob:, data:), qui n'ont pas
+            // accès au pont (`trusted`) ; jamais l'app elle-même.
+            decisionHandler(Self.framable(url) || ["about", "blob", "data"].contains(scheme ?? "") ? .allow : .cancel)
+            return
+        }
+        switch scheme {
+        case Shell.scheme where url.host?.lowercased() == "app":
             decisionHandler(.allow)
-        case "data" where action.targetFrame.map { !$0.isMainFrame } ?? false:
-            // Un document data: n'a pas la CSP de index.html : jamais dans la fenêtre principale.
+        case Shell.scheme:
+            decisionHandler(.cancel)
+        case "about", "blob":
+            // Pas de data: : un tel document n'a pas la CSP de index.html, jamais dans la fenêtre principale.
             decisionHandler(.allow)
         default:
             openExternally(url)
