@@ -7,9 +7,8 @@ import * as shop from './shop.ts';
 import * as ads from './ads.ts';
 import * as marketing from './marketing.ts';
 import * as shopify from '../../integrations/shopify/api.ts';
-import * as model from '../projects/model.ts';
 import { esc } from '../../lib/markdown.ts';
-import { icon, menu, need, target, toast } from '../../ui/kit.ts';
+import { icon, need, target } from '../../ui/kit.ts';
 import type { AppShell } from '../../types.ts';
 import type { Project } from '../projects/model.ts';
 
@@ -42,18 +41,13 @@ export function mount(box: HTMLElement, p: Project): void {
   show(last.get(p.id) ?? 'chiffres');
 }
 
-/** Vue « Boutiques » : toutes les boutiques reliées, et de quoi en relier une à un projet. */
+/** Vue « Boutiques » : toutes les boutiques du coffre, et le formulaire pour en ajouter une. */
 export function mountAll(main: HTMLElement): void {
   main.innerHTML = `<header class="toolbar">${app.tbLeft()}${app.crumb('Boutiques')}<div class="tb-side tb-right">
-    <button class="btn" data-cm-link>${icon('link')}Relier un projet</button><button class="btn" data-open-conn="commerce">${icon('gear')}Réglages</button></div></header>
+    <button class="btn" data-open-conn="commerce" title="Boutiques et compte publicitaire Meta">${icon('gear')}Réglages</button></div></header>
     <div class="cm-page"><div class="cm-all"></div></div>`;
   const page = need('.cm-page', main);
   const open = (id: string): void => { void app.setView({ type: 'projets', project: id, tab: 'boutique' }); };
   page.addEventListener('commerce:open', e => { const id = (e as CustomEvent<{ project?: string }>).detail?.project; if (id) open(id); });
-  need('[data-cm-link]', main).addEventListener('click', e => {
-    const free = model.projects().filter(p => !p.shopify);
-    if (!free.length) { toast(model.projects().length ? 'Tous tes projets ont déjà une boutique.' : 'Crée d’abord un projet : une boutique se relie à un projet.'); return; }
-    menu(target(e).closest('button') ?? target(e), free.map(p => ({ label: p.name, icon: 'folder', run: () => open(p.id) })));
-  });
   shop.mountAll(need('.cm-all', page));
 }
