@@ -18,6 +18,17 @@ export function el<T extends HTMLElement = HTMLElement>(html: string): T {
   return x as T;
 }
 /** Cible d'un événement, en tant qu'élément HTML (pour les clics délégués). */
+/** Dernier HTML écrit par `paintIfChanged`, par élément (oublié avec l'élément), avec le premier nœud et le nombre
+ *  d'enfants obtenus : une écriture faite à côté (innerHTML direct) remplace ces nœuds et force le prochain rendu. */
+const painted = new WeakMap<Element, { html: string; first: ChildNode | null; count: number }>();
+/** Écrit `html` dans `node` seulement s'il diffère de la dernière écriture : un rendu périodique identique ne coûte
+ *  ni analyse HTML, ni mise en page, et garde survol, focus et sélection. Vrai si le contenu a été remplacé. */
+export function paintIfChanged(node: Element, html: string): boolean {
+  const p = painted.get(node);
+  if (p && p.html === html && p.first === node.firstChild && p.count === node.childNodes.length) return false;
+  node.innerHTML = html; painted.set(node, { html, first: node.firstChild, count: node.childNodes.length });
+  return true;
+}
 export const target = (e: Event): HTMLElement => (e.target instanceof Element ? e.target : document.body) as HTMLElement;
 
 const I: Record<string, string> = {

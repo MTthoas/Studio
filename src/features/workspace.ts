@@ -13,7 +13,7 @@ import type { AgentRun, Session, Action, Queued } from './projects/sessions.ts';
 import type { Project } from './projects/model.ts';
 import { esc } from '../lib/markdown.ts';
 import { fold } from '../lib/fuzzy.ts';
-import { $, $$, icon, kbd, rel, modal, need, toast, target } from '../ui/kit.ts';
+import { $, $$, icon, kbd, rel, modal, need, toast, target, paintIfChanged } from '../ui/kit.ts';
 
 /** Une vue : la conversation qu'elle suit (`session`), ou un agent qui démarre (`run`), ou rien (nouvel agent). */
 interface Pane { project: string; session: string; run?: string }
@@ -88,6 +88,8 @@ async function loadDetail(p: Pane): Promise<void> {
 
 async function refresh(): Promise<void> {
   if (!root?.isConnected) { stop(); return; }
+  // Fenêtre cachée : aucun appel au Mac ; le tour suivant (2,5 s au plus après le retour) rattrape tout.
+  if (document.hidden) return;
   const all = projects.projects(), shown = panes().filter((x): x is Pane => !!x);
   // Les agents (lecture en mémoire sur le Mac, rapide) : à chaque tour pour les projets affichés ou qui travaillent, un tour sur deux pour les autres.
   const busy = new Set([...shown.map(x => x.project), ...[...runsBy].filter(([, l]) => l.some(live)).map(([k]) => k)]);
@@ -137,10 +139,10 @@ function paintList(): void {
     }).join('')}</div>`;
   }).join('');
   const loading = projects.projects().some(p => !sessionsBy.has(p.id));
-  box.innerHTML = groups || `<p class="aw-empty">${loading ? '<span class="spin"></span>Lecture des conversations…' : q ? 'Aucune conversation ne correspond.' : 'Aucune conversation pour l’instant. Lance un agent dans une vue.'}</p>`;
-  box.scrollTop = scroll;
+  // Réécrit seulement ce qui a changé : la liste est redemandée à chaque tour (2,5 s) et pendant la relecture des projets.
+  if (paintIfChanged(box, groups || `<p class="aw-empty">${loading ? '<span class="spin"></span>Lecture des conversations…' : q ? 'Aucune conversation ne correspond.' : 'Aucune conversation pour l’instant. Lance un agent dans une vue.'}</p>`)) box.scrollTop = scroll;
   const counts = { running: list.filter(r => r.status === 'running').length, review: list.filter(r => r.status === 'review').length };
-  const c = $('.aw-counts', root!); if (c) c.innerHTML = `${counts.running ? `<span class="aw-c run">${counts.running} en cours</span>` : ''}${counts.review ? `<span class="aw-c rev">${counts.review} à relire</span>` : ''}`;
+  const c = $('.aw-counts', root!); if (c) paintIfChanged(c, `${counts.running ? `<span class="aw-c run">${counts.running} en cours</span>` : ''}${counts.review ? `<span class="aw-c rev">${counts.review} à relire</span>` : ''}`);
 }
 
 const projectOptions = (cur: string) => projects.projects().map(p => `<option value="${esc(p.id)}"${p.id === cur ? ' selected' : ''}>${esc(p.name)}</option>`).join('');

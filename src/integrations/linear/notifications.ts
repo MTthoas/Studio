@@ -4,11 +4,11 @@ import * as linear from './api.ts';
 import * as vault from '../../core/vault.ts';
 import * as events from '../../core/events.ts';
 import { esc } from '../../lib/markdown.ts';
-import { $, icon, toast, rel, need, target, errMsg, avatar } from '../../ui/kit.ts';
+import { $, icon, toast, rel, need, target, errMsg, avatar, paintIfChanged } from '../../ui/kit.ts';
 import type { AppShell } from '../../types.ts';
 
 const EVERY = 60e3, SEEN = 'carnet.linear.seen', PREF = 'carnet.linear.notify';
-let app!: AppShell, items: linear.Notification[] = [], error = '', loaded = false, busy = false;
+let app!: AppShell, items: linear.Notification[] = [], error = '', loaded = false, busy = false, shownSig = '', badged = -1;
 let timer: ReturnType<typeof setInterval> | undefined;
 
 const native = () => window.webkit?.messageHandlers?.carnet;
@@ -40,6 +40,8 @@ const headline = (n: linear.Notification) => { const v = verb(n.type); return /:
 
 function badge(): void {
   const c = unreadCount();
+  if (c === badged) return; // relu chaque minute : le Mac n'est prévenu que d'un changement
+  badged = c;
   native()?.postMessage({ type: 'badge', count: c });
   try { void (c ? navigator.setAppBadge?.(c) : navigator.clearAppBadge?.()); } catch { /* non pris en charge */ }
 }
@@ -66,7 +68,6 @@ export async function poll({ quiet = true } = {}): Promise<void> {
   if (!active() || busy) return;
   busy = true;
   try {
-    const before = unreadCount();
     items = await linear.notifications(); error = '';
     const last = localStorage.getItem(SEEN), newest = items[0]?.createdAt;
     // Premier passage : on prend l'état actuel comme point de départ, sans rien annoncer.
@@ -78,7 +79,6 @@ export async function poll({ quiet = true } = {}): Promise<void> {
     for (const [id, list] of byProject) events.emit('linear', list.map(n => `- ${headline(n)}${excerpt(n) ? ` : « ${excerpt(n)} »` : ''}${n.issue ? ` (${n.issue.url})` : ''}`).join('\n'), { linearProject: id });
     if (newest && (!last || newest > last)) localStorage.setItem(SEEN, newest);
     loaded = true; badge();
-    if (before !== unreadCount()) app.renderSidebar();
   } catch (e) { error = errMsg(e); if (!quiet) toast('Linear : ' + errMsg(e)); }
   busy = false;
   refresh();
@@ -97,7 +97,7 @@ export function init(shell: AppShell): void {
 async function read(ids: string[]): Promise<void> {
   const at = new Date().toISOString();
   for (const n of items) if (ids.includes(n.id)) n.readAt = n.readAt || at;
-  badge(); refresh(); app.renderSidebar();
+  badge(); refresh(); // refresh prévient la barre latérale (onCount)
   try { await linear.markRead(ids, at); } catch (e) { toast('Linear : ' + errMsg(e)); void poll(); }
 }
 
@@ -120,12 +120,14 @@ function body(): string {
 }
 
 export function refresh(): void {
+  // Barre latérale et accueil ne sont redessinés que si les notifications ont changé (relues chaque minute, même identiques).
+  const sig = `${loaded}|${error}|${items.map(n => n.id + (n.readAt ? '.' : '')).join()}`;
+  if (sig !== shownSig) { shownSig = sig; app.onCount?.(); }
   const root = $('.notifs'); if (!root) return;
-  need('.nf-list', root).innerHTML = body();
+  paintIfChanged(need('.nf-list', root), body());
   const c = unreadCount();
   need('.nf-sub', root).textContent = !active() ? '' : c ? `${c} non lue${c > 1 ? 's' : ''} · actualisé toutes les minutes` : 'Actualisé toutes les minutes tant que Studio est ouverte';
   need('[data-nf-all]', root).hidden = !c;
-  app.onCount?.();
 }
 
 // La liste s'insère dans la page Linear (onglet Notifications).

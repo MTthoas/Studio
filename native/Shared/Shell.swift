@@ -85,6 +85,9 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
 
     // Messages envoyés par la page : window.webkit.messageHandlers.carnet.postMessage({...})
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        // Le pont est installé dans tous les cadres : seule la page de Studio elle-même y a droit,
+        // jamais un cadre intégré (Figma…) ni un document chargé hors de carnet://.
+        guard message.frameInfo.isMainFrame, message.frameInfo.securityOrigin.protocol.lowercased() == Shell.scheme else { return }
         guard let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
         if type == "theme", let dark = body["dark"] as? Bool { onTheme?(dark) }
         if type == "notify", let title = body["title"] as? String {
@@ -418,7 +421,10 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
         guard let url = action.request.url else { decisionHandler(.cancel); return }
         if let frame = action.targetFrame, !frame.isMainFrame, Self.framable(url) { decisionHandler(.allow); return }
         switch url.scheme?.lowercased() {
-        case Shell.scheme, "about", "blob", "data":
+        case Shell.scheme, "about", "blob":
+            decisionHandler(.allow)
+        case "data" where action.targetFrame.map { !$0.isMainFrame } ?? false:
+            // Un document data: n'a pas la CSP de index.html : jamais dans la fenêtre principale.
             decisionHandler(.allow)
         default:
             openExternally(url)

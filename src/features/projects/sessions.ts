@@ -9,7 +9,7 @@ import * as tuning from '../../integrations/tuning.ts';
 import * as github from '../../integrations/github/api.ts';
 import { esc, renderMarkdown } from '../../lib/markdown.ts';
 import { fold } from '../../lib/fuzzy.ts';
-import { icon, rel, modal, need, toast, confirmBox, errMsg, $ } from '../../ui/kit.ts';
+import { icon, rel, modal, need, toast, confirmBox, errMsg, $, paintIfChanged } from '../../ui/kit.ts';
 import * as review from './review.ts';
 import * as store from '../../core/store.ts';
 import * as model from './model.ts';
@@ -1220,7 +1220,7 @@ async function treesInBackground(p: Project): Promise<void> {
 function repaintList(): void {
   if (!cur || painting || selected || !cur.box.isConnected) return;
   const zone = $('.ag-zone', cur.box), list = known.get(cur.p.id)?.list;
-  if (zone && list && !$('.ag-zone > .hm-empty', cur.box)) zone.innerHTML = listHTML(list);
+  if (zone && list && !$('.ag-zone > .hm-empty', cur.box)) paintIfChanged(zone, listHTML(list));
 }
 
 // ---------- Montage ----------
@@ -1241,7 +1241,7 @@ async function paintOnce(box: HTMLElement, p: Project): Promise<void> {
   // dernière fois s'affiche tout de suite.
   const listing = selected ? null : loadList(p);
   const cached = known.get(p.id);
-  if (!selected && cached?.list.length && $('.ag-zone > .hm-empty', box)) zone.innerHTML = listHTML(cached.list);
+  if (!selected && cached?.list.length && $('.ag-zone > .hm-empty', box)) paintIfChanged(zone, listHTML(cached.list));
   const wasLive = new Set(runs.filter(live).map(r => r.run));
   const l = await bridge.call('agent', 'list', { project: p.id }, 10000); runs = l.ok ? (l.runs as AgentRun[]) : runs;
   if (l.ok) queued = (l.queued as Queued[] | undefined) ?? [];
@@ -1290,7 +1290,7 @@ async function paintOnce(box: HTMLElement, p: Project): Promise<void> {
   const list = await (listing ?? loadList(p)) ?? cached?.list ?? [];
   if (!box.isConnected || selected) return;
   paintLimits();
-  zone.innerHTML = listHTML(list);
+  paintIfChanged(zone, listHTML(list)); // relue toutes les 3 s : réécrite seulement si elle change
   // Les conversations récentes sans nom en reçoivent un, une à la fois.
   const unnamed = list.slice(0, 8).find(s => wantsName(s, s.live || runs.some(r => r.session === s.id && live(r))));
   if (unnamed) void nameSession(p, unnamed);

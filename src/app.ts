@@ -39,7 +39,7 @@ import * as update from './core/update.ts';
 import * as linear from './integrations/linear/api.ts';
 import * as vault from './core/vault.ts';
 import * as link from './integrations/link.ts';
-import { $, $$, el, icon, logo, kbd, keys, matches, isMac, rel, until, full, menu, modal, confirmBox, toast, download, closeTop, topLayer, need, target, errMsg, num, hue } from './ui/kit.ts';
+import { $, $$, el, icon, logo, kbd, keys, matches, isMac, rel, until, full, menu, modal, confirmBox, toast, download, closeTop, topLayer, need, target, errMsg, num, hue, paintIfChanged } from './ui/kit.ts';
 import type { MenuItem } from './ui/kit.ts';
 import type { Note, Version, ViewState } from './types.ts';
 import type { Graph, GraphInput } from './lib/graph.ts';
@@ -191,7 +191,7 @@ function renderSidebar() {
   const item = (type: string) => `<button class="side-item${v.type === type ? ' sel' : ''}" data-view="${type}" style="--ic:var(--c-${SIDE_HUE[type] ?? 'gray'})">${icon(VIEWS[type]?.icon ?? 'notes')}<span>${VIEWS[type]?.label ?? type}</span>${count[type] ? `<span class="side-count">${count[type]}</span>` : ''}</button>`;
   const tags = [...idx.tags].filter(([t]) => !t.startsWith('projet/')).sort((a, b) => a[0].localeCompare(b[0], 'fr'));
   const devs = vault.isOpen() ? link.devices().length : 0;
-  need('#sidebar').innerHTML = `
+  const html = `
     <div class="side-head">
       <button class="ws" data-act="workspace" aria-label="Menu Studio">${logo()}<span class="ws-name">Studio</span>${icon('chevron')}</button>
       <button class="icon-btn" data-act="palette" title="Rechercher (${keys(SC.palette)})" aria-label="Rechercher">${icon('search')}</button>
@@ -223,10 +223,15 @@ function renderSidebar() {
       <div class="side-label">Explorer</div>
       <div class="side-group">${item('graph')}${item('trash')}${item('help')}</div>
     </div>
-    <div id="plug-side">${plugins.sidebarHTML()}</div>
+    <div id="plug-side"></div>
     ${update.ready() ? `<button class="side-foot side-update" data-open-conn="maj" title="La nouvelle version est téléchargée : elle s’installe à la relance, ou quand tu quittes Studio">${icon('refresh')}<span>Relancer pour mettre à jour</span></button>`
       : update.available() ? `<button class="side-foot side-update" data-open-conn="maj" title="Une nouvelle version de Studio est disponible">${icon('download')}<span>Mise à jour disponible</span></button>` : ''}
     <button class="side-foot" data-open-conn="${vault.enabled() ? 'appareils' : 'coffre'}" title="Réglages (${keys(SC.settings)})">${icon(vault.isOpen() ? 'shield' : 'unlock')}<span>${vault.isOpen() ? 'Chiffré de bout en bout' : 'Non chiffré'}</span>${devs ? `<span class="side-count">${icon('devices')}${devs}</span>` : ''}</button>`;
+  // Redessinée à chaque enregistrement (donc à chaque pause de frappe) : rien n'est réécrit si rien n'a changé,
+  // et le défilement est gardé quand elle l'est.
+  const box = need('#sidebar'), top = $('.side-scroll', box)?.scrollTop ?? 0;
+  if (paintIfChanged(box, html)) { const sc = $('.side-scroll', box); if (sc) sc.scrollTop = top; }
+  plugins.refresh(); // #plug-side, redessiné aussi seul par les plugins
 }
 
 // Arborescence des sous-notes : chaque note qui en a, à partir des racines, dépliable (ui.treeOpen).
@@ -278,7 +283,7 @@ function noteItem(n: Note) {
 
 function renderList() {
   const v = ui.view, box = need('#list');
-  if (WIDE.has(v.type)) { box.innerHTML = ''; return; }
+  if (WIDE.has(v.type)) { paintIfChanged(box, ''); return; }
   const scroll = $('.list-scroll', box)?.scrollTop || 0;
   const title = v.type === 'tag' ? '#' + v.tag : VIEWS[v.type]?.label ?? '';
   let body, sub;
@@ -297,8 +302,8 @@ function renderList() {
     body = list.length ? list.map(noteItem).join('') : `<div class="list-empty">${empty}</div>`;
     if (v.type === 'trash' && list.length) body = `<div class="list-note">Suppression définitive après 30 jours.</div>` + body;
   }
-  box.innerHTML = `<div class="list-head"><div class="lh-text"><h2>${v.type !== 'tag' ? icon(VIEWS[v.type]?.icon ?? 'notes') : `<i class="tag-dot" style="--c:var(--c-${hue(v.tag ?? '')})"></i>`}${esc(title)}</h2><span>${esc(sub)}</span></div>${v.type !== 'trash' ? `<button class="icon-btn" data-act="new" title="Nouvelle note (${keys(SC.newNote)})" aria-label="Nouvelle note">${icon('plus')}</button>` : ''}</div><div class="list-scroll">${body}</div>`;
-  need('.list-scroll', box).scrollTop = scroll;
+  const html = `<div class="list-head"><div class="lh-text"><h2>${v.type !== 'tag' ? icon(VIEWS[v.type]?.icon ?? 'notes') : `<i class="tag-dot" style="--c:var(--c-${hue(v.tag ?? '')})"></i>`}${esc(title)}</h2><span>${esc(sub)}</span></div>${v.type !== 'trash' ? `<button class="icon-btn" data-act="new" title="Nouvelle note (${keys(SC.newNote)})" aria-label="Nouvelle note">${icon('plus')}</button>` : ''}</div><div class="list-scroll">${body}</div>`;
+  if (paintIfChanged(box, html)) need('.list-scroll', box).scrollTop = scroll;
 }
 
 // ---------- Rendu : zone principale ----------
@@ -608,6 +613,10 @@ function toggleTimer(node: HTMLElement, reset: boolean): void {
   saveTimers(); paintTimers();
 }
 function tickTimers() {
+  // Quatre fois par seconde : rien à faire tant qu'aucun minuteur ne tourne (avant, chaque minuteur affiché était
+  // réécrit à chaque tour, même à l'arrêt).
+  const running = Object.values(timers).some(t => t.endAt);
+  if (!running) return;
   let changed = false;
   for (const [key, t] of Object.entries(timers)) {
     if (!t.endAt || t.endAt > Date.now()) continue;
@@ -619,7 +628,7 @@ function tickTimers() {
     if ('Notification' in window && Notification.permission === 'granted' && document.hidden) new Notification('Minuteur terminé', { body: titleOf(n) });
   }
   if (changed) saveTimers();
-  paintTimers();
+  if (changed || !document.hidden) paintTimers();
 }
 
 async function toggleTask(n: Note, line: number) {
@@ -943,6 +952,14 @@ function setTheme(t: string) { ui.theme = t; saveUI(); applyTheme(); }
 
 const hl = (text: string, pos: number[]) => { const set = new Set(pos); let out = ''; [...text.normalize('NFC')].forEach((ch, i) => { out += set.has(i) ? `<b>${esc(ch)}</b>` : esc(ch); }); return out; };
 
+// Corps « plié » (sans accents ni casse) de chaque note, gardé tant que le texte ne change pas : la palette cherche
+// dans tout le carnet à chaque touche.
+const foldedBodies = new WeakMap<Note, { body: string; folded: string }>();
+function foldedBody(n: Note, body: string): string {
+  const c = foldedBodies.get(n); if (c?.body === body) return c.folded;
+  const folded = fold(body); foldedBodies.set(n, { body, folded }); return folded;
+}
+
 function paletteResults(raw: string): PaletteSection[] {
   const cmdOnly = raw.startsWith('>'), tagOnly = raw.startsWith('#');
   const q = raw.replace(/^[>#]/, '').trim(), out: PaletteSection[] = [];
@@ -958,7 +975,7 @@ function paletteResults(raw: string): PaletteSection[] {
       const t = titleOf(n), f = q ? fuzzy(q, t) : { score: 0, pos: [] }, body = store.getBody(n);
       let score = f ? f.score * 2 : -Infinity, sub = store.isLocked(n) ? 'Note chiffrée' : store.meta(n).snippet;
       if (q && body) {
-        const fb = fold(body);
+        const fb = foldedBody(n, body);
         if (words.every(w => fb.includes(w))) {
           const at = fb.indexOf(words[0]), s = Math.max(0, at - 30), nb = body.normalize('NFC');
           const frag = nb.slice(s, at + 90).replace(/\n/g, ' ');
@@ -1353,7 +1370,7 @@ async function start() {
   setInterval(async () => {
     const out = await store.purge();
     for (const g of out.filter(g => g.expired)) toast(`« ${g.title.trim() || 'Sans titre'} » s’est autodétruite`);
-    if (!out.length && !topLayer()) { renderList(); const chip = $('.chip-warn'); const n = store.get(ui.id); if (chip?.lastChild && n?.expiresAt) chip.lastChild.textContent = until(n.expiresAt); }
+    if (!out.length && !topLayer() && !document.hidden) { renderList(); const chip = $('.chip-warn'); const n = store.get(ui.id); if (chip?.lastChild && n?.expiresAt) chip.lastChild.textContent = until(n.expiresAt); }
   }, 30000);
   if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
   // L'app Mac embarque ses fichiers : elle cherche ses nouvelles versions dans les Releases du dépôt (voir core/update.ts).

@@ -5,7 +5,7 @@
 // politique de sécurité de index.html (connect-src) ; il les déclare dans `hosts`, affichés dans les réglages.
 import * as vault from '../core/vault.ts';
 import * as events from '../core/events.ts';
-import { toast, errMsg } from '../ui/kit.ts';
+import { toast, errMsg, paintIfChanged } from '../ui/kit.ts';
 import type { AppEvent } from '../core/events.ts';
 import type { Project } from '../features/projects/model.ts';
 import type { Task } from '../features/tasks.ts';
@@ -198,7 +198,7 @@ export function enable(id: string, on: boolean): void {
 export const sidebarHTML = (): string => live().map(p => { try { return p.sidebar?.(api(p)) ?? ''; } catch { return ''; } }).join('');
 export function refresh(): void {
   const x = document.getElementById('plug-side');
-  if (x) x.innerHTML = sidebarHTML();
+  if (x) paintIfChanged(x, sidebarHTML()); // relu souvent (Spotify : chaque seconde) : rien n'est réécrit sans changement
 }
 
 /** Lance l'action `<id>:<action>` d'un plugin actif, puis redessine ce qu'il affiche. */

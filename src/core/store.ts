@@ -63,8 +63,13 @@ async function load() {
 export const isLocked = (n: Note) => !!n.enc && !unlocked.has(n.id);
 export const getBody = (n: Note): string | null => n.enc ? (unlocked.get(n.id)?.body ?? null) : n.body;
 export function setBody(n: Note, text: string) {
+  // Appelé à chaque frappe : l'index (titres, rétroliens, tags) n'est jeté que si les liens ou les tags de la note changent,
+  // sinon il était reconstruit pour tout le carnet à chaque image.
+  const before = idx && metaCache.get(n);
   if (n.enc) { const u = unlocked.get(n.id); if (u) u.body = text; } else n.body = text;
-  idx = null;
+  if (!before || before.body == null) { idx = null; return; }
+  const after = meta(n);
+  if (after.tags.join('\n') !== before.tags.join('\n') || after.links.join('\n') !== before.links.join('\n')) idx = null;
 }
 
 export function meta(n: Note): NoteMeta {

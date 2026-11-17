@@ -56,7 +56,8 @@ final class Agents {
     /// Messages secondaires : écrits pendant que l'agent d'une discussion travaille (clé : projet|session).
     /// Claude Code (mode -p) ne lit rien en plein tour, et l'interrompre lui ferait perdre le fil : ils lui sont
     /// remis ensemble, en une seule consigne, dès qu'il a fini son tour proprement.
-    private struct Queued { let id: String, session: String, text: String, at: Date, machine: String }
+    /// `remote` : message venu d'un appareil lié (link.ts) ; la reprise qui l'emporte part sans terminal.
+    private struct Queued { let id: String, session: String, text: String, at: Date, machine: String, remote: Bool }
     private var queues: [String: [Queued]] = [:]
     /// Sous-agents de la dernière consigne de chaque conversation : un message en attente repart avec le même réglage.
     private var teams: [String: [String: Any]] = [:]
@@ -101,12 +102,12 @@ final class Agents {
     }
 
     /// Met un message en attente pour la discussion dont l'agent travaille encore.
-    private func enqueue(project: String, session: String, text: String, machine: String) -> [String: Any] {
+    private func enqueue(project: String, session: String, text: String, machine: String, remote: Bool) -> [String: Any] {
         lock.lock(); defer { lock.unlock() }
         let key = project + "|" + session
         var q = queues[key] ?? []
         guard q.count < maxQueued else { return ["ok": false, "message": "Déjà \(maxQueued) messages en attente : attends que Claude finisse son tour."] }
-        q.append(Queued(id: UUID().uuidString, session: session, text: text, at: Date(), machine: machine))
+        q.append(Queued(id: UUID().uuidString, session: session, text: text, at: Date(), machine: machine, remote: remote))
         queues[key] = q
         return ["ok": true, "queued": q.count, "session": session]
     }
@@ -143,18 +144,19 @@ final class Agents {
     func flushQueues() {
         flushQueue.async {
             self.lock.lock()
-            let ready: [(project: String, session: String, machine: String, team: [String: Any]?)] = self.queues.compactMap { key, q in
+            let ready: [(project: String, session: String, machine: String, team: [String: Any]?, remote: Bool)] = self.queues.compactMap { key, q in
                 guard let first = q.first else { return nil }
                 let mine = self.runs.values.filter { $0.project + "|" + $0.session == key }
                 guard !mine.contains(where: { $0.status == "running" || $0.status == "starting" }),
                       mine.max(by: { $0.started < $1.started })?.status == "done" else { return nil }
-                return (String(key.prefix { $0 != "|" }), first.session, first.machine, self.teams[key])
+                return (String(key.prefix { $0 != "|" }), first.session, first.machine, self.teams[key], q.contains { $0.remote })
             }
             self.lock.unlock()
             for r in ready {
                 let sem = DispatchSemaphore(value: 0)
                 var body: [String: Any] = ["session": r.session, "prompt": "", "machine": r.machine]
                 if let t = r.team { body["subagents"] = t }
+                if r.remote { body["remote"] = true }
                 self.start(project: r.project, body: body) { _ in sem.signal() }
                 _ = sem.wait(timeout: .now() + 60)
             }
@@ -266,6 +268,8 @@ final class Agents {
         // à la reprise suivante, tous les messages en attente partent avec la consigne, en une seule fois.
         // Les reprises lancées par l'orchestrateur (résolution de conflits) n'y touchent pas.
         var taken: [String] = []
+        // Consigne venue d'un appareil lié (posé par link.ts, jamais retiré) : jamais de terminal, même dans la bulle.
+        var fromLink = body["remote"] as? Bool == true
         if !resume.isEmpty, body["internal"] as? Bool != true {
             lock.lock(); teams[pid + "|" + resume] = body["subagents"] as? [String: Any]; lock.unlock()
         }
@@ -278,10 +282,11 @@ final class Agents {
             }
             if self.busy(project: pid, session: resume) {
                 guard !prompt.isEmpty, prompt.utf8.count <= 100_000 else { return done(["ok": false, "message": "Message vide ou trop long."]) }
-                return done(enqueue(project: pid, session: resume, text: prompt, machine: onServer ? "server" : "mac"))
+                return done(enqueue(project: pid, session: resume, text: prompt, machine: onServer ? "server" : "mac", remote: fromLink))
             }
             lock.lock(); let q = queues[pid + "|" + resume] ?? []; lock.unlock()
             taken = q.map(\.id)
+            if q.contains(where: \.remote) { fromLink = true }
             prompt = Self.combine(q.map(\.text), prompt)
             if cut {
                 prompt = "L'utilisateur a interrompu ton tour en cours pour intervenir. Ce que tu avais commencé reste en l'état : "
@@ -404,7 +409,7 @@ final class Agents {
         // Profil refusé par macOS : l'agent part comme avant, sans bulle ni terminal.
         let bubble = onServer || !AgentPermissions.terminal ? nil
             : AgentSandbox.profile(project: pid, workDirs: [cwd] + extraDirs, readDirs: [dir])
-        let shell = bubble != nil && mode == "edit" && body["internal"] as? Bool != true
+        let shell = bubble != nil && mode == "edit" && body["internal"] as? Bool != true && !fromLink
         // Dans la bulle, en mode Modifier, c'est macOS qui borne l'écriture à la copie : Claude Code passe en
         // bypassPermissions pour ne plus refuser Edit/Write sous `.claude/` (les copies vivent dans `.claude/worktrees/`,
         // un chemin qu'il protège et refuse en dontAsk même autorisé). Les outils restent ceux de --tools (sans Bash
@@ -888,10 +893,13 @@ enum AgentPermissions {
     /// Ce qu'il faut à un agent pour piloter un navigateur, ou nil (réglage coupé, aucun site, npx introuvable).
     /// Navigateur sans fenêtre et profil éphémère (`--isolated`) : aucune session ni mot de passe du Mac n'y est.
     /// Commande du serveur Playwright MCP, partagée avec le navigateur de l'IA de Studio (Browser.swift).
+    /// Version épinglée : `@latest` téléchargeait et lançait à chaque démarrage le code du jour, hors bulle pour l'IA de Studio.
+    /// À monter à la main, après lecture des nouveautés.
+    static let browserPackage = "@playwright/mcp@0.0.85"
     static func browserCommand() -> (exe: String, args: [String], dir: String, sites: [String])? {
         let list = sites
         guard browser, !list.isEmpty, let dir = npxDir else { return nil }
-        return (dir + "/npx", ["-y", "@playwright/mcp@latest", "--headless", "--isolated", "--allowed-origins", list.joined(separator: ";")], dir, list)
+        return (dir + "/npx", ["-y", browserPackage, "--headless", "--isolated", "--allowed-origins", list.joined(separator: ";")], dir, list)
     }
 
     /// `bubble` : l'agent tourne dans la bulle macOS, où Chrome ne peut pas poser son propre bac à sable (`--no-sandbox`).

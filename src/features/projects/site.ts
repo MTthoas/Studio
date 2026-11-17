@@ -151,6 +151,6 @@ export function mount(root: HTMLElement, p: Project): void {
   void load();
   timer = window.setInterval(() => {
     if (!box.isConnected) { window.clearInterval(timer); return; }
-    if (box.dataset.live) void load();
+    if (box.dataset.live && !document.hidden) void load();
   }, 2500);
 }

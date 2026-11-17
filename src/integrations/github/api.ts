@@ -25,7 +25,13 @@ const API = 'https://api.github.com', EVERY = 5 * 60e3, SEEN = 'carnet.github.se
 let app: AppShell | null = null, events: GhEvent[] = [], me = '', error = '', loaded = false, busy = false;
 const listeners = new Set<() => void>();
 export const onUpdate = (f: () => void): void => { listeners.add(f); }; // la page s'abonne pour se redessiner
-const emit = () => { app?.onCount?.(); listeners.forEach(f => f()); };
+// Relu toutes les 5 min, souvent à l'identique : barre latérale et accueil ne sont redessinés que si quelque chose a changé.
+let shownSig = '';
+const emit = () => {
+  const sig = `${loaded}|${error}|${events[0]?.id ?? ''}|${unseenCount()}`;
+  if (sig !== shownSig) { shownSig = sig; app?.onCount?.(); }
+  listeners.forEach(f => f());
+};
 export const state = () => ({ events, me, error, loaded, seen: localStorage.getItem(SEEN) || '' });
 
 export const connected = (): boolean => !!vault.secret('github');
