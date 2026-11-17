@@ -1,0 +1,54 @@
+/* Bloc ```shopify d'une note : encadrés de chiffres, commandes, stock, produit. Préfixe .sf-. Même allure que le bloc ```linear. */
+.md .sf { display: flex; flex-direction: column; gap: 10px; margin: 0 0 1em; }
+.sf-part { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.sf-head { display: flex; align-items: center; gap: 8px; padding: 2px 4px 2px 12px; height: 34px; border-bottom: 1px solid var(--border); font-size: var(--t-1); color: var(--text-2); background: var(--surface-2); }
+.sf-head > .ic { width: 14px; height: 14px; flex: none; color: var(--text-3); }
+.sf-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sf-t strong { font-weight: 500; color: var(--text); }
+.sf-upd { color: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+.sf-head .icon-btn .ic { width: 14px; height: 14px; }
+.sf-busy .sf-head [data-sf-refresh] .ic { animation: sf-spin 1s linear infinite; }
+@keyframes sf-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .sf-busy .sf-head [data-sf-refresh] .ic { animation: none; opacity: .5; } }
+
+.sf-empty, .sf-err { margin: 0; padding: 10px 12px; color: var(--text-3); font-size: var(--t-1); }
+.sf-err { color: var(--danger); font-size: var(--t-2); line-height: 1.5; }
+.md p.sf-help { margin: 0; color: var(--text-3); font-size: var(--t-1); line-height: 1.6; }
+
+.sf-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 14px; padding: 12px; }
+.sf-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; }
+.sf-tile > span { font-size: var(--t-1); color: var(--text-3); }
+.sf-tile > b { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.01em; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sf-body .ch { margin: 0; padding: 0 12px 12px; }
+
+.sf-row { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 4px 12px; border-bottom: 1px solid var(--border); font-size: var(--t-2); color: var(--text) !important; text-decoration: none !important; }
+.sf-body > .sf-row:last-child { border-bottom: 0; }
+a.sf-row:hover { background: var(--hover); }
+.sf-id { flex: none; min-width: 52px; color: var(--text-3); font-size: var(--t-1); font-variant-numeric: tabular-nums; }
+.sf-main { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sf-main i, .sf-items i { color: var(--text-3); font-style: normal; font-size: var(--t-1); }
+.sf-sts { display: flex; gap: 4px; flex: none; color: var(--text-3); font-size: var(--t-1); }
+.sf-amt { flex: none; font-variant-numeric: tabular-nums; }
+.sf-amt.warn, .sf-meta .warn { color: var(--danger); }
+.sf-when { flex: none; color: var(--text-3); font-size: var(--t-1); min-width: 40px; text-align: right; }
+.sf-bar { flex: 0 0 90px; }
+.sf-bar .ch-meter { height: 6px; }
+.sf-pill { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 10px; font-size: 11px; font-weight: 500; color: var(--text-2); background: var(--btn); white-space: nowrap; }
+.sf-pill.warn { color: color-mix(in srgb, var(--c-amber) 85%, var(--text)); background: color-mix(in srgb, var(--c-amber) 14%, transparent); }
+
+.sf-order, .sf-goal { display: flex; flex-direction: column; gap: 8px; padding: 12px; }
+.sf-line { display: flex; align-items: center; gap: 10px; font-size: var(--t-2); }
+.sf-line .sf-sts, .sf-line .sf-meta { flex: 1; }
+.sf-line .sf-amt { margin-left: auto; font-weight: 600; }
+.sf-meta { color: var(--text-3); font-size: var(--t-1); line-height: 1.5; }
+.md ul.sf-items { margin: 0; padding-left: 18px; font-size: var(--t-2); }
+.md p.sf-note { margin: 0; color: var(--text-2); font-size: var(--t-1); white-space: pre-wrap; }
+.sf-links { display: flex; gap: 12px; margin-top: 2px; }
+.md a.sf-lnk { font-size: var(--t-1); color: var(--text-2); }
+
+.sf-prod { display: flex; gap: 12px; padding: 12px; align-items: flex-start; }
+.sf-prod img, .sf-noimg { flex: none; width: 72px; height: 72px; border-radius: 6px; object-fit: cover; border: 1px solid var(--border); background: var(--active); }
+.sf-noimg { display: block; }
+.sf-info { display: flex; flex-direction: column; gap: 6px; min-width: 0; font-size: var(--t-2); }
+.sf-info .sf-meta { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+@media (max-width: 760px) { .sf-when { display: none; } .sf-sts { display: none; } }

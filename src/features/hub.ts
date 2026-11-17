@@ -22,6 +22,9 @@ import { projectOfNote } from './projects/model.ts';
 import * as tuningUI from './tuning.ts';
 import * as permissionsUI from './permissions.ts';
 import * as savedCommands from './commands.ts';
+import * as shopFence from './commerce/fence.ts';
+import * as shopUI from './commerce/shop.ts';
+import * as adsUI from './commerce/ads.ts';
 import * as pluginsUI from './plugins.ts';
 import * as registry from '../plugins/registry.ts';
 import type { AppEvent } from '../core/events.ts';
@@ -197,6 +200,7 @@ export function fenceFor(note: Note): (lang: string, code: string, idx: number) 
     if (lang === 'agent') return agentBlock(note, code, idx);
     if (lang === 'linear') return linBlock(code);
     if (savedCommands.LANGS.has(lang)) return savedCommands.blockHTML(code);
+    if (shopFence.LANGS.has(lang)) return shopFence.block(note, code, idx);
     return registry.fence(lang, code);
   };
 }
@@ -518,6 +522,7 @@ const TABS: [string, string, string, string][] = [
   ['autorisations', 'terminal', 'Autorisations des agents', 'Ce que les agents Claude Code des projets ont le droit de faire sur ce Mac : commandes, accès au web, notes et tâches du projet, dossiers des outils.'],
   ['linear', 'linear', 'Linear', 'Tickets, projets et notifications Linear, sans intermédiaire.'],
   ['github', 'github', 'GitHub', 'L’actualité de tes dépôts, en lecture seule.'],
+  ['commerce', 'shop', 'Boutiques', 'Tes boutiques Shopify et ton compte publicitaire Meta. Les identifiants restent dans le coffre ; seule l’app Mac parle à Shopify et à Meta.'],
   ['extensions', 'plug', 'Extensions', 'Des fonctions en plus, à activer une par une : Spotify, n8n… Tout tourne sur cet appareil, sans serveur.'],
   ['appareils', 'devices', 'Appareils', 'Relie ton téléphone et tes ordinateurs, sans serveur, chiffré de bout en bout.'],
   ['apparence', 'palette', 'Apparence', 'Thème de l’interface.'],
@@ -541,7 +546,7 @@ export function mountSettings(main: HTMLElement, tab: string): void {
   refreshConnections();
 }
 
-const TAB_BODY: Record<string, () => string> = { coffre: () => tabVault(), ia: () => tabAI(), consignes: () => tuningUI.html(), autorisations: () => permissionsUI.html(), linear: () => tabLinear(), github: () => tabGithub(), extensions: () => pluginsUI.html(), appareils: () => tabDevices(), apparence: () => tabLook(), donnees: () => tabData(), maj: () => tabUpdate() };
+const TAB_BODY: Record<string, () => string> = { coffre: () => tabVault(), ia: () => tabAI(), consignes: () => tuningUI.html(), autorisations: () => permissionsUI.html(), linear: () => tabLinear(), github: () => tabGithub(), commerce: () => shopUI.settings.html() + adsUI.settings.html(), extensions: () => pluginsUI.html(), appareils: () => tabDevices(), apparence: () => tabLook(), donnees: () => tabData(), maj: () => tabUpdate() };
 /** Pour les plugins : redessine l'onglet Extensions s'il est à l'écran. */
 export function refreshSettings(): void { if (curTab === 'extensions') refreshConnections(); }
 function refreshConnections(): void {
@@ -555,6 +560,7 @@ function refreshConnections(): void {
   if (curTab === 'github' && github.connected()) github.viewer().then(v => { const x = $('[data-gh-who]', body); if (x) x.textContent = `Connecté : ${v.login}`; }).catch(e => { const x = $('[data-gh-who]', body); if (x) x.textContent = 'Erreur : ' + e.message; });
   if (curTab === 'linear' && linear.connected()) linear.viewer().then(v => { const x = $('.cx-who', body); if (x) x.textContent = `Connecté : ${v.viewer.name} · ${v.organization.name}`; }).catch(e => { const x = $('.cx-who', body); if (x) x.textContent = 'Erreur : ' + e.message; });
   if (curTab === 'ia') ccRefresh();
+  if (curTab === 'commerce') { shopUI.settings.bind(body); adsUI.settings.bind(body); }
   if (curTab === 'consignes') tuningUI.mount();
   if (curTab === 'autorisations') permissionsUI.mount();
   if (curTab === 'maj' && update.supported() && !update.current() && !update.working() && !update.outdatedShell()) void update.check();

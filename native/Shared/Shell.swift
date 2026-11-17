@@ -99,6 +99,7 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
         if type == "claude", let action = body["action"] as? String, let id = body["id"] as? Int { claude(action, id: id, body: body) }
         if type == "docker", let action = body["action"] as? String, let id = body["id"] as? Int { docker(action, id: id, body: body) }
         if type == "models", let action = body["action"] as? String, let id = body["id"] as? Int { models(action, id: id, body: body) }
+        if type == "commerce", let action = body["action"] as? String, let id = body["id"] as? Int { commerce(action, id: id, body: body) }
         if type == "browser", let action = body["action"] as? String, let id = body["id"] as? Int { browser(action, id: id, body: body) }
         if type == "update", let action = body["action"] as? String, let id = body["id"] as? Int { update(action, id: id) }
         if type == "voice", let action = body["action"] as? String {
@@ -237,6 +238,17 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
         #if os(macOS)
         DispatchQueue.global(qos: .userInitiated).async {
             var r = Models.shared.handle(action, body: body); r["id"] = id; self.answer(r)
+        }
+        #else
+        answer(["id": id, "ok": false, "message": "Disponible dans l'app Mac."])
+        #endif
+    }
+
+    /// Boutique Shopify et publicité Meta : requêtes https faites ici, hors de la page (voir Commerce.swift).
+    private func commerce(_ action: String, id: Int, body: [String: Any]) {
+        #if os(macOS)
+        DispatchQueue.global(qos: .userInitiated).async {
+            var r = Commerce.shared.handle(action, body: body); r["id"] = id; self.answer(r)
         }
         #else
         answer(["id": id, "ok": false, "message": "Disponible dans l'app Mac."])
