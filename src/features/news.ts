@@ -53,6 +53,18 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'local-models', date: '2026-11-17', icon: 'cpu', hue: 'teal', mac: true,
+    title: 'Modèles locaux',
+    lead: 'Studio installe et lance des modèles ouverts avec Ollama, sur ce Mac ou sur un serveur d’un projet.',
+    bits: [
+      ['download', 'Catalogue', 'Qwen, Llama, Mistral, Gemma, gpt-oss… installés en un clic, avec la progression'],
+      ['cpu', 'Machine', 'chaque taille dit si elle tourne bien, d’après la mémoire et la carte graphique'],
+      ['server', 'Serveurs', 'le même modèle se déploie sur un serveur par SSH, sans ouvrir de port'],
+      ['sparkle', 'Utiliser', 'un modèle installé devient l’IA de Studio, ou s’essaie dans une conversation'],
+    ],
+    where: ['Barre latérale', 'Modèles'],
+    go: { label: 'Ouvrir Modèles', view: { type: 'models' } },
+    visual: { kind: 'flow', steps: [['Catalogue', 'teal', 'download'], ['Ce Mac ou un serveur', 'blue', 'server'], ['IA de Studio', 'orange', 'sparkle']] } },
   { id: 'agent-groups', date: '2026-11-17', icon: 'pr', hue: 'orange', mac: true,
     title: 'Branche mère des agents',
     lead: 'Plusieurs agents lancés ensemble partent d’une branche mère commune, chacun sur sa sous-branche.',

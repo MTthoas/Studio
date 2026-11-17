@@ -281,7 +281,6 @@ Les automatisations planifiées tournent tant que l'application est ouverte, ave
 ### Intelligence artificielle
 
 Studio se branche sur **Claude**, **OpenAI** ou un **modèle local** : les appels partent directement de l'app vers le fournisseur, avec ta clé. Réglages → IA affiche la consommation des clés API — tokens du mois par fournisseur et par modèle, et ce qu'il reste sur le budget mensuel que tu fixes.
-
 **Claude Code, avec ton abonnement et sans clé API** — sur Mac, Studio peut passer par le Claude Code installé sur la machine : Réglages → Intelligence artificielle → carte **Claude Code**. Studio le détecte, guide l'installation et la connexion si besoin, puis un clic sur **Utiliser Claude Code** en fait le fournisseur par défaut.
 
 - Dans ce rôle, Claude Code tourne **sans ses propres outils** (`--tools ""`), sans serveur MCP, sans tes réglages ni tes hooks, sans session enregistrée, dans un dossier vide propre à Studio. Il ne lance aucune commande et ne lit aucun fichier.
@@ -297,6 +296,18 @@ Studio se branche sur **Claude**, **OpenAI** ou un **modèle local** : les appel
 - **Contexte envoyé** : la taille maximale des notes jointes, du diff, des demandes d'une journée.
 
 Chaque consigne peut être rétablie à son texte d'origine, et tout d'un coup.
+
+#### Modèles locaux
+
+**Modèles** (barre latérale, app Mac) installe et lance des modèles ouverts avec [Ollama](https://ollama.com), sans terminal :
+
+- **Catalogue** : Qwen, Llama, Mistral, Gemma, gpt-oss, DeepSeek… avec leurs tailles. Chaque taille dit si elle tournera bien sur la machine (mémoire, carte graphique), et lesquels savent appeler des outils. Tout autre modèle d'Ollama ou de Hugging Face s'installe par son nom.
+- **Installation en un clic**, avec progression, débit et temps restant ; elle continue si tu changes de vue, et une notification annonce la fin. Si Ollama manque, Studio l'installe (sur le Mac : l'app officielle, signature vérifiée par macOS avant toute copie).
+- **Serveurs** : les serveurs SSH de tes projets apparaissent à côté de « Ce Mac ». Studio y installe Ollama (script officiel, avec root ou sudo sans mot de passe) et y déploie les mêmes modèles. Tout passe par SSH : Ollama n'écoute que sur le serveur lui-même, aucun port n'est ouvert.
+- **Utiliser** : un modèle installé devient l'IA de Studio en un clic (automatisations, panneau IA des notes, page Claude), ou s'essaie dans une conversation qui n'est pas gardée. Les requêtes passent par l'app Mac : pas d'`OLLAMA_ORIGINS` à régler.
+
+Un modèle sur ton Mac ne fait rien sortir de ta machine. Un modèle sur un serveur reçoit tes demandes par SSH : choisis un serveur à toi. Depuis un iPhone lié, un modèle géré par Studio n'est pas joignable (le pont `models` reste sur le Mac).
+
 
 ### Synchronisation entre appareils
 
@@ -363,6 +374,7 @@ src/                               TypeScript strict
     home.ts           accueil
     chat.ts           page Claude : conversation avec les outils de l'IA, ouverte depuis un projet et bornée à lui
     workspace.ts      Espace agents : les agents de tous les projets, liste à la Linear et grille de 1 à 8 vues
+    models.ts         Modèles locaux : machines, modèles installés, catalogue (modelcatalog.ts), essai
     tasks.ts          tâches, sous-tâches, échéances, tickets Linear
     board.ts          Kanban générique (glisser-déposer, clavier, tactile)
     voice.ts          notes vocales (transcription sur l'appareil)
@@ -406,6 +418,7 @@ native/             apps Mac et iPhone (Swift) et leurs scripts de build
     ServerExtensions.swift  extensions du serveur : Docker, Kubernetes
     Sites.swift         site d'un projet en local : détection, serveur de fichiers, script dev, builds notifiés
     Docker.swift        conteneurs et images Docker du Mac (lecture seule, par la socket du moteur)
+    Models.swift        Ollama sur le Mac ou sur un serveur (par SSH) : état, installation, modèles, chat
   macOS/, iOS/        points d'entrée de chaque plateforme
 site/               site vitrine de Studio : HTML, CSS et JS statiques, sans build ni dépendance
 scripts/            build.ts (esbuild), check.ts et site.ts, exécutés directement par Node

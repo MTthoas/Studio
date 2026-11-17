@@ -25,8 +25,8 @@ export const PROVIDERS: Record<Provider, string> = { claudecode: 'Claude Code', 
 /** Modèles proposés pour Claude Code : alias compris par Claude Code ('' = son modèle par défaut), ou identifiant complet. */
 export const CC_MODELS: [string, string][] = [['', 'Modèle par défaut de Claude Code'], ['opus', 'Opus'], ['sonnet', 'Sonnet'], ['haiku', 'Haiku'], ['claude-fable-5-2', 'Fable 5.2']];
 
-export interface AiConfig { provider: Provider; anthropicModel: string; effort: string; openaiModel: string; localUrl: string; localModel: string; ccModel: string; /** Budget mensuel en millions de tokens (0 = aucun). */ budgetM: number }
-const DEFAULTS: AiConfig = { provider: 'anthropic', anthropicModel: 'claude-opus-5-5', effort: 'medium', openaiModel: 'gpt-5', localUrl: 'http://localhost:11434/v1', localModel: 'llama3.2', ccModel: '', budgetM: 0 };
+export interface AiConfig { provider: Provider; anthropicModel: string; effort: string; openaiModel: string; localUrl: string; localModel: string; /** Qui fait tourner le modèle local : '' = l'adresse `localUrl`, jointe par la page ; 'mac' ou 'server' = Ollama piloté par Studio (vue Modèles), joint par l'app Mac, sur ce Mac ou sur le serveur `localServer` du projet `localProject`. */ localVia: '' | 'mac' | 'server'; localProject: string; localServer: string; ccModel: string; /** Budget mensuel en millions de tokens (0 = aucun). */ budgetM: number }
+const DEFAULTS: AiConfig = { provider: 'anthropic', anthropicModel: 'claude-opus-5-5', effort: 'medium', openaiModel: 'gpt-5', localUrl: 'http://localhost:11434/v1', localModel: 'llama3.2', localVia: '', localProject: '', localServer: '', ccModel: '', budgetM: 0 };
 
 export function config(): AiConfig {
   let c: Partial<AiConfig> = {};
@@ -398,6 +398,16 @@ ${spec}`;
 interface OpenAIMessage { role: string; content?: string | null; tool_calls?: { id: string; function: { name: string; arguments?: string } }[]; tool_call_id?: string }
 interface OpenAIReply { choices?: { message?: OpenAIMessage }[]; model?: string; usage?: { prompt_tokens?: number; completion_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } } }
 
+/** Modèle local piloté par Studio (vue Modèles) : la requête passe par l'app Mac, qui joint Ollama sur ce Mac ou,
+ *  par SSH, sur un serveur du projet. Pas d'origine à autoriser dans Ollama, aucun port ouvert sur le serveur. */
+async function managedChat(cfg: AiConfig, body: Record<string, unknown>, signal?: AbortSignal): Promise<OpenAIReply> {
+  const where = cfg.localVia === 'server' ? { project: cfg.localProject, server: cfg.localServer } : { project: '', server: '' };
+  const r = await native.call('models', 'chat', { ...where, body }, 620000);
+  signal?.throwIfAborted();
+  if (!r.ok) throw new Error(r.message || 'Le modèle local n’a pas répondu (vue Modèles).');
+  return r.reply as OpenAIReply;
+}
+
 async function loopOpenAI(cfg: AiConfig, system: string, user: string, tools: Tool[], exec: Exec, signal: AbortSignal | undefined, local: boolean): Promise<string> {
   const key = local ? vault.secret('local') : vault.secret('openai');
   if (!local && !key) throw new Error('Clé OpenAI manquante (Réglages → Intelligence artificielle).');
@@ -407,7 +417,7 @@ async function loopOpenAI(cfg: AiConfig, system: string, user: string, tools: To
   for (let step = 0; step < max; step++) {
     const body: Record<string, unknown> = { model: local ? cfg.localModel : cfg.openaiModel, messages };
     if (tools.length) body.tools = tools.map(t => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.schema } }));
-    const r = await post<OpenAIReply>(base + '/chat/completions', key ? { Authorization: `Bearer ${key}` } : {}, body, signal);
+    const r = local && cfg.localVia ? await managedChat(cfg, body, signal) : await post<OpenAIReply>(base + '/chat/completions', key ? { Authorization: `Bearer ${key}` } : {}, body, signal);
     if (r.usage) { const cached = r.usage.prompt_tokens_details?.cached_tokens ?? 0; usage.record(local ? 'local' : 'openai', r.model ?? String(body.model), { input: (r.usage.prompt_tokens ?? 0) - cached, output: r.usage.completion_tokens, cacheRead: cached }); }
     const msg = r.choices?.[0]?.message; if (!msg) throw new Error('Réponse vide du fournisseur.');
     messages.push(msg);

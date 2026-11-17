@@ -98,6 +98,7 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
         if type == "agent", let action = body["action"] as? String, let id = body["id"] as? Int { agent(action, id: id, body: body) }
         if type == "claude", let action = body["action"] as? String, let id = body["id"] as? Int { claude(action, id: id, body: body) }
         if type == "docker", let action = body["action"] as? String, let id = body["id"] as? Int { docker(action, id: id, body: body) }
+        if type == "models", let action = body["action"] as? String, let id = body["id"] as? Int { models(action, id: id, body: body) }
         if type == "browser", let action = body["action"] as? String, let id = body["id"] as? Int { browser(action, id: id, body: body) }
         if type == "update", let action = body["action"] as? String, let id = body["id"] as? Int { update(action, id: id) }
         if type == "voice", let action = body["action"] as? String {
@@ -225,6 +226,17 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
                 return [(id: p, dir: main)] + folders.otherRepos(p).found.map { (id: p, dir: $0.dir) }
             }
             var r = Docker.status(projects: list); r["id"] = id; self.answer(r)
+        }
+        #else
+        answer(["id": id, "ok": false, "message": "Disponible dans l'app Mac."])
+        #endif
+    }
+
+    /// Modèles locaux : Ollama sur ce Mac ou sur un serveur d'un projet (voir Models.swift).
+    private func models(_ action: String, id: Int, body: [String: Any]) {
+        #if os(macOS)
+        DispatchQueue.global(qos: .userInitiated).async {
+            var r = Models.shared.handle(action, body: body); r["id"] = id; self.answer(r)
         }
         #else
         answer(["id": id, "ok": false, "message": "Disponible dans l'app Mac."])
