@@ -309,6 +309,19 @@ Chaque consigne peut être rétablie à son texte d'origine, et tout d'un coup.
 Un modèle sur ton Mac ne fait rien sortir de ta machine. Un modèle sur un serveur reçoit tes demandes par SSH : choisis un serveur à toi. Depuis un iPhone lié, un modèle géré par Studio n'est pas joignable (le pont `models` reste sur le Mac).
 
 
+#### Boutiques (Shopify, publicité Meta, marketing)
+
+**Boutiques** (barre latérale, app Mac) relie des boutiques Shopify à tes projets : une boutique par projet (`shopify: nom.myshopify.com` dans le bloc projet, `meta: act_…` pour son compte publicitaire), autant de boutiques que tu veux. Le projet gagne un onglet **Boutique**.
+
+- **Connexion** : Réglages → Boutiques. Pour Shopify, une app créée dans l'admin de la boutique (jeton `shpat_`) ou dans le Dev Dashboard (identifiant et secret) ; pour Meta, un jeton d'accès à ton compte publicitaire. Les identifiants restent dans le coffre.
+- **Chiffres** : ventes, commandes, panier moyen, conversion, produits les plus vendus, canaux, par jour et face à la période précédente.
+- **Commandes, produits, clients, réductions** : expédier avec un numéro de suivi, noter une commande, modifier une fiche, un prix, un stock, créer un code de réduction. Chaque écriture se confirme.
+- **Publicité** : campagnes Meta, dépense, clics, achats, ROAS, par emplacement ; pause et budget. Une campagne se compose depuis un produit et se crée toujours **en pause** : c'est toi qui l'actives. Facebook Marketplace n'a pas d'API pour publier une annonce : Studio le propose comme emplacement de publicité (avec le fil), prépare le texte de l'annonce à copier, et le catalogue passe par le canal « Facebook & Instagram » de Shopify.
+- **Marketing** : fiches produit, annonces Marketplace, textes de publicité, e-mails, écrits par un modèle local d'Ollama (Studio conseille le mieux adapté à ta machine) ; le résultat s'applique à la fiche après relecture.
+- **Notes** : un bloc ` ```shopify ` affiche les chiffres dans une note (`ventes 30j par jour`, `commandes à expédier`, `stock < 5`, `produit: handle`, `pub 7j`, `objectif 5000`…), et l'onglet Boutique liste les notes du projet. L'IA (outil `boutique`) lit la boutique du projet et propose des modifications, toujours soumises à ton accord ; elle peut mettre une publicité en pause, jamais en lancer.
+
+Seule l'app Mac parle à Shopify et à Meta ; rien ne passe par un serveur de Studio.
+
 ### Synchronisation entre appareils
 
 Réglages → Appareils → « Lier un appareil ». Un secret de 128 bits passe d'un écran à l'autre (QR code ou copier-coller via le presse-papiers universel). Il chiffre une courte poignée de main relayée par `ntfy.sh` — qui ne voit que du chiffré, non stocké — puis les notes passent en direct entre appareils (WebRTC), et en temps réel tant que les deux sont ouverts.
@@ -375,6 +388,7 @@ src/                               TypeScript strict
     chat.ts           page Claude : conversation avec les outils de l'IA, ouverte depuis un projet et bornée à lui
     workspace.ts      Espace agents : les agents de tous les projets, liste à la Linear et grille de 1 à 8 vues
     models.ts         Modèles locaux : machines, modèles installés, catalogue (modelcatalog.ts), essai
+    commerce/         Boutiques : page.ts (onglet et vue), shop*.ts (Shopify), ads.ts (Meta), marketing*.ts (modèle local), fence.ts (bloc de note)
     tasks.ts          tâches, sous-tâches, échéances, tickets Linear
     board.ts          Kanban générique (glisser-déposer, clavier, tactile)
     voice.ts          notes vocales (transcription sur l'appareil)

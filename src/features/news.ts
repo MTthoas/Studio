@@ -53,6 +53,19 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'commerce', date: '2026-11-18', icon: 'shop', hue: 'green', mac: true,
+    title: 'Boutiques Shopify',
+    lead: 'Studio suit et pilote tes boutiques Shopify, leur publicité Meta et leur marketing, une boutique par projet.',
+    bits: [
+      ['graph', 'Chiffres', 'ventes, commandes, panier moyen, produits phares et canaux, comparés à la période d’avant'],
+      ['inbox', 'Gérer', 'expédier une commande, changer un prix, un stock, une fiche, créer un code de réduction'],
+      ['bolt', 'Publicité', 'campagnes Meta avec Marketplace comme emplacement, toujours créées en pause'],
+      ['cpu', 'Marketing', 'fiches, annonces et textes de pub écrits par un modèle local, sans rien envoyer ailleurs'],
+      ['notes', 'Notes', 'un bloc shopify affiche les chiffres dans une note ; l’IA lit la boutique du projet'],
+    ],
+    where: ['Barre latérale', 'Boutiques'],
+    go: { label: 'Ouvrir Boutiques', view: { type: 'commerce' } },
+    visual: { kind: 'flow', steps: [['Boutique', 'green', 'shop'], ['Chiffres et commandes', 'blue', 'graph'], ['Publicité et marketing', 'orange', 'bolt']] } },
   { id: 'local-models', date: '2026-11-17', icon: 'cpu', hue: 'teal', mac: true,
     title: 'Modèles locaux',
     lead: 'Studio installe et lance des modèles ouverts avec Ollama, sur ce Mac ou sur un serveur d’un projet.',

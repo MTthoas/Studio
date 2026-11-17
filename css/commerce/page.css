@@ -1,0 +1,8 @@
+/* Commerce : la coquille de l'onglet Boutique d'un projet et de la vue Boutiques (voir src/features/commerce/page.ts). */
+.cm-root { display: flex; flex-direction: column; gap: 20px; }
+.cm-nav { display: flex; flex-wrap: wrap; gap: 4px; }
+.cm-nav button { padding: 5px 11px; border-radius: 7px; font-size: var(--t-2); color: var(--text-2); }
+.cm-nav button:hover { background: var(--hover); color: var(--text); }
+.cm-nav button[aria-current] { background: var(--active); color: var(--text); font-weight: 600; }
+.cm-page { flex: 1; min-height: 0; overflow: auto; }
+.cm-all { max-width: 1040px; margin: 0 auto; padding: 44px 40px 72px; }

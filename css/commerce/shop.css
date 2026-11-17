@@ -1,0 +1,177 @@
+/* Boutique Shopify : sections de l'onglet Boutique, fenêtres des fiches, vue « Boutiques », accueil, Réglages. Préfixe .sh-. */
+.sh-root { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+.sh-sub { color: var(--text-3); font-size: var(--t-1); line-height: 1.5; }
+.sh-k { color: var(--text-3); font-size: var(--t-1); }
+.sh-p { margin: 0; line-height: 1.5; }
+.sh-title { margin: 0; font-size: var(--t-3); font-weight: 600; }
+.sh-right { margin-left: auto; }
+.sh-loading { margin: 0; padding: 18px 0; color: var(--text-3); font-size: var(--t-2); }
+.sh-none { margin: 0; padding: 22px 0; text-align: center; }
+.sh-ok { margin: 0; color: var(--ok); font-size: var(--t-2); line-height: 1.5; }
+.sh-warn { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--warn); font-size: var(--t-2); line-height: 1.5; }
+.sh-warn .ic { flex: none; width: 14px; height: 14px; }
+.sh-err { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 14px 16px; border: 1px solid var(--border); border-radius: 8px; }
+.sh-err p { margin: 0; color: var(--danger); font-size: var(--t-2); line-height: 1.5; }
+.sh-err-inline { margin: 10px 0 0; color: var(--danger); font-size: var(--t-2); line-height: 1.5; }
+.sh-err-inline[hidden] { display: none; }
+
+/* Barre du haut : périodes, filtres, recherche */
+.sh-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sh-seg { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.sh-seg .btn.on { background: var(--active); color: var(--text); }
+.sh-seg .btn.on:disabled { opacity: 1; }
+.sh-refresh { margin-left: auto; }
+.sh-search { position: relative; display: flex; align-items: center; flex: 1; min-width: 200px; max-width: 360px; margin-left: auto; }
+.sh-search .ic { position: absolute; left: 10px; width: 14px; height: 14px; color: var(--text-3); pointer-events: none; }
+.sh-search .field { width: 100%; padding-left: 30px; }
+.sh-count { display: inline-block; min-width: 16px; margin-left: 2px; padding: 0 5px; border-radius: 8px; background: var(--btn-hover); color: var(--text-2); font-size: 11px; font-variant-numeric: tabular-nums; text-align: center; }
+.sh-more { align-self: center; margin: 12px auto 0; }
+
+/* Tuiles de chiffres */
+.sh-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.sh-tiles-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.sh-tiles-4 { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.sh-tile { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+.sh-tile strong { font-size: var(--t-6); font-weight: 600; letter-spacing: -.02em; line-height: 1.15; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-tile strong.sh-multi { display: flex; flex-direction: column; gap: 2px; font-size: var(--t-5); white-space: normal; }
+.sh-tr { display: flex; min-height: 20px; }
+.sh-big { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 2px 0 10px; font-size: var(--t-6); font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.sh-big small { color: var(--text-3); font-size: var(--t-2); font-weight: 400; letter-spacing: 0; }
+
+/* Blocs et colonnes */
+.sh-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; align-items: start; }
+.sh-block { min-width: 0; }
+.sh-block h4 { display: flex; align-items: baseline; gap: 8px; margin: 0 0 8px; font-size: var(--t-2); font-weight: 600; }
+.sh-block h4 .sh-sub, .sh-block h4 .link-btn { margin-left: auto; font-size: var(--t-1); font-weight: 400; }
+.sh-block h4 .link-btn { font-weight: 500; }
+.sh-block h5 { display: flex; align-items: baseline; gap: 6px; margin: 14px 0 4px; color: var(--text-2); font-size: var(--t-1); font-weight: 600; }
+.sh-block h5 b { color: var(--text-3); font-weight: 500; font-variant-numeric: tabular-nums; }
+.sh-block .link-btn { margin-top: 6px; font-size: var(--t-1); }
+.sh-block .sh-sub { margin: 0; }
+.sh-block > .sh-sub + .sh-sub { margin-top: 4px; }
+
+/* Lignes de classement (meilleurs produits, canaux, à traiter) */
+.sh-ln { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 6px 8px; margin: 0 -8px; border-radius: 6px; text-align: left; color: inherit; }
+button.sh-ln:hover { background: var(--hover); }
+.sh-ln-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.sh-ln-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-2); font-weight: 500; }
+.sh-ln-v { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; font-size: var(--t-2); font-variant-numeric: tabular-nums; }
+.sh-ln-v small { color: var(--text-3); font-size: var(--t-1); }
+.sh-ln-v.warn, .sh-row-stock.warn, .sh-hm-ship.warn { color: var(--warn); }
+.sh-ln-v.bad { color: var(--danger); }
+.sh-bar { display: block; height: 4px; border-radius: 2px; }
+.sh-bar i { display: block; height: 100%; border-radius: 2px; background: var(--text-3); }
+
+/* Listes (commandes, produits, clients, réductions) */
+.sh-list { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.sh-row { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 56px; padding: 8px 16px; background: var(--bg); text-align: left; color: inherit; }
+.sh-row + .sh-row { border-top: 1px solid var(--border); }
+button.sh-row:hover { background: var(--hover); }
+.sh-static { cursor: default; }
+.sh-row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.sh-row-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-2); font-weight: 500; }
+.sh-row-main .sh-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-row-pills { flex: none; display: flex; align-items: center; gap: 4px; }
+.sh-row-stock { flex: none; min-width: 90px; color: var(--text-2); font-size: var(--t-1); font-variant-numeric: tabular-nums; text-align: right; }
+.sh-row-v { flex: none; min-width: 84px; font-size: var(--t-2); font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+.sh-prow { min-height: 64px; }
+.sh-miss { display: flex; flex-wrap: wrap; gap: 4px; }
+.sh-miss i { padding: 0 6px; border-radius: 4px; background: var(--warn-soft); color: var(--warn); font-size: 11px; font-style: normal; }
+.sh-pill { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 10px; background: var(--btn); color: var(--text-2); font-size: 11px; font-weight: 600; white-space: nowrap; }
+.sh-pill.ok { background: color-mix(in srgb, var(--c-green) 14%, transparent); color: color-mix(in srgb, var(--c-green) 80%, var(--text)); }
+.sh-pill.warn { background: var(--warn-soft); color: var(--warn); }
+.sh-pill.down { background: var(--del); color: var(--danger); }
+
+/* Images de produits */
+.sh-img { flex: none; width: 40px; height: 40px; border-radius: 6px; object-fit: cover; background: var(--btn); }
+.sh-img.lg { width: 72px; height: 72px; border-radius: 8px; }
+.sh-noimg { display: grid; place-items: center; color: var(--text-3); }
+.sh-noimg .ic { width: 18px; height: 18px; }
+
+/* Fenêtres : fiches commande, produit, client, nouveau code */
+.modal.sh-modal { width: min(640px, 100%); max-height: calc(100dvh - 40px); overflow: auto; }
+.modal.sh-modal.small { width: min(440px, 100%); }
+.sh-fiche { display: flex; flex-direction: column; gap: 18px; }
+.sh-fiche .modal-actions { margin-top: 2px; }
+.sh-wrap { flex-wrap: wrap; }
+.sh-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.sh-total { margin-left: auto; font-size: var(--t-4); font-variant-numeric: tabular-nums; }
+.sh-hero { display: flex; align-items: center; gap: 14px; }
+.sh-hero-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.sh-hero-main strong { font-size: var(--t-4); font-weight: 600; }
+.sh-item { display: flex; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: var(--t-2); }
+.sh-item:last-child { border-bottom: 0; }
+.sh-item b { flex: none; min-width: 28px; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--text-2); }
+.sh-item span { display: flex; flex-direction: column; min-width: 0; }
+.sh-item small { color: var(--text-3); font-size: var(--t-1); }
+.sh-acts { display: flex; justify-content: flex-end; margin-top: 8px; }
+.sh-inline { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sh-inline .field { flex: 1; min-width: 180px; }
+.sh-var { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: end; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.sh-var:last-of-type { border-bottom: 0; }
+.sh-var-name { display: flex; flex-direction: column; gap: 2px; min-width: 0; align-self: center; }
+.sh-var-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-2); font-weight: 500; }
+.sh-var-edit { display: flex; align-items: flex-end; gap: 6px; }
+.sh-var-edit label { display: flex; flex-direction: column; gap: 3px; }
+.sh-var-edit .field { width: 96px; }
+@media (max-width: 640px) { .sh-var { grid-template-columns: 1fr; } .sh-var-edit { flex-wrap: wrap; } }
+.sh-notes { display: flex; flex-direction: column; gap: 2px; }
+.sh-note { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 0 8px; margin: 0 -8px; border-radius: 6px; color: var(--text); font-size: var(--t-2); text-align: left; }
+.sh-note:hover { background: var(--hover); }
+.sh-note .ic { flex: none; width: 14px; height: 14px; color: var(--text-3); }
+.sh-note span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-ext { text-decoration: none; }
+
+/* Formulaires */
+.sh-form { display: flex; flex-direction: column; gap: 12px; }
+.sh-f { display: flex; flex-direction: column; gap: 5px; min-width: 0; color: var(--text-2); font-size: var(--t-1); }
+.sh-two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+
+/* Mise en route et état vide */
+.sh-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; max-width: 560px; margin: 40px auto; color: var(--text-2); font-size: var(--t-2); line-height: 1.6; }
+.sh-empty h3 { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--text); font-size: var(--t-4); font-weight: 600; }
+.sh-empty h3 .ic, .sh-empty > .ic { width: 18px; height: 18px; color: var(--text-3); }
+.sh-empty p { margin: 0; }
+.sh-shops { display: flex; flex-direction: column; width: 100%; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.sh-shop { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 16px; background: var(--bg); text-align: left; color: inherit; }
+.sh-shop + .sh-shop { border-top: 1px solid var(--border); }
+button.sh-pick:hover { background: var(--hover); }
+.sh-pick > .ic { flex: none; width: 14px; height: 14px; color: var(--text-3); }
+.sh-shop-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.sh-shop-main strong { font-size: var(--t-2); font-weight: 500; }
+
+/* Réglages → Boutiques */
+.sh-set .sh-form { margin-top: 14px; }
+.sh-guide { margin-top: 16px; }
+.sh-guide summary { cursor: pointer; color: var(--text); font-size: var(--t-2); font-weight: 500; }
+.sh-steps { margin: 10px 0; padding-left: 20px; color: var(--text-2); font-size: var(--t-2); line-height: 1.6; }
+.sh-steps li + li { margin-top: 4px; }
+.sh-scopes { white-space: pre-wrap; overflow-wrap: anywhere; }
+.sh-notes-list { margin: 12px 0 0; padding-left: 20px; color: var(--text-2); font-size: var(--t-1); line-height: 1.6; }
+
+/* Vue « Boutiques » */
+.sh-all { gap: 18px; }
+.sh-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+.sh-card { display: flex; flex-direction: column; gap: 14px; min-width: 0; padding: 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg); color: inherit; text-align: left; }
+.sh-card:hover { background: var(--hover); }
+.sh-card-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.sh-card-top strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-3); font-weight: 600; }
+.sh-card-top .sh-sub { margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--c, var(--text-3)); }
+.sh-card-figs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.sh-fig { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.sh-fig strong { font-size: var(--t-5); font-weight: 600; letter-spacing: -.01em; font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-card-err { color: var(--danger); font-size: var(--t-1); line-height: 1.5; }
+.sh-card-foot { display: flex; flex-wrap: wrap; gap: 6px; min-height: 22px; }
+.sh-chip { display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 11px; background: var(--btn); color: var(--text-2); font-size: var(--t-1); font-variant-numeric: tabular-nums; }
+.sh-chip.warn { background: var(--warn-soft); color: var(--warn); }
+
+/* Accueil */
+.sh-hm { display: flex; flex-direction: column; }
+.sh-hm-row { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; border-bottom: 1px solid var(--border); color: inherit; font-size: var(--t-2); text-align: left; }
+.sh-hm-row:last-child { border-bottom: 0; }
+.sh-hm-row:hover .sh-hm-name { text-decoration: underline; text-decoration-color: var(--border-2); text-underline-offset: 3px; }
+.sh-hm-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.sh-hm-v { flex: none; display: flex; align-items: baseline; gap: 6px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.sh-hm-v small { color: var(--text-3); font-size: var(--t-1); font-weight: 400; }
+.sh-hm-ship { flex: none; min-width: 90px; color: var(--text-3); font-size: var(--t-1); text-align: right; font-variant-numeric: tabular-nums; }

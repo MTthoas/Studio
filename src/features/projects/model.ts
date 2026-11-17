@@ -32,6 +32,10 @@ export interface Project {
   linear: string | null;
   /** Site web du projet (https uniquement). */
   site: string | null;
+  /** Boutique Shopify du projet : son domaine « nom.myshopify.com ». */
+  shopify: string | null;
+  /** Compte publicitaire Meta du projet : « act_<numéro> ». */
+  meta: string | null;
   hue: string;
 }
 
@@ -91,10 +95,19 @@ export const PROJECT_TAG_RE = /(^|\s)#projet\/([\p{L}\d][\p{L}\d_-]*)(?=[\s,.;:!
 export const slugify = (s: string): string => fold(s).replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'projet';
 
 /** Lit le bloc ```projet d'une note (null si la note n'en a pas, ou s'il est vide). */
+/** Domaine d'une boutique Shopify, d'après ce qu'on a écrit (« nom », « nom.myshopify.com », une adresse d'admin). */
+export function shopDomain(v: string): string | null {
+  const t = v.trim().toLowerCase().replace(/^https?:\/\//, '');
+  const m = t.match(/^admin\.shopify\.com\/store\/([a-z0-9][a-z0-9-]*)/) ?? t.match(/^([a-z0-9][a-z0-9-]*)(?:\.myshopify\.com)?(?:\/.*)?$/);
+  return m?.[1] ? `${m[1]}.myshopify.com` : null;
+}
+/** Compte publicitaire Meta : « act_123 » (le préfixe est ajouté s'il manque). */
+export function adAccount(v: string): string | null { const m = v.trim().match(/^(?:act_)?(\d{5,20})$/); return m ? `act_${m[1]}` : null; }
+
 export function parse(n: Note): Project | null {
   const body = store.getBody(n); if (!body || !body.includes('```projet')) return null;
   const m = body.match(BLOCK_RE); if (!m) return null;
-  let name = n.title.trim(), stack: Repo[] = [], linear: string | null = null, site: string | null = null;
+  let name = n.title.trim(), stack: Repo[] = [], linear: string | null = null, site: string | null = null, shopify: string | null = null, meta: string | null = null;
   for (const line of (m[1] ?? '').split('\n')) {
     const kv = line.match(/^\s*([\p{L}]+)\s*:\s*(.*)$/u); if (!kv) continue;
     const k = fold(kv[1] ?? ''), v = (kv[2] ?? '').trim();
@@ -102,10 +115,12 @@ export function parse(n: Note): Project | null {
     else if (k === 'depot' || k === 'depots' || k === 'repo' || k === 'repos' || k === 'github') stack = parseRepos(v);
     else if (k === 'linear') linear = v || null;
     else if (k === 'site' || k === 'url' || k === 'web') site = /^https:\/\/[^\s]+$/i.test(v) ? v : null;
+    else if (k === 'shopify' || k === 'boutique') shopify = shopDomain(v);
+    else if (k === 'meta' || k === 'pub' || k === 'ads') meta = adAccount(v);
   }
   name = name || 'Projet';
   const slug = slugify(name);
-  return { id: n.id, note: n, name, slug, tag: `projet/${slug}`, repos: stack.map(r => r.name), stack, linear, site, hue: hue(slug) };
+  return { id: n.id, note: n, name, slug, tag: `projet/${slug}`, repos: stack.map(r => r.name), stack, linear, site, shopify, meta, hue: hue(slug) };
 }
 
 let cache: { idx: object; list: Project[]; ofNote: Map<string, Project | null> } | null = null;
@@ -180,7 +195,7 @@ export async function setNoteProject(n: Note, p: Project | null): Promise<void> 
 }
 
 /** Écrit (ou remplace) un champ du bloc ```projet de la note du projet. */
-export async function setField(p: Project, key: 'dépôts' | 'linear' | 'site', value: string): Promise<void> {
+export async function setField(p: Project, key: 'dépôts' | 'linear' | 'site' | 'shopify' | 'meta', value: string): Promise<void> {
   const body = store.getBody(p.note); if (body == null) throw new Error('Déverrouille la note du projet.');
   const re = key === 'dépôts' ? /^(\s*)d[ée]p[oô]ts?\s*:.*$/m : new RegExp(`^(\\s*)${key}\\s*:.*$`, 'm');
   if (/[\r\n]/.test(value)) throw new Error('Valeur invalide.');

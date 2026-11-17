@@ -21,6 +21,7 @@ import * as journal from './features/journal.ts';
 import * as chat from './features/chat.ts';
 import * as workspace from './features/workspace.ts';
 import * as models from './features/models.ts';
+import * as commerce from './features/commerce/page.ts';
 import * as automations from './features/automations.ts';
 import * as help from './features/help.ts';
 import * as onboarding from './features/onboarding.ts';
@@ -86,15 +87,15 @@ const SC = {
   workspace: 'mod+shift+a', sidebar: isMac ? 'ctrl+mod+s' : 'mod+alt+s', task: 'mod+enter', bold: 'mod+b', italic: 'mod+i',
 };
 const VIEWS: Record<string, { label: string; icon: string }> = {
-  home: { label: 'Accueil', icon: 'home' }, workspace: { label: 'Espace agents', icon: 'board' }, models: { label: 'Modèles', icon: 'cpu' }, claude: { label: 'Claude', icon: 'sparkle' }, agents: { label: 'Automatisations', icon: 'bot' }, help: { label: 'Aide', icon: 'help' }, projets: { label: 'Projets', icon: 'folder' }, settings: { label: 'Réglages', icon: 'gear' },
+  home: { label: 'Accueil', icon: 'home' }, workspace: { label: 'Espace agents', icon: 'board' }, models: { label: 'Modèles', icon: 'cpu' }, commerce: { label: 'Boutiques', icon: 'shop' }, claude: { label: 'Claude', icon: 'sparkle' }, agents: { label: 'Automatisations', icon: 'bot' }, help: { label: 'Aide', icon: 'help' }, projets: { label: 'Projets', icon: 'folder' }, settings: { label: 'Réglages', icon: 'gear' },
   today: { label: 'Aujourd’hui', icon: 'today' }, journal: { label: 'Journal', icon: 'journal' }, tasks: { label: 'Tâches', icon: 'check' }, linear: { label: 'Linear', icon: 'linear' }, github: { label: 'GitHub', icon: 'github' }, all: { label: 'Toutes les notes', icon: 'notes' },
   inbox: { label: 'Boîte de réception', icon: 'inbox' }, ephemeral: { label: 'Éphémères', icon: 'hourglass' },
   graph: { label: 'Graphe', icon: 'graph' }, trash: { label: 'Corbeille', icon: 'trash' },
 };
 /** Teinte de l'icône de chaque section dans la barre latérale. */
-const SIDE_HUE: Record<string, string> = { home: 'gray', workspace: 'violet', models: 'teal', claude: 'orange', inbox: 'blue', today: 'amber', journal: 'pink', all: 'gray', ephemeral: 'orange', tasks: 'green', agents: 'violet', help: 'blue', projets: 'orange', linear: 'indigo', github: 'gray', graph: 'teal', trash: 'gray' };
+const SIDE_HUE: Record<string, string> = { home: 'gray', workspace: 'violet', models: 'teal', commerce: 'green', claude: 'orange', inbox: 'blue', today: 'amber', journal: 'pink', all: 'gray', ephemeral: 'orange', tasks: 'green', agents: 'violet', help: 'blue', projets: 'orange', linear: 'indigo', github: 'gray', graph: 'teal', trash: 'gray' };
 const titleOf = (n: Note) => n.title.trim() || 'Sans titre';
-const WIDE = new Set(['workspace', 'models', 'graph', 'home', 'claude', 'settings', 'tasks', 'linear', 'github', 'agents', 'help', 'projets', 'journal']); // vues sans colonne de liste
+const WIDE = new Set(['workspace', 'models', 'commerce', 'graph', 'home', 'claude', 'settings', 'tasks', 'linear', 'github', 'agents', 'help', 'projets', 'journal']); // vues sans colonne de liste
 
 function applyTheme() {
   const dark = ui.theme === 'dark' || (ui.theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
@@ -205,14 +206,14 @@ function renderSidebar() {
       <div class="side-group">${item('inbox')}${item('today')}${item('journal')}${item('all')}${count.ephemeral || v.type === 'ephemeral' ? item('ephemeral') : ''}</div>
       ${treeHTML(idx.live)}
       <div class="side-label">Organisation</div>
-      <div class="side-group">${projectsPage.claudeAvailable() ? item('workspace') : ''}${models.available() ? item('models') : ''}${item('projets')}${projectsModel.projects().slice(0, 8).map(p => {
+      <div class="side-group">${projectsPage.claudeAvailable() ? item('workspace') : ''}${models.available() ? item('models') : ''}${commerce.available() ? item('commerce') : ''}${item('projets')}${projectsModel.projects().slice(0, 8).map(p => {
         const open = v.type === 'projets' && v.project === p.id, tab = v.tab ?? 'overview';
         // Sous « Claude Code » : les conversations récentes du projet, celle qui est ouverte en surbrillance.
         const talks = open ? projectsPage.sideSessions(p.id) : [], talking = tab === 'sessions' && talks.some(s => s.sel);
         // Sous « Serveur » : les serveurs du projet, celui qui est affiché en surbrillance.
         const servers = open ? projectsPage.sideServers(p.id) : [], serving = tab === 'server' && servers.some(s => s.sel);
         return `<button class="side-item side-sub${open && tab === 'overview' ? ' sel' : ''}${open ? ' open' : ''}" data-pj-open="${esc(p.id)}"><i class="tag-dot" style="--c:var(--c-${p.hue})"></i><span>${esc(p.name)}</span></button>`
-          + (open ? projectsPage.TABS.slice(1).map(([k, l, ic]) => `<button class="side-item side-sub2${tab === k && !(k === 'sessions' && talking) && !(k === 'server' && serving) ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="${k}"${k === 'sessions' ? ' data-pj-session=""' : ''}>${icon(ic)}<span>${esc(l)}</span></button>`
+          + (open ? projectsPage.tabsOf(p, tab ?? '').slice(1).map(([k, l, ic]) => `<button class="side-item side-sub2${tab === k && !(k === 'sessions' && talking) && !(k === 'server' && serving) ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="${k}"${k === 'sessions' ? ' data-pj-session=""' : ''}>${icon(ic)}<span>${esc(l)}</span></button>`
             + (k === 'server' ? servers.map(s => `<button class="side-item side-sub3${tab === 'server' && s.sel ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="server" data-pj-server="${esc(s.id)}" title="${esc(s.dest)}">${icon('server')}<span>${esc(s.name)}</span></button>`).join('') : '')
             + (k === 'sessions' ? talks.map(s => `<button class="side-item side-sub3${tab === 'sessions' && s.sel && !s.subs.some(a => a.sel) ? ' sel' : ''}${!s.live && s.stage ? ` ${s.stage.cls}` : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="sessions" data-pj-session="${esc(s.id)}" title="${esc(s.title)}${s.live ? ' · en cours' : s.stage ? ` · ${esc(s.stage.label)}` : ''}"><i class="ss-live${s.live ? ' on' : s.stage ? ` ${s.stage.cls}` : ''}"></i><span>${esc(s.title)}</span>${!s.live && s.stage?.cls === 'st-review' ? `<em class="side-stage">${esc(s.stage.label)}</em>` : ''}</button>`
               // Sous la conversation : ses sous-agents épinglés, et celui dont on lit le fil.
@@ -342,6 +343,7 @@ function renderMain() {
   if (ui.view.type === 'workspace') return workspace.mount(main, tbLeft());
   if (ui.view.type === 'projets') return projectsPage.mount(main);
   if (ui.view.type === 'models') return models.mount(main);
+  if (ui.view.type === 'commerce') return commerce.mountAll(main);
   if (ui.view.type === 'help') return help.mount(main);
   if (ui.view.type === 'linear') return linearView.mount(main);
   if (ui.view.type === 'github') return githubPage.mount(main);
@@ -902,6 +904,7 @@ function commands() {
     c('Journal des demandes', 'journal', () => setView({ type: 'journal' }), '', 'journal prompts demandes résumé journée claude code historique'),
     c('Projets', 'folder', () => setView({ type: 'projets', project: null }), '', 'dossier dépôt github vscode cockpit'),
     c('Espace agents', 'board', () => setView({ type: 'workspace' }), SC.workspace, 'agents claude code vues split grille parallèle diffuser'),
+    ...(commerce.available() ? [c('Boutiques', 'shop', () => setView({ type: 'commerce' }), '', 'shopify boutique e-commerce ventes commandes produits stock chiffres publicité meta facebook marketplace marketing')] : []),
     ...(models.available() ? [c('Modèles locaux', 'cpu', () => setView({ type: 'models' }), '', 'modèle local ollama llama qwen mistral gemma installer télécharger serveur déployer open source')] : []),
     c('Nouveau projet', 'plus', () => projectsPage.createDialog(), '', 'créer projet dossier dépôt'),
     ...(open && n ? [c('Ranger la note dans un projet…', 'folder', () => { const a = $('[data-act=project]'); if (a) menu(a, projectsPage.projectMenuItems(n)); }, '', 'projet déplacer tag')] : []),
@@ -1347,7 +1350,7 @@ async function start() {
   const shared = { setView, openNote, capture: quickCapture, view: () => ui.view.type, viewState: () => ui.view, renderSidebar, tbLeft, crumb,
     onCount: () => { renderSidebar(); linearView.refreshCount(); if (ui.view.type === 'home' && !topLayer() && !need('#main').contains(document.activeElement)) renderMain(); } };
   registerBuiltins();
-  home.init(shared); journal.init(shared); chat.init({ ...shared, refreshNote }); automations.init(shared); projectsPage.init(shared); help.init({ ...shared, shortcuts: shortcutRows }); models.init(shared); voice.init(shared); linearView.init(shared); githubPage.init(shared);
+  home.init(shared); journal.init(shared); chat.init({ ...shared, refreshNote }); automations.init(shared); projectsPage.init(shared); help.init({ ...shared, shortcuts: shortcutRows }); models.init(shared); commerce.init(shared); voice.init(shared); linearView.init(shared); githubPage.init(shared);
 
   noteai.init({
     editor: () => (ed && $('.nai') && !ed.note.deletedAt && !store.isLocked(ed.note) ? { note: ed.note, ta: ed.ta } : null),

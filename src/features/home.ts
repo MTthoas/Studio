@@ -11,6 +11,7 @@ import * as voice from './voice.ts';
 import * as hub from './hub.ts';
 import * as onboarding from './onboarding.ts';
 import * as docker from './projects/docker.ts';
+import * as shop from './commerce/shop.ts';
 import { esc, plain } from '../lib/markdown.ts';
 import { $, icon, rel, need, target } from '../ui/kit.ts';
 import type { AppShell, Note } from '../types.ts';
@@ -93,7 +94,7 @@ export function mount(main: HTMLElement): void {
       <div class="hm-col">
         ${linked ? section('Quoi de neuf', feed()) : ''}
         ${section('Automatisations', hasAgents ? agents() : `<p class="hm-empty">Fais travailler Studio pour toi : une revue chaque matin, le tri des captures, tes notifications Linear changées en tâches…</p><button class="btn" data-view="agents">${icon('bot')}Choisir un modèle</button>`, { view: 'agents' })}
-        ${docker.supported() ? '<div data-hm-docker></div>' : ''}
+        ${docker.supported() ? '<div data-hm-docker></div><div data-hm-shop></div>' : ''}
         ${section('Connexions', connections(), { meta: devs.length ? `<button class="hm-link" data-home="sync">Synchroniser</button>` : '' })}
       </div>
     </div>
@@ -103,8 +104,11 @@ export function mount(main: HTMLElement): void {
   $('[data-ob-dismiss]', main)?.addEventListener('click', () => { onboarding.dismiss(); mount(main); });
   need('.home', main).addEventListener('click', e => {
     const f = target(e).closest('[data-feed-issue]'); if (f) void import('../integrations/linear/page.ts').then(m => m.openTicket(f.dataset.feedIssue ?? ''));
+    const s = target(e).closest('[data-sh-project]'); if (s) void app.setView({ type: 'projets', project: s.dataset.shProject ?? null, tab: 'boutique' });
     const d = target(e).closest('[data-dk-project]'); if (d) void app.setView({ type: 'projets', project: d.dataset.dkProject ?? null, tab: 'docker' });
   });
+  // Boutiques Shopify (app Mac) : ventes du jour et commandes à expédier ; rien sans boutique reliée.
+  void shop.homeHTML().then(h => { const box = $('[data-hm-shop]', main); if (box?.isConnected) box.outerHTML = h ? section('Boutiques', h, { view: 'commerce' }) : ''; }).catch(() => {});
   // Docker (app Mac) : les conteneurs en cours, avec leur projet ; rien si Docker n'est pas là.
   void docker.status().then(st => { const box = $('[data-hm-docker]', main), h = docker.homeHTML(st); if (box?.isConnected) box.outerHTML = h ? section('Docker', h.body, { meta: h.meta }) : ''; });
 }
