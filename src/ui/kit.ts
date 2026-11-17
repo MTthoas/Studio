@@ -92,6 +92,7 @@ const I: Record<string, string> = {
   music: '<path d="M9 17.5V5.5l10-2v12"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/>',
   container: '<path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/>',
   kube: '<path d="M12 3 19.8 7.5v9L12 21l-7.8-4.5v-9z"/><circle cx="12" cy="12" r="2.2"/><path d="M12 6.5v3.3M12 14.2v3.3M7.2 9.2l2.9 1.7M13.9 13.1l2.9 1.7M7.2 14.8l2.9-1.7M13.9 10.9l2.9-1.7"/>',
+  cpu: '<rect x="6.5" y="6.5" width="11" height="11" rx="2"/><rect x="10" y="10" width="4" height="4" rx=".5"/><path d="M9.5 3.5v3M14.5 3.5v3M9.5 17.5v3M14.5 17.5v3M3.5 9.5h3M3.5 14.5h3M17.5 9.5h3M17.5 14.5h3"/>',
   server: '<rect x="4" y="4.5" width="16" height="6" rx="1.5"/><rect x="4" y="13.5" width="16" height="6" rx="1.5"/><path d="M7.5 7.5h.01M7.5 16.5h.01"/>',
   refresh: '<path d="M19.5 12a7.5 7.5 0 11-2.2-5.3L19.5 9"/><path d="M19.5 4.5V9H15"/>',
   linear: '<path d="M4.2 13.6l6.2 6.2M3.6 10.2l10.2 10.2M4.8 6.9l12.3 12.3M7.5 4.5l12 12M11 3.6l9.4 9.4"/>',

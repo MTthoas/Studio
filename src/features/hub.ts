@@ -690,6 +690,14 @@ function ccUsageRefresh(op = ''): void {
   void ai.cc.limitsCall(op).then(ccUsagePaint);
 }
 
+/** Section « Modèle local » : géré par Studio (vue Modèles, sur ce Mac ou un serveur) ou adresse saisie à la main. */
+function localHTML(c: ai.AiConfig): string {
+  const mac = document.documentElement.dataset.native === 'mac';
+  const open = mac ? `<button class="btn" data-v="models">${icon('cpu')}Ouvrir Modèles</button>` : '';
+  if (c.localVia) return `<section class="cx-sec"><h4>${icon('cpu')}Modèle local</h4><p class="modal-hint"><strong>${esc(c.localModel)}</strong>, lancé par Studio ${c.localVia === 'server' ? 'sur un serveur, par SSH' : 'sur ce Mac : rien ne quitte ta machine'}.</p><div class="cx-row">${open}<button class="btn btn-ghost" data-v="local-direct">Saisir une adresse à la main</button></div></section>`;
+  return `<section class="cx-sec"><h4>${icon('cpu')}Modèle local — rien ne quitte ta machine</h4>${mac ? `<p class="modal-hint">Studio installe et lance des modèles ouverts pour toi, sur ce Mac ou sur un serveur.</p><div class="cx-row">${open}</div>` : ''}<p class="modal-hint">${mac ? 'Ou une adresse à la main : ' : ''}Ollama ou LM Studio (API compatible OpenAI). Pour Ollama, autorise l’origine de Studio : <code>OLLAMA_ORIGINS=${esc(location.origin)}</code></p><div class="cx-grid"><input class="field" data-cfg="localUrl" value="${esc(c.localUrl)}" placeholder="http://localhost:11434/v1" aria-label="Adresse du serveur local"><input class="field" data-cfg="localModel" value="${esc(c.localModel)}" placeholder="Modèle" aria-label="Modèle local"></div></section>`;
+}
+
 function tabAI() {
   const cc = `<section class="cx-sec cc" data-cc>${ccHTML()}</section>`;
   if (!vault.enabled()) return cc + needVault('Les clés des fournisseurs d’IA');
@@ -702,7 +710,7 @@ function tabAI() {
     <section class="cx-sec"><h4>Claude · clé API</h4>${keyField('anthropic', 'Clé Anthropic', 'sk-ant-…')}
       <div class="cx-grid"><select class="field" data-cfg="anthropicModel">${ai.CLAUDE_MODELS.map(([v, l]) => `<option value="${v}"${c.anthropicModel === v ? ' selected' : ''}>${l}</option>`).join('')}</select><select class="field" data-cfg="effort">${[['low', 'Effort : faible'], ['medium', 'Effort : moyen'], ['high', 'Effort : élevé'], ['xhigh', 'Effort : très élevé']].map(([v, l]) => `<option value="${v}"${c.effort === v ? ' selected' : ''}>${l}</option>`).join('')}</select></div></section>
     <section class="cx-sec"><h4>OpenAI (ChatGPT)</h4>${keyField('openai', 'Clé OpenAI', 'sk-…')}<input class="field" data-cfg="openaiModel" value="${esc(c.openaiModel)}" placeholder="Modèle, ex. gpt-5" aria-label="Modèle OpenAI"></section>
-    <section class="cx-sec"><h4>Modèle local — rien ne quitte ta machine</h4><p class="modal-hint">Ollama ou LM Studio (API compatible OpenAI). Pour Ollama, autorise l’origine de Studio : <code>OLLAMA_ORIGINS=${esc(location.origin)}</code></p><div class="cx-grid"><input class="field" data-cfg="localUrl" value="${esc(c.localUrl)}" placeholder="http://localhost:11434/v1" aria-label="Adresse du serveur local"><input class="field" data-cfg="localModel" value="${esc(c.localModel)}" placeholder="Modèle" aria-label="Modèle local"></div></section>
+    ${localHTML(c)}
     <section class="cx-sec"><button class="btn" data-v="test">${icon('play')}Tester le fournisseur par défaut</button><span class="cx-test"></span></section>`;
 }
 
@@ -777,6 +785,8 @@ async function onConnClick(e: MouseEvent) {
     out.innerHTML = ' <span class="spin"></span>';
     try { const r = await ai.run({ prompt: 'Réponds uniquement : « Connexion OK ».', tools: [] }); out.textContent = ' ' + r.text.slice(0, 80); } catch (err) { out.innerHTML = ` <span class="err">${esc(errMsg(err))}</span>`; }
   }
+  if (v === 'models') void app.setView({ type: 'models' });
+  if (v === 'local-direct') { ai.setConfig({ localVia: '' }); refreshConnections(); }
   if (v === 'cc-use') { ai.setConfig({ provider: 'claudecode' }); refreshConnections(); toast('Claude Code est maintenant ton fournisseur d’IA'); }
   if (v === 'cc-check') { ai.cc.last = null; refreshConnections(); ccRefresh(true); }
   if (v === 'cc-usage-refresh') { const b = t.closest<HTMLButtonElement>('[data-v]'); if (b) b.disabled = true; ccUsageRefresh('refresh'); }
