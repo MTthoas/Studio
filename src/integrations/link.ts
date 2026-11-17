@@ -111,6 +111,10 @@ export function parseCode(input: string): string {
 }
 export const linkURL = (code: string): string => `${location.origin}${location.pathname}#lier=${code}`;
 
+/** Une invitation jamais acceptée expire : son code ne lie plus rien passé ce délai. */
+const INVITE_TTL = 15 * 60e3;
+const expired = (d: Device): boolean => !d.id && Date.now() - d.pairedAt > INVITE_TTL;
+
 // Crée une invitation : le secret est enregistré tout de suite, l'autre appareil se présentera.
 export async function invite(): Promise<{ code: string; pretty: string; url: string }> {
   const code = b32(cr.random(16));
@@ -184,6 +188,9 @@ class Session {
     try { msg = JSON.parse(await cr.gunzip(await cr.openCompact(this.key, text.trim()))); } catch { return; } // pas pour nous
     const m = me();
     if (msg.from === m.id || Math.abs(Date.now() - msg.ts) > 5 * 60e3) return;
+    // Une fois lié, l'appareil est figé : quiconque détiendrait aussi le code ne peut pas prendre sa place.
+    if (this.dev.id && this.dev.id !== msg.from) return;
+    if (!this.dev.id && expired(this.dev)) return;
     if (this.dev.id !== msg.from || this.dev.name !== msg.name) {
       const first = !this.dev.id;
       this.dev.id = msg.from; this.dev.name = msg.name;
@@ -317,7 +324,12 @@ function connect(dev: Device): void {
   if (peers.has(dev.secret) || !('RTCPeerConnection' in globalThis)) return;
   const s = new Session(dev); peers.set(dev.secret, s); s.start().catch(e => emit({ type: 'error', message: errMsg(e) }));
 }
-export function startAll(): void { if (vault.isOpen()) devices().forEach(connect); }
+export function startAll(): void {
+  if (!vault.isOpen()) return;
+  const list = devices(), live = list.filter(d => !expired(d));
+  if (live.length !== list.length) void saveDevices(live);
+  live.forEach(connect);
+}
 export function syncNow(): void {
   for (const s of peers.values()) { if (s.dc?.readyState === 'open') s.send({ t: 'manifest', notes: store.manifest(), tombs: store.tombs() }); else void s.signal({ t: 'hello' }); }
   if (!peers.size) startAll();

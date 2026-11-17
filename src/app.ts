@@ -430,11 +430,17 @@ function onBodyInput(): void {
   if (E.ta.value.includes(']]')) onboarding.mark('link');
   const n = E.note;
   store.touch(n); store.setBody(n, E.ta.value); n.updated = Date.now();
-  scheduleSave(n); schedulePreview(); updateAc();
+  // Aperçu masqué (mode Écrire) ou très longue note : on attend une pause dans la frappe plutôt que de tout refaire à chaque touche.
+  scheduleSave(n); schedulePreview(ui.mode === 'edit' ? 350 : E.ta.value.length > 30000 ? 150 : 0); updateAc();
 }
 
-let previewRaf = 0;
-function schedulePreview() { if (!previewRaf) previewRaf = requestAnimationFrame(() => { previewRaf = 0; renderPreview(); }); }
+let previewRaf = 0, previewT = 0;
+function schedulePreview(delay = 0) {
+  if (delay) { clearTimeout(previewT); previewT = window.setTimeout(() => { previewT = 0; schedulePreview(); }, delay); return; }
+  if (!previewRaf) previewRaf = requestAnimationFrame(() => { previewRaf = 0; renderPreview(); });
+}
+/** Sous-notes et rétroliens ne dépendent que des autres notes : refaits seulement quand l'index change. */
+let linksCache: { idx: object; id: string; title: string; deleted: boolean; kids: string; back: string; count: number } | null = null;
 
 function renderPreview() {
   if (!ed || !ed.preview) return;
@@ -444,14 +450,22 @@ function renderPreview() {
   const sorts = ed.sorts;
   $$<HTMLTableElement>('table.sortable', ed.preview).forEach((t, i) => { const s = sorts.get(i); if (s) sortTable(t, s.col, s.dir); });
   paintTimers();
-  const kids = n.deletedAt ? [] : store.childrenOf(n.id);
-  const sn = ed.read && $('.subnotes', ed.read); if (sn) sn.innerHTML = kids.length ? `<h4>${icon('notes')}Sous-notes · ${kids.length}<button class="link-btn sn-add" data-act="subnote">${icon('plus')}Ajouter</button></h4>${kids.map(k => `<button class="backlink" data-id="${k.id}"><strong>${esc(titleOf(k))}</strong><span>${esc(store.isLocked(k) ? 'Note chiffrée' : store.meta(k).snippet || 'Aucun contenu')}</span></button>`).join('')}` : '';
-  const back = n.deletedAt ? [] : store.backlinks(n);
-  const bl = ed.read && $('.backlinks:not(.subnotes)', ed.read); if (bl) bl.innerHTML = back.length ? `<h4>${icon('link')}Rétroliens · ${back.length}</h4>${back.map(b => {
+  const index = store.index();
+  let lc = linksCache;
+  if (!lc || lc.idx !== index || lc.id !== n.id || lc.title !== n.title || lc.deleted !== !!n.deletedAt) {
+    const kids = n.deletedAt ? [] : store.childrenOf(n.id);
+    const kidsHTML = kids.length ? `<h4>${icon('notes')}Sous-notes · ${kids.length}<button class="link-btn sn-add" data-act="subnote">${icon('plus')}Ajouter</button></h4>${kids.map(k => `<button class="backlink" data-id="${k.id}"><strong>${esc(titleOf(k))}</strong><span>${esc(store.isLocked(k) ? 'Note chiffrée' : store.meta(k).snippet || 'Aucun contenu')}</span></button>`).join('')}` : '';
+    const back = n.deletedAt ? [] : store.backlinks(n);
+    const backHTML = back.length ? `<h4>${icon('link')}Rétroliens · ${back.length}</h4>${back.map(b => {
     const key = fold(n.title.trim());
     const line = (store.getBody(b) || '').split('\n').find(l => [...l.matchAll(LINK_RE)].some(m => fold(m[1].trim()) === key)) || '';
     return `<button class="backlink" data-id="${b.id}"><strong>${esc(titleOf(b))}</strong><span>${esc(plain(line).slice(0, 140))}</span></button>`;
   }).join('')}` : '';
+    lc = linksCache = { idx: index, id: n.id, title: n.title, deleted: !!n.deletedAt, kids: kidsHTML, back: backHTML, count: back.length };
+  }
+  const sn = ed.read && $('.subnotes', ed.read); if (sn) paintIfChanged(sn, lc.kids);
+  const bl = ed.read && $('.backlinks:not(.subnotes)', ed.read); if (bl) paintIfChanged(bl, lc.back);
+  const back = { length: lc.count };
   const words = body.trim() ? body.trim().split(/\s+/).length : 0;
   need('.status-right').innerHTML = `${back.length ? `<button class="status-btn" data-act="backlinks">${back.length} rétrolien${back.length > 1 ? 's' : ''}</button>` : ''}<span>${words} mot${words > 1 ? 's' : ''}</span>`;
 }
@@ -461,6 +475,7 @@ function setMode(m: UiState['mode']) {
   const note = $('.note'); if (!note || !ed?.ta) return;
   note.dataset.mode = m;
   $$('.seg button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.mode === m)));
+  if (m !== 'edit' && previewT) { clearTimeout(previewT); previewT = 0; renderPreview(); }
   if (m === 'read') ed.ta.blur(); else ed.ta.focus();
 }
 
