@@ -135,7 +135,7 @@ export function mount(box: HTMLElement, p: Project, folder: string | null): void
   box.addEventListener('click', e => { if ((e.target as HTMLElement).closest('[data-dk="refresh"]')) void paint(true); });
   void paint(false);
   if (!supported()) return;
-  const t = setInterval(() => { if (!box.isConnected) clearInterval(t); else void paint(true); }, 5000);
+  const t = setInterval(() => { if (!box.isConnected) clearInterval(t); else if (!document.hidden) void paint(true); }, 5000);
 }
 
 /** Pour la vue d'ensemble : remplit la carte Docker. */
