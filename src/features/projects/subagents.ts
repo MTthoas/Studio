@@ -20,6 +20,9 @@ const PRESETS: [label: string, m: Member][] = [
   ['Testeur', { name: 'testeur', model: '', access: 'all',
     description: 'Écrit ou complète les tests d’un changement, et les lance quand les commandes sont permises.',
     prompt: 'Tu écris les tests du changement que l’agent principal te décrit, dans le style des tests existants du dépôt. Ne touche qu’aux fichiers de test. Rends : les fichiers créés ou modifiés, ce que chaque test vérifie, et le résultat si tu as pu les lancer.' }],
+  ['Intégrateur', { name: 'integrateur', model: '', access: 'all',
+    description: 'Après une vague de sous-agents : assemble leurs parties, réconcilie les contrats du tableau d’équipe, corrige les raccords.',
+    prompt: 'Tu intègres le travail de plusieurs sous-agents. Lis d’abord tout le tableau d’équipe (plan, contrats, notes de chacun), puis les fichiers modifiés. Corrige les raccords : noms, signatures, imports et formats qui ne concordent pas, en suivant les contrats du plan. Ne réécris pas ce qui marche. Rends la liste des raccords corrigés (chemin:ligne) et ce qui reste incohérent.' }],
   ['Rédacteur', { name: 'redacteur', model: 'sonnet', access: 'all',
     description: 'Met à jour la documentation (README, commentaires d’en-tête) après un changement de comportement.',
     prompt: 'Tu mets la documentation à jour après le changement que l’agent principal te décrit. Ne touche qu’aux fichiers de documentation, dans le ton et la langue de ceux qui existent. Rends la liste des passages modifiés.' }],
@@ -56,7 +59,8 @@ export function edit(): Promise<boolean> {
   return new Promise(res => {
     let done = false;
     const m = modal({ title: 'Sous-agents', cls: 'sa', onClose: () => res(done), html: `<form novalidate>
-      <p class="modal-text">Claude Code peut confier des parties d’une même consigne à des sous-agents : ils explorent, modifient ou relisent <strong>en parallèle</strong>, chacun avec son propre contexte, puis lui rendent un résumé. Il décide seul quand cela vaut le coup.</p>
+      <p class="modal-text">Claude Code peut confier des parties d’une même consigne à des sous-agents : ils explorent, modifient ou relisent <strong>en parallèle</strong>, chacun avec son propre contexte, puis lui rendent un résumé. Il décide seul quand cela vaut le coup : il écrit d’abord un plan (sous-tâches, fichiers réservés, contrats partagés), lance une vague, puis une seconde pour intégrer et relire.</p>
+      <p class="modal-text">En mode Modifier, ils se parlent par un <strong>tableau d’équipe</strong> (dans le <code>.git</code> du dépôt, jamais commité) : chacun y note ses contrats, pièges et besoins, et relit ceux des autres. Tu le suis, et tu peux y laisser une consigne sans interrompre, depuis l’Espace agents (bouton tableau d’une vue, ou T).</p>
       <div class="ag-seg sa-seg" role="radiogroup" aria-label="Sous-agents"><label><input type="radio" name="on" value="1"${t.on ? ' checked' : ''}><span>${icon('sparkle')}Automatiques</span></label><label><input type="radio" name="on" value=""${t.on ? '' : ' checked'}><span>${icon('stop')}Coupés</span></label></div>
       <div data-body>
         <div class="sa-row">

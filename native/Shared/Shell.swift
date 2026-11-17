@@ -258,7 +258,7 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
         case "discard":
             let name = body["worktree"] as? String ?? ""
             if Orchestrator.shared.busy(project: pid, worktree: name) { send(["ok": false, "message": "Une publication est en cours sur cette copie."]); return }
-            bg { folders.removeWorktree(pid, name: name) }
+            bg { let r = folders.removeWorktree(pid, name: name); if r["ok"] as? Bool == true { AgentBoard.remove(project: pid, worktree: name) }; return r }
         // Groupe d'agents : fusionne le travail d'un agent (copie `<groupe>-aN`) dans la branche mère du groupe.
         case "mergechild":
             let name = body["worktree"] as? String ?? ""
@@ -274,6 +274,11 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
         // Orchestrateur : publication ou mise à jour d'une copie, de bout en bout (voir Orchestrator.swift).
         case "publish": folders.rememberAuthor(body["author"]); bg { Orchestrator.shared.start(kind: "publish", project: pid, worktree: body["worktree"] as? String ?? "", message: body["message"] as? String ?? "", branch: body["branch"] as? String ?? "") }
         case "sync": folders.rememberAuthor(body["author"]); bg { Orchestrator.shared.start(kind: "sync", project: pid, worktree: body["worktree"] as? String ?? "") }
+        // Tableau d'équipe d'une copie (AgentBoard) : lecture, ou consigne de l'utilisateur ajoutée à utilisateur.md.
+        case "board":
+            let name = body["worktree"] as? String ?? ""
+            if let text = body["note"] as? String { bg { AgentBoard.note(project: pid, worktree: name, text: text) } }
+            else { bg { AgentBoard.read(project: pid, worktree: name) } }
         case "job": send(Orchestrator.shared.job(body["job"] as? String ?? ""))
         case "jobs": send(Orchestrator.shared.list(project: pid))
         case "commits": bg { folders.commits(pid, days: body["days"] as? Int ?? 30) }

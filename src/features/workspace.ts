@@ -4,20 +4,25 @@
 // ou lance un nouvel agent dans le projet choisi. « Diffuser » envoie la même consigne à plusieurs vues à la fois.
 // Tout passe par le Mac où se trouvent les dossiers des projets (remote.ts : ce Mac, ou un Mac lié).
 // Clavier (hors champ de saisie) : 1-8 choisit une vue, J/K parcourt la liste, Entrée l'ouvre dans la vue choisie,
-// C crée un agent, F agrandit la vue, X la vide, L change de disposition, / cherche, D diffuse.
+// Par défaut (« Auto », `st.auto`), chaque agent qui travaille, dans n'importe quel projet, reçoit sa vue (`autoShow`).
+// C crée un agent, F agrandit la vue, X la vide, L change de disposition, / cherche, D diffuse, T tableau d'équipe.
+// Chaque vue porte aussi la copie de son agent (étape, branche) et tous ses gestes : publier (commit, push, PR),
+// mettre à jour, fusionner dans la branche mère d'un groupe, revue, VS Code, nouvelle branche, suppression
+// (copyStrip / copyAct de sessions.ts). Le tableau d'équipe (AgentBoard, Agents.swift) montre ce que l'agent, ses
+// sous-agents et les agents de son groupe s'écrivent, et l'utilisateur peut leur y laisser une consigne.
 import * as bridge from '../integrations/remote.ts';
 import * as projects from './projects/model.ts';
 import * as subagents from './projects/subagents.ts';
-import { feedBlocks, syncFeed, nameOf, live, STATUS, modelName, agentCount, COUNT_HINT, newGroup } from './projects/sessions.ts';
-import type { AgentRun, Session, Action, Queued } from './projects/sessions.ts';
+import { feedBlocks, syncFeed, nameOf, live, STATUS, modelName, agentCount, COUNT_HINT, newGroup, copyStrip, copyAct, COPY_ACTS, groupOfCopy } from './projects/sessions.ts';
+import type { AgentRun, Session, Action, Queued, Worktree } from './projects/sessions.ts';
 import type { Project } from './projects/model.ts';
-import { esc } from '../lib/markdown.ts';
+import { esc, renderMarkdown } from '../lib/markdown.ts';
 import { fold } from '../lib/fuzzy.ts';
-import { $, $$, icon, kbd, rel, modal, need, toast, target, paintIfChanged } from '../ui/kit.ts';
+import { $, $$, icon, kbd, rel, modal, need, toast, target, paintIfChanged, menu } from '../ui/kit.ts';
 
 /** Une vue : la conversation qu'elle suit (`session`), ou un agent qui démarre (`run`), ou rien (nouvel agent). */
 interface Pane { project: string; session: string; run?: string }
-interface State { layout: number; panes: (Pane | null)[]; focus: number; max: number; filter: string; draftProject: string }
+interface State { layout: number; panes: (Pane | null)[]; focus: number; max: number; filter: string; draftProject: string; /** Montrer d'office les agents qui travaillent. */ auto: boolean; /** Conversations au travail que l'utilisateur a retirées de leur vue : pas remises d'office tant qu'elles travaillent. */ dismissed: string[] }
 interface Detail extends Partial<Session> { actions: Action[]; message?: string; at: number }
 interface Row { p: Project; s: Session; status: 'running' | 'error' | 'review' | 'idle' }
 
@@ -26,18 +31,24 @@ const KEY = 'studio.workspace', SEEN = 'studio.workspace.seen', TICK = 2500;
 const read = <T>(k: string, d: T): T => { try { return (JSON.parse(localStorage.getItem(k) || 'null') as T | null) ?? d; } catch { return d; } };
 const write = (k: string, v: unknown) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* plein */ } };
 
-const st: State = { layout: 4, panes: [], focus: 0, max: -1, filter: '', draftProject: '', ...read<Partial<State>>(KEY, {}) };
+const st: State = { layout: 4, panes: [], focus: 0, max: -1, filter: '', draftProject: '', auto: true, dismissed: [], ...read<Partial<State>>(KEY, {}) };
 if (!LAYOUTS.includes(st.layout)) st.layout = 4;
 /** Dernière activité vue, par conversation : ce qui a bougé depuis passe dans « À relire ». */
 const seen: Record<string, number> = read(SEEN, {});
 /** Première ouverture : tout ce qui existe déjà compte comme vu, sinon « À relire » serait rempli d'anciennes conversations. */
 let firstUse = !Object.keys(seen).length;
-const save = () => write(KEY, { layout: st.layout, panes: st.panes.slice(0, 8), focus: st.focus, max: st.max, filter: st.filter, draftProject: st.draftProject });
+const save = () => write(KEY, { layout: st.layout, panes: st.panes.slice(0, 8), focus: st.focus, max: st.max, filter: st.filter, draftProject: st.draftProject, auto: st.auto, dismissed: st.dismissed.slice(-100) });
 
 const sessionsBy = new Map<string, { list: Session[]; at: number }>();
 const runsBy = new Map<string, AgentRun[]>();
 const queuedBy = new Map<string, Queued[]>();
 const details = new Map<string, Detail>();
+/** Copies des agents, par projet (relues toutes les 15 s pour les projets affichés, et après chaque geste). */
+const treesBy = new Map<string, { list: Worktree[]; at: number }>();
+/** Tableau d'équipe, par projet et copie (`projet/copie`) ; `open` : vues (par conversation) qui l'affichent. */
+interface BoardFile { name: string; text: string; at: number }
+const boards = new Map<string, { files: BoardFile[]; at: number; missing?: boolean }>();
+const boardOpen = new Set<string>(read<string[]>('studio.workspace.boards', []));
 let root: HTMLElement | null = null, timer: ReturnType<typeof setInterval> | undefined, tick = 0, cursor = 0, listing = false;
 /** Conversations d'agents déjà réclamées à la liste du Mac (relue une fois pour chacune, pas à chaque tour). */
 const asked = new Set<string>();
@@ -81,6 +92,21 @@ async function loadRuns(pid: string): Promise<void> {
   runsBy.set(pid, (l.runs as AgentRun[] | undefined) ?? []);
   queuedBy.set(pid, (l.queued as Queued[] | undefined) ?? []);
 }
+async function loadTrees(pid: string): Promise<void> {
+  const r = await bridge.call('agent', 'worktrees', { project: pid }, 30000);
+  if (r.ok) treesBy.set(pid, { list: (r.worktrees as Worktree[] | undefined) ?? [], at: Date.now() });
+}
+async function loadBoard(pid: string, wt: string): Promise<void> {
+  const r = await bridge.call('agent', 'board', { project: pid, worktree: wt }, 10000);
+  boards.set(`${pid}/${wt}`, r.ok ? { files: (r.files as BoardFile[] | undefined) ?? [], at: Date.now() } : { files: [], at: Date.now(), missing: true });
+}
+/** Copie où travaille l'agent d'une vue : celle de sa conversation, sinon celle de son lancement. */
+function paneTree(x: Pane): string {
+  const d = details.get(pkey(x));
+  if (d?.worktree) return d.worktree;
+  const r = (runsBy.get(x.project) ?? []).filter(y => (!!x.session && y.session === x.session) || (!!x.run && y.run === x.run)).find(y => y.worktree);
+  return r?.worktree ?? '';
+}
 async function loadDetail(p: Pane): Promise<void> {
   const d = await bridge.call('project', 'session', { project: p.project, session: p.session }, 20000);
   details.set(pkey(p), d.ok ? { ...(d as unknown as Partial<Session>), id: p.session, actions: (d.actions as Action[] | undefined) ?? [], at: Date.now() } : { actions: [], message: d.message ?? 'Conversation introuvable.', at: Date.now() });
@@ -107,12 +133,22 @@ async function refresh(): Promise<void> {
     const d = details.get(pkey(x)), working = d?.live || (runsBy.get(x.project) ?? []).some(r => r.session === x.session && live(r));
     return !d || working || tick % 4 === 0 ? loadDetail(x) : Promise.resolve();
   }));
+  // Les copies des projets affichés (étape, branche, gestes possibles) : toutes les 15 s, et tout de suite pour un nouveau projet.
+  const withTree = [...new Set(shown.filter(x => paneTree(x)).map(x => x.project))];
+  // Une copie que la liste ne connaît pas encore (agent qui vient d'être lancé) fait relire son projet tout de suite.
+  const unknown = (pid: string) => shown.some(x => x.project === pid && paneTree(x) && !treesBy.get(pid)?.list.some(t => t.name === paneTree(x)));
+  await Promise.all(withTree.filter(pid => !treesBy.has(pid) || tick % 6 === 0 || (tick % 2 === 0 && unknown(pid))).map(loadTrees));
+  // Les tableaux d'équipe ouverts : un tour sur deux.
+  await Promise.all(shown.filter(x => boardOpen.has(pkey(x)) && paneTree(x)).map(x => {
+    const k = `${x.project}/${paneTree(x)}`; return !boards.has(k) || tick % 2 === 0 ? loadBoard(x.project, paneTree(x)) : Promise.resolve();
+  }));
   // La liste des conversations (lecture des journaux, la plus lente) : toutes les 30 s, un projet après l'autre.
   if (!listing && (tick % 12 === 0 || all.some(p => !sessionsBy.has(p.id)))) {
     listing = true;
     void (async () => { for (const p of all) { if (!root?.isConnected) break; await loadSessions(p); paintList(); } listing = false; firstUse = false; })();
   }
   tick++;
+  autoShow();
   paint();
 }
 // Chaque ouverture relit tout de suite la liste des conversations (tick à 0), puis toutes les 30 s.
@@ -152,12 +188,12 @@ function newHTML(): string {
     <div class="aw-new-row"><label class="aw-sel">${icon('folder')}<select name="project" aria-label="Projet">${projectOptions(cur)}</select></label>
       <div class="cx-seg aw-mode" role="radiogroup" aria-label="Mode"><label><input type="radio" name="mode" value="edit" checked>${icon('pencil')}Modifier</label><label><input type="radio" name="mode" value="read">${icon('search')}Analyser</label></div></div>
     <textarea name="prompt" class="aw-big" placeholder="Décris ce que l’agent doit faire… ${COUNT_HINT}" aria-label="Consigne du nouvel agent"></textarea>
-    <div class="aw-new-foot"><span>ou glisse une conversation de la liste ici</span><button class="btn btn-primary">${icon('play')}Lancer ${kbd('mod+enter')}</button></div></form>`;
+    <div class="aw-new-foot"><button type="button" class="btn btn-ghost aw-sub" data-w="sub" title="${esc(subagents.HINT)}">${icon('sparkle')}<span>${esc(subagents.label())}</span></button><span>ou glisse une conversation de la liste ici</span><button class="btn btn-primary">${icon('play')}Lancer ${kbd('mod+enter')}</button></div></form>`;
 }
 function paneShell(x: Pane | null, i: number): string {
   const act = (a: string, ic: string, t: string, k = '') => `<button type="button" class="icon-btn" data-w="${a}" title="${esc(t)}${k ? ` (${k})` : ''}" aria-label="${esc(t)}">${icon(ic)}</button>`;
-  return `<header class="aw-ph"><b class="aw-num">${i + 1}</b><div class="aw-ph-main"></div><div class="aw-ph-acts">${x ? act('stop', 'stop', 'Arrêter l’agent') : ''}${act('max', 'focus', 'Agrandir', 'F')}${x ? act('close', 'x', 'Vider la vue', 'X') : ''}</div></header>
-    ${x ? `<div class="aw-body"><div class="ss-feed aw-feed" role="log" tabindex="0" aria-label="Fil de l’agent ${i + 1}"></div></div>
+  return `<header class="aw-ph"><b class="aw-num">${i + 1}</b><div class="aw-ph-main"></div><div class="aw-ph-acts">${x ? act('stop', 'stop', 'Arrêter l’agent') + act('team', 'board', 'Tableau d’équipe', 'T') + act('open', 'chevronRight', 'Ouvrir dans le projet') : ''}${act('max', 'focus', 'Agrandir', 'F')}${x ? act('close', 'x', 'Vider la vue', 'X') : ''}</div></header>
+    ${x ? `<div class="aw-copy-slot"></div><div class="aw-body"><div class="ss-feed aw-feed" role="log" tabindex="0" aria-label="Fil de l’agent ${i + 1}"></div><aside class="aw-board" hidden aria-label="Tableau d’équipe de l’agent ${i + 1}"><div class="aw-board-list"></div><form class="aw-board-say"><input name="note" placeholder="Consigne pour l’équipe, lue à sa prochaine étape…" aria-label="Consigne pour l’équipe" maxlength="4000"><button class="btn" title="Ajouter au tableau (sans interrompre)">${icon('play')}</button></form></aside></div>
     <form class="aw-reply"><textarea name="prompt" rows="1" placeholder="Répondre à l’agent…" aria-label="Réponse à l’agent ${i + 1}"></textarea><button class="btn btn-primary" title="Envoyer (⌘↵) · ⇧⌘↵ interrompt le tour en cours">${icon('play')}</button></form>`
     : `<div class="aw-body aw-blank">${newHTML()}</div>`}`;
 }
@@ -198,12 +234,81 @@ function paint(): void {
     const runs = (runsBy.get(x.project) ?? []).filter(r => r.session === x.session || (x.run && r.run === x.run));
     const working = runs.some(live) || !!d?.live;
     $<HTMLButtonElement>('[data-w="stop"]', el)!.hidden = !runs.some(live);
+    paintCopy(el, x, working);
     if (d?.message) { syncFeed(feed, [{ key: 'msg', html: `<p class="ss-cut">${esc(d.message)}</p>` }]); return; }
     const end = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 40;
     if (syncFeed(feed, feedBlocks(d?.actions ?? [], null, working || !d, (queuedBy.get(x.project) ?? []).filter(q => q.session === x.session))) && end) feed.scrollTop = feed.scrollHeight;
     if (d && x.session) { const a = ms(d.updated); if (a > (seen[x.session] ?? 0)) { seen[x.session] = a; write(SEEN, Object.fromEntries(Object.entries(seen).slice(-500))); } }
   });
   paintList();
+}
+
+/** Bandeau de la copie et tableau d'équipe d'une vue. */
+function paintCopy(el: HTMLElement, x: Pane, working: boolean): void {
+  const wt = paneTree(x), slot = $('.aw-copy-slot', el), board = $('.aw-board', el), team = $<HTMLButtonElement>('[data-w="team"]', el);
+  const w = wt ? treesBy.get(x.project)?.list.find(t => t.name === wt) : undefined;
+  if (slot) paintIfChanged(slot, w ? copyStrip(w, working) : '');
+  if (team) team.hidden = !wt;
+  if (!board) return;
+  const open = !!wt && boardOpen.has(pkey(x));
+  board.hidden = !open; team?.setAttribute('aria-pressed', String(open));
+  if (!open) return;
+  const b = boards.get(`${x.project}/${wt}`), list = need('.aw-board-list', board);
+  const who = (n: string) => n === 'utilisateur.md' ? 'Toi' : n === 'principal.md' ? 'Agent principal' : n.replace(/\.md$/, '').replace(/^agent-(\d)$/, 'Agent $1').replace(/^agent-(\d)-/, 'Agent $1 · ');
+  const g = groupOfCopy(wt);
+  const empty = `<p class="aw-board-empty">${icon('board')}${b?.missing ? 'Pas de tableau pour cette copie (agent sur serveur, mode Analyser, ou app Mac à mettre à jour).' : `Le tableau se remplit quand l’agent découpe son travail en sous-agents${g ? ' ou que les agents du groupe partagent leurs découvertes' : ''}. Ta consigne ci-dessous y est lue à chaque étape, sans interrompre.`}</p>`;
+  const html = !b ? '<p class="aw-board-empty"><span class="spin"></span>Lecture du tableau…</p>' : !b.files.length ? empty
+    : b.files.map(f => `<article class="aw-note${f.name === 'utilisateur.md' ? ' me' : ''}"><header><b>${esc(who(f.name))}</b><time>${esc(rel(f.at))}</time></header><div class="md">${renderMarkdown(f.text)}</div></article>`).join('');
+  const end = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+  if (paintIfChanged(list, html) && end) list.scrollTop = list.scrollHeight;
+}
+async function boardNote(f: HTMLFormElement, i: number): Promise<void> {
+  const x = panes()[i], input = need<HTMLInputElement>('input', f), text = input.value.trim(), wt = x ? paneTree(x) : '';
+  if (!x || !text || !wt) return;
+  const r = await bridge.call('agent', 'board', { project: x.project, worktree: wt, note: text }, 10000);
+  if (!r.ok) { toast(r.message === 'Action inconnue.' ? 'Mets à jour l’app Studio pour Mac.' : r.message ?? 'Écriture impossible.'); return; }
+  input.value = '';
+  boards.set(`${x.project}/${wt}`, { files: (r.files as BoardFile[] | undefined) ?? [], at: Date.now() });
+  paint();
+  // L'agent ne lit le tableau qu'à ses étapes : au repos, il faut lui répondre pour qu'il en tienne compte.
+  const working = (runsBy.get(x.project) ?? []).some(y => live(y) && y.worktree === wt);
+  toast(working ? 'Consigne ajoutée au tableau : l’équipe la lira à sa prochaine étape' : 'Consigne ajoutée au tableau : l’agent la lira à son prochain tour');
+}
+/** Geste sur la copie d'une vue (publier, mettre à jour, fusionner…), puis relecture de son état. */
+async function copyGesture(act: string, wt: string, i: number, b?: HTMLButtonElement): Promise<void> {
+  const x = panes()[i], p = x && proj(x.project);
+  if (!x || !p || !wt) return;
+  if (act === 'more') {
+    if (b) menu(b, [
+      { label: 'Nouvelle branche', icon: 'refresh', hint: 'repartir de la branche principale', run: () => void copyGesture('newbranch', wt, i) },
+      { label: 'Ouvrir dans le projet', icon: 'chevronRight', run: () => openInProject(x) },
+      '-',
+      { label: 'Supprimer la copie', icon: 'trash', run: () => void copyGesture('discard', wt, i) },
+    ]);
+    return;
+  }
+  if (!COPY_ACTS.has(act)) return;
+  if (b) b.disabled = true;
+  try {
+    if (await copyAct(p, act, wt) && act === 'discard') {
+      await loadTrees(p.id);
+      if (!treesBy.get(p.id)?.list.some(t => t.name === wt)) { st.panes[i] = null; save(); }
+    }
+  }
+  finally { if (b?.isConnected) b.disabled = false; }
+  // Une publication ou une mise à jour se poursuit sur le Mac : son état est relu aux tours suivants.
+  void loadTrees(p.id).then(paint);
+}
+function openInProject(x: Pane): void {
+  if (!x.session) { toast('La conversation n’a pas encore démarré.'); return; }
+  void import('./projects/page.ts').then(m => m.openAgent(x.project, x.session));
+}
+function toggleBoard(i: number): void {
+  const x = panes()[i]; if (!x || !paneTree(x)) return;
+  const k = pkey(x);
+  if (boardOpen.has(k)) boardOpen.delete(k); else { boardOpen.add(k); void loadBoard(x.project, paneTree(x)).then(paint); }
+  write('studio.workspace.boards', [...boardOpen].slice(-50));
+  paint();
 }
 
 // ---------- Actions ----------
@@ -228,6 +333,52 @@ function focusPane(i: number, field = false): void {
 function setLayout(n: number): void {
   st.layout = n; if (st.focus >= n) st.focus = n - 1; if (st.max >= n) st.max = -1; save(); paint();
 }
+/** Donne une vue à chaque agent qui travaille et n'en a pas : d'abord les vues vides (sauf un brouillon en cours),
+ *  puis une disposition plus grande, enfin, à 8 vues, les vues d'agents au repos (sans réponse en cours d'écriture). */
+function autoShow(): void {
+  const working = rows().filter(r => r.status === 'running');
+  const busy = new Set(working.map(r => r.s.id));
+  // Une conversation retirée à la main redevient candidate quand elle a fini (son prochain tour la remontrera).
+  const kept = st.dismissed.filter(id => busy.has(id));
+  if (kept.length !== st.dismissed.length) { st.dismissed = kept; save(); }
+  if (!st.auto) return;
+  const shown = panes(), on = new Set(shown.map(x => x?.session).filter(Boolean));
+  const shownRuns = new Set(shown.map(x => x?.run).filter(Boolean));
+  const missing = working.filter(r => !on.has(r.s.id) && !st.dismissed.includes(r.s.id)
+    && !(runsBy.get(r.p.id) ?? []).some(x => x.session === r.s.id && shownRuns.has(x.run)));
+  if (!missing.length) return;
+  const typed = (i: number) => !!$$<HTMLTextAreaElement>(`.aw-pane[data-i="${i}"] textarea`, root ?? document).some(t => t.value.trim());
+  const free = () => panes().map((x, i) => (!x && !typed(i) ? i : -1)).filter(i => i >= 0);
+  // Pas assez de vues vides : la plus petite disposition qui les loge tous.
+  const need = missing.length - free().length;
+  if (need > 0) {
+    const want = LAYOUTS.find(n => n >= st.layout + need) ?? 8;
+    if (want > st.layout) setLayout(want);
+  }
+  let slots = free();
+  if (slots.length < missing.length) {
+    const idle = panes().map((x, i) => {
+      if (!x || i === st.focus || typed(i)) return -1;
+      const busyHere = busy.has(x.session) || (runsBy.get(x.project) ?? []).some(y => live(y) && (y.session === x.session || (!!x.run && y.run === x.run)));
+      return busyHere ? -1 : i;
+    }).filter(i => i >= 0);
+    slots = [...slots, ...idle];
+  }
+  let changed = false;
+  for (const r of missing) {
+    const i = slots.shift(); if (i === undefined) break;
+    st.panes[i] = { project: r.p.id, session: r.s.id }; changed = true;
+    if (!details.has(`${r.p.id}/${r.s.id}`)) void loadDetail({ project: r.p.id, session: r.s.id }).then(paint);
+  }
+  if (changed) save();
+}
+/** Retire la vue `i` ; un agent qui y travaillait n'y est pas remis d'office. */
+function closePane(i: number): void {
+  const x = st.panes[i];
+  if (x?.session && rows().some(r => r.s.id === x.session && r.status === 'running')) st.dismissed = [...st.dismissed, x.session];
+  st.panes[i] = null; if (st.max === i) st.max = -1; save(); paint();
+}
+const paintAuto = (page: HTMLElement) => $('.aw-auto', page)?.setAttribute('aria-pressed', String(st.auto));
 const firstEmpty = () => { const i = panes().findIndex(x => !x); return i >= 0 ? i : st.focus; };
 
 async function launch(f: HTMLFormElement, i: number): Promise<void> {
@@ -338,11 +489,12 @@ export function mount(main: HTMLElement, toolbarLeft: string): void {
   // Tout est dans `.aw-root` : les écouteurs disparaissent avec la page (#main, lui, sert à toutes les vues).
   main.innerHTML = `<div class="aw-root" tabindex="-1"><header class="toolbar">${toolbarLeft}<div class="crumb"><span>Espace agents</span></div><span class="aw-counts"></span>
       <div class="tb-side tb-right"><div class="aw-seg" role="group" aria-label="Nombre de vues (L)">${LAYOUTS.map(n => `<button type="button" data-layout="${n}" title="${n} vue${n > 1 ? 's' : ''}" aria-pressed="false">${layoutIcon(n)}<span>${n}</span></button>`).join('')}</div>
+      <button class="btn btn-ghost aw-auto" data-w="auto" aria-pressed="${st.auto}" title="Ouvrir d’office chaque agent qui travaille dans une vue">${icon('bolt')}<span>Auto</span></button>
       <button class="btn btn-ghost" data-w="cast" title="Envoyer la même consigne à plusieurs vues (D)">${icon('share')}<span>Diffuser</span></button>
       <button class="btn btn-primary" data-w="new" title="Nouvel agent dans la vue choisie (C)">${icon('plus')}<span>Nouvel agent</span></button></div></header>
     <div class="aw">
       <aside class="aw-side"><div class="aw-search">${icon('search')}<input type="search" placeholder="Filtrer les agents…" aria-label="Filtrer les agents" value="${esc(st.filter)}"><kbd>/</kbd></div><div class="aw-list" role="listbox" aria-label="Conversations des agents"></div>
-        <p class="aw-keys">${kbd('1')}–${kbd('8')} vue · ${kbd('J')}${kbd('K')} liste · ${kbd('↵')} ouvrir · ${kbd('C')} créer · ${kbd('F')} agrandir · ${kbd('X')} vider · ${kbd('L')} disposition</p></aside>
+        <p class="aw-keys">${kbd('1')}–${kbd('8')} vue · ${kbd('J')}${kbd('K')} liste · ${kbd('↵')} ouvrir · ${kbd('C')} créer · ${kbd('F')} agrandir · ${kbd('X')} vider · ${kbd('L')} disposition · ${kbd('T')} tableau d’équipe · ${kbd('P')} publier</p></aside>
       <div class="aw-grid"></div>
     </div></div>`;
   const page = need('.aw-root', main);
@@ -358,15 +510,21 @@ export function mount(main: HTMLElement, toolbarLeft: string): void {
     if (w === 'cast') { broadcast(); return; }
     if (w === 'new') { const k = firstEmpty(); if (panes()[k]) setPane(k, null); focusPane(k, true); return; }
     if (w === 'max') { st.max = st.max === i ? -1 : i; save(); paint(); return; }
-    if (w === 'close') { st.panes[i] = null; if (st.max === i) st.max = -1; save(); paint(); return; }
+    if (w === 'close') { closePane(i); return; }
+    if (w === 'auto') { st.auto = !st.auto; save(); paintAuto(page); if (st.auto) { autoShow(); paint(); } toast(st.auto ? 'Les agents qui travaillent s’ouvrent d’office dans une vue' : 'Les vues ne changent plus d’elles-mêmes'); return; }
     if (w === 'stop') { void stopPane(i); return; }
+    if (w === 'team') { toggleBoard(i); return; }
+    if (w === 'open') { const x = panes()[i]; if (x) openInProject(x); return; }
+    if (w === 'sub') { void subagents.edit().then(ok => { if (ok) $$('.aw-sub span', page).forEach(s => { s.textContent = subagents.label(); }); }); return; }
+    const cp = t.closest<HTMLElement>('[data-aw-copy]');
+    if (cp) { void copyGesture(cp.dataset.awCopy ?? '', cp.dataset.wt ?? '', i, cp as HTMLButtonElement); return; }
     if (t.closest('[data-ag="copy"]')) { const md = t.closest('.ss-msg')?.querySelector('.md') as HTMLElement | null; if (md) void navigator.clipboard.writeText(md.innerText).then(() => toast('Réponse copiée')); return; }
     if (pane && i !== st.focus) { st.focus = i; save(); grid.querySelectorAll('.aw-pane').forEach(p => p.classList.toggle('focus', p === pane)); }
   });
   page.addEventListener('submit', e => {
     e.preventDefault();
     const f = e.target as HTMLFormElement, i = Number(f.closest<HTMLElement>('.aw-pane')?.dataset.i ?? st.focus);
-    if (f.classList.contains('aw-new')) void launch(f, i); else void send(f, i, false);
+    if (f.classList.contains('aw-new')) void launch(f, i); else if (f.classList.contains('aw-board-say')) void boardNote(f, i); else void send(f, i, false);
   });
   page.addEventListener('input', e => {
     const t = e.target as HTMLElement;
@@ -391,10 +549,16 @@ export function mount(main: HTMLElement, toolbarLeft: string): void {
     else if (k === 'enter') { const r = $<HTMLElement>('.aw-row.cur', list); if (r) { e.preventDefault(); openRow(r); } }
     else if (k === 'c') { e.preventDefault(); if (panes()[st.focus]) setPane(st.focus, null); focusPane(st.focus, true); }
     else if (k === 'f') { e.preventDefault(); st.max = st.max === st.focus ? -1 : st.focus; save(); paint(); }
-    else if (k === 'x') { e.preventDefault(); st.panes[st.focus] = null; if (st.max === st.focus) st.max = -1; save(); paint(); }
+    else if (k === 'x') { e.preventDefault(); closePane(st.focus); }
     else if (k === 'l') { e.preventDefault(); setLayout(LAYOUTS[(LAYOUTS.indexOf(st.layout) + 1) % LAYOUTS.length] ?? 1); }
     else if (k === 'r') { e.preventDefault(); focusPane(st.focus, true); }
     else if (k === 'd') { e.preventDefault(); broadcast(); }
+    else if (k === 't') { e.preventDefault(); toggleBoard(st.focus); }
+    else if (k === 'p') {
+      // Publier la vue choisie : le premier geste mis en avant de sa copie (publier, fusionner dans la mère…).
+      const b = $<HTMLButtonElement>(`.aw-pane[data-i="${st.focus}"] .aw-copy .btn-primary:not(:disabled)`, page);
+      if (b) { e.preventDefault(); b.click(); }
+    }
     else if (k === '/') { e.preventDefault(); search.focus(); search.select(); }
   });
   // Glisser une conversation de la liste sur une vue.

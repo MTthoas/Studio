@@ -28,7 +28,7 @@ interface Quota { status?: string; resetsAt?: number; rateLimitType?: string; is
 /** `add`/`del` : lignes ajoutées et retirées par une écriture (nombre, ou texte pour les agents sur serveur). */
 export interface Action { at: string; kind: string; text: string; add?: number | string; del?: number | string }
 export interface AgentRun { machine?: string; host?: string; run: string; mode: string; prompt: string; status: string; session: string; worktree: string; started: string; finished: string; result: string; lastText: string; turns: number; denials: string[]; quota?: Quota | null; /** Notes et tâches envoyées au projet par ce tour (features/projects/items.ts). */ items?: { tasks?: number; notes?: number } }
-interface Worktree {
+export interface Worktree {
   name: string; branch: string; /** Commit de la copie (absent avec une app Mac ancienne). */ head?: string; changes: number; ahead: number; behind?: number; pushed: boolean; conflicts?: string[];
   /** Titre du dernier commit de la copie, si elle en a un. */ subject?: string;
   /** La branche distante est exactement la copie : rien de nouveau à pousser. */ upToDate?: boolean;
@@ -627,8 +627,8 @@ const STAGES: Record<Stage, { c: string; ic: string; l: string; g: string; d: st
   merged: { c: 'violet', ic: 'check', l: 'Fusionné', g: 'Fusionnées', d: 'livré dans la branche principale' },
   idle: { c: 'gray', ic: 'pencil', l: 'Sans changement', g: 'Sans changement', d: 'rien de nouveau dans la copie' },
 };
-function stageOf(w: Worktree): Stage {
-  if (runs.some(r => r.worktree === w.name && live(r))) return 'work';
+function stageOf(w: Worktree, working = runs.some(r => r.worktree === w.name && live(r))): Stage {
+  if (working) return 'work';
   // Les copies sœurs comptent comme la copie : du travail dans un seul dépôt suffit à la rendre « à publier ».
   const sis = w.sisters ?? [];
   if (hasWork(w) || sis.some(hasWork)) return 'review';
@@ -985,7 +985,7 @@ async function workRepo(p: Project): Promise<string | undefined> {
   return p.repos[0];
 }
 
-async function publish(p: Project, wt: string, root: HTMLElement): Promise<void> {
+async function publish(p: Project, wt: string, root: HTMLElement | null): Promise<void> {
   // La première demande faite dans cette copie (les suivantes sont souvent « continue », « résous le conflit »…).
   const mine = runs.filter(r => r.worktree === wt), run = mine[mine.length - 1], repo = await workRepo(p);
   const canPR = !!repo && github.connected();
@@ -1074,9 +1074,9 @@ async function publish(p: Project, wt: string, root: HTMLElement): Promise<void>
     go.disabled = true; st.innerHTML = '<p class="rv-status"><span class="spin"></span>Démarrage…</p>';
     const started = await native.call('agent', 'publish', { project: p.id, worktree: wt, message, branch: wanted, author: await github.author() }, 30000);
     if (!started.ok) { st.innerHTML = `<p class="rv-status err">${esc(started.message ?? 'Échec.')}</p>`; go.disabled = false; return; }
-    void refreshTrees(p).then(() => paint(root, p));
+    void refreshTrees(p).then(() => root ? paint(root, p) : undefined);
     const j = await follow(String(started.job));
-    void refreshTrees(p).then(() => paint(root, p));
+    void refreshTrees(p).then(() => root ? paint(root, p) : undefined);
     if (!j) return;
     if (j.status === 'blocked') {
       st.insertAdjacentHTML('beforeend', `<div class="ag-prfail"><p class="err">L’agent n’a pas pu résoudre ces conflits : ${j.conflicts.map(f => `<code>${esc(f)}</code>`).join(', ')}.</p><p>Retire les marqueurs <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</code> / <code>&gt;&gt;&gt;&gt;&gt;&gt;&gt;</code> dans VS Code, ou réponds à l’agent dans sa session, puis publie à nouveau.</p><div class="ag-prfail-act"><button class="btn" data-ag-open>${icon('code')}Ouvrir dans VS Code</button></div></div>`);
@@ -1221,6 +1221,72 @@ function repaintList(): void {
   if (!cur || painting || selected || !cur.box.isConnected) return;
   const zone = $('.ag-zone', cur.box), list = known.get(cur.p.id)?.list;
   if (zone && list && !$('.ag-zone > .hm-empty', cur.box)) paintIfChanged(zone, listHTML(list));
+}
+
+// ---------- Actions sur une copie (onglet Claude Code et Espace agents) ----------
+/** Ce qu'on peut faire de la copie d'un agent : publier (commit, push, PR), mettre à jour, fusionner dans la mère… */
+export const COPY_ACTS = new Set(['push', 'sync', 'pr', 'mergechild', 'newbranch', 'discard', 'review', 'vscode']);
+
+/** Mène une action sur la copie `wt` du projet `p`, depuis n'importe quelle vue ; `box` : onglet Claude Code à redessiner.
+ *  Rend `true` quand l'état de la copie a changé (à relire), `false` si rien n'a été fait ou si l'action suit seule son cours. */
+export async function copyAct(p: Project, act: string, wt: string, box: HTMLElement | null = null): Promise<boolean> {
+  // Appel venu d'une autre vue : l'état des copies et des agents est celui d'un autre projet, ou trop ancien.
+  if (treesFor !== p.id || !box) { restoreTrees(p.id); await refreshTrees(p); }
+  if (cur?.p.id !== p.id) { const l = await bridge.call('agent', 'list', { project: p.id }, 10000); if (l.ok) runs = l.runs as AgentRun[]; }
+  if (act === 'review') { await review.review(p, 'working', wt); return false; }
+  if (act === 'vscode') { const r = await native.call('project', 'open', { project: p.id, app: 'vscode', worktree: wt }, 15000); if (!r.ok) toast(r.message ?? 'Impossible d’ouvrir.'); return false; }
+  if (act === 'push') { await publish(p, wt, box); return false; }
+  if (act === 'pr') { const w = trees.find(x => x.name === wt); if (w) await openPR(p, w); else toast('Copie introuvable.'); return false; }
+  if (act === 'sync') {
+    const r = await native.call('agent', 'sync', { project: p.id, worktree: wt, author: await github.author() }, 30000);
+    toast(r.ok ? 'Mise à jour de la copie lancée' : r.message ?? 'Impossible.');
+    return true;
+  }
+  if (act === 'mergechild') {
+    const g = groupOfCopy(wt);
+    const r = await native.call('agent', 'mergechild', { project: p.id, worktree: wt }, 120000);
+    if (r.ok) keepMerged(wt);
+    toast(r.ok ? String(r.message ?? `Agent ${g?.slot ?? ''} fusionné dans la branche mère`) : r.message === 'Action inconnue.' ? 'Mets à jour l’app Studio pour Mac.' : r.message ?? 'Fusion impossible.');
+    return true;
+  }
+  if (act === 'newbranch') {
+    const w = trees.find(x => x.name === wt);
+    if (!await confirmBox({ title: 'Repartir sur une nouvelle branche ?', text: `${w?.branch ? `La branche ${w.branch} reste poussée avec sa PR. ` : ''}La copie repart de la dernière version de la branche principale : la discussion avec l’agent continue, et son prochain travail sera publié sur une nouvelle branche.`, ok: 'Nouvelle branche' })) return false;
+    const r = await native.call('agent', 'newbranch', { project: p.id, worktree: wt }, 60000);
+    toast(r.ok ? `Nouvelle branche : ${String(r.branch)}` : r.message === 'Action inconnue.' ? 'Mets à jour l’app Studio pour Mac.' : r.message ?? 'Impossible.');
+    return true;
+  }
+  if (act === 'discard') {
+    if (!await confirmBox({ title: 'Supprimer cette copie ?', text: `${runs.some(r => live(r) && r.worktree === wt) ? 'L’agent qui y travaille sera arrêté. ' : ''}Les changements non publiés de l’agent seront perdus. Une branche déjà poussée sur GitHub reste en place.`, ok: 'Supprimer', danger: true })) return false;
+    for (const r of runs.filter(x => live(x) && x.worktree === wt)) await bridge.call('agent', 'stop', { run: r.run }, 10000);
+    const r = await native.call('agent', 'discard', { project: p.id, worktree: wt }, 30000);
+    toast(r.ok ? 'Copie supprimée' : r.message ?? 'Impossible.');
+    return true;
+  }
+  return false;
+}
+
+/** Bandeau de la copie d'un agent pour l'Espace agents : son étape, sa branche, et les gestes possibles
+ *  (boutons `data-aw-copy`, menés par `copyAct`). `working` : l'agent travaille dans cette copie. */
+export function copyStrip(w: Worktree, working: boolean): string {
+  const st = stageOf(w, working), g = groupOfCopy(w.name), mac = bridge.local();
+  const btn = (act: string, ic: string, label: string, title: string, wt = w.name, primary = false) =>
+    `<button type="button" class="btn${primary ? ' btn-primary' : ''}" data-aw-copy="${act}" data-wt="${esc(wt)}" title="${esc(title)}"${working && act !== 'review' && act !== 'vscode' && act !== 'pr' ? ' disabled' : ''}>${icon(ic)}<span>${esc(label)}</span></button>`;
+  const fresh = hasWork(w) || (w.sisters ?? []).some(hasWork), pending = w.pushed && !w.merged;
+  const inMother = !!g && mergedKids.has(w.name) && !w.changes;
+  const acts = !mac ? '<em class="ag-onmac">sur le Mac</em>' : [
+    g ? (inMother ? btn('push', 'upload', 'Publier le groupe', 'Publier la branche mère du groupe : commit, push et pull request', g.group, true)
+      : btn('mergechild', 'pr', 'Fusionner dans la mère', 'Commiter le travail de cet agent et le fusionner dans la branche mère du groupe', w.name, fresh)) : '',
+    !g && fresh ? btn('push', 'upload', pending ? 'Republier' : 'Publier', 'Commit, push et pull request (Studio remet d’abord la copie à jour ; l’agent résout les conflits)', w.name, true) : '',
+    !g && (pending || w.pr) ? btn('pr', 'pr', w.pr?.state === 'open' ? `PR #${w.pr.number}` : 'PR', 'Ouvrir la pull request de cette branche') : '',
+    w.behind && (w.changes > 0 || pending) ? btn('sync', 'refresh', 'Mettre à jour', 'Remettre la copie sur la dernière version de la branche principale ; l’agent résout les conflits') : '',
+    btn('review', 'sparkle', 'Revue', 'Relecture des changements par l’IA'),
+    btn('vscode', 'code', 'VS Code', 'Ouvrir la copie dans VS Code'),
+    `<button type="button" class="icon-btn" data-aw-copy="more" data-wt="${esc(w.name)}" title="Plus d’actions" aria-label="Plus d’actions sur la copie">${icon('more')}</button>`,
+  ].join('');
+  const what = w.conflicts?.length ? `<span class="err">conflits : ${esc(w.conflicts.join(', '))}</span>`
+    : w.changes ? `${w.changes} fichier${w.changes > 1 ? 's' : ''} modifié${w.changes > 1 ? 's' : ''}` : w.ahead && !w.merged ? `${w.ahead} commit${w.ahead > 1 ? 's' : ''}` : '';
+  return `<div class="aw-copy st-${st}" style="${stageVar(st)}">${stageBadge(st)}${w.branch && !w.branch.startsWith('worktree-') ? `<code title="Branche">${esc(w.branch)}</code>` : g ? `<code title="Groupe ${esc(g.group)}">agent ${g.slot}</code>` : ''}${what ? `<em>${what}</em>` : ''}<span class="aw-copy-act">${acts}</span></div>`;
 }
 
 // ---------- Montage ----------
@@ -1531,37 +1597,14 @@ export function mount(box: HTMLElement, p: Project, folder: string | null): void
       hideRuns(b.dataset.ag === 'hide-run' ? [b.dataset.run ?? ''].filter(Boolean) : runs.filter(r => !live(r)).map(r => r.run));
       again = painting; void paint(box, p); return;
     }
-    if (b.dataset.ag === 'review') await review.review(p, 'working', wt);
-    if (b.dataset.ag === 'vscode') { const r = await native.call('project', 'open', { project: p.id, app: 'vscode', worktree: wt }, 15000); if (!r.ok) toast(r.message ?? 'Impossible d’ouvrir.'); }
-    if (b.dataset.ag === 'push') await publish(p, wt, box);
-    if (b.dataset.ag === 'sync') {
-      const r = await native.call('agent', 'sync', { project: p.id, worktree: wt, author: await github.author() }, 30000);
-      toast(r.ok ? 'Mise à jour de la copie lancée' : r.message ?? 'Impossible.');
-      await refreshTrees(p); void paint(box, p);
-    }
-    if (b.dataset.ag === 'pr') { const w = trees.find(x => x.name === wt); if (w) await openPR(p, w); }
-    if (b.dataset.ag === 'mergechild') {
-      const g = groupOfCopy(wt);
-      (b as HTMLButtonElement).disabled = true;
-      const r = await native.call('agent', 'mergechild', { project: p.id, worktree: wt }, 120000);
-      if (r.ok) keepMerged(wt);
-      toast(r.ok ? String(r.message ?? `Agent ${g?.slot ?? ''} fusionné dans la branche mère`) : r.message === 'Action inconnue.' ? 'Mets à jour l’app Studio pour Mac.' : r.message ?? 'Fusion impossible.');
-      await refreshTrees(p); void paint(box, p);
-      return;
-    }
-    if (b.dataset.ag === 'newbranch') {
-      const w = trees.find(x => x.name === wt);
-      if (!await confirmBox({ title: 'Repartir sur une nouvelle branche ?', text: `${w?.branch ? `La branche ${w.branch} reste poussée avec sa PR. ` : ''}La copie repart de la dernière version de la branche principale : la discussion avec l’agent continue, et son prochain travail sera publié sur une nouvelle branche.`, ok: 'Nouvelle branche' })) return;
-      const r = await native.call('agent', 'newbranch', { project: p.id, worktree: wt }, 60000);
-      toast(r.ok ? `Nouvelle branche : ${String(r.branch)}` : r.message === 'Action inconnue.' ? 'Mets à jour l’app Studio pour Mac.' : r.message ?? 'Impossible.');
-      await refreshTrees(p); void paint(box, p);
-    }
-    if (b.dataset.ag === 'discard' && await confirmBox({ title: 'Supprimer cette copie ?', text: `${runs.some(r => live(r) && r.worktree === wt) ? 'L’agent qui y travaille sera arrêté. ' : ''}Les changements non publiés de l’agent seront perdus. Une branche déjà poussée sur GitHub reste en place.`, ok: 'Supprimer', danger: true })) {
-      for (const r of runs.filter(x => live(x) && x.worktree === wt)) await bridge.call('agent', 'stop', { run: r.run }, 10000);
-      const r = await native.call('agent', 'discard', { project: p.id, worktree: wt }, 30000);
-      toast(r.ok ? 'Copie supprimée' : r.message ?? 'Impossible.');
-      if (r.ok && selected) { selected = null; sub = null; shell(box, p); }
-      await refreshTrees(p); void paint(box, p);
+    if (COPY_ACTS.has(b.dataset.ag ?? '')) {
+      if (b.dataset.ag === 'mergechild') (b as HTMLButtonElement).disabled = true;
+      const changed = await copyAct(p, b.dataset.ag ?? '', wt, box);
+      if (!changed) return;
+      await refreshTrees(p);
+      // Copie bien supprimée : on quitte sa conversation (un échec laisse tout en place).
+      if (b.dataset.ag === 'discard' && selected && !trees.some(x => x.name === wt)) { selected = null; sub = null; shell(box, p); }
+      void paint(box, p);
     }
   };
   void paint(box, p);

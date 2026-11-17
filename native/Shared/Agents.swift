@@ -428,6 +428,10 @@ final class Agents {
         let tools = AgentPermissions.tools(mode: mode, commands: tests, shell: shell) + (team == nil ? [] : ["Agent"])
         args += ["--tools", tools.joined(separator: ",")]
         if let j = team?.json(tools: tools) { args += ["--agents", j] }
+        // Tableau d'équipe (AgentBoard) : en mode Modifier sur ce Mac, pour un agent qui délègue ou qui fait partie d'un groupe.
+        let wtName = cwd.range(of: "/.claude/worktrees/").map { String(cwd[$0.upperBound...]) } ?? ""
+        let board = onServer || mode != "edit" || body["internal"] as? Bool == true || wtName.isEmpty
+            || (team == nil && ProjectFolders.groupOf(wtName) == nil) ? nil : AgentBoard.prepare(repo: dir, worktree: wtName, team: team != nil)
         // Navigateur : sur ce Mac seulement, jamais pour l'orchestrateur ; ses outils sont permis en bloc (`mcp__browser`).
         let browse = onServer || body["internal"] as? Bool == true ? nil : AgentPermissions.browserSetup(bubble: bubble != nil)
         if let b = browse { args += ["--mcp-config", b.config] }
@@ -436,10 +440,12 @@ final class Agents {
         let effortOK = Self.efforts.contains(useEffort)
         if modelOK { args += ["--model", useModel] }
         if effortOK { args += ["--effort", useEffort] }
-        if !extraDirs.isEmpty { args += ["--add-dir"] + extraDirs }
+        // Hors bulle, le tableau d'équipe est ouvert par --add-dir (dans la bulle, le .git du dépôt l'est déjà).
+        let addDirs = extraDirs + (bubble == nil ? board.map { [$0.dir] } ?? [] : [])
+        if !addDirs.isEmpty { args += ["--add-dir"] + addDirs }
         // Notes et tâches du projet : permises par les réglages, jamais pour l'orchestrateur (résolution de conflits).
         let items = AgentPermissions.projectItems && body["internal"] as? Bool != true
-        let added = [AgentTuning.prompt(mode: mode, tests: tests, items: items, shell: shell), team?.prompt(edit: mode == "edit") ?? "", repoNote, groupNote, browse?.prompt ?? ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        let added = [AgentTuning.prompt(mode: mode, tests: tests, items: items, shell: shell), team?.prompt(edit: mode == "edit") ?? "", repoNote, groupNote, board?.prompt ?? "", browse?.prompt ?? ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
         if !added.isEmpty { args += ["--append-system-prompt", added] }
         args += ["--allowedTools"] + AgentPermissions.allowed(tools: tools, commands: tests, shell: shell) + (browse == nil ? [] : ["mcp__\(AgentPermissions.browserServer)"])
 
@@ -581,7 +587,7 @@ final class Agents {
 
     /// Consigne ajoutée à un agent d'un groupe : il sait qu'il travaille en parallèle d'autres agents sur la même demande.
     static func groupPrompt(slot: Int, of total: Int) -> String {
-        "Tu es l'agent \(slot)\(total > 1 ? " sur \(total)" : "") d'un groupe : d'autres agents reçoivent la même demande en parallèle, chacun dans sa propre copie, partie de la même branche mère. L'utilisateur comparera vos résultats et fusionnera le meilleur (ou plusieurs) dans la branche mère. Propose ta propre solution, complète et cohérente, sans te soucier des autres agents. Ne commite pas : Studio s'en charge."
+        "Tu es l'agent \(slot)\(total > 1 ? " sur \(total)" : "") d'un groupe : d'autres agents reçoivent la même demande en parallèle, chacun dans sa propre copie, partie de la même branche mère. L'utilisateur comparera vos résultats et fusionnera le meilleur (ou plusieurs) dans la branche mère. Propose ta propre solution, complète et cohérente : partage tes découvertes par le tableau d'équipe, mais ne copie pas le travail des autres. Ne commite pas : Studio s'en charge."
     }
 
     private func withOk(_ r: Run) -> [String: Any] { lock.lock(); defer { lock.unlock() }; var s = summary(r); s["ok"] = true; return s }
@@ -678,7 +684,7 @@ struct AgentTeam {
         if members.isEmpty { return nil }
         var o: [String: Any] = [:]
         for m in members {
-            var d: [String: Any] = ["description": m.description, "prompt": m.prompt.isEmpty ? m.description : m.prompt]
+            var d: [String: Any] = ["description": m.description, "prompt": (m.prompt.isEmpty ? m.description : m.prompt) + Self.boardLine]
             if !m.model.isEmpty { d["model"] = m.model }
             if m.readOnly { d["tools"] = tools.filter { Self.readTools.contains($0) } }
             o[m.name] = d
@@ -686,6 +692,10 @@ struct AgentTeam {
         guard let data = try? JSONSerialization.data(withJSONObject: o, options: [.sortedKeys]) else { return nil }
         return String(data: data, encoding: .utf8)
     }
+
+    /// Ajouté à la consigne de chaque spécialiste : le tableau d'équipe passe par la consigne de l'agent principal.
+    static let boardLine = "\n\nSi l'agent principal t'indique un tableau d'équipe, lis-le avant tout, ne modifie que les fichiers qu'il te réserve, "
+        + "écris dans ton fichier du tableau ce que les autres doivent savoir (contrats, pièges, besoins), et relis-le avant de rendre."
 
     /// Les sous-agents sont attendus par l'agent (pas de tâche de fond : `claude -p` resterait ouvert après son
     /// compte rendu), ne délèguent pas à leur tour, et `max` au plus tournent ensemble.
@@ -707,6 +717,113 @@ struct AgentTeam {
         + (members.isEmpty ? "" : " Spécialistes définis par l'utilisateur, à préférer quand leur rôle correspond : "
             + members.map { "\($0.name) (\($0.description))" }.joined(separator: " ; ") + ".")
     }
+}
+
+/// Tableau d'équipe : le canal entre un agent, ses sous-agents, les autres agents de son groupe et l'utilisateur.
+/// Un dossier de fichiers Markdown dans le .git commun du dépôt (`.git/studio-equipe/<copie ou groupe>/`) : jamais
+/// commité, lisible et modifiable par chaque copie du dépôt (la bulle permet l'écriture dans ce .git), partagé par
+/// toutes les copies d'un groupe. Chacun écrit son propre fichier (pas d'écritures concurrentes sur un même fichier) :
+/// `principal.md` ou `agent-N.md` pour l'agent, `<nom>.md` pour ses sous-agents, `utilisateur.md` pour l'utilisateur
+/// (action de pont `agent board`, Espace agents). Mode Modifier sur ce Mac seulement, jamais pour l'orchestrateur.
+enum AgentBoard {
+    static let folder = "studio-equipe"
+    static let user = "utilisateur.md"
+    private static let maxFile = 20_000, maxFiles = 24
+    private static let nameRe = try! NSRegularExpression(pattern: "^[a-z0-9][a-z0-9._-]{0,60}\\.md$")
+
+    /// Clé du tableau : le groupe pour ses agents et sa branche mère, sinon la copie elle-même.
+    static func key(_ worktree: String) -> String { ProjectFolders.groupOf(worktree)?.group ?? worktree }
+
+    /// Dossier du tableau d'une copie, dans le .git du dépôt principal ; nil si ce n'est pas un dossier .git ordinaire.
+    static func dir(repo: String, worktree: String) -> String? {
+        guard ProjectFolders.validWorktree(worktree) else { return nil }
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: repo + "/.git", isDirectory: &isDir), isDir.boolValue else { return nil }
+        return repo + "/.git/" + folder + "/" + key(worktree)
+    }
+
+    /// Crée le dossier si besoin et rend ce qu'il faut ajouter à la consigne de l'agent.
+    static func prepare(repo: String, worktree: String, team: Bool) -> (dir: String, prompt: String)? {
+        guard let d = dir(repo: repo, worktree: worktree),
+              (try? FileManager.default.createDirectory(atPath: d, withIntermediateDirectories: true)) != nil else { return nil }
+        return (d, prompt(dir: d, slot: ProjectFolders.groupOf(worktree)?.slot, team: team))
+    }
+
+    static func prompt(dir d: String, slot: Int?, team: Bool) -> String {
+        let me = slot.map { "agent-\($0).md" } ?? "principal.md", prefix = slot.map { "agent-\($0)-" } ?? ""
+        var s = "Tableau d'équipe : le dossier \(d). C'est le canal entre toi"
+            + (team ? ", tes sous-agents" : "") + (slot != nil ? ", les autres agents de ton groupe" : "")
+            + " et l'utilisateur : chacun y écrit son propre fichier Markdown (le tien : \(me)) et lit ceux des autres (Glob puis Read). "
+            + "Il vit dans le .git du dépôt : jamais commité. Écris court, en lignes datées par étape, et ne modifie jamais le fichier d'un autre. "
+            + "Relis \(user) s'il existe, au début puis à chaque étape : l'utilisateur peut y laisser des consignes pendant que tu travailles, sans t'interrompre. "
+            + "Si l'écriture y est refusée, mets ces notes dans ton compte rendu."
+        if let n = slot {
+            s += "\nLes autres agents du groupe ont la même demande, chacun dans sa copie, et écrivent agent-1.md, agent-2.md… "
+                + "Lis leurs fichiers au début et avant de finir pour profiter de leurs découvertes (où sont les choses, pièges, contrats), "
+                + "et note les tiennes dans agent-\(n).md au fil du travail ; garde ta propre solution."
+        }
+        if team {
+            s += """
+
+                Orchestration de tes sous-agents :
+                1. Évalue d'abord la demande. Petite ou d'un seul tenant (quelques fichiers liés) : fais-la seul. Plusieurs parties \
+                indépendantes, exploration large ou travail à relire : découpe.
+                2. Pour découper, écris d'abord dans \(me) le plan (une ligne par sous-tâche : qui, quoi, fichiers réservés) et les \
+                contrats que les parties partagent (noms, signatures, formats, routes, clés). Un fichier n'est réservé qu'à une sous-tâche.
+                3. Lance dans un même message les sous-agents indépendants. Chaque consigne donne le chemin du tableau, le nom de son \
+                fichier (\(prefix)<nom-court>.md), sa sous-tâche, ses fichiers réservés et ce qu'il doit rendre, et exige de lui : lire \
+                le tableau en premier ; ne modifier que ses fichiers réservés ; écrire dans son fichier, au fil du travail, ce que les \
+                autres doivent savoir (contrat ajouté ou changé, piège, besoin de toucher un fichier réservé par un autre, question) ; \
+                relire le tableau avant de rendre et s'aligner sur les contrats des autres.
+                4. À leur retour, relis le tableau : réconcilie les contrats, lance au besoin une seconde vague pour ce qui dépendait des \
+                premiers résultats (intégration, tests, relecture par un sous-agent), puis vérifie l'ensemble toi-même.
+                """
+        }
+        return s
+    }
+
+    /// Fichiers du tableau d'une copie (le plus récent en dernier), pour l'Espace agents.
+    static func read(project pid: String, worktree: String) -> [String: Any] {
+        guard let repo = ProjectFolders.shared.path(pid), let d = dir(repo: repo, worktree: worktree) else { return ["ok": false, "message": "Tableau introuvable."] }
+        let fm = FileManager.default
+        let names = ((try? fm.contentsOfDirectory(atPath: d)) ?? []).filter { ok($0) }
+        var files: [(name: String, text: String, at: Double)] = []
+        for n in names {
+            let p = d + "/" + n
+            let at = ((try? fm.attributesOfItem(atPath: p))?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
+            guard let data = fm.contents(atPath: p) else { continue }
+            let text = String(decoding: data.suffix(maxFile), as: UTF8.self)
+            files.append((n, text, at))
+        }
+        files.sort { $0.at < $1.at }
+        let list: [[String: Any]] = files.suffix(maxFiles).map { ["name": $0.name, "text": $0.text, "at": Int($0.at * 1000)] }
+        return ["ok": true, "key": key(worktree), "files": list]
+    }
+
+    /// Ajoute une consigne de l'utilisateur à `utilisateur.md` (les agents le relisent à chaque étape).
+    static func note(project pid: String, worktree: String, text: String) -> [String: Any] {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return ["ok": false, "message": "Message vide."] }
+        guard let repo = ProjectFolders.shared.path(pid), let d = dir(repo: repo, worktree: worktree),
+              (try? FileManager.default.createDirectory(atPath: d, withIntermediateDirectories: true)) != nil else { return ["ok": false, "message": "Tableau introuvable."] }
+        let f = DateFormatter(); f.dateFormat = "HH:mm"
+        let p = d + "/" + user
+        let line = "- [\(f.string(from: Date()))] " + String(t.prefix(4000)).replacingOccurrences(of: "\n", with: "\n  ") + "\n"
+        if let h = FileHandle(forWritingAtPath: p) { h.seekToEndOfFile(); h.write(Data(line.utf8)); h.closeFile() }
+        else if !FileManager.default.createFile(atPath: p, contents: Data(("# Consignes de l'utilisateur\n\n" + line).utf8)) { return ["ok": false, "message": "Écriture impossible."] }
+        return read(project: pid, worktree: worktree)
+    }
+
+    /// Supprime le tableau d'une copie supprimée ; celui d'un groupe, quand il ne reste ni sa branche mère ni aucun de ses agents.
+    static func remove(project pid: String, worktree: String) {
+        guard let repo = ProjectFolders.shared.path(pid), let d = dir(repo: repo, worktree: worktree) else { return }
+        let k = key(worktree)
+        let left = (try? FileManager.default.contentsOfDirectory(atPath: repo + "/.claude/worktrees")) ?? []
+        if left.contains(where: { $0 == k || ProjectFolders.groupOf($0)?.group == k }) { return }
+        try? FileManager.default.removeItem(atPath: d)
+    }
+
+    private static func ok(_ n: String) -> Bool { nameRe.firstMatch(in: n, range: NSRange(n.startIndex..., in: n)) != nil }
 }
 
 /// Consignes ajoutées à celle de Claude Code pour chaque agent, et réglages qui bornent son contexte.
