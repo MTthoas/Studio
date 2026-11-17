@@ -13,7 +13,7 @@ import { mount as mountStats } from './shop-stats.ts';
 import { mount as mountOrders, toShip } from './shop-orders.ts';
 import { mount as mountProducts } from './shop-products.ts';
 import { mountClients, mountDiscounts } from './shop-clients.ts';
-import { mountSetup } from './shop-setup.ts';
+import { mountSetup, attachMenu, settings } from './shop-setup.ts';
 
 export { settings } from './shop-setup.ts';
 export type Section = 'chiffres' | 'commandes' | 'produits' | 'clients' | 'reductions';
@@ -50,56 +50,73 @@ const sumOf = (cards: Map<string, Card>, pick: (c: Card) => number | null): stri
   return seen ? (n >= 50 ? `${int(n)}+` : int(n)) : '—';
 };
 
-function cardHTML(p: Project, shop: api.ShopCreds, c: Card | undefined): string {
-  const head = `<span class="sh-card-top"><i class="sh-dot"></i><strong>${esc(p.name)}</strong><span class="sh-sub">${esc(shop.name || shop.domain)}</span></span>`;
-  if (!c) return `<button class="sh-card" style="${tint(p)}" data-sh="open" data-project="${esc(p.id)}">${head}<span class="sh-loading">Lecture des chiffres…</span></button>`;
+function cardHTML(p: Project | null, shop: api.ShopCreds, c: Card | undefined): string {
+  const name = p?.name ?? (shop.name || shop.domain);
+  const head = `<span class="sh-card-top"><i class="sh-dot"></i><strong>${esc(name)}</strong><span class="sh-sub">${esc(p ? shop.name || shop.domain : shop.domain)}</span></span>`;
+  const act = p ? `data-sh="open" data-project="${esc(p.id)}"` : `data-sh="card-attach" data-domain="${esc(shop.domain)}" title="Rattacher à un projet pour ouvrir ses commandes, ses produits et sa publicité"`;
+  const style = p ? tint(p) : '--c:var(--c-gray)';
+  const orphan = p ? '' : `<span class="sh-chip warn">${icon('folder')}Rattacher à un projet</span>`;
+  if (!c) return `<button class="sh-card" style="${style}" ${act}>${head}<span class="sh-loading">Lecture des chiffres…</span>${orphan ? `<span class="sh-card-foot">${orphan}</span>` : ''}</button>`;
   const figure = (k: string, s: api.Summary | null, span: string): string => s
     ? `<span class="sh-fig"><span class="sh-k">${esc(k)}</span><strong>${esc(money(s.sales, s.currency))}</strong><span class="sh-tr">${trend(s.sales, s.prev.sales, span)}</span></span>`
     : `<span class="sh-fig"><span class="sh-k">${esc(k)}</span><strong>—</strong><span class="sh-tr"></span></span>`;
   const chips = [
+    orphan,
     c.ship === null ? '' : `<span class="sh-chip${c.ship ? ' warn' : ''}">${esc(count(c.ship))} à expédier</span>`,
     c.low === null ? '' : `<span class="sh-chip${c.low ? ' warn' : ''}">${esc(String(c.low))} stock${c.low > 1 ? 's' : ''} bas</span>`,
   ].join('');
-  return `<button class="sh-card" style="${tint(p)}" data-sh="open" data-project="${esc(p.id)}">${head}
+  return `<button class="sh-card" style="${style}" ${act}>${head}
     <span class="sh-card-figs">${figure('Aujourd’hui', c.day, '1 j')}${figure('7 jours', c.week, '7 j')}</span>
     ${c.error ? `<span class="sh-card-err">${esc(c.error)}</span>` : ''}<span class="sh-card-foot">${chips}</span></button>`;
 }
 
-/** Toutes les boutiques reliées, une carte par projet. Une boutique en erreur n'empêche pas les autres. */
+/** Toutes les boutiques du coffre (rattachées ou non à un projet), une carte chacune, et le formulaire pour en ajouter.
+ *  Une boutique en erreur n'empêche pas les autres. */
 export function mountAll(box: HTMLElement): void {
   const root = makeRoot(box, 'sh-all');
   if (!api.supported()) { root.innerHTML = notMacHTML(); return; }
-  const linked = (): { p: Project; shop: api.ShopCreds }[] => model.projects().flatMap(p => { const shop = api.shopOf(p); return shop ? [{ p, shop }] : []; });
+  root.innerHTML = '<div class="sh-all-list"></div><div class="sh-all-add"></div>';
+  const listBox = root.querySelector<HTMLElement>('.sh-all-list'), addBox = root.querySelector<HTMLElement>('.sh-all-add');
+  if (!listBox || !addBox) return;
+  const all = (): { p: Project | null; shop: api.ShopCreds }[] => {
+    const projects = model.projects();
+    return api.shops().map(shop => ({ shop, p: projects.find(p => p.shopify === shop.domain) ?? null }));
+  };
   const cards = new Map<string, Card>();
-  let seq = 0;
+  let seq = 0, adding = false;
+
+  /** Le formulaire d'ajout : ouvert d'office tant qu'il n'y a aucune boutique (ou que le coffre est fermé). */
+  const form = (): void => {
+    const open = adding || !api.shops().length;
+    addBox.hidden = !open;
+    if (!open) { addBox.replaceChildren(); return; }
+    if (addBox.querySelector('.sh-set')) return;
+    addBox.innerHTML = `<h3 class="sh-title">${api.shops().length ? 'Ajouter une boutique' : 'Relier ta première boutique'}</h3>${settings.html()}`;
+    settings.bind(addBox, () => { adding = false; paint(); loadAll(false); form(); });
+  };
 
   const paint = (): void => {
     if (!root.isConnected) return;
-    const list = linked();
-    if (!list.length) {
-      paintIfChanged(root, `<div class="sh-empty">${icon('plug')}<h3>Aucune boutique reliée</h3>
-        <p>Relie une boutique Shopify à un projet : tu verras ici, côte à côte, les ventes du jour et des 7 derniers jours, les commandes à expédier et les stocks bas de chacune.</p>
-        <div class="cx-grid"><button class="btn btn-primary" data-open-conn="commerce">Relier une boutique</button></div></div>`);
-      return;
-    }
-    const mine = list.filter(x => cards.has(x.p.id)).length;
+    const list = all();
+    if (!list.length) { paintIfChanged(listBox, ''); return; }
     const head = `<div class="sh-head"><h3 class="sh-title">Boutiques</h3><span class="sh-sub">${list.length} boutique${list.length > 1 ? 's' : ''}</span>
-      <button class="btn sh-right" data-sh="refresh" title="Relire les chiffres">${icon('refresh')}Actualiser</button></div>`;
-    const all = new Map([...cards].filter(([id]) => list.some(x => x.p.id === id)));
-    const sums = mine ? `<div class="sh-tiles sh-tiles-4">
-      <div class="sh-tile"><span class="sh-k">Ventes aujourd’hui</span><strong class="sh-multi">${totals(all, c => c.day)}</strong></div>
-      <div class="sh-tile"><span class="sh-k">Ventes sur 7 jours</span><strong class="sh-multi">${totals(all, c => c.week)}</strong></div>
-      <div class="sh-tile"><span class="sh-k">À expédier</span><strong>${esc(sumOf(all, c => c.ship))}</strong></div>
-      <div class="sh-tile"><span class="sh-k">Stocks bas</span><strong>${esc(sumOf(all, c => c.low))}</strong></div></div>` : '';
-    paintIfChanged(root, `${head}${sums}<div class="sh-cards">${list.map(x => cardHTML(x.p, x.shop, cards.get(x.p.id))).join('')}</div>`);
+      <button class="btn sh-right" data-sh="refresh" title="Relire les chiffres">${icon('refresh')}Actualiser</button>
+      <button class="btn${adding ? ' on' : ''}" data-sh="add">${icon('plus')}Ajouter une boutique</button></div>`;
+    const mine = new Map([...cards].filter(([d]) => list.some(x => x.shop.domain === d)));
+    const sums = mine.size ? `<div class="sh-tiles sh-tiles-4">
+      <div class="sh-tile"><span class="sh-k">Ventes aujourd’hui</span><strong class="sh-multi">${totals(mine, c => c.day)}</strong></div>
+      <div class="sh-tile"><span class="sh-k">Ventes sur 7 jours</span><strong class="sh-multi">${totals(mine, c => c.week)}</strong></div>
+      <div class="sh-tile"><span class="sh-k">À expédier</span><strong>${esc(sumOf(mine, c => c.ship))}</strong></div>
+      <div class="sh-tile"><span class="sh-k">Stocks bas</span><strong>${esc(sumOf(mine, c => c.low))}</strong></div></div>` : '';
+    paintIfChanged(listBox, `${head}${sums}<div class="sh-cards">${list.map(x => cardHTML(x.p, x.shop, cards.get(x.shop.domain))).join('')}</div>`);
   };
 
-  const loadOne = async (p: Project, shop: api.ShopCreds, fresh: boolean, mine: number): Promise<void> => {
+  const loadOne = async (shop: api.ShopCreds, fresh: boolean, mine: number): Promise<void> => {
     if (fresh) api.forget(shop.domain);
     const [day, week, ship, low] = await Promise.allSettled([api.summary(shop, 'today', fresh), api.summary(shop, '7d', fresh), toShip(shop), api.lowStock(shop)]);
     if (mine !== seq) return;
     const bad = [day, week, ship, low].find(r => r.status === 'rejected');
-    cards.set(p.id, {
+    cards.set(shop.domain, {
       day: day.status === 'fulfilled' ? day.value : null, week: week.status === 'fulfilled' ? week.value : null,
       ship: ship.status === 'fulfilled' ? ship.value.length : null, low: low.status === 'fulfilled' ? low.value.length : null,
       error: bad && bad.status === 'rejected' ? errMsg(bad.reason) : '',
@@ -108,14 +125,17 @@ export function mountAll(box: HTMLElement): void {
   };
   const loadAll = (fresh: boolean): void => {
     const mine = ++seq;
-    for (const { p, shop } of linked()) void loadOne(p, shop, fresh, mine);
+    for (const { shop } of all()) void loadOne(shop, fresh, mine);
   };
 
-  clicks(root, {
+  clicks(listBox, {
     open: t => { const id = t.dataset.project; if (id) root.dispatchEvent(new CustomEvent('commerce:open', { bubbles: true, detail: { project: id } })); },
+    'card-attach': t => { const s = api.shops().find(x => x.domain === t.dataset.domain); if (s) attachMenu(t, s, () => { paint(); form(); }); },
     refresh: () => { loadAll(true); },
+    add: () => { adding = !adding; paint(); form(); if (adding) addBox.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); },
   });
   paint();
+  form();
   loadAll(false);
   poll(root, () => loadAll(true));
 }

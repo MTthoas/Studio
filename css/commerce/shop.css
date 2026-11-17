@@ -175,3 +175,12 @@ button.sh-pick:hover { background: var(--hover); }
 .sh-hm-v { flex: none; display: flex; align-items: baseline; gap: 6px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .sh-hm-v small { color: var(--text-3); font-size: var(--t-1); font-weight: 400; }
 .sh-hm-ship { flex: none; min-width: 90px; color: var(--text-3); font-size: var(--t-1); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Vue Boutiques : formulaire d'ajout sous les cartes, ouvert d'office sans boutique. */
+.sh-all-add:not([hidden]) { max-width: 640px; margin-top: 28px; }
+.sh-all-list:empty + .sh-all-add { margin: 8px auto 0; }
+.sh-all-add > .sh-title { margin: 0 0 12px; }
+.sh-all-add .cx-sec > h4 { display: none; }
+.sh-intro { margin: 0 0 4px; }
+.sh-head .btn.on { background: var(--active); }
+.sh-chip .ic { width: 12px; height: 12px; margin-right: 4px; vertical-align: -1px; }

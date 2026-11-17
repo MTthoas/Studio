@@ -10,6 +10,8 @@ import type { Project } from '../projects/model.ts';
 
 let app: AppShell | null = null;
 export const setApp = (shell: AppShell): void => { app = shell; };
+/** Ouvre l'onglet Boutique d'un projet. */
+export const openProject = (id: string): void => { if (app) void app.setView({ type: 'projets', project: id, tab: 'boutique' }); };
 export const openNote = (id: string): void => { if (app) app.openNote(id); else toast('Impossible d’ouvrir la note pour l’instant.'); };
 
 /** Ce que partagent une section et ses fenêtres : le projet, sa boutique, la racine, et de quoi relire la liste. */
