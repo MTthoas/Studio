@@ -20,6 +20,7 @@ import * as permissions from '../permissions.ts';
 import * as voice from '../voice.ts';
 import { pickNotes } from './notepick.ts';
 import * as subagents from './subagents.ts';
+import * as infra from './infra.ts';
 import type { Project } from './model.ts';
 
 interface Tokens { input: number; output: number; cacheRead: number; cacheWrite: number }
@@ -451,10 +452,51 @@ function keepDraft(f: HTMLFormElement): void {
     mode: f.querySelector<HTMLInputElement>('[name=mode]:checked')?.value ?? 'edit', tests: !!f.querySelector<HTMLInputElement>('[name=tests]')?.checked, fan: fanOf(f) });
 }
 
+// ---------- Où travailler : le Mac ou un serveur du projet ----------
+
+/** Dernière machine choisie par projet (`mac`, `server`, `server:<id>`), reprise à chaque nouveau formulaire. */
+const MACHINE_KEY = 'studio.cc.machine';
+function lastMachine(pid: string): string { try { return (JSON.parse(localStorage.getItem(MACHINE_KEY) ?? '{}') as Record<string, string>)[pid] ?? 'mac'; } catch { return 'mac'; } }
+function keepMachine(pid: string, v: string): void {
+  try { const all = JSON.parse(localStorage.getItem(MACHINE_KEY) ?? '{}') as Record<string, string>; all[pid] = v; localStorage.setItem(MACHINE_KEY, JSON.stringify(all)); } catch { /* stockage plein ou refusé : le choix ne sera pas repris */ }
+}
+const machineValue = (s: infra.ServerItem): string => s.id ? `server:${s.id}` : 'server';
+function machineOptions(p: Project): string {
+  const list = infra.knownServers(p.id), want = lastMachine(p.id), sel = list.some(s => machineValue(s) === want) ? want : 'mac';
+  return `<option value="mac"${sel === 'mac' ? ' selected' : ''}>Sur le Mac</option>`
+    + list.map(s => `<option value="${esc(machineValue(s))}"${machineValue(s) === sel ? ' selected' : ''}>Sur ${esc(s.name || s.dest || s.host)}</option>`).join('');
+}
+/** Choix de machine d'un nouvel agent : caché tant que le projet n'a aucun serveur (rempli ensuite par `fillMachines`). */
+function machineHTML(p: Project): string {
+  return `<select class="field ag-machine" name="machine" aria-label="Où travailler" title="Où l’agent travaille : sur ce Mac, ou sur un serveur du projet (onglet Serveur), dans une copie isolée du dépôt distant"${infra.knownServers(p.id).length ? '' : ' hidden'}>${machineOptions(p)}</select>`;
+}
+/** Sur un serveur, ni « Commandes » (réglage du Mac) ni l'abonnement lu sur le Mac : on les masque. */
+function showMachine(f: HTMLFormElement): void {
+  const v = (f.elements.namedItem('machine') as HTMLSelectElement | null)?.value ?? 'mac', far = v.startsWith('server');
+  f.classList.toggle('on-server', far);
+  f.querySelectorAll<HTMLElement>('[data-mac-only]').forEach(el => { el.hidden = far; });
+}
+/** Lit les serveurs du projet et met à jour le choix de machine des formulaires de lancement de `root`. */
+async function fillMachines(root: HTMLElement, p: Project): Promise<void> {
+  const r = await infra.list(p).catch(() => null);
+  if (!r?.ok || !root.isConnected) return;
+  root.querySelectorAll<HTMLFormElement>('.ag-compose:not(.ag-continue)').forEach(f => {
+    const mc = f.elements.namedItem('machine') as HTMLSelectElement | null;
+    if (!mc || mc.dataset.fixed !== undefined) return;
+    const was = mc.value, html = machineOptions(p);
+    if (mc.innerHTML !== html) mc.innerHTML = html;
+    if (was && [...mc.options].some(o => o.value === was)) mc.value = was;
+    mc.hidden = r.servers.length === 0;
+    showMachine(f);
+  });
+}
+
 /** `server` : identifiant du serveur du projet visé quand `machine` vaut 'server' ("" : le premier). */
 export function composerHTML(p: Project, { session = '', compact = false, machine = '', server = '' } = {}): string {
   // Un agent lancé sur un serveur utilise la connexion Claude du serveur, pas l'abonnement lu sur le Mac.
-  const lims = machine === 'server' ? '' : `<div class="ag-lims" aria-label="Utilisation de l’abonnement Claude">${limsHTML()}</div>`;
+  // Serveur repris du dernier lancement : « Commandes » et l'abonnement du Mac sont masqués dès le rendu.
+  const far = !session && machine !== 'server' && infra.knownServers(p.id).some(s => machineValue(s) === lastMachine(p.id)), macOnly = far ? ' hidden' : '';
+  const lims = machine === 'server' ? '' : `<div class="ag-lims" data-mac-only${macOnly} aria-label="Utilisation de l’abonnement Claude">${limsHTML()}</div>`;
   // Chaque formulaire a son brouillon : un par conversation, un pour la nouvelle consigne, un pour celle de l'aperçu, un pour le serveur.
   const key = `${p.id}|${session ? `s:${session}` : machine === 'server' ? 'server' : compact ? 'quick' : 'new'}`, d = saved.draft(key);
   if (session) return `<form class="ag-compose ag-continue" data-draft="${esc(key)}" data-session="${esc(session)}"${machine ? ` data-machine="${esc(machine)}"` : ''}><textarea name="prompt" rows="2" placeholder="Réponds à Claude : précise, corrige, tranche, demande la suite…" aria-label="Répondre dans la session">${esc(d?.text ?? '')}</textarea>
@@ -468,12 +510,12 @@ export function composerHTML(p: Project, { session = '', compact = false, machin
   const read = d?.mode === 'read', inRead = permissions.commandsInRead(), tests = (!read || inRead) && !!d?.tests;
   const fan = compact ? '' : hand?.fan || d?.fan || '';
   if (hand) saved.saveDraft(key, { text, notes, mode: read ? 'read' : 'edit', tests, fan });
-  return `<form class="ag-compose${compact ? ' compact' : ''}" data-draft="${esc(key)}" data-notes="${esc(notes.join(','))}"><textarea name="prompt" rows="${compact ? 1 : 3}" placeholder="Que doit faire Claude Code dans ${esc(p.name)} ? Ex. « Ajoute des tests au parseur de dates ». ${COUNT_HINT}" aria-label="Consigne pour Claude Code">${esc(text)}</textarea>
+  return `<form class="ag-compose${compact ? ' compact' : ''}${far ? ' on-server' : ''}" data-draft="${esc(key)}" data-notes="${esc(notes.join(','))}"><textarea name="prompt" rows="${compact ? 1 : 3}" placeholder="Que doit faire Claude Code dans ${esc(p.name)} ? Ex. « Ajoute des tests au parseur de dates ». ${COUNT_HINT}" aria-label="Consigne pour Claude Code">${esc(text)}</textarea>
     <div class="ag-ctx">${ctxHTML(notes)}</div>
     <div class="ag-opts"><div class="ag-tools">
       <div class="ag-seg" role="radiogroup" aria-label="Mode"><label><input type="radio" name="mode" value="edit"${read ? '' : ' checked'}><span>${icon('pencil')}Modifier</span></label><label><input type="radio" name="mode" value="read"${read ? ' checked' : ''}><span>${icon('search')}Analyser</span></label></div>
-      ${bridge.local() && machine !== 'server' ? `<label class="ag-check" title="Autorise les commandes réglées dans Réglages → Autorisations (par défaut npm test et npm run …) : le code du projet peut alors s’exécuter"><input type="checkbox" name="tests"${tests ? ' checked' : ''}${read && !inRead ? ' disabled' : ''}>Commandes</label>` : ''}
-      <select class="field" name="machine" aria-label="Où travailler"${machine === 'server' ? '' : ' hidden'}><option value="mac">Sur le Mac</option>${machine === 'server' ? `<option value="${server ? `server:${esc(server)}` : 'server'}" selected>Sur le serveur</option>` : ''}</select>
+      ${bridge.local() && machine !== 'server' ? `<label class="ag-check" data-mac-only${macOnly} title="Autorise les commandes réglées dans Réglages → Autorisations (par défaut npm test et npm run …) : le code du projet peut alors s’exécuter"><input type="checkbox" name="tests"${tests ? ' checked' : ''}${read && !inRead ? ' disabled' : ''}>Commandes</label>` : ''}
+      ${machine === 'server' ? `<select class="field" name="machine" aria-label="Où travailler" data-fixed><option value="${server ? `server:${esc(server)}` : 'server'}" selected>Sur le serveur</option></select>` : machineHTML(p)}
       ${tuneHTML(saved.defaults())}
       ${compact ? '' : `<select class="field" name="fan" aria-label="Nombre d’agents" title="Plusieurs agents en parallèle, chacun dans sa copie isolée : un par note jointe, ou un par ligne de la consigne (${FAN_MAX} à la fois au plus)">${[['', 'Un agent'], ['notes', 'Un agent par note'], ['lines', 'Un agent par ligne']].map(([v, l]) => `<option value="${v}"${v === fan ? ' selected' : ''}>${l}</option>`).join('')}</select>`}
       ${compact ? '' : subHTML()}
@@ -486,7 +528,8 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
   void loadLimits();
   permissions.preload();
   // Formulaires fraîchement rendus (brouillon repris) : hauteur du texte et choix « Auto » à jour.
-  requestAnimationFrame(() => root.querySelectorAll<HTMLFormElement>('.ag-compose').forEach(f => { const ta = f.querySelector('textarea'); if (ta) grow(ta); showAuto(f); showFan(f); }));
+  requestAnimationFrame(() => root.querySelectorAll<HTMLFormElement>('.ag-compose').forEach(f => { const ta = f.querySelector('textarea'); if (ta) grow(ta); showAuto(f); showFan(f); showMachine(f); }));
+  if (bridge.where() && root.querySelector('.ag-compose:not(.ag-continue) select[name=machine]:not([data-fixed])')) void fillMachines(root, p);
   if (root.dataset.agBound) return;
   root.dataset.agBound = '1';
   root.addEventListener('input', e => {
@@ -498,6 +541,7 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     const t = e.target as HTMLInputElement, f = t.closest<HTMLFormElement>('.ag-compose'); if (!f) return;
     if (t.name === 'model' || t.name === 'effort') { void tune(f, t as unknown as HTMLSelectElement).then(() => showAuto(f)); return; }
     if (t.name === 'mode') showAuto(f);
+    if (t.name === 'machine' && (t as unknown as HTMLSelectElement).dataset.fixed === undefined) { keepMachine(p.id, t.value); showMachine(f); }
     if (t.name === 'tests') { keepDraft(f); return; }
     if (t.name === 'fan') { keepDraft(f); showFan(f); return; }
     if (t.name !== 'mode') return;
@@ -566,7 +610,7 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     // Sous-agents : le réglage de l'appareil part avec chaque consigne, reprise comprise (l'outil se donne à chaque tour).
     const sub = subagents.body(); if (sub) body.subagents = sub;
     if (f.dataset.session) { body.session = f.dataset.session; if (f.dataset.machine) body.machine = f.dataset.machine; if (cut) body.interrupt = true; }
-    else { body.mode = f.querySelector<HTMLInputElement>('[name=mode]:checked')?.value ?? 'edit'; body.tests = !!val('tests')?.checked; const mc = val('machine'); if (mc && !mc.hidden) { const [m, s] = mc.value.split(':'); body.machine = m; if (s) body.server = s; } }
+    else { body.mode = f.querySelector<HTMLInputElement>('[name=mode]:checked')?.value ?? 'edit'; body.tests = !!val('tests')?.checked && !f.classList.contains('on-server'); const mc = val('machine'); if (mc && !mc.hidden) { const [m, s] = mc.value.split(':'); body.machine = m; if (s) body.server = s; } }
     btn.disabled = true;
     // Un lancement après l'autre : chaque appel revient dès que la session est créée, l'agent continue seul.
     let last: Awaited<ReturnType<typeof bridge.call>> | null = null, started = 0, fail = '';
@@ -1362,8 +1406,6 @@ async function paintOnce(box: HTMLElement, p: Project): Promise<void> {
   if (unnamed) void nameSession(p, unnamed);
 }
 
-/** Options « Sur <serveur> » du choix de machine, une par serveur du projet (remplies par `mount`). */
-let serverOpts = '';
 function shell(box: HTMLElement, p: Project): void {
   const selRun = selected ? runs.find(r => r.session === selected) : undefined;
   box.innerHTML = (remote ? `<p class="ag-remote">${icon('devices')}Piloté à distance sur <strong>${esc(remote)}</strong> · relecture et publication depuis le Mac</p>` : '') + (selected && sub
@@ -1372,8 +1414,6 @@ function shell(box: HTMLElement, p: Project): void {
     : selected
     ? `<button class="lv-back" data-ss="">${icon('back')}Toutes les sessions</button><div class="ag-zone"><p class="hm-empty">Chargement…</p></div>${composerHTML(p, { session: selected, machine: selRun?.machine === 'server' ? 'server' : '' })}`
     : `${composerHTML(p)}<div class="ag-zone"><p class="hm-empty">Chargement…</p></div>`);
-  const mc = $<HTMLSelectElement>('select[name=machine]', box);
-  if (mc && serverOpts && !selected) { mc.insertAdjacentHTML('beforeend', serverOpts); mc.hidden = false; }
 }
 
 /** Ouvre une conversation dans l'onglet affiché (`null` : retour à la liste). */
@@ -1549,15 +1589,6 @@ export function mount(box: HTMLElement, p: Project, folder: string | null): void
   restoreTrees(p.id); treesSoon = false;
   shell(box, p);
   void loadPulls(p);
-  // Une option par serveur du projet (`server:<id>`, le premier sans identifiant). Un Mac d'avant la liste répond à `list` par l'état du premier.
-  serverOpts = '';
-  void bridge.call('agent', 'server', { project: p.id, op: 'list' }, 25000).then(r => {
-    const list = Array.isArray(r.servers) ? r.servers as { id: string; name: string; dest: string }[] : r.ok && r.configured ? [{ id: '', name: '', dest: String(r.host) }] : [];
-    serverOpts = list.map(s => `<option value="${s.id ? `server:${esc(s.id)}` : 'server'}">Sur ${esc(s.name || s.dest)}</option>`).join('');
-    const mc = $<HTMLSelectElement>('.ag-compose:not(.ag-continue) select[name=machine]', box);
-    if (!mc || !serverOpts || mc.querySelector('[value^=server]')) return;
-    mc.insertAdjacentHTML('beforeend', serverOpts); mc.hidden = false;
-  });
   bindComposer(box, p, r => { open(r.session || selected); });
   box.onclick = async e => {
     const t = e.target as HTMLElement;

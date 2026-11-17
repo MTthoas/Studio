@@ -32,6 +32,8 @@ let listener: (() => void) | null = null;
 const changed = (): void => listener?.();
 /** Prévient quand la liste des serveurs d'un projet, ou celui qui est affiché, a changé. */
 export function onChange(fn: () => void): void { listener = fn; }
+/** Dernière liste connue des serveurs du projet (sans appel au Mac) : pour un rendu immédiat. */
+export const knownServers = (pid: string): ServerItem[] => known[pid] ?? [];
 /** Serveurs du projet pour la barre latérale ; la première demande les lit en arrière-plan, puis `onChange` prévient. */
 export function sideServers(pid: string): { id: string; name: string; dest: string; sel: boolean }[] {
   const p = model.byId(pid);
