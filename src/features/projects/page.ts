@@ -526,6 +526,8 @@ export const sideServers = (pid: string) => infra.sideServers(pid);
 /** Choisit le serveur que l'onglet Serveur du projet affichera (clic dans la barre latérale). */
 export const openServer = (pid: string, id: string): void => { const p = model.byId(pid); if (p) infra.use(p, id); };
 export const openSession =(pid: string, id: string | null, agent: string | null = null): void => sessions.select(id, pid, agent);
+/** Ouvre une conversation d'agent dans l'onglet Claude Code de son projet (depuis l'Espace agents). */
+export const openAgent = (pid: string, id: string): void => { sessions.select(id, pid); void go(pid, 'sessions'); };
 
 // ---------- Page ----------
 /** Fil d'Ariane : Projets › projet › onglet › conversation Claude Code › sous-agent, chaque niveau ramenant à sa page. */

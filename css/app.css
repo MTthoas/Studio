@@ -2588,6 +2588,42 @@ a.dk-port:hover { background: color-mix(in srgb, var(--c-blue) 14%, transparent)
 .aw-ph-acts .icon-btn[hidden] { display: none; }
 .aw-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .aw-feed.ss-feed { flex: 1; max-height: none; border: 0; border-radius: 0; padding: 12px 14px; gap: 10px; }
+.aw-body { position: relative; }
+/* Copie de l'agent d'une vue : étape, branche et gestes (publier, PR, fusionner dans la mère…). */
+.aw-copy-slot:empty { display: none; }
+.aw-copy { flex: none; display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 4px 6px 4px 10px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--c) 5%, var(--bg)); font-size: var(--t-1); color: var(--text-2); overflow: hidden; }
+.aw-copy > .ag-stage, .aw-copy > code { flex: none; }
+.aw-copy > code { max-width: 26ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); }
+.aw-copy > em { font-style: normal; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.aw-copy-act { margin-left: auto; flex: none; display: flex; align-items: center; gap: 4px; }
+.aw-copy-act .btn { height: 26px; padding: 0 8px; gap: 5px; font-size: var(--t-1); }
+.aw-copy-act .btn .ic { width: 13px; height: 13px; }
+.aw-copy-act .icon-btn { width: 26px; height: 26px; }
+.aw-grid.l4 .aw-copy-act .btn:not(.btn-primary) span, .aw-grid.l6 .aw-copy-act .btn:not(.btn-primary) span, .aw-grid.l8 .aw-copy-act .btn:not(.btn-primary) span { display: none; }
+.aw-grid.l6 .aw-copy > em, .aw-grid.l8 .aw-copy > em, .aw-grid.l8 .aw-copy > code { display: none; }
+.aw-grid.maxed .aw-copy-act .btn span, .aw-grid.maxed .aw-copy > em, .aw-grid.maxed .aw-copy > code { display: inline; }
+.aw-ph-acts .icon-btn[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
+/* Tableau d'équipe : ce que l'agent, ses sous-agents et son groupe s'écrivent (AgentBoard, Agents.swift). */
+.aw-board { position: absolute; inset: 0 0 0 auto; width: min(380px, 88%); display: flex; flex-direction: column; background: var(--surface); border-left: 1px solid var(--border); box-shadow: -8px 0 24px rgb(0 0 0 / .12); z-index: 2; }
+.aw-board[hidden] { display: none; }
+.aw-board-list { flex: 1; min-height: 0; overflow: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.aw-board-empty { display: flex; gap: 8px; align-items: flex-start; margin: 4px 2px; font-size: var(--t-1); line-height: 1.5; color: var(--text-3); }
+.aw-board-empty .ic { flex: none; width: 15px; height: 15px; margin-top: 2px; }
+.aw-note { border: 1px solid var(--border); border-radius: 8px; background: var(--bg); padding: 8px 10px; font-size: var(--t-1); }
+.aw-note.me { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.aw-note header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+.aw-note header b { font-weight: 600; color: var(--text); }
+.aw-note header time { margin-left: auto; color: var(--text-3); }
+.aw-note .md { color: var(--text-2); overflow-wrap: anywhere; }
+.aw-note .md > :first-child { margin-top: 0; }
+.aw-note .md > :last-child { margin-bottom: 0; }
+.aw-note .md h1, .aw-note .md h2, .aw-note .md h3 { font-size: var(--t-2); margin: 8px 0 4px; }
+.aw-board-say { flex: none; display: flex; gap: 6px; padding: 8px; border-top: 1px solid var(--border); }
+.aw-board-say input { flex: 1; min-width: 0; height: 30px; padding: 0 9px; border: 1px solid var(--border-2); border-radius: 7px; background: var(--surface-2); color: var(--text); font: var(--t-1) var(--font); }
+.aw-board-say input:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.aw-board-say .btn { height: 30px; width: 30px; padding: 0; flex: none; }
+.aw-auto[aria-pressed="true"] { color: var(--accent); background: var(--accent-soft); }
+.aw-sub { height: 28px; gap: 5px; font-size: var(--t-1); flex: none; }
 .aw-reply { flex: none; display: flex; align-items: flex-end; gap: 6px; padding: 8px; border-top: 1px solid var(--border); }
 .aw-reply textarea { flex: 1; min-width: 0; min-height: 34px; max-height: 220px; resize: none; padding: 7px 10px; border: 1px solid var(--border-2); border-radius: 7px; background: var(--surface-2); color: var(--text); font: var(--t-2)/1.45 var(--font); }
 .aw-reply textarea:focus-visible, .aw-big:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); background: var(--bg); }
