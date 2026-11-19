@@ -22,7 +22,7 @@ import { $, $$, icon, kbd, rel, modal, need, toast, target, paintIfChanged, menu
 
 /** Une vue : la conversation qu'elle suit (`session`), ou un agent qui démarre (`run`), ou rien (nouvel agent). */
 interface Pane { project: string; session: string; run?: string }
-interface State { layout: number; panes: (Pane | null)[]; focus: number; max: number; filter: string; draftProject: string; /** Montrer d'office les agents qui travaillent. */ auto: boolean; /** Conversations au travail que l'utilisateur a retirées de leur vue : pas remises d'office tant qu'elles travaillent. */ dismissed: string[] }
+interface State { layout: number; panes: (Pane | null)[]; focus: number; max: number; filter: string; draftProject: string; /** Montrer d'office les agents qui travaillent. */ auto: boolean; /** Barre de la liste réduite à une colonne d'icônes (réduction visuelle seulement). */ mini: boolean; /** Conversations au travail que l'utilisateur a retirées de leur vue : pas remises d'office tant qu'elles travaillent. */ dismissed: string[] }
 interface Detail extends Partial<Session> { actions: Action[]; message?: string; at: number }
 interface Row { p: Project; s: Session; status: 'running' | 'error' | 'review' | 'idle' }
 
@@ -31,13 +31,13 @@ const KEY = 'studio.workspace', SEEN = 'studio.workspace.seen', TICK = 2500;
 const read = <T>(k: string, d: T): T => { try { return (JSON.parse(localStorage.getItem(k) || 'null') as T | null) ?? d; } catch { return d; } };
 const write = (k: string, v: unknown) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* plein */ } };
 
-const st: State = { layout: 4, panes: [], focus: 0, max: -1, filter: '', draftProject: '', auto: true, dismissed: [], ...read<Partial<State>>(KEY, {}) };
+const st: State = { layout: 4, panes: [], focus: 0, max: -1, filter: '', draftProject: '', auto: true, mini: false, dismissed: [], ...read<Partial<State>>(KEY, {}) };
 if (!LAYOUTS.includes(st.layout)) st.layout = 4;
 /** Dernière activité vue, par conversation : ce qui a bougé depuis passe dans « À relire ». */
 const seen: Record<string, number> = read(SEEN, {});
 /** Première ouverture : tout ce qui existe déjà compte comme vu, sinon « À relire » serait rempli d'anciennes conversations. */
 let firstUse = !Object.keys(seen).length;
-const save = () => write(KEY, { layout: st.layout, panes: st.panes.slice(0, 8), focus: st.focus, max: st.max, filter: st.filter, draftProject: st.draftProject, auto: st.auto, dismissed: st.dismissed.slice(-100) });
+const save = () => write(KEY, { layout: st.layout, panes: st.panes.slice(0, 8), focus: st.focus, max: st.max, filter: st.filter, draftProject: st.draftProject, auto: st.auto, mini: st.mini, dismissed: st.dismissed.slice(-100) });
 
 const sessionsBy = new Map<string, { list: Session[]; at: number }>();
 const runsBy = new Map<string, AgentRun[]>();
@@ -159,6 +159,8 @@ export function stop(): void { clearInterval(timer); timer = undefined; }
 const ICON: Record<Row['status'], string> = { running: '<span class="aw-ring"></span>', error: `<span class="aw-st err">${icon('x')}</span>`, review: '<span class="aw-st review"></span>', idle: `<span class="aw-st done">${icon('check')}</span>` };
 const GROUPS: [Row['status'], string][] = [['running', 'En cours'], ['review', 'À relire'], ['error', 'En erreur'], ['idle', 'Récentes']];
 
+/** Lettre de la conversation, pour la liste réduite. */
+const initial = (t: string) => (t.match(/[\p{L}\p{N}]/u)?.[0] ?? '·').toUpperCase();
 function paintList(): void {
   const box = root && $('.aw-list', root); if (!box) return;
   const q = fold(st.filter.trim()), open = new Map(panes().map((x, i) => [x?.session ?? '', i + 1]));
@@ -171,7 +173,7 @@ function paintList(): void {
     if (!g.length) return '';
     return `<div class="aw-group"><h4>${label}<span>${g.length}</span></h4>${g.map(r => {
       const n = open.get(r.s.id), idx = i++;
-      return `<button class="aw-row${idx === cursor ? ' cur' : ''}${n ? ' shown' : ''}" draggable="true" data-row="${idx}" data-p="${esc(r.p.id)}" data-s="${esc(r.s.id)}" title="${esc(nameOf(r.s))}">${ICON[r.status]}<span class="aw-rt">${esc(nameOf(r.s))}</span><span class="aw-rp"><i class="tag-dot" style="--c:var(--c-${r.p.hue})"></i>${esc(r.p.name)}</span><time>${esc(rel(ms(r.s.active || r.s.updated)))}</time>${n ? `<b class="aw-in">${n}</b>` : ''}</button>`;
+      return `<button class="aw-row${idx === cursor ? ' cur' : ''}${n ? ' shown' : ''}" draggable="true" data-row="${idx}" data-p="${esc(r.p.id)}" data-s="${esc(r.s.id)}" title="${esc(`${nameOf(r.s)} · ${r.p.name}`)}" aria-label="${esc(nameOf(r.s))}">${ICON[r.status]}<i class="aw-ini" style="--c:var(--c-${r.p.hue})" aria-hidden="true">${esc(initial(nameOf(r.s)))}</i><span class="aw-rt">${esc(nameOf(r.s))}</span><span class="aw-rp"><i class="tag-dot" style="--c:var(--c-${r.p.hue})"></i>${esc(r.p.name)}</span><time>${esc(rel(ms(r.s.active || r.s.updated)))}</time>${n ? `<b class="aw-in">${n}</b>` : ''}</button>`;
     }).join('')}</div>`;
   }).join('');
   const loading = projects.projects().some(p => !sessionsBy.has(p.id));
@@ -480,6 +482,14 @@ function broadcast(): void {
 // ---------- Montage ----------
 const layoutIcon = (n: number) => { const [c, r] = ({ 1: [1, 1], 2: [2, 1], 3: [3, 1], 4: [2, 2], 6: [3, 2], 8: [4, 2] } as Record<number, [number, number]>)[n] ?? [1, 1]; return `<svg class="aw-li" viewBox="0 0 ${c * 6 + 1} ${r * 6 + 1}" aria-hidden="true">${Array.from({ length: c * r }, (_, k) => `<rect x="${(k % c) * 6 + 1}" y="${Math.floor(k / c) * 6 + 1}" width="5" height="5" rx="1"/>`).join('')}</svg>`; };
 
+const sideToggle = () => { const t = st.mini ? 'Déplier la liste' : 'Réduire la liste'; return `<button type="button" class="icon-btn aw-fold" data-w="side" title="${t} (S)" aria-label="${t}" aria-expanded="${!st.mini}">${icon('sidebar')}</button>`; };
+/** Réduit ou déplie la liste : seul l'affichage change (filtre, curseur et vues restent). */
+function toggleSide(page: HTMLElement): void {
+  st.mini = !st.mini; save();
+  $('.aw', page)?.classList.toggle('mini', st.mini);
+  const b = $('.aw-fold', page); if (b) b.outerHTML = sideToggle();
+}
+
 export function mount(main: HTMLElement, toolbarLeft: string): void {
   stop();
   if (!bridge.where()) {
@@ -492,9 +502,9 @@ export function mount(main: HTMLElement, toolbarLeft: string): void {
       <button class="btn btn-ghost aw-auto" data-w="auto" aria-pressed="${st.auto}" title="Ouvrir d’office chaque agent qui travaille dans une vue">${icon('bolt')}<span>Auto</span></button>
       <button class="btn btn-ghost" data-w="cast" title="Envoyer la même consigne à plusieurs vues (D)">${icon('share')}<span>Diffuser</span></button>
       <button class="btn btn-primary" data-w="new" title="Nouvel agent dans la vue choisie (C)">${icon('plus')}<span>Nouvel agent</span></button></div></header>
-    <div class="aw">
-      <aside class="aw-side"><div class="aw-search">${icon('search')}<input type="search" placeholder="Filtrer les agents…" aria-label="Filtrer les agents" value="${esc(st.filter)}"><kbd>/</kbd></div><div class="aw-list" role="listbox" aria-label="Conversations des agents"></div>
-        <p class="aw-keys">${kbd('1')}–${kbd('8')} vue · ${kbd('J')}${kbd('K')} liste · ${kbd('↵')} ouvrir · ${kbd('C')} créer · ${kbd('F')} agrandir · ${kbd('X')} vider · ${kbd('L')} disposition · ${kbd('T')} tableau d’équipe · ${kbd('P')} publier</p></aside>
+    <div class="aw${st.mini ? ' mini' : ''}">
+      <aside class="aw-side"><div class="aw-side-head"><div class="aw-search">${icon('search')}<input type="search" placeholder="Filtrer les agents…" aria-label="Filtrer les agents" value="${esc(st.filter)}"><kbd>/</kbd></div>${sideToggle()}</div><div class="aw-list" role="listbox" aria-label="Conversations des agents"></div>
+        <p class="aw-keys">${kbd('1')}–${kbd('8')} vue · ${kbd('J')}${kbd('K')} liste · ${kbd('↵')} ouvrir · ${kbd('C')} créer · ${kbd('F')} agrandir · ${kbd('X')} vider · ${kbd('L')} disposition · ${kbd('S')} réduire la liste · ${kbd('T')} tableau d’équipe · ${kbd('P')} publier</p></aside>
       <div class="aw-grid"></div>
     </div></div>`;
   const page = need('.aw-root', main);
@@ -507,6 +517,7 @@ export function mount(main: HTMLElement, toolbarLeft: string): void {
     const row = t.closest<HTMLElement>('.aw-row');
     if (row) { cursor = Number(row.dataset.row); openRow(row, (e as MouseEvent).metaKey || (e as MouseEvent).ctrlKey ? firstEmpty() : st.focus); return; }
     const w = t.closest<HTMLElement>('[data-w]')?.dataset.w, pane = t.closest<HTMLElement>('.aw-pane'), i = pane ? Number(pane.dataset.i) : st.focus;
+    if (w === 'side') { toggleSide(page); return; }
     if (w === 'cast') { broadcast(); return; }
     if (w === 'new') { const k = firstEmpty(); if (panes()[k]) setPane(k, null); focusPane(k, true); return; }
     if (w === 'max') { st.max = st.max === i ? -1 : i; save(); paint(); return; }
@@ -553,13 +564,14 @@ export function mount(main: HTMLElement, toolbarLeft: string): void {
     else if (k === 'l') { e.preventDefault(); setLayout(LAYOUTS[(LAYOUTS.indexOf(st.layout) + 1) % LAYOUTS.length] ?? 1); }
     else if (k === 'r') { e.preventDefault(); focusPane(st.focus, true); }
     else if (k === 'd') { e.preventDefault(); broadcast(); }
+    else if (k === 's') { e.preventDefault(); toggleSide(page); }
     else if (k === 't') { e.preventDefault(); toggleBoard(st.focus); }
     else if (k === 'p') {
       // Publier la vue choisie : le premier geste mis en avant de sa copie (publier, fusionner dans la mère…).
       const b = $<HTMLButtonElement>(`.aw-pane[data-i="${st.focus}"] .aw-copy .btn-primary:not(:disabled)`, page);
       if (b) { e.preventDefault(); b.click(); }
     }
-    else if (k === '/') { e.preventDefault(); search.focus(); search.select(); }
+    else if (k === '/') { e.preventDefault(); if (st.mini) toggleSide(page); search.focus(); search.select(); }
   });
   // Glisser une conversation de la liste sur une vue.
   list.addEventListener('dragstart', e => { const r = (e.target as HTMLElement).closest<HTMLElement>('.aw-row'); if (r && e.dataTransfer) { e.dataTransfer.setData('text/x-ws', JSON.stringify({ p: r.dataset.p, s: r.dataset.s })); e.dataTransfer.effectAllowed = 'move'; } });

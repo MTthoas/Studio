@@ -2541,9 +2541,12 @@ a.dk-port:hover { background: color-mix(in srgb, var(--c-blue) 14%, transparent)
 .aw-seg button:hover { color: var(--text); }
 .aw-seg button[aria-pressed="true"] { background: var(--bg); color: var(--text); box-shadow: 0 0 0 1px var(--border-2); }
 .aw-li { height: 11px; width: auto; fill: currentColor; opacity: .85; }
-.aw { flex: 1; min-height: 0; display: grid; grid-template-columns: 300px minmax(0, 1fr); }
-.aw-side { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border); background: var(--bg); }
-.aw-search { display: flex; align-items: center; gap: 8px; margin: 12px 10px 4px; padding: 0 9px; height: 32px; border: 1px solid transparent; border-radius: 8px; background: var(--hover); color: var(--text-3); transition: background .12s, border-color .12s, box-shadow .12s; }
+.aw { flex: 1; min-height: 0; display: grid; grid-template-columns: 300px minmax(0, 1fr); transition: grid-template-columns .18s ease; }
+.aw-side { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; border-right: 1px solid var(--border); background: var(--bg); }
+.aw-side-head { display: flex; align-items: center; gap: 4px; margin: 12px 10px 4px; }
+.aw-side-head .aw-fold { color: var(--text-3); }
+.aw-ini { display: none; }
+.aw-search { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 0 9px; height: 32px; border: 1px solid transparent; border-radius: 8px; background: var(--hover); color: var(--text-3); transition: background .12s, border-color .12s, box-shadow .12s; }
 .aw-search:focus-within { background: var(--bg); border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .aw-search .ic { width: 13px; height: 13px; flex: none; }
 .aw-search input { flex: 1; min-width: 0; border: 0; background: none; color: var(--text); font: var(--t-2) var(--font); outline: none; }
@@ -2573,6 +2576,21 @@ a.dk-port:hover { background: color-mix(in srgb, var(--c-blue) 14%, transparent)
 .aw-empty { margin: 24px 12px; color: var(--text-3); font-size: var(--t-1); display: flex; align-items: center; }
 .aw-keys { margin: 0 8px 8px; padding: 8px 10px; border-radius: 8px; background: var(--hover); font-size: 11px; line-height: 1.9; color: var(--text-3); }
 .aw-keys kbd { font-size: 10px; }
+/* Liste réduite (S) : une colonne d'initiales teintées du projet, l'état en pastille ; le nom est en infobulle. */
+.aw.mini { grid-template-columns: 56px minmax(0, 1fr); }
+.aw.mini .aw-side-head { justify-content: center; margin: 12px 0 4px; }
+.aw.mini .aw-search, .aw.mini .aw-keys, .aw.mini .aw-empty { display: none; }
+.aw.mini .aw-side:has(.aw-search input:not(:placeholder-shown)) .aw-fold { color: var(--accent-text); background: var(--accent-soft); }
+.aw.mini .aw-list { padding: 2px 8px 12px; scrollbar-width: none; }
+.aw.mini .aw-group h4 { height: 0; margin: 10px 6px; border-top: 1px solid var(--border); font-size: 0; }
+.aw.mini .aw-group h4 span { display: none; }
+.aw.mini .aw-row { position: relative; display: grid; grid-template: "st" 32px / 1fr; place-items: center; padding: 3px 0; }
+.aw.mini .aw-row > :first-child { position: absolute; right: 2px; bottom: 2px; z-index: 1; box-shadow: 0 0 0 2px var(--bg); border-radius: 50%; }
+.aw.mini .aw-row:hover > :first-child { box-shadow: 0 0 0 2px var(--hover); }
+.aw.mini .aw-row.cur > :first-child { box-shadow: 0 0 0 2px var(--active); }
+.aw.mini .aw-rt, .aw.mini .aw-rp, .aw.mini .aw-row time { display: none; }
+.aw.mini .aw-ini { grid-area: st; display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; font: 600 var(--t-1)/1 var(--font); font-style: normal; color: var(--c, var(--text-2)); background: color-mix(in srgb, var(--c, var(--text-3)) 14%, transparent); }
+.aw.mini .aw-in { position: absolute; top: 1px; right: 1px; min-width: 14px; height: 14px; padding: 0 3px; font-size: 9px; z-index: 1; }
 
 .aw-grid { min-width: 0; min-height: 0; display: grid; gap: 1px; background: var(--border); }
 .aw-grid.l1 { grid-template: 1fr / 1fr; }
@@ -2641,7 +2659,7 @@ a.dk-port:hover { background: color-mix(in srgb, var(--c-blue) 14%, transparent)
 .aw-reply textarea:focus-visible, .aw-big:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); background: var(--bg); }
 .aw-reply .btn { height: 34px; width: 34px; padding: 0; flex: none; }
 .aw-blank { padding: 14px; overflow: auto; }
-.aw-new { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+.aw-new { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
 .aw-new-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .aw-sel { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 4px 0 9px; border: 1px solid var(--border-2); border-radius: var(--r); background: var(--bg); color: var(--text-3); max-width: 100%; }
 .aw-sel .ic { width: 13px; height: 13px; flex: none; }
@@ -2651,8 +2669,13 @@ a.dk-port:hover { background: color-mix(in srgb, var(--c-blue) 14%, transparent)
 .aw-mode input { position: absolute; opacity: 0; pointer-events: none; }
 .aw-mode .ic { width: 12px; height: 12px; }
 .aw-big { flex: 1; min-height: 120px; width: 100%; resize: none; padding: 12px 14px; border: 1px solid var(--border-2); border-radius: 8px; background: var(--surface-2); color: var(--text); font: var(--t-3)/1.55 var(--font); }
-.aw-new-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: var(--t-1); color: var(--text-3); }
-.aw-grid.l6 .aw-new-foot > span, .aw-grid.l8 .aw-new-foot > span { display: none; }
+.aw-new-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; min-width: 0; font-size: var(--t-1); color: var(--text-3); }
+.aw-new-foot > span { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-new-foot > .btn-primary { margin-left: auto; flex: none; }
+.aw-new-foot .aw-sub { min-width: 0; max-width: 100%; flex: 0 1 auto; }
+.aw-new-foot .aw-sub span { overflow: hidden; text-overflow: ellipsis; }
+.aw-grid:is(.l3, .l4, .l6, .l8):not(.maxed) .aw-new-foot > span { display: none; }
+.aw-grid:is(.l6, .l8):not(.maxed) .aw-new-foot > .btn-primary kbd { display: none; }
 .aw-grid.l6 .aw-ph-main .aw-meta, .aw-grid.l8 .aw-ph-main .aw-meta, .aw-grid.l8 .aw-ph-main .aw-rp, .aw-grid.l6 .aw-ph-main .ag-pill, .aw-grid.l8 .aw-ph-main .ag-pill { display: none; }
 .aw-grid.maxed .aw-ph-main .aw-meta, .aw-grid.maxed .aw-ph-main .aw-rp, .aw-grid.maxed .aw-ph-main .ag-pill { display: inline-flex; }
 
@@ -2674,6 +2697,8 @@ a.dk-port:hover { background: color-mix(in srgb, var(--c-blue) 14%, transparent)
 @media (max-width: 900px) {
   .aw { grid-template-columns: 1fr; grid-template-rows: minmax(140px, 32%) minmax(0, 1fr); }
   .aw-side { border-right: 0; border-bottom: 1px solid var(--border); }
+  .aw.mini { grid-template-columns: 1fr; }
+  .aw-fold { display: none; }
   .aw-keys { display: none; }
   .aw-grid.l3, .aw-grid.l4, .aw-grid.l6, .aw-grid.l8 { grid-template-columns: minmax(0, 1fr); grid-auto-rows: minmax(320px, 1fr); grid-template-rows: none; overflow: auto; }
   .aw-grid.l2 { grid-template: repeat(2, minmax(0, 1fr)) / minmax(0, 1fr); }
