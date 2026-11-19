@@ -105,6 +105,30 @@ function pickBarHTML(p: Project): string {
     <button class="btn" data-pj="pick-claude" title="Conversation du projet : Claude lit ces notes">${icon('sparkle')}Claude</button>
     <span class="pj-pickbar-end">${k < all.length ? '<button class="link-btn" data-pj="pick-all">Tout cocher</button>' : ''}<button class="link-btn" data-pj="pick-none">Tout décocher</button></span>`;
 }
+/** Importe des fichiers de contexte (CLAUDE.md, AGENTS.md, .cursorrules, notes d'architecture…) : une note du projet
+ *  par fichier, marquée #contexte-ia. Titre : le premier titre « # » du fichier, sinon son nom. */
+const CTX_MAX = 400_000;
+function importContexts(p: Project): void {
+  const i = document.createElement('input');
+  i.type = 'file'; i.multiple = true; i.hidden = true; i.accept = '.md,.markdown,.mdc,.mdx,.txt,.rst,.cursorrules,.windsurfrules,text/markdown,text/plain';
+  i.onchange = async () => {
+    const files = [...(i.files ?? [])]; i.remove(); if (!files.length) return;
+    let k = 0; const skipped: string[] = [];
+    for (const file of files) {
+      try {
+        const text = (await file.text()).replace(/\r\n?/g, '\n').trim();
+        if (!text || text.length > CTX_MAX || text.includes('\u0000')) { skipped.push(file.name); continue; }
+        const h1 = /^#\s+(.+)$/m.exec(text.slice(0, 2000))?.[1]?.trim();
+        const title = (h1 || file.name.replace(/\.[^.]+$/, '') || file.name).slice(0, 120);
+        await store.createNote({ title, body: `${text}\n\n#${p.tag} #${model.CONTEXT_TAG}\n` }); k++;
+      } catch { skipped.push(file.name); }
+    }
+    if (k) toast(`${k} contexte${k > 1 ? 's' : ''} IA importé${k > 1 ? 's' : ''} dans ${p.name}`);
+    if (skipped.length) toast(`Non importé${skipped.length > 1 ? 's' : ''} (vide, binaire ou trop long) : ${skipped.join(', ')}`);
+    refresh();
+  };
+  document.body.append(i); i.click();
+}
 function noteRows(p: Project): string {
   // La note du projet d'abord, puis celles qui y sont rangées (tag #projet/… ou sous-note d'une note du projet).
   const notes = model.notesOf(p), linked = model.linkedTo(p);
@@ -113,10 +137,12 @@ function noteRows(p: Project): string {
   for (const id of [...sel]) if (!ok.has(id)) sel.delete(id);
   const pick = (n: Note) => ok.has(n.id) ? `<label class="pj-pick" title="Cocher pour l’envoyer à l’IA"><input type="checkbox" data-pj-pick="${n.id}"${sel.has(n.id) ? ' checked' : ''} aria-label="Cocher la note ${esc(titleOf(n))}"></label>` : `<span class="pj-pick" title="Chiffrée ou #privé : jamais envoyée à l’IA">${icon('lock')}</span>`;
   const ask = (n: Note) => ok.has(n.id) ? `<button class="pj-cc" data-pj-ask-note="${n.id}" title="Discuter de cette note avec Claude (conversation du projet)">${icon('sparkle')}Claude</button>` : '';
+  const ctxs = model.contextsOf(p).filter(n => ok.has(n.id)).length;
   return `<div class="pj-pickbar${sel.size ? ' on' : ''}" data-pickbar>${pickBarHTML(p)}</div>
-    ${notes.length ? notes.map(n => `<div class="pj-row pj-noterow${sel.has(n.id) ? ' sel' : ''}">${pick(n)}<button class="w-row" data-open-note="${n.id}">${icon(n.id === p.id ? 'folder' : 'notes')}<span>${esc(titleOf(n))}${n.id === p.id ? '<i class="pj-main">Note du projet</i>' : ''}</span><em>${esc(rel(n.updated))}</em></button>${ask(n)}${cc && ok.has(n.id) ? `<button class="pj-cc" data-pj-cc-note="${n.id}" title="Confier cette note à Claude Code">${icon('terminal')}Claude Code</button>` : ''}</div>`).join('') : ''}
+    ${ctxs ? `<p class="pj-ctxinfo">${icon('sparkle')}<span><b>${ctxs} contexte${ctxs > 1 ? 's' : ''} IA</b> : lu${ctxs > 1 ? 's' : ''} d’office par l’IA de Studio et par chaque nouvelle consigne Claude Code de ce projet, pour se situer dans l’application.</span></p>` : ''}
+    ${notes.length ? notes.map(n => `<div class="pj-row pj-noterow${sel.has(n.id) ? ' sel' : ''}">${pick(n)}<button class="w-row" data-open-note="${n.id}">${icon(n.id === p.id ? 'folder' : 'notes')}<span>${esc(titleOf(n))}${n.id === p.id ? '<i class="pj-main">Note du projet</i>' : ''}${model.isContext(n) ? '<i class="pj-main pj-ctxtag" title="Lue d’office par l’IA dans ce projet">Contexte IA</i>' : ''}</span><em>${esc(rel(n.updated))}</em></button>${ask(n)}${cc && ok.has(n.id) ? `<button class="pj-cc" data-pj-cc-note="${n.id}" title="Confier cette note à Claude Code">${icon('terminal')}Claude Code</button>` : ''}</div>`).join('') : ''}
     ${notes.length < 2 ? '<p class="hm-empty">Pour ranger une note dans ce projet : crée-la d’ici, range une note existante, fais-en une sous-note de la note du projet, ou ajoute-lui <code>#' + esc(p.tag) + '</code>.</p>' : ''}
-    <div class="pj-noteadd"><button class="hm-more" data-pj="new-note">${icon('plus')}Nouvelle note du projet</button><button class="hm-more" data-pj="adopt">${icon('folder')}Ranger une note existante…</button></div>
+    <div class="pj-noteadd"><button class="hm-more" data-pj="new-note">${icon('plus')}Nouvelle note du projet</button><button class="hm-more" data-pj="adopt">${icon('folder')}Ranger une note existante…</button><button class="hm-more" data-pj="ctx-import" title="Fichiers Markdown ou texte (CLAUDE.md, AGENTS.md, notes d’architecture…) : chacun devient une note du projet marquée #${model.CONTEXT_TAG}, que l’IA lit d’office">${icon('sparkle')}Importer des contextes IA…</button><button class="hm-more" data-pj="ctx-pick" title="Choisir les notes du projet que l’IA lit d’office (tag #${model.CONTEXT_TAG})">${icon('check')}Contextes IA…</button></div>
     ${linked.length ? `<h3 class="pj-linked-h">Liées à la note du projet <span>citées par elle ou qui la citent, sans être rangées ici</span></h3>
       ${linked.map(n => `<div class="pj-row pj-noterow"><span class="pj-pick">${icon('link')}</span><button class="w-row" data-open-note="${n.id}">${icon('notes')}<span>${esc(titleOf(n))}${model.projectOfNote(n) ? `<i class="pj-main">${esc(model.projectOfNote(n)?.name ?? '')}</i>` : ''}</span><em>${esc(rel(n.updated))}</em></button>${store.getBody(n) != null && !model.byId(n.id) ? `<button class="pj-cc" data-pj-adopt="${n.id}" title="Ajoute #${esc(p.tag)} à cette note">${icon('folder')}Ranger ici</button>` : ''}</div>`).join('')}` : ''}`;
 }
@@ -659,6 +685,18 @@ export function mount(main: HTMLElement): void {
       let k = 0;
       for (const id of ids) { const n = store.get(id); if (n) { await model.setNoteProject(n, p); k++; } }
       toast(`${k} note${k > 1 ? 's' : ''} rangée${k > 1 ? 's' : ''} dans ${p.name}`); refresh();
+      return;
+    }
+    if (act === 'ctx-import') { importContexts(p); return; }
+    if (act === 'ctx-pick') {
+      const list = model.notesOf(p).filter(n => !n.todo && shareable(n) && store.getBody(n) != null), had = list.filter(model.isContext).map(n => n.id);
+      const ids = await pickFrom(list, had, { title: `Contextes IA de ${p.name}`, ok: 'Enregistrer',
+        hint: `${icon('sparkle')}Les notes cochées reçoivent <code>#${model.CONTEXT_TAG}</code> : l’IA de Studio et chaque nouvelle consigne Claude Code de ce projet les lisent d’office pour se situer dans l’application.`,
+        empty: 'Aucune note lisible dans ce projet : importe d’abord un contexte.' });
+      if (!ids) return;
+      const want = new Set(ids);
+      try { for (const n of list) await model.setContext(n, want.has(n.id)); } catch (err) { toast(errMsg(err)); }
+      toast(`${want.size} contexte${want.size > 1 ? 's' : ''} IA dans ${p.name}`); refresh();
       return;
     }
     if (act === 'new-note') { const n = await store.createNote({ title: '', body: `\n\n#${p.tag}` }); app.openNote(n.id); }

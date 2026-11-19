@@ -2201,6 +2201,9 @@ button.lv-chip:hover, .lv-chip.sel { color: var(--text); background: var(--btn);
 .pj-noterow > .w-row { flex: 1; min-width: 0; }
 .pj-noterow .pj-main { margin-left: 8px; padding: 1px 6px; border-radius: 5px; background: var(--btn); color: var(--text-3); font-style: normal; font-size: var(--t-1); }
 .pj-noteadd { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.pj-ctxinfo { display: flex; gap: 8px; align-items: flex-start; margin: 4px 0 8px; color: var(--text-2); font-size: var(--t-1); }
+.pj-ctxinfo svg { flex: none; margin-top: 2px; color: var(--c, var(--accent)); }
+.pj-noterow .pj-ctxtag { color: var(--c, var(--accent)); }
 .pj-linked-h { margin: 18px 0 6px; color: var(--text-2); font-size: var(--t-1); font-weight: 600; }
 .pj-linked-h span { margin-left: 8px; color: var(--text-3); font-weight: 400; }
 .pj-noterow.sel > .w-row { background: color-mix(in srgb, var(--c, var(--accent)) 9%, transparent); }

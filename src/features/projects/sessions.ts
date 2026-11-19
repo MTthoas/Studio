@@ -219,8 +219,8 @@ async function nameSession(p: Project, s: Nameable, actions?: Action[]): Promise
   naming = true;
   try {
     if (!actions) { const d = await bridge.call('project', 'session', { project: p.id, session: s.id }, 20000); actions = d.ok ? (d.actions as Action[] | undefined) ?? [] : []; }
-    // Les notes jointes à une consigne ne font pas partie de la demande.
-    const asks = actions.filter(a => a.kind === 'prompt').map(a => (a.text.split('\n---\nNotes du projet')[0] ?? '').trim().slice(0, 400)).filter(Boolean);
+    // Les notes jointes et les contextes IA ajoutés à une consigne ne font pas partie de la demande.
+    const asks = actions.filter(a => a.kind === 'prompt').map(a => (a.text.split(/\n---\n(?:Notes du projet|Contextes IA du projet)/)[0] ?? '').trim().slice(0, 400)).filter(Boolean);
     const first = (s.firstPrompt ?? '').replace(/…$/, '').slice(0, 400);
     if (first && !asks.some(a => a.startsWith(first.slice(0, 120)))) asks.unshift(first);
     if (!asks.length) { nameFailed.set(s.id, Date.now()); return; }
@@ -253,8 +253,9 @@ function setNotes(f: HTMLFormElement, ids: string[]): void {
 /** Ouvre l'onglet Claude Code du projet avec des notes déjà jointes et, éventuellement, une consigne.
  *  `fan: 'notes'` : le formulaire est réglé sur « Un agent par note » (rien n'est lancé sans le clic sur Lancer). */
 export function handoff(p: Project, { notes = [] as string[], prompt = '', fan = '' } = {}): void { pending = { project: p.id, notes, prompt, fan }; selected = null; sub = null; }
-/** Consigne finale : le texte de l'utilisateur, puis le contenu des notes jointes. */
-function withNotes(prompt: string, ids: string[]): { text: string; refused: string[] } {
+/** Consigne finale : le texte de l'utilisateur, puis le contenu des notes jointes, puis (nouvelle conversation
+ *  seulement, `ctxOf`) les contextes IA du projet, notes #contexte-ia déjà jointes exceptées. */
+function withNotes(prompt: string, ids: string[], ctxOf: Project | null = null): { text: string; refused: string[] } {
   const parts: string[] = [], refused: string[] = []; let total = 0;
   const MAX_NOTE = tuning.num('ctx.attach'), MAX_ALL = tuning.num('ctx.attachAll');
   for (const id of ids) {
@@ -265,7 +266,9 @@ function withNotes(prompt: string, ids: string[]): { text: string; refused: stri
     total += chunk.length; parts.push(`## Note « ${n.title.trim() || 'Sans titre'} »\n\n${chunk}`);
   }
   const head = prompt || (parts.length === 1 ? 'Réalise ce que décrit la note jointe.' : 'Réalise ce que décrivent les notes jointes.');
-  return { text: parts.length ? `${head}\n\n---\nNotes du projet jointes par l’utilisateur (contexte et cahier des charges) :\n\n${parts.join('\n\n')}` : head, refused };
+  const base = parts.length ? `${head}\n\n---\nNotes du projet jointes par l’utilisateur (contexte et cahier des charges) :\n\n${parts.join('\n\n')}` : head;
+  const ctx = ai.projectContext(ctxOf, ids).text;
+  return { text: ctx ? `${base}\n\n---\n${ctx}` : base, refused };
 }
 
 // ---------- Abonnement : ce qu'il reste ----------
@@ -597,7 +600,7 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     const many = units.length > 1;
     if (units.length > FAN_MAX) { toast(`${units.length} agents demandés : ${FAN_MAX} à la fois au plus. Réduis la liste, ou lance-la en plusieurs fois.`); return; }
     if (many && !await confirmBox({ title: `Lancer ${units.length} agents ?`, text: `Ils travaillent en parallèle, chacun dans sa propre copie isolée du dépôt, avec ${fan === 'notes' ? 'une des notes jointes' : fan === 'lines' ? 'une ligne de la consigne' : 'la même consigne'}. Ils consomment ton abonnement Claude en même temps.`, ok: `Lancer ${units.length} agents` })) return;
-    const built = units.map(u => withNotes(u.text, u.notes)), refused = [...new Set(built.flatMap(b => b.refused))];
+    const built = units.map(u => withNotes(u.text, u.notes, f.dataset.session ? null : p)), refused = [...new Set(built.flatMap(b => b.refused))];
     if (refused.length) toast(`Non jointe${refused.length > 1 ? 's' : ''} (verrouillée, privée ou trop longue) : ${refused.join(', ')}`);
     const btn = need<HTMLButtonElement>('button.btn-primary', f), label = btn.innerHTML;
     const val = (n: string) => (f.elements.namedItem(n) as HTMLInputElement | null);
