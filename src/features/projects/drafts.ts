@@ -93,24 +93,35 @@ export function addModel(id: string): void {
 }
 
 // ---------- Sous-agents ----------
-/** Spécialiste proposé à Claude Code en plus de ses sous-agents d'origine (voir AgentTeam dans Agents.swift). */
-export interface Member { name: string; description: string; prompt: string; model: string; access: 'read' | 'all' }
-/** Sous-agents des consignes lancées depuis cet appareil. `on` : Claude Code reçoit l'outil Agent et délègue de lui-même. */
-export interface Team { on: boolean; max: number; model: string; members: Member[] }
+/** Spécialiste proposé à Claude Code en plus de ses sous-agents d'origine (voir AgentTeam dans Agents.swift).
+ *  `auto` : créé par Studio d'après une consigne (autoteam.ts), pas par l'utilisateur ; sert à le dire dans la fenêtre. */
+export interface Member { name: string; description: string; prompt: string; model: string; access: 'read' | 'all'; auto?: boolean }
+/** Sous-agents des consignes d'un projet. `on` : Claude Code reçoit l'outil Agent et délègue de lui-même.
+ *  `auto` : Studio ajoute à l'équipe du projet les spécialistes utiles à chaque consigne (vrai à l'origine). */
+export interface Team { on: boolean; max: number; model: string; members: Member[]; auto: boolean }
+/** L'équipe appartient au projet. L'ancienne clé, globale à l'appareil, ne sert plus que de valeur d'origine. */
 const TEAM = 'studio.cc.subagents';
 /** Mêmes bornes que le Mac, qui revalide tout. */
 export const MEMBER_RE = /^[a-z0-9][a-z0-9-]{0,39}$/, TEAM_SIZE = 8, TEAM_PARALLEL = 10;
 const member = (v: unknown): Member => {
   const m = (v ?? {}) as Partial<Record<keyof Member, unknown>>;
-  return { name: str(m.name), description: str(m.description).slice(0, 400), prompt: str(m.prompt).slice(0, 4000), model: MODEL_RE.test(str(m.model)) ? str(m.model) : '', access: m.access === 'read' ? 'read' : 'all' };
+  return { name: str(m.name), description: str(m.description).slice(0, 400), prompt: str(m.prompt).slice(0, 4000), model: MODEL_RE.test(str(m.model)) ? str(m.model) : '', access: m.access === 'read' ? 'read' : 'all', ...(m.auto === true ? { auto: true } : {}) };
 };
-let teamNow: Team = (() => {
-  const o = object(TEAM), max = typeof o.max === 'number' && Number.isInteger(o.max) ? o.max : 4;
-  return { on: o.on !== false, max: Math.min(TEAM_PARALLEL, Math.max(1, max)), model: MODEL_RE.test(str(o.model)) ? str(o.model) : '',
+const teamOf = (o: Record<string, unknown>): Team => {
+  const max = typeof o.max === 'number' && Number.isInteger(o.max) ? o.max : 4;
+  return { on: o.on !== false, auto: o.auto !== false, max: Math.min(TEAM_PARALLEL, Math.max(1, max)), model: MODEL_RE.test(str(o.model)) ? str(o.model) : '',
     members: (Array.isArray(o.members) ? (o.members as unknown[]).map(member) : []).filter(m => MEMBER_RE.test(m.name) && m.description.trim()).slice(0, TEAM_SIZE) };
-})();
-export const team = (): Team => ({ ...teamNow, members: teamNow.members.map(m => ({ ...m })) });
-export function setTeam(t: Team): void {
-  teamNow = { ...t, members: t.members.map(m => ({ ...m })) };
-  try { localStorage.setItem(TEAM, JSON.stringify(teamNow)); } catch { /* stockage plein : le réglage vaut jusqu'au rechargement */ }
+};
+const copy = (t: Team): Team => ({ ...t, members: t.members.map(m => ({ ...m })) });
+/** Équipes déjà lues ou écrites : le réglage vaut même si le stockage est plein. */
+const teams = new Map<string, Team>();
+/** Équipe d'un projet ; sans réglage propre, celle de l'ancien réglage global (ses spécialistes ne sont pas « créés automatiquement »). */
+export const team = (pid: string): Team => {
+  const known = teams.get(pid); if (known) return copy(known);
+  const own = object(`${TEAM}.${pid}`);
+  return copy(teamOf(Object.keys(own).length ? own : object(TEAM)));
+};
+export function setTeam(pid: string, t: Team): void {
+  teams.set(pid, copy(t));
+  try { localStorage.setItem(`${TEAM}.${pid}`, JSON.stringify(copy(t))); } catch { /* stockage plein : le réglage vaut jusqu'au rechargement */ }
 }

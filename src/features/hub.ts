@@ -371,7 +371,7 @@ const lastTrigger = new Map<string, number>();
 function onEvent(e: AppEvent): void {
   if (vault.enabled() && !vault.isOpen()) return;
   for (const { note, spec } of ai.findAgents()) {
-    if (spec.declencheur !== e.kind || isPaused(spec, note) || !ai.ready(spec.modele || ai.config().provider)) continue;
+    if (spec.declencheur !== e.kind || !ai.eventShareable(e) || isPaused(spec, note) || !ai.ready(spec.modele || ai.config().provider)) continue;
     let s: scope.Scope; try { s = scope.byName(spec.projet); } catch { continue; }
     void scope.eventIn(s, e).then(ok => {
       const k = keyOf(spec, note);
@@ -409,15 +409,18 @@ export function askAI(prefill = '', opts: { improve?: boolean } = {}): void {
   // Périmètre : le projet de la note ouverte, sinon Général. La liste des tâches mêle tous les projets : jamais jointe.
   const sc = scope.of(n ? projectOfNote(n) : null), withLinear = scope.hasLinear(sc);
   const canCtx = !!n && !n.deletedAt && !n.todo && !store.isLocked(n) && ai.shareable(n);
+  const open = ai.notesAllowed();
+  if (improve && !open) { toast('Les notes sont fermées à l’IA.', { label: 'Autoriser dans les Réglages', run: () => openConnections('ia') }); return; }
   if (improve && !canCtx) { toast('Cette note (chiffrée, #privé ou liste des tâches) n’est jamais envoyée à l’IA.'); return; }
   // Notes que l'IA pourra lire : aucune par défaut, l'utilisateur les coche.
   const pickable = store.index().live.filter(x => ai.shareable(x) && scope.noteIn(sc, x) && x.id !== n?.id).sort((a, b) => b.updated - a.updated).slice(0, 300);
-  const pickHTML = pickable.length ? `<details class="ask-pick"><summary>${icon('notes')}<span>Notes lues par l’IA : <b data-pick-count>aucune</b></span></summary><input class="field" type="search" placeholder="Filtrer…" aria-label="Filtrer les notes" data-pick-filter><div class="ask-pick-list">${pickable.map(x => `<label data-t="${esc(fold(titleOf(x)))}"><input type="checkbox" data-pick="${esc(x.id)}"> ${esc(titleOf(x))}</label>`).join('')}</div></details>` : '';
+  const closedHTML = `<div class="ns-closed-box"><span class="ns-closed">${icon('lock')}Notes fermées à l’IA</span><button type="button" class="btn" data-ask-allow>Autoriser dans les Réglages</button></div>`;
+  const pickHTML = !open ? closedHTML : pickable.length ? `<details class="ask-pick"><summary>${icon('notes')}<span>Notes lues par l’IA : <b data-pick-count>aucune</b></span></summary><input class="field" type="search" placeholder="Filtrer…" aria-label="Filtrer les notes" data-pick-filter><div class="ask-pick-list">${pickable.map(x => `<label data-t="${esc(fold(titleOf(x)))}"><input type="checkbox" data-pick="${esc(x.id)}"> ${esc(titleOf(x))}</label>`).join('')}</div></details>` : '';
   const m = modal({ cls: 'ask', html: `<div class="cap-head">${icon('sparkle')}<span>Demander à l’IA</span><select class="ask-prov" aria-label="Fournisseur">${Object.entries(ai.PROVIDERS).map(([k, l]) => `<option value="${k}"${k === cfg.provider ? ' selected' : ''}>${l}${ai.ready(k as ai.Provider) ? '' : ' — à configurer'}</option>`).join('')}</select></div>
     <textarea rows="3" placeholder="Résume cette note, propose un plan d’action, crée les issues Linear correspondantes…" aria-label="Demande" autofocus>${esc(prefill)}</textarea>
     <p class="ask-scope">${icon('lock')}Périmètre : ${esc(scope.label(sc))}${sc.project ? '' : ' (hors projets)'}</p>
-    <div class="ask-opts"><label><input type="checkbox" data-o="ctx"${canCtx ? (improve ? ' checked' : '') : ' disabled'}> Note ouverte${n && !canCtx ? (n.todo ? ' (liste des tâches : jamais jointe)' : ' (chiffrée ou #privé : jamais envoyée)') : ''}</label><label title="${withLinear ? '' : 'Linear ne s’ouvre à l’IA que depuis un projet relié à Linear'}"><input type="checkbox" data-o="linear"${withLinear ? '' : ' disabled'}> Linear${sc.project?.linear ? ` · ${esc(sc.project.linear)}` : ''}</label><label><input type="checkbox" data-o="agents"> Mes agents</label>${ai.cc.onMac() ? '<label title="Ouvre, clique et lit les sites listés dans Réglages → Autorisations des agents"><input type="checkbox" data-o="navigateur"> Navigateur</label>' : ''}</div>
-    ${pickHTML}<p class="ask-scope">${icon('lock')}L’IA ne lit aucune note tant que tu ne l’as pas cochée.</p>
+    <div class="ask-opts"><label><input type="checkbox" data-o="ctx"${canCtx ? (improve ? ' checked' : '') : ' disabled'}> Note ouverte${n && !open ? ' (notes fermées à l’IA)' : n && !canCtx ? (n.todo ? ' (liste des tâches : jamais jointe)' : ' (chiffrée ou #privé : jamais envoyée)') : ''}</label><label title="${withLinear ? '' : 'Linear ne s’ouvre à l’IA que depuis un projet relié à Linear'}"><input type="checkbox" data-o="linear"${withLinear ? '' : ' disabled'}> Linear${sc.project?.linear ? ` · ${esc(sc.project.linear)}` : ''}</label><label><input type="checkbox" data-o="agents"> Mes agents</label>${ai.cc.onMac() ? '<label title="Ouvre, clique et lit les sites listés dans Réglages → Autorisations des agents"><input type="checkbox" data-o="navigateur"> Navigateur</label>' : ''}</div>
+    ${pickHTML}<p class="ask-scope">${icon('lock')}${open ? 'L’IA ne lit aucune note tant que tu ne l’as pas cochée.' : 'L’IA ne lit aucune note.'}</p>
     <div class="ask-steps"></div><div class="ask-out md" hidden></div>
     <div class="cap-foot"><span class="ask-status"></span><span class="ask-actions"><button class="btn" data-rep hidden>Remplacer la note</button><button class="btn" data-ins hidden>Ajouter à la note</button><button class="btn" data-new hidden>Nouvelle note</button><button class="btn btn-primary" data-go>Envoyer ${kbd('mod+enter')}</button></span></div>` });
   const ta = need<HTMLTextAreaElement>('textarea', m.node), out = need('.ask-out', m.node), status = need('.ask-status', m.node), steps = need('.ask-steps', m.node);
@@ -443,6 +446,7 @@ export function askAI(prefill = '', opts: { improve?: boolean } = {}): void {
     busy = false;
   };
   need('[data-go]', m.node).onclick = () => void go();
+  $('[data-ask-allow]', m.node)?.addEventListener('click', () => { m.close(); openConnections('ia'); });
   ta.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void go(); } });
   need('[data-rep]', m.node).onclick = async () => {
     if (!n || !text.trim()) return;
@@ -706,9 +710,13 @@ function localHTML(c: ai.AiConfig): string {
 
 function tabAI() {
   const cc = `<section class="cx-sec cc" data-cc>${ccHTML()}</section>`;
-  if (!vault.enabled()) return cc + needVault('Les clés des fournisseurs d’IA');
+  // Hors du coffre : ce réglage ne dépend d'aucune clé, il doit rester visible même sans coffre actif.
+  const notes = `<section class="cx-sec"><h4>${icon('lock')}Notes lisibles par l’IA</h4>
+    <label class="cx-check"><input type="checkbox" data-ai-notes${ai.notesAllowed() ? ' checked' : ''}> Autoriser l’IA à lire les notes que je lui lie</label>
+    <p class="modal-hint">Coupé, aucune note ne part vers une IA. Activé, seules les notes que tu lies à une demande partent, jamais les notes chiffrées ni <code>#privé</code>. Celles liées à un agent Claude Code voyagent scellées : chiffrées avec une clé à usage unique remise à cet agent seul.</p></section>`;
+  if (!vault.enabled()) return cc + notes + needVault('Les clés des fournisseurs d’IA');
   const c = ai.config();
-  return `${cc}<section class="cx-sec"><h4>${icon('bolt')}Consommation des clés API</h4>${usageHTML()}
+  return `${cc}${notes}<section class="cx-sec"><h4>${icon('bolt')}Consommation des clés API</h4>${usageHTML()}
     <label class="cx-row us-budget"><span>Budget mensuel</span><input class="field" type="number" min="0" step="0.5" data-cfg="budgetM" value="${c.budgetM || ''}" placeholder="0"><span>millions de tokens</span></label>
     <p class="modal-hint">Compté par Studio à chaque réponse. Les fournisseurs n’exposent pas ton crédit restant à une simple clé : fixe ici le budget que tu t’accordes pour les clés API, Studio t’indique ce qu’il en reste. Ce qui passe par Claude Code relève de ton abonnement, pas de ce budget : son utilisation et ses limites sont dans la carte Claude Code, plus haut.</p></section>
     <section class="cx-sec"><h4>${icon('sparkle')}Fournisseur par défaut</h4><div class="cx-seg">${Object.entries(ai.PROVIDERS).map(([k, l]) => `<label><input type="radio" name="provider" value="${k}"${c.provider === k ? ' checked' : ''}>${l}</label>`).join('')}</div>
@@ -858,6 +866,7 @@ function onConnChange(e: Event): void {
   else if (t.dataset.cfg) ai.setConfig({ [t.dataset.cfg]: t.value.trim() });
   else if (t.matches('[data-autolock]')) vault.setSetting('autolock', Number(t.value));
   else if (t.matches('[data-lan]')) link.setLanOnly(t.checked);
+  else if (t.matches('[data-ai-notes]')) { ai.setNotesAllowed(t.checked); toast(t.checked ? 'Notes lisibles par l’IA : activé. Rien n’est lié tant que tu ne le demandes pas.' : 'Notes fermées à l’IA.'); }
   else if (t.matches('[data-update-auto]')) update.setAuto(t.checked);
   else if (t.matches('[data-update-install]')) update.setAutoInstall(t.checked);
   else if (t.dataset.devRemote) void link.setRemote(t.dataset.devRemote, t.checked).then(() => toast(t.checked ? 'Cet appareil peut piloter Claude Code sur ce Mac' : 'Pilotage à distance retiré'));

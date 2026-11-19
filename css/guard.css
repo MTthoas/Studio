@@ -1,0 +1,13 @@
+/* Confirmations demandées par les agents avant de supprimer ou d'installer (src/features/projects/guard.ts).
+   Un panneau sobre, en bas à droite, au-dessus de tout : la commande telle quelle, deux boutons. Aucune couleur d'alerte. */
+.gd { position: fixed; right: 16px; bottom: 16px; z-index: 900; width: min(440px, calc(100vw - 32px)); max-height: min(70vh, 560px); display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: var(--shadow); animation: rise .18s ease-out; }
+.gd-title { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0; padding: 12px 14px 10px; font-size: var(--t-2); font-weight: 600; border-bottom: 1px solid var(--border); }
+.gd-title span { font-weight: 400; font-size: var(--t-1); color: var(--text-3); }
+.gd-list { list-style: none; margin: 0; padding: 0; overflow: auto; }
+.gd-ask { padding: 12px 14px; }
+.gd-ask + .gd-ask { border-top: 1px solid var(--border); }
+.gd-what { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; margin: 0 0 8px; font-size: var(--t-2); }
+.gd-what span { color: var(--text-3); font-size: var(--t-1); }
+.gd-cmd { margin: 0; padding: 8px 10px; max-height: 132px; overflow: auto; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); font: var(--t-1)/1.5 var(--mono); color: var(--text); white-space: pre-wrap; word-break: break-word; }
+.gd-meta { margin: 8px 0 0; font-size: var(--t-1); color: var(--text-3); }
+.gd-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }

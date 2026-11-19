@@ -1,10 +1,12 @@
-// Nouveautés : ce qui change dans Studio, dans une fenêtre à deux colonnes (sommaire par date, fiche).
+// Nouveautés : ce qui change dans Studio, dans une fenêtre éditoriale à deux colonnes (texte à gauche,
+// image en grain à droite).
 //   - après une mise à jour (ou à la première ouverture d'une version qui en apporte), elle liste
 //     la version installée puis chaque nouveauté pas encore vue ;
 //   - sur Mac, quand une nouvelle version est téléchargée et vérifiée, une fenêtre propose de relancer.
 //
 // Ajouter une nouveauté : une entrée en tête de NEWS (identifiant stable, jamais réutilisé). Elle sera
 // montrée une fois à chaque personne, puis reste consultable depuis le menu Studio → Nouveautés.
+// Rédaction : voir « Annoncer une fonction visible » dans contexte.md.
 import * as update from '../core/update.ts';
 import { esc } from '../lib/markdown.ts';
 import { icon, modal, need, toast, topLayer, target } from '../ui/kit.ts';
@@ -19,13 +21,11 @@ export interface NewsApi {
   firstRun: boolean;
 }
 
-/** Pastille de l'illustration : un libellé, sa teinte (--c-…), une icône facultative. */
+/** Pastille d'un schéma : un libellé, une teinte (--c-…), une icône facultative. */
 type Chip = [label: string, hue: string, icon?: string];
 /**
- * Illustration d'une nouveauté, toujours parlante d'un coup d'œil :
- *   - `flow` : un parcours fléché (étape → étape → étape) ;
- *   - `chips` : des pastilles colorées, ce qu'on trouve ou ce qu'on règle ;
- *   - `stack` : des lignes empilées (dépôts d'un projet, fichiers…), chacune avec sa pastille.
+ * Schéma d'une nouveauté. Seul `flow` est rendu (une ligne de texte « A → B → C », sous les points) ;
+ * `chips` et `stack` restent en données : leurs exemples chiffrés (« 8 vCPU », « code 137 ») jureraient avec la fiche.
  */
 type Visual = { kind: 'flow'; steps: Chip[] } | { kind: 'chips'; chips: Chip[] } | { kind: 'stack'; rows: [tag: Chip, text: string][] };
 
@@ -33,16 +33,16 @@ interface Item {
   id: string;
   /** Date de sortie, AAAA-MM-JJ. */
   date: string;
-  /** Titre : le nom de la fonction, sobre, sans slogan ; 30 caractères au plus (il tient dans le sommaire). */
+  /** Titre : le nom de la fonction, sans slogan ; 30 caractères au plus. */
   title: string;
-  /** Une phrase factuelle, pas plus. */
+  /** Une phrase factuelle au présent, 120 caractères au plus. */
   lead: string;
-  /** Deux à quatre points : icône, mot-clé (en gras), précision courte. `code` entre accents graves. */
+  /** Deux à quatre points : icône (non affichée), mot-clé (22 caractères au plus), précision (100 au plus). `code` entre accents graves. */
   bits: [icon: string, key: string, detail: string][];
   /** Où le trouver, en fil de menus : ['Réglages', 'Extensions']. */
   where?: string[];
   icon: string;
-  /** Teinte de l'illustration (une des couleurs --c-… de la feuille de style). */
+  /** Teinte presque neutre de l'image (une des couleurs --c-… de la feuille de style). */
   hue: string;
   visual: Visual;
   /** Ne concerne que l'app Mac. */
@@ -53,116 +53,139 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'agents-equipe-20261120', date: '2026-11-20', icon: 'bot', hue: 'violet', mac: true,
+    title: 'Équipe de sous-agents visible',
+    lead: 'L’Espace agents montre chaque sous-agent au travail, ses fichiers modifiés en direct et les échanges de l’équipe.',
+    bits: [
+      ['bot', 'Bande Équipe', 'sous-agents d’un agent, état de chacun, lignes ajoutées et retirées au total'],
+      ['eye', 'Vue par sous-agent', 'consigne, dernière action, compte rendu et fichiers modifiés, avec le diff en direct'],
+      ['share', 'Fil Échanges', 'consignes, délégations, comptes rendus et messages du tableau, dans l’ordre'],
+      ['gear', 'Équipe par projet', 'composée d’après la consigne ; chaque projet garde la sienne, modifiable'],
+    ],
+    where: ['Barre latérale', 'Espace agents'],
+    visual: { kind: 'flow', steps: [['Consigne', 'blue', 'terminal'], ['Sous-agents', 'violet', 'bot'], ['Fichiers modifiés', 'green', 'pencil'], ['Compte rendu', 'orange', 'check']] },
+    go: { label: 'Ouvrir l’Espace agents', view: { type: 'workspace' } } },
+  { id: 'notes-fermees-scellees', date: '2026-11-20', icon: 'lock', hue: 'indigo',
+    title: 'Notes fermées à l’IA',
+    lead: 'Aucune note n’est lue par une IA sans autorisation ; les agents ne reçoivent que celles jointes à la demande.',
+    bits: [
+      ['lock', 'Fermées par défaut', 'l’interrupteur des Réglages est coupé : aucune note n’est envoyée'],
+      ['check', 'Une demande à la fois', 'une fois activé, seules les notes jointes à la demande partent'],
+      ['shield', 'Exclusions', 'les notes chiffrées et marquées `#privé` ne partent jamais'],
+      ['key', 'Scellées pour l’agent', 'chiffrées avec une clé à usage unique, remise à l’agent seul'],
+    ],
+    where: ['Réglages', 'IA'],
+    visual: { kind: 'flow', steps: [['Note jointe', 'indigo', 'notes'], ['Chiffrée', 'violet', 'lock'], ['Agent', 'green', 'bot']] },
+    go: { label: 'Ouvrir les réglages IA', view: { type: 'settings', tab: 'ia' } } },
   { id: 'commerce', date: '2026-11-18', icon: 'shop', hue: 'green', mac: true,
     title: 'Boutiques Shopify',
-    lead: 'Studio suit et pilote tes boutiques Shopify, leur publicité Meta et leur marketing, une boutique par projet.',
+    lead: 'Studio suit les boutiques Shopify, leur publicité Meta et leur marketing, une boutique par projet.',
     bits: [
-      ['graph', 'Chiffres', 'ventes, commandes, panier moyen, produits phares et canaux, comparés à la période d’avant'],
-      ['inbox', 'Gérer', 'expédier une commande, changer un prix, un stock, une fiche, créer un code de réduction'],
-      ['bolt', 'Publicité', 'campagnes Meta avec Marketplace comme emplacement, toujours créées en pause'],
-      ['cpu', 'Marketing', 'fiches, annonces et textes de pub écrits par un modèle local, sans rien envoyer ailleurs'],
-      ['notes', 'Notes', 'un bloc shopify affiche les chiffres dans une note ; l’IA lit la boutique du projet'],
+      ['graph', 'Chiffres', 'ventes, commandes, panier moyen et produits phares, comparés à la période précédente'],
+      ['inbox', 'Gestion', 'expédier une commande, modifier un prix, un stock ou une fiche, créer un code de réduction'],
+      ['bolt', 'Publicité Meta', 'campagnes avec Marketplace comme emplacement, toujours créées en pause'],
+      ['cpu', 'Marketing', 'fiches, annonces et textes de publicité rédigés par un modèle local, sans envoi externe'],
     ],
     where: ['Barre latérale', 'Boutiques'],
     go: { label: 'Ouvrir Boutiques', view: { type: 'commerce' } },
     visual: { kind: 'flow', steps: [['Boutique', 'green', 'shop'], ['Chiffres et commandes', 'blue', 'graph'], ['Publicité et marketing', 'orange', 'bolt']] } },
   { id: 'local-models', date: '2026-11-17', icon: 'cpu', hue: 'teal', mac: true,
     title: 'Modèles locaux',
-    lead: 'Studio installe et lance des modèles ouverts avec Ollama, sur ce Mac ou sur un serveur d’un projet.',
+    lead: 'Studio installe et lance des modèles ouverts avec Ollama, sur ce Mac ou sur le serveur d’un projet.',
     bits: [
-      ['download', 'Catalogue', 'Qwen, Llama, Mistral, Gemma, gpt-oss… installés en un clic, avec la progression'],
-      ['cpu', 'Machine', 'chaque taille dit si elle tourne bien, d’après la mémoire et la carte graphique'],
-      ['server', 'Serveurs', 'le même modèle se déploie sur un serveur par SSH, sans ouvrir de port'],
-      ['sparkle', 'Utiliser', 'un modèle installé devient l’IA de Studio, ou s’essaie dans une conversation'],
+      ['download', 'Catalogue', 'Qwen, Llama, Mistral, Gemma, gpt-oss : installation en un clic, avec progression'],
+      ['cpu', 'Compatibilité', 'chaque taille indique si elle tourne bien, selon la mémoire et la carte graphique'],
+      ['server', 'Serveurs', 'déploiement d’un modèle par SSH, sans ouvrir de port'],
+      ['sparkle', 'Utilisation', 'un modèle installé devient l’IA de Studio, ou s’essaie dans une conversation'],
     ],
     where: ['Barre latérale', 'Modèles'],
     go: { label: 'Ouvrir Modèles', view: { type: 'models' } },
     visual: { kind: 'flow', steps: [['Catalogue', 'teal', 'download'], ['Ce Mac ou un serveur', 'blue', 'server'], ['IA de Studio', 'orange', 'sparkle']] } },
   { id: 'agent-groups', date: '2026-11-17', icon: 'pr', hue: 'orange', mac: true,
     title: 'Branche mère des agents',
-    lead: 'Plusieurs agents lancés ensemble partent d’une branche mère commune, chacun sur sa sous-branche.',
+    lead: 'Des agents lancés ensemble partent d’une branche mère commune, chacun sur sa sous-branche.',
     bits: [
-      ['play', '3×', '« 3× … », un agent par note ou par ligne : une branche mère, une sous-branche par agent'],
-      ['eye', 'Comparer', 'le groupe s’affiche ensemble dans les copies des agents : Revue, VS Code'],
-      ['pr', 'Fusionner', 'le travail retenu rejoint la mère ; un conflit ne fusionne rien et nomme les fichiers'],
-      ['upload', 'Publier', 'la mère part en une seule PR'],
+      ['play', 'Lancement groupé', '« 3× … » crée un agent par note ou par ligne, chacun sur sa sous-branche'],
+      ['eye', 'Comparaison', 'le groupe s’affiche d’un bloc dans les copies des agents : Revue, VS Code'],
+      ['pr', 'Fusion', 'le travail retenu rejoint la branche mère ; un conflit n’en fusionne aucun et nomme les fichiers'],
+      ['upload', 'Publication', 'la branche mère part en une seule pull request'],
     ],
     where: ['Projets', 'un projet', 'Claude Code'],
     visual: { kind: 'flow', steps: [['Branche mère', 'orange', 'pr'], ['Agents 1, 2, 3', 'blue', 'bot'], ['Fusion', 'green', 'check']] } },
   { id: 'ci-graph', date: '2026-11-17', icon: 'graph', hue: 'teal',
     title: 'Graphe des workflows',
-    lead: 'Chaque exécution GitHub Actions en graphe de jobs, en direct, avec l’historique des durées.',
+    lead: 'Chaque exécution GitHub Actions s’affiche en graphe de jobs, en direct, avec l’historique des durées.',
     bits: [
-      ['graph', 'Graphe', 'jobs et dépendances (needs), état, durée, attente d’un runner, étape en cours'],
-      ['list', 'Étapes', 'un clic sur un job : ses étapes et ses logs'],
-      ['history', 'Historique', 'réussite, durée médiane, une barre par exécution (cliquer l’affiche)'],
+      ['graph', 'Graphe', 'jobs et dépendances, état, durée, attente d’un runner, étape en cours'],
+      ['list', 'Étapes', 'un clic sur un job ouvre ses étapes et ses journaux'],
+      ['history', 'Historique', 'taux de réussite, durée médiane et une barre par exécution'],
     ],
     where: ['Projets', 'un projet', 'Flux'],
     visual: { kind: 'flow', steps: [['Vérifications', 'green', 'check'], ['Apps Mac et iPhone', 'amber', 'bolt'], ['Publication', 'gray', 'upload']] } },
   { id: 'agents-workspace', date: '2026-11-17', icon: 'board', hue: 'violet', mac: true,
     title: 'Espace agents',
-    lead: 'Tous les agents de tous les projets, dans une liste à la Linear et une grille de 1 à 8 vues en direct.',
+    lead: 'Tous les agents de tous les projets : une liste filtrable et une grille de 1 à 8 vues en direct.',
     bits: [
-      ['list', 'Liste', 'en cours, à relire, en erreur, récentes ; filtre, et J/K pour la parcourir'],
+      ['list', 'Liste', 'en cours, à relire, en erreur, récents ; filtre, navigation avec J et K'],
       ['board', 'Vues', '1, 2, 3, 4, 6 ou 8 agents côte à côte, chacun avec son champ de réponse'],
-      ['share', 'Diffuser', 'la même consigne à plusieurs vues : réponse ou nouvel agent'],
-      ['keyboard', 'Clavier', '1–8, C créer, F agrandir, X vider, L disposition, ⇧⌘↵ interrompre'],
+      ['share', 'Diffusion', 'une même consigne envoyée à plusieurs vues, en réponse ou en nouvel agent'],
+      ['keyboard', 'Clavier', '1 à 8, C créer, F agrandir, X vider, L disposition, ⇧⌘↵ interrompre'],
     ],
     where: ['Barre latérale', 'Espace agents'],
-    visual: { kind: 'flow', steps: [['Liste', 'violet', 'list'], ['Vues', 'blue', 'board'], ['Diffuser', 'orange', 'share']] },
-    go: { label: 'Ouvrir l’espace agents', view: { type: 'workspace' } } },
+    visual: { kind: 'flow', steps: [['Liste', 'violet', 'list'], ['Vues', 'blue', 'board'], ['Diffusion', 'orange', 'share']] },
+    go: { label: 'Ouvrir l’Espace agents', view: { type: 'workspace' } } },
   { id: 'subagents-auto', date: '2026-11-17', icon: 'bot', hue: 'violet', mac: true,
     title: 'Sous-agents automatiques',
-    lead: 'Pour une même consigne, Claude Code confie de lui-même des parties du travail à des sous-agents qui tournent en parallèle.',
+    lead: 'Claude Code confie des parties d’une consigne à des sous-agents qui travaillent en parallèle.',
     bits: [
-      ['sparkle', 'Automatiques', 'exploration, parties indépendantes, relecture : Claude décide quand déléguer'],
-      ['bot', 'Spécialistes', 'ajoute les tiens : nom, rôle, consigne, modèle, lecture seule ou non'],
-      ['gear', 'Réglages', 'nombre en parallèle, modèle par défaut, ou tout couper'],
+      ['sparkle', 'Délégation', 'exploration, parties indépendantes, relecture : Claude décide quand déléguer'],
+      ['bot', 'Spécialistes', 'nom, rôle, consigne, modèle et lecture seule ou non, au choix'],
+      ['gear', 'Réglages', 'nombre en parallèle, modèle par défaut, ou désactivation complète'],
       ['shield', 'Mêmes limites', 'un sous-agent a les droits de l’agent : même copie, même bulle'],
     ],
     where: ['Projets', 'un projet', 'Agents', 'Sous-agents'],
     visual: { kind: 'flow', steps: [['Consigne', 'blue', 'terminal'], ['Sous-agents', 'violet', 'bot'], ['Compte rendu', 'green', 'check']] },
-    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
+    go: { label: 'Ouvrir les projets', view: { type: 'projets' } } },
   { id: 'notes-agents-intervene', date: '2026-11-17', icon: 'bolt', hue: 'orange',
     title: 'Notes, agents et interventions',
-    lead: 'Les notes d’un projet se cochent pour partir vers Claude ou Claude Code, une consigne peut lancer plusieurs agents, et un agent au travail peut être interrompu.',
+    lead: 'Les notes d’un projet se cochent pour Claude ou Claude Code, et un agent au travail peut être interrompu.',
     bits: [
-      ['check', 'Sélection', 'coche des notes dans l’onglet Notes d’un projet, puis envoie-les à Claude ou à Claude Code'],
+      ['check', 'Sélection', 'cocher des notes dans l’onglet Notes d’un projet, puis les envoyer à Claude ou à Claude Code'],
       ['notes', 'Notes jointes', 'fenêtre de choix avec filtre et « Tout cocher », dans la consigne et sur la page Claude'],
-      ['terminal', 'Plusieurs agents', 'un agent par note ou par ligne de la consigne, huit à la fois au plus'],
-      ['bolt', 'Intervenir', 'coupe le tour en cours : l’agent lit le message tout de suite, puis reprend (`⌘⇧↩`)'],
+      ['terminal', 'Plusieurs agents', 'un agent par note ou par ligne de la consigne, huit au plus à la fois'],
+      ['bolt', 'Intervention', 'le tour en cours est coupé, l’agent lit le message puis reprend (`⌘⇧↩`)'],
     ],
     where: ['Projets', 'un projet', 'Notes'],
     visual: { kind: 'flow', steps: [['Notes cochées', 'amber', 'notes'], ['Un agent par note', 'orange', 'bolt'], ['Copies isolées', 'green', 'terminal']] },
-    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
+    go: { label: 'Ouvrir les projets', view: { type: 'projets' } } },
   { id: 'docker-local', date: '2026-11-16', icon: 'container', hue: 'blue', mac: true,
-    title: 'Les conteneurs de ton Mac, dans tes projets',
-    lead: 'Un onglet Docker par projet : ce qui tourne sur ton Mac pour lui, reconnu à son dossier.',
+    title: 'Conteneurs Docker par projet',
+    lead: 'Un onglet Docker par projet liste les conteneurs de ce Mac, reconnus à leur dossier.',
     bits: [
-      ['container', 'Conteneurs', 'en cours ou arrêtés, état, ports à ouvrir d’un clic ; ceux lancés par un agent sont marqués'],
-      ['download', 'Images', 'construites par Compose ou utilisées par ses conteneurs'],
-      ['home', 'Accueil', 'les conteneurs qui tournent sur le Mac, avec leur projet'],
+      ['container', 'Conteneurs', 'état et ports ouvrables d’un clic ; ceux lancés par un agent sont signalés'],
+      ['download', 'Images', 'celles construites par Compose ou utilisées par les conteneurs du projet'],
+      ['home', 'Accueil', 'les conteneurs en cours, avec leur projet'],
       ['shield', 'Lecture seule', 'Studio lit le moteur Docker sans rien lancer ni arrêter'],
     ],
     where: ['Projets', 'un projet', 'Docker'],
     visual: { kind: 'stack', rows: [[['api', 'green', 'container'], 'en cours · :3000'], [['db', 'green', 'container'], 'en cours · :5432'], [['worker', 'red', 'container'], 'arrêté (code 137)']] },
-    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
+    go: { label: 'Ouvrir les projets', view: { type: 'projets' } } },
   { id: 'agent-project-items', date: '2026-11-16', icon: 'check', hue: 'green', mac: true,
-    title: 'Tes agents ajoutent des tâches et des notes',
-    lead: 'Demande à un agent de noter une suite à donner ou une décision : il l’ajoute au projet d’où il est lancé.',
+    title: 'Tâches et notes des agents',
+    lead: 'Un agent peut consigner une suite à donner ou une décision dans le projet d’où il est lancé.',
     bits: [
-      ['check', 'Tâches', 'dans l’onglet Tâches du projet, avec leur échéance (« vendredi », `@2026-12-01`)'],
-      ['notes', 'Notes', 'avec le tag du projet ; rien d’existant n’est modifié ni supprimé'],
+      ['check', 'Tâches', 'ajoutées à l’onglet Tâches, avec échéance (« vendredi », `@2026-12-01`)'],
+      ['notes', 'Notes', 'ajoutées avec le tag du projet ; rien d’existant n’est modifié ni supprimé'],
       ['shield', 'Interrupteur', '« Notes et tâches du projet », activé par défaut'],
     ],
     where: ['Réglages', 'Autorisations des agents'],
     visual: { kind: 'flow', steps: [['Agent', 'violet', 'terminal'], ['Compte rendu', 'blue', 'notes'], ['Tâches et notes', 'green', 'check']] },
-    go: { label: 'Voir les autorisations', view: { type: 'settings', tab: 'autorisations' } } },
+    go: { label: 'Ouvrir les autorisations', view: { type: 'settings', tab: 'autorisations' } } },
   { id: 'subnotes-commands', date: '2026-11-16', icon: 'notes', hue: 'teal',
     title: 'Sous-notes et commandes',
     lead: 'Une note peut en contenir d’autres, rangées en arbre dans la barre latérale, et garder des commandes à copier.',
     bits: [
-      ['notes', 'Sous-notes', 'menu ⋯ → « Nouvelle sous-note » ou « Ranger sous une note… »'],
+      ['notes', 'Sous-notes', 'menu ⋯ puis « Nouvelle sous-note » ou « Ranger sous une note… »'],
       ['sidebar', 'Arborescence', 'section de la barre latérale, branches dépliables'],
       ['terminal', 'Bloc commandes', '`# description` au-dessus, `## Section` pour grouper, un clic copie'],
       ['search', 'Palette', 'les commandes enregistrées se retrouvent avec ⌘K'],
@@ -171,291 +194,291 @@ const NEWS: Item[] = [
     visual: { kind: 'stack', rows: [[['Note', 'gray', 'notes'], 'Serveur'], [['Sous-note', 'teal', 'notes'], 'Déploiement'], [['Commande', 'orange', 'terminal'], 'docker compose up -d']] } },
   { id: 'agent-browser', date: '2026-11-16', icon: 'eye', hue: 'blue', mac: true,
     title: 'Navigateur des agents',
-    lead: 'Les agents Claude Code et l’IA de Studio pilotent un navigateur sur les sites que tu leur ouvres.',
+    lead: 'Les agents Claude Code et l’IA de Studio pilotent un navigateur sur les sites autorisés.',
     bits: [
       ['eye', 'Actions', 'ouvrir une page, cliquer, remplir un formulaire, capturer, lire la console'],
-      ['sparkle', 'Tous fournisseurs', 'Claude, OpenAI ou modèle local : page Claude, « Demander à l’IA », outils: navigateur'],
-      ['shield', 'Sites listés', 'tout autre site est bloqué ; profil vide, sans tes sessions'],
-      ['bolt', 'Playwright MCP', 'lancé par npx, sans fenêtre, sur ce Mac seulement'],
+      ['sparkle', 'Tous fournisseurs', 'Claude, OpenAI ou modèle local, depuis la page Claude et « Demander à l’IA »'],
+      ['shield', 'Sites listés', 'tout autre site est bloqué ; profil vide, sans session existante'],
+      ['bolt', 'Playwright MCP', 'lancé par npx, sans fenêtre, sur ce Mac uniquement'],
     ],
     where: ['Réglages', 'Autorisations des agents', 'Navigateur'],
     visual: { kind: 'flow', steps: [['Ouvre', 'blue', 'eye'], ['Clique', 'orange', 'bolt'], ['Capture', 'green', 'check']] } },
   { id: 'server-specs', date: '2026-11-16', icon: 'server', hue: 'teal', mac: true,
     title: 'Fiche machine du serveur',
-    lead: 'L’onglet Serveur décrit la machine : où elle se trouve, sa puissance, ce qui y est installé.',
+    lead: 'L’onglet Serveur décrit la machine : emplacement, puissance et logiciels installés.',
     bits: [
-      ['link', 'Emplacement', 'ville, pays et région de l’hébergeur, fuseau, adresse publique'],
-      ['bolt', 'Puissance', 'vCPU et modèle du processeur, mémoire, disques SSD ou NVMe, débit réseau'],
-      ['database', 'Capacités', 'volumes, virtualisation, sudo, logiciels installés (Docker, Node, nginx…)'],
-      ['eye', 'Localiser l’IP', 'sur demande, le serveur interroge ipinfo.io'],
+      ['link', 'Emplacement', 'ville, pays et région de l’hébergeur, fuseau horaire, adresse publique'],
+      ['bolt', 'Puissance', 'vCPU et processeur, mémoire, disques SSD ou NVMe, débit réseau'],
+      ['database', 'Capacités', 'volumes, virtualisation, sudo, logiciels installés (Docker, Node, nginx)'],
+      ['eye', 'Localisation de l’IP', 'sur demande, le serveur interroge ipinfo.io'],
     ],
     where: ['Projets', 'un projet', 'Serveur'],
     visual: { kind: 'chips', chips: [['Paris, France', 'blue', 'link'], ['8 vCPU', 'orange', 'bolt'], ['32 Go', 'green', 'database'], ['NVMe', 'teal', 'server']] },
-    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
+    go: { label: 'Ouvrir les projets', view: { type: 'projets' } } },
   { id: 'agent-live-pulse', date: '2026-11-16', icon: 'bolt', hue: 'orange', mac: true,
     title: 'Suivi en direct des agents',
-    lead: 'Au-dessus du fil, l’avancement de Claude se met à jour pendant qu’il travaille.',
+    lead: 'L’avancement de Claude s’affiche au-dessus du fil et se met à jour pendant le travail.',
     bits: [
-      ['search', 'Étapes', 'explore, modifie, vérifie, répond : l’étape en cours bat'],
-      ['plus', 'Compteurs vivants', 'lignes ajoutées et retirées, fichiers, commandes, tokens'],
-      ['pencil', 'Fichiers', 'chacun avec ses +/−, ceux qui bougent s’allument'],
+      ['search', 'Étapes', 'explore, modifie, vérifie, répond : l’étape en cours est signalée'],
+      ['plus', 'Compteurs', 'lignes ajoutées et retirées, fichiers, commandes, tokens'],
+      ['pencil', 'Fichiers', 'chacun avec ses ajouts et retraits ; ceux qui changent sont signalés'],
     ],
     where: ['Projets', 'un projet', 'Agents', 'une conversation'],
     visual: { kind: 'flow', steps: [['Explore', 'blue', 'search'], ['Modifie', 'green', 'pencil'], ['Vérifie', 'amber', 'terminal'], ['Répond', 'pink', 'sparkle']] },
-    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
+    go: { label: 'Ouvrir les projets', view: { type: 'projets' } } },
   { id: 'agent-auto-model', date: '2026-11-16', icon: 'sparkle', hue: 'violet', mac: true,
     title: 'Modèle « Auto » des agents',
     lead: 'Avec « Auto », chaque message envoyé à Claude Code prend le modèle le plus économe qui suffit.',
     bits: [
-      ['sparkle', 'À chaque envoi', 'nouvelle consigne comme réponse dans une conversation'],
+      ['sparkle', 'À chaque envoi', 'pour une nouvelle consigne comme pour une réponse dans une conversation'],
       ['bolt', 'Économe', 'Haiku pour un petit changement, Sonnet pour le courant, Opus pour une refonte'],
-      ['pencil', 'Champ sans limite', 'il grandit avec ton texte : tout reste visible'],
+      ['pencil', 'Champ extensible', 'il grandit avec le texte : tout reste visible'],
     ],
     where: ['Projets', 'un projet', 'Agents'],
     visual: { kind: 'chips', chips: [['Haiku', 'green', 'bolt'], ['Sonnet', 'blue', 'sparkle'], ['Opus', 'violet', 'sparkle']] },
-    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
+    go: { label: 'Ouvrir les projets', view: { type: 'projets' } } },
   { id: 'project-home', date: '2026-11-16', icon: 'folder', hue: 'blue', mac: true,
     title: 'Dossier mère du projet',
-    lead: 'Tu choisis le dossier qui réunit les dépôts du projet, et où cloner ceux qui manquent.',
+    lead: 'Le dossier mère réunit les dépôts du projet et reçoit ceux qui manquent.',
     bits: [
-      ['folder', 'Retrouvés seuls', 'les dépôts déjà rangés dans le dossier mère'],
-      ['download', 'Clonés au bon endroit', 'dans le dossier mère, ou ailleurs au choix'],
+      ['folder', 'Détection', 'les dépôts déjà rangés dans le dossier mère sont retrouvés seuls'],
+      ['download', 'Clonage', 'dans le dossier mère par défaut, ou ailleurs au choix'],
     ],
     where: ['Projets', 'un projet', 'Code'],
     visual: { kind: 'flow', steps: [['Dossier mère', 'blue', 'folder'], ['Dépôts clonés', 'green', 'download']] },
-    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
+    go: { label: 'Ouvrir les projets', view: { type: 'projets' } } },
   { id: 'agent-multi-repo', date: '2026-11-16', icon: 'folder', hue: 'blue', mac: true,
     title: 'Agents sur plusieurs dépôts',
-    lead: 'Claude Code travaille sur tous les dépôts du projet à la fois : l’app, son site, son API.',
+    lead: 'Claude Code travaille sur tous les dépôts d’un projet à la fois : l’app, son site, son API.',
     bits: [
-      ['folder', 'Trouvés seuls', 'les clones rangés à côté du dossier du projet ; sinon, cloner en un clic'],
-      ['github', 'Une copie par dépôt', 'isolées, du même nom, ton dossier n’est jamais touché'],
+      ['folder', 'Détection', 'les clones rangés à côté du dossier du projet ; sinon, clonage en un clic'],
+      ['github', 'Une copie par dépôt', 'copies isolées, du même nom : le dossier d’origine n’est jamais modifié'],
       ['check', 'Une PR par dépôt', 'même branche partout, les pull requests se citent entre elles'],
     ],
     where: ['Projets', 'un projet', 'Agents'],
     visual: { kind: 'stack', rows: [[['app', 'blue', 'folder'], '3 fichiers modifiés'], [['site', 'green', 'folder'], '1 fichier modifié'], [['api', 'amber', 'folder'], 'rien à publier']] },
-    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
+    go: { label: 'Ouvrir les projets', view: { type: 'projets' } } },
   { id: 'servers-many', date: '2026-11-16', icon: 'server', hue: 'blue', mac: true,
     title: 'Plusieurs serveurs par projet',
-    lead: 'Relie la production, la préproduction et les autres au même projet, et teste la connexion avant d’enregistrer.',
+    lead: 'Production, préproduction et autres serveurs se relient au même projet, avec un test de connexion avant enregistrement.',
     bits: [
-      ['server', 'Un onglet par serveur', 'chacun avec son nom, sa clé, ses extensions et ses agents'],
-      ['refresh', 'Tester la connexion', 'SSH, empreinte, clé acceptée, dossier, Git et Claude Code'],
-      ['terminal', 'Agents', 'choisis le serveur où lancer la consigne'],
+      ['server', 'Un onglet par serveur', 'avec son nom, sa clé, ses extensions et ses agents'],
+      ['refresh', 'Test de connexion', 'SSH, empreinte, clé acceptée, dossier, Git et Claude Code'],
+      ['terminal', 'Agents', 'choix du serveur où lancer la consigne'],
     ],
     where: ['Projets', 'un projet', 'Serveur'],
     visual: { kind: 'stack', rows: [[['Production', 'green', 'check'], 'en ligne · 38 ms'], [['Préproduction', 'amber', 'server'], 'dossier introuvable'], [['Ajouter un serveur', 'blue', 'plus'], 'test avant d’enregistrer']] },
-    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
+    go: { label: 'Ouvrir les projets', view: { type: 'projets' } } },
   { id: 'site-build', date: '2026-11-16', icon: 'bolt', hue: 'amber', mac: true,
     title: 'Builds notifiés',
-    lead: 'Lance le build du projet depuis l’onglet Site : une notification t’avertit dès qu’il se termine.',
+    lead: 'Le build du projet se lance depuis l’onglet Site, et une notification signale sa fin.',
     bits: [
       ['bolt', 'Variantes', '`build`, `build:prod`, `build-staging`… lues dans le `package.json`'],
       ['check', 'Notification', 'réussite ou échec, avec la durée et le code de sortie'],
-      ['terminal', 'Sortie en direct', 'le journal du build, à côté du site qui tourne'],
+      ['terminal', 'Sortie en direct', 'le journal du build s’affiche à côté du site qui tourne'],
     ],
     where: ['Projets', 'un projet', 'Site'],
     visual: { kind: 'stack', rows: [[['build', 'green', 'check'], 'réussi en 42 s'], [['build:prod', 'amber', 'bolt'], 'en cours…'], [['build:staging', 'red', 'bolt'], 'en échec · code 1']] },
-    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
+    go: { label: 'Ouvrir les projets', view: { type: 'projets' } } },
   { id: 'agent-voice', date: '2026-11-16', icon: 'mic', hue: 'violet',
     title: 'Dictée vocale pour les agents',
-    lead: 'Dicte une consigne ou une réponse à un agent : ta voix s’écrit dans le champ, tu relis, tu envoies.',
+    lead: 'Une consigne ou une réponse se dicte dans le champ de l’agent, puis se relit avant l’envoi.',
     bits: [
-      ['mic', 'Bouton micro', 'à côté de Lancer et d’Envoyer ; un second clic termine'],
-      ['pencil', 'À la suite', 'la dictée s’ajoute au texte déjà écrit et au brouillon'],
-      ['shield', 'Sur l’appareil', 'transcription hors ligne, rien ne part en ligne'],
+      ['mic', 'Bouton micro', 'à côté de Lancer et d’Envoyer ; un second clic termine la dictée'],
+      ['pencil', 'À la suite', 'le texte dicté s’ajoute à ce qui est déjà écrit, brouillon compris'],
+      ['shield', 'Sur l’appareil', 'transcription hors ligne : rien ne part sur le réseau'],
     ],
     where: ['Projets', 'un projet', 'Claude Code'],
-    visual: { kind: 'flow', steps: [['Tu parles', 'violet', 'mic'], ['Texte dans le champ', 'blue', 'pencil'], ['⌘↩', 'green', 'play']] },
-    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
+    visual: { kind: 'flow', steps: [['Dictée', 'violet', 'mic'], ['Texte dans le champ', 'blue', 'pencil'], ['⌘↩', 'green', 'play']] },
+    go: { label: 'Ouvrir les projets', view: { type: 'projets' } } },
   { id: 'github-actions', date: '2026-11-15', icon: 'bolt', hue: 'green',
     title: 'GitHub Actions dans le Flux',
-    lead: 'L’état de chaque workflow dans l’onglet Flux, et beaucoup moins d’attente sur les projets.',
+    lead: 'L’état de chaque workflow s’affiche dans l’onglet Flux, avec moins d’attente sur les projets.',
     bits: [
       ['bolt', 'Un workflow par ligne', 'dernière exécution, branche, déclencheur, durée et bande des précédentes'],
-      ['refresh', 'Suivi en direct', 'relu toutes les 30 s tant qu’une exécution tourne'],
-      ['refresh', 'Relancer', 'une exécution en échec se relance d’un clic (droit Actions en écriture sur le jeton)'],
-      ['check', 'Requêtes partagées', 'une même donnée n’est demandée qu’une fois, puis seulement revalidée'],
+      ['refresh', 'Suivi en direct', 'relecture toutes les 30 s tant qu’une exécution tourne'],
+      ['refresh', 'Relance', 'une exécution en échec se relance d’un clic (droit Actions en écriture requis sur le jeton)'],
+      ['check', 'Requêtes partagées', 'une donnée n’est demandée qu’une fois, puis seulement revalidée'],
     ],
     where: ['Projets', 'un projet', 'Flux'],
     visual: { kind: 'stack', rows: [[['Build', 'green', 'check'], 'main · réussie · 2 min 14'], [['Pages', 'amber', 'bolt'], 'main · en cours'], [['Tests', 'red', 'bolt'], 'feat/api · en échec']] },
-    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
+    go: { label: 'Ouvrir les projets', view: { type: 'projets' } } },
   { id: 'server-user', date: '2026-11-15', icon: 'server', hue: 'teal',
     title: 'Utilisateur SSH du serveur',
-    lead: 'Un champ Utilisateur dans l’onglet Serveur : root, ubuntu, deploy… sans toucher à ~/.ssh/config.',
+    lead: 'Un champ Utilisateur dans l’onglet Serveur remplace la modification de ~/.ssh/config.',
     bits: [
-      ['server', 'Prioritaire sur ta config', 'passe avant le `User` de ~/.ssh/config, qui reste proposé en indication'],
-      ['shield', 'Refus expliqué', 'quand le serveur refuse tes clés, Studio dit pour quel utilisateur'],
+      ['server', 'Prioritaire', 'passe avant le `User` de ~/.ssh/config, qui reste affiché en indication'],
+      ['shield', 'Refus expliqué', 'quand le serveur refuse les clés, Studio indique pour quel utilisateur'],
     ],
     where: ['Projets', 'un projet', 'Serveur', 'Modifier'],
     visual: { kind: 'stack', rows: [[['Hôte', 'teal', 'server'], 'studio'], [['Utilisateur', 'teal', 'server'], 'root · au lieu de ubuntu']] },
     mac: true,
-    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
+    go: { label: 'Ouvrir les projets', view: { type: 'projets' } } },
   { id: 'server-keys-ext', date: '2026-11-15', icon: 'server', hue: 'teal',
     title: 'Clé SSH, Docker et Kubernetes',
-    lead: 'Une clé SSH gardée chiffrée par Studio, et Docker ou Kubernetes pilotés depuis l’onglet Serveur.',
+    lead: 'Studio garde une clé SSH chiffrée et pilote Docker ou Kubernetes depuis l’onglet Serveur.',
     bits: [
-      ['key', 'Clé SSH dans Studio', 'créée (Ed25519) ou importée, chiffrée dans le trousseau du Mac, jamais montrée'],
+      ['key', 'Clé SSH', 'créée (Ed25519) ou importée, chiffrée dans le trousseau du Mac, jamais affichée'],
       ['shield', 'Empreinte vérifiée', 'un nouveau serveur n’est accepté qu’après confirmation de son empreinte'],
-      ['container', 'Docker', 'conteneurs, Compose, ressources, journaux ; démarrer, arrêter, redémarrer'],
+      ['container', 'Docker', 'conteneurs, Compose, ressources, journaux ; démarrage, arrêt, redémarrage'],
       ['kube', 'Kubernetes', 'nœuds, déploiements, pods (kubectl, k3s, microk8s) ; journaux, redémarrage'],
     ],
     where: ['Projets', 'un projet', 'Serveur', 'Modifier'],
     visual: { kind: 'stack', rows: [[['Clé', 'teal', 'key'], 'vps-prod · ED25519'], [['Docker', 'blue', 'container'], '4 en marche sur 5'], [['Kube', 'indigo', 'kube'], '1 nœud · 12 pods']] },
-    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
+    go: { label: 'Ouvrir les projets', view: { type: 'projets' } } },
   { id: 'project-repos', date: '2026-11-15', icon: 'github', hue: 'indigo',
     title: 'Plusieurs dépôts par projet',
-    lead: 'L’app, son site, son API : chaque dépôt a son rôle et sa carte dans le projet.',
+    lead: 'L’app, son site, son API : chaque dépôt a un rôle et une carte dans le projet.',
     bits: [
-      ['github', 'Plusieurs dépôts', 'ajoutés à la création ou d’un clic sur « Ajouter un dépôt »'],
-      ['palette', 'Un rôle par dépôt', 'App, Site, API, Mobile, Docs, Infra… deviné du nom (`…-site`, `…-api`)'],
-      ['pr', 'État de chacun', 'CI, PR ouvertes, dernière version, sur chaque carte'],
-      ['folder', 'Le bon dépôt', 'la PR d’un agent part vers le dépôt du dossier sur ce Mac'],
+      ['github', 'Ajout', 'à la création du projet, ou depuis « Ajouter un dépôt »'],
+      ['palette', 'Rôle', 'App, Site, API, Mobile, Docs, Infra, déduit du nom (`…-site`, `…-api`)'],
+      ['pr', 'État', 'CI, pull requests ouvertes et dernière version, sur chaque carte'],
+      ['folder', 'Bon dépôt', 'la PR d’un agent part vers le dépôt du dossier sur ce Mac'],
     ],
     where: ['Projets', 'un projet', 'Vue d’ensemble', 'Dépôts'],
     visual: { kind: 'stack', rows: [[['App', 'indigo', 'code'], 'MTthoas/Studio'], [['Site', 'teal', 'link'], 'MTthoas/studio-site'], [['API', 'orange', 'plug'], 'MTthoas/studio-api']] },
-    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
+    go: { label: 'Ouvrir les projets', view: { type: 'projets' } } },
   { id: 'agent-stages', date: '2026-11-14', icon: 'pr', hue: 'blue',
     title: 'Étapes des agents',
-    lead: 'Le travail des agents est rangé par étape, chacune avec sa couleur.',
+    lead: 'Le travail des agents est rangé en quatre étapes, identiques partout dans l’app.',
     bits: [
       ['bot', 'Quatre étapes', 'au travail, à publier, PR ouverte, fusionné'],
-      ['eye', 'Partout pareil', 'panneau Claude Code, liste des sessions, barre latérale'],
-      ['check', 'Ce qui est livré s’efface', 'il ne reste que ce qui t’attend'],
+      ['eye', 'Même repère', 'panneau Claude Code, liste des sessions et barre latérale'],
+      ['check', 'Livré, donc retiré', 'seul ce qui reste à traiter demeure affiché'],
     ],
     where: ['Projets', 'un projet', 'Claude Code'],
     visual: { kind: 'flow', steps: [['Au travail', 'amber', 'bot'], ['À publier', 'violet', 'upload'], ['PR ouverte', 'blue', 'pr'], ['Fusionné', 'green', 'check']] } },
   { id: 'figma-plugin', date: '2026-11-14', icon: 'figma', hue: 'violet',
     title: 'Maquettes Figma dans les notes',
-    lead: 'Un lien Figma dans une note devient un aperçu en grand.',
+    lead: 'Un lien Figma dans une note s’affiche en aperçu agrandi.',
     bits: [
       ['figma', 'Bloc ```figma', 'maquette, prototype ou tableau FigJam, sans quitter la note'],
-      ['folder', 'Dans le projet', 'la liste des fichiers Figma cités dans ses notes'],
-      ['key', 'Avec un jeton', 'dernière modification et commentaires ouverts'],
+      ['folder', 'Dans le projet', 'liste des fichiers Figma cités dans ses notes'],
+      ['key', 'Avec un jeton', 'date de dernière modification et commentaires ouverts'],
     ],
     where: ['Réglages', 'Extensions', 'Figma'],
     visual: { kind: 'chips', chips: [['Maquette', 'violet', 'figma'], ['Prototype', 'pink', 'play'], ['FigJam', 'amber', 'board'], ['Commentaires', 'blue', 'compose']] },
     go: { label: 'Activer Figma', view: { type: 'settings', tab: 'extensions' } } },
   { id: 'project-local-site', date: '2026-11-14', mac: true, icon: 'link', hue: 'teal',
     title: 'Site du projet en local',
-    lead: 'Studio trouve le site dans le dossier du projet et le sert sur ce Mac.',
+    lead: 'Studio détecte le site dans le dossier du projet et le sert sur ce Mac.',
     bits: [
       ['folder', 'index.html', 'servi tel quel par Studio'],
       ['terminal', 'Next.js, Astro, Vite', 'lancés avec leur script `dev`'],
-      ['eye', 'Pages vues et requêtes', 'en direct, avec l’adresse locale'],
-      ['lock', 'Rien ne sort', 'visible sur ce Mac seulement'],
+      ['eye', 'Pages vues et requêtes', 'affichées en direct, avec l’adresse locale'],
+      ['lock', 'Accès local', 'visible sur ce Mac uniquement'],
     ],
     where: ['Projets', 'un projet', 'Site', 'En local'],
     visual: { kind: 'flow', steps: [['Dossier', 'orange', 'folder'], ['npm run dev', 'teal', 'terminal'], ['localhost', 'green', 'link']] },
-    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
+    go: { label: 'Ouvrir les projets', view: { type: 'projets' } } },
   { id: 'ai-project-scopes', date: '2026-11-14', icon: 'lock', hue: 'indigo',
     title: 'IA cloisonnée par projet',
-    lead: 'Claude s’ouvre depuis un projet, et n’en sort pas.',
+    lead: 'Claude s’ouvre depuis un projet et ne lit que les données de ce projet.',
     bits: [
-      ['folder', 'Notes, tâches, dépôts', 'seulement ceux du projet'],
-      ['linear', 'Linear', 'jamais ouvert hors du projet qui y est relié'],
-      ['bolt', 'Automatisations', 'et « Demander à l’IA » suivent la même règle'],
+      ['folder', 'Notes, tâches, dépôts', 'uniquement ceux du projet'],
+      ['linear', 'Linear', 'accessible seulement depuis le projet qui y est relié'],
+      ['bolt', 'Automatisations', 'et « Demander à l’IA » appliquent la même règle'],
     ],
     where: ['Projets', 'un projet', 'Claude'],
     visual: { kind: 'chips', chips: [['Ce projet', 'indigo', 'folder'], ['Ses notes', 'teal', 'notes'], ['Ses tâches', 'green', 'check'], ['Le reste', 'gray', 'lock']] },
-    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
+    go: { label: 'Ouvrir les projets', view: { type: 'projets' } } },
   { id: 'agent-permissions', date: '2026-11-14', mac: true, icon: 'terminal', hue: 'amber',
     title: 'Autorisations des agents',
-    lead: 'Une liste claire des commandes, du web et du PATH permis aux agents.',
+    lead: 'Une liste unique des commandes, de l’accès au web et du PATH permis aux agents.',
     bits: [
-      ['terminal', 'Commandes', '`cargo test`, `npm ci`… quand « Commandes » est cochée'],
-      ['link', 'Accès au web', 'autorisé ou non'],
-      ['folder', 'PATH', 'les dossiers d’outils ajoutés'],
-      ['history', 'Réponse dans le fil', 'garde les commandes du tour précédent'],
+      ['terminal', 'Commandes', '`cargo test`, `npm ci`… dès que « Commandes » est cochée'],
+      ['link', 'Accès au web', 'autorisé ou refusé'],
+      ['folder', 'PATH', 'dossiers d’outils ajoutés'],
+      ['history', 'Réponse dans le fil', 'les commandes du tour précédent sont conservées'],
     ],
     where: ['Réglages', 'Autorisations des agents'],
     visual: { kind: 'chips', chips: [['npm ci', 'green', 'check'], ['cargo test', 'green', 'check'], ['Web', 'amber', 'link'], ['rm -rf', 'red', 'lock']] },
     go: { label: 'Régler les autorisations', view: { type: 'settings', tab: 'autorisations' } } },
   { id: 'claude-chat', date: '2026-11-14', icon: 'sparkle', hue: 'orange',
     title: 'Conversation avec Claude',
-    lead: 'Une conversation libre avec Claude, à côté de tes notes.',
+    lead: 'Une conversation libre avec Claude, à côté des notes du projet.',
     bits: [
-      ['notes', 'Tes données', 'notes, tâches, Linear et GitHub, quand c’est utile'],
-      ['shield', 'Ton accord', 'demandé avant toute modification'],
+      ['notes', 'Données du projet', 'notes, tâches, Linear et GitHub, lus quand la question le demande'],
+      ['shield', 'Validation', 'accord demandé avant toute modification'],
     ],
     where: ['Projets', 'un projet', 'Claude'],
-    visual: { kind: 'flow', steps: [['Ta question', 'gray', 'compose'], ['Claude lit', 'orange', 'sparkle'], ['Tu valides', 'green', 'check']] },
-    go: { label: 'Voir mes projets', view: { type: 'projets' } } },
+    visual: { kind: 'flow', steps: [['Question', 'gray', 'compose'], ['Claude lit', 'orange', 'sparkle'], ['Validation', 'green', 'check']] },
+    go: { label: 'Ouvrir les projets', view: { type: 'projets' } } },
   { id: 'spotify-volume', date: '2026-11-14', icon: 'volume', hue: 'green',
     title: 'Volume de Spotify',
-    lead: 'Règle le son de l’appareil qui joue, sans quitter Studio.',
+    lead: 'Le son de l’appareil qui joue se règle sans quitter Studio.',
     bits: [
       ['volume', 'Curseur', 'sous le titre en cours'],
-      ['mute', 'Haut-parleur', 'coupe ou remet le son'],
-      ['refresh', 'Déjà connecté ?', 'reconnecte Spotify une fois pour l’activer'],
+      ['mute', 'Haut-parleur', 'coupe ou rétablit le son'],
+      ['refresh', 'Compte déjà connecté', 'une reconnexion à Spotify, une seule fois, active la fonction'],
     ],
     where: ['Barre latérale', 'Spotify'],
     visual: { kind: 'chips', chips: [['Volume', 'green', 'volume'], ['Muet', 'gray', 'mute'], ['Palette ⌘K', 'blue', 'search']] } },
   { id: 'extensions', date: '2026-11-14', icon: 'plug', hue: 'green',
     title: 'Extensions : Spotify, n8n',
-    lead: 'Active seulement ce dont tu as besoin. Toujours sans serveur.',
+    lead: 'Les extensions s’activent à la demande ; aucune n’exige de serveur.',
     bits: [
-      ['music', 'Spotify', 'le titre en cours et ses commandes dans la barre latérale'],
-      ['bolt', 'n8n', 'reçoit tes captures, tâches terminées et notes'],
+      ['music', 'Spotify', 'titre en cours et commandes dans la barre latérale'],
+      ['bolt', 'n8n', 'reçoit les captures, tâches terminées et notes'],
     ],
     where: ['Réglages', 'Extensions'],
     visual: { kind: 'chips', chips: [['Spotify', 'green', 'music'], ['n8n', 'pink', 'bolt'], ['Figma', 'violet', 'figma']] },
-    go: { label: 'Voir les extensions', view: { type: 'settings', tab: 'extensions' } } },
+    go: { label: 'Ouvrir les extensions', view: { type: 'settings', tab: 'extensions' } } },
   { id: 'repo-memory', date: '2026-11-14', mac: true, icon: 'notes', hue: 'teal',
     title: 'Mémoire du dépôt',
-    lead: 'Chaque agent lit `contexte.md` avant de commencer, au lieu de tout réexplorer.',
+    lead: 'Chaque agent lit `contexte.md` avant de commencer, au lieu d’explorer tout le dépôt.',
     bits: [
       ['eye', 'Lu en premier', '`contexte.md`, à la racine du dépôt'],
-      ['pencil', 'Tenu à jour', 'l’agent y note ce qu’il a appris de durable'],
-      ['bolt', 'Plus rapide', 'l’agent suivant démarre avec cet acquis'],
+      ['pencil', 'Tenu à jour', 'l’agent y consigne ce qu’il a appris de durable'],
+      ['bolt', 'Démarrage plus rapide', 'l’agent suivant repart de cet acquis'],
     ],
     where: ['Réglages', 'Consignes et contexte'],
     visual: { kind: 'flow', steps: [['contexte.md', 'teal', 'notes'], ['Agent', 'violet', 'bot'], ['Appris', 'green', 'pencil']] },
-    go: { label: 'Voir les consignes', view: { type: 'settings', tab: 'consignes' } } },
+    go: { label: 'Ouvrir les consignes', view: { type: 'settings', tab: 'consignes' } } },
   { id: 'auto-update', date: '2026-11-14', mac: true, icon: 'download', hue: 'blue',
     title: 'Mises à jour automatiques',
     lead: 'La nouvelle version est téléchargée en arrière-plan, puis installée à la relance.',
     bits: [
-      ['download', 'Téléchargée', 'et vérifiée sans te déranger'],
-      ['refresh', 'Installée', 'quand tu relances, ou toute seule quand tu quittes'],
+      ['download', 'Téléchargement', 'et vérification, sans interrompre le travail'],
+      ['refresh', 'Installation', 'à la relance, ou automatiquement à la fermeture de Studio'],
     ],
     where: ['Réglages', 'Mises à jour'],
     visual: { kind: 'flow', steps: [['Téléchargée', 'blue', 'download'], ['Vérifiée', 'violet', 'shield'], ['Installée', 'green', 'check']] },
-    go: { label: 'Réglages des mises à jour', view: { type: 'settings', tab: 'maj' } } },
+    go: { label: 'Ouvrir les mises à jour', view: { type: 'settings', tab: 'maj' } } },
   { id: 'whats-new', date: '2026-11-14', icon: 'bolt', hue: 'orange',
     title: 'Fenêtre des nouveautés',
-    lead: 'À chaque version, Studio liste ce qui change, rangé par date.',
+    lead: 'À chaque version, Studio liste ce qui change, classé par date.',
     bits: [
-      ['eye', 'Une fois', 'chaque nouveauté n’est montrée qu’une fois'],
-      ['history', 'À revoir', 'quand tu veux, depuis le menu Studio'],
+      ['eye', 'Une seule fois', 'chaque nouveauté n’est présentée qu’une fois'],
+      ['history', 'Consultation libre', 'à tout moment depuis le menu Studio'],
     ],
     where: ['Studio ▾', 'Nouveautés'],
     visual: { kind: 'chips', chips: [['Nouveau', 'green', 'sparkle'], ['Amélioré', 'indigo', 'bolt'], ['Corrigé', 'orange', 'check']] } },
   { id: 'subagent-threads', date: '2026-11-13', mac: true, icon: 'bot', hue: 'violet',
     title: 'Fil des sous-agents',
-    lead: 'Ce que Claude délègue se suit comme une conversation à part.',
+    lead: 'Chaque tâche déléguée par Claude se suit dans un fil séparé.',
     bits: [
-      ['bot', 'Dans l’en-tête', 'les tâches déléguées pendant la conversation'],
-      ['list', 'Fil du sous-agent', 'un clic pour l’ouvrir, le fil d’Ariane pour revenir'],
-      ['pin', 'Épingler', 'le garde dans la barre latérale, sous sa conversation'],
+      ['bot', 'En-tête', 'liste des tâches déléguées pendant la conversation'],
+      ['list', 'Fil du sous-agent', 'un clic l’ouvre, le fil d’Ariane ramène à la conversation'],
+      ['pin', 'Épinglage', 'le sous-agent reste dans la barre latérale, sous sa conversation'],
     ],
     where: ['Projets', 'un projet', 'Claude Code'],
     visual: { kind: 'stack', rows: [[['Conversation', 'violet', 'terminal'], 'Refonte du site'], [['Sous-agent', 'indigo', 'bot'], 'Explorer les styles'], [['Sous-agent', 'indigo', 'bot'], 'Vérifier les liens']] },
     go: { label: 'Ouvrir les projets', view: { type: 'projets' } } },
   { id: 'queued-messages', date: '2026-11-12', mac: true, icon: 'list', hue: 'teal',
     title: 'Messages en attente',
-    lead: 'Studio ne coupe jamais un agent en plein travail.',
+    lead: 'Un message envoyé pendant qu’un agent travaille attend la fin de son tour au lieu de l’interrompre.',
     bits: [
-      ['hourglass', 'En attente', 'tes messages s’affichent ainsi dans le fil'],
-      ['list', 'Remis ensemble', 'dans l’ordre, dès que l’agent a fini son tour'],
+      ['hourglass', 'En attente', 'le message apparaît ainsi dans le fil'],
+      ['list', 'Remise groupée', 'dans l’ordre d’envoi, dès que l’agent a terminé'],
     ],
-    visual: { kind: 'flow', steps: [['Tu écris', 'gray', 'compose'], ['En attente', 'amber', 'hourglass'], ['Remis', 'teal', 'check']] } },
+    visual: { kind: 'flow', steps: [['Envoi', 'gray', 'compose'], ['En attente', 'amber', 'hourglass'], ['Remis', 'teal', 'check']] } },
   { id: 'reuse-worktrees', date: '2026-11-12', mac: true, icon: 'pr', hue: 'green',
-    title: 'Copies réutilisées après fusion',
-    lead: 'Une copie fusionnée repart d’elle-même sur une nouvelle branche.',
+    title: 'Copies relancées après fusion',
+    lead: 'Une copie fusionnée repart automatiquement sur une nouvelle branche.',
     bits: [
-      ['check', 'Fusion reconnue', 'la copie n’est plus reproposée à la publication'],
-      ['pr', 'Nouvelle branche', 'à partir de la dernière version de la branche principale'],
+      ['check', 'Fusion reconnue', 'la copie n’est plus proposée à la publication'],
+      ['pr', 'Nouvelle branche', 'créée depuis la dernière version de la branche principale'],
     ],
     visual: { kind: 'flow', steps: [['Fusionné', 'green', 'check'], ['main à jour', 'blue', 'refresh'], ['Nouvelle branche', 'violet', 'pr']] } },
 ];
@@ -498,7 +521,50 @@ export function changes(notes: string): Change[] {
 export function changeList(notes: string, max = 6): string {
   const all = changes(notes);
   if (!all.length) return '';
-  return `<ul class="wn-list">${all.slice(0, max).map(c => `<li><span class="wn-kind ${c.kind}">${KIND_LABEL[c.kind]}</span><span>${esc(c.text)}</span></li>`).join('')}${all.length > max ? `<li class="wn-more">et ${all.length - max} autre${all.length - max > 1 ? 's' : ''}</li>` : ''}</ul>`;
+  return `<ul class="nw-list">${all.slice(0, max).map(c => `<li><span class="nw-kind">${KIND_LABEL[c.kind]}</span><span>${esc(c.text)}</span></li>`).join('')}${all.length > max ? `<li class="nw-more">et ${all.length - max} autre${all.length - max > 1 ? 's' : ''}</li>` : ''}</ul>`;
+}
+
+// ---------- Image en grain ----------
+// Une forme organique par identifiant, sans fichier ni bibliothèque : SVG en ligne (la CSP autorise
+// `style-src 'unsafe-inline'`, et rien n'est chargé). Le tracé vient d'un hasard déterministe : la même
+// nouveauté a toujours la même forme. Le grain est un `feTurbulence`, seuillé en fines taches.
+function hash(s: string): number { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return h >>> 0; }
+function rng(seed: number): () => number {
+  let a = seed || 1;
+  return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+/** Courbe fermée irrégulière : 6 ou 7 sommets autour d'un centre, reliés en Bézier (Catmull-Rom), rayon entre 50 et 80. */
+export function shapePath(id: string): string {
+  const r = rng(hash(id)), n = 6 + Math.floor(r() * 2), rot = r() * Math.PI * 2;
+  const cx = 100 + (r() - .5) * 14, cy = 120 + (r() - .5) * 14;
+  const p: [number, number][] = [];
+  for (let k = 0; k < n; k++) {
+    const a = rot + ((k + (r() - .5) * .45) / n) * Math.PI * 2, d = 50 + r() * 30;
+    p.push([cx + Math.cos(a) * d, cy + Math.sin(a) * d * 1.08]);
+  }
+  const f = (v: number): string => v.toFixed(1);
+  let out = `M${f(p[0]![0])} ${f(p[0]![1])}`;
+  for (let i = 0; i < n; i++) {
+    const p0 = p[(i + n - 1) % n]!, p1 = p[i]!, p2 = p[(i + 1) % n]!, p3 = p[(i + 2) % n]!;
+    out += `C${f(p1[0] + (p2[0] - p0[0]) / 6)} ${f(p1[1] + (p2[1] - p0[1]) / 6)} ${f(p2[0] - (p3[0] - p1[0]) / 6)} ${f(p2[1] - (p3[1] - p1[1]) / 6)} ${f(p2[0])} ${f(p2[1])}`;
+  }
+  return `${out}Z`;
+}
+/** Matière : un grain fin sur tout le volet (le papier déborde du cadre, quel que soit son format), plus un grain plus dense dans la forme, au bord légèrement rongé. */
+function grainSVG(id: string): string {
+  const h = hash(id), k = `nw-${h.toString(36)}`, seed = h % 997;
+  // Le bruit est lu en canal rouge (≈ 0,5 en moyenne) puis seuillé : alpha = a·R + b.
+  const speck = (a: number, b: number): string => `<feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  ${a} 0 0 0 ${b}" result="s"/>`;
+  return `<svg class="nw-svg" viewBox="0 0 200 240" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">
+    <defs>
+      <filter id="${k}-e" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB"><feTurbulence type="fractalNoise" baseFrequency="1.2" numOctaves="2" seed="${seed}" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="4" xChannelSelector="R" yChannelSelector="G"/></filter>
+      <filter id="${k}-g" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB"><feTurbulence type="fractalNoise" baseFrequency="1.2" numOctaves="2" seed="${seed}" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="4" xChannelSelector="R" yChannelSelector="G" result="d"/>${speck(3.4, -1.35)}<feComposite in="d" in2="s" operator="in"/></filter>
+      <filter id="${k}-p" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB"><feTurbulence type="fractalNoise" baseFrequency="1.6" numOctaves="1" seed="${seed + 7}" result="n"/>${speck(3, -1.2)}<feComposite in="SourceGraphic" in2="s" operator="in"/></filter>
+    </defs>
+    <rect class="nw-paper" x="-200" y="-200" width="600" height="640" filter="url(#${k}-p)"/>
+    <path class="nw-shape" d="${shapePath(id)}" filter="url(#${k}-e)"/>
+    <path class="nw-grain" d="${shapePath(id)}" filter="url(#${k}-g)"/>
+  </svg>`;
 }
 
 // ---------- Fenêtres ----------
@@ -508,66 +574,65 @@ function whenFree(run: () => void, delay: number): void {
   setTimeout(attempt, delay);
 }
 
-const day = (iso: string): string => { const d = new Date(`${iso}T12:00:00`); return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' }); };
+const day = (iso: string): string => { const d = new Date(`${iso}T12:00:00`); return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }); };
 /** Texte court : `code` entre accents graves, le reste échappé. */
 const rich = (t: string): string => esc(t).replace(/`([^`]+)`/g, '<code>$1</code>');
-/** Repère d'une pastille ou d'une ligne : son icône, sinon un point. C'est lui seul qui porte la teinte. */
-const mark = (ic?: string): string => ic ? icon(ic) : '<i class="wn-pt"></i>';
-const chipHTML = ([label, hue, ic]: Chip): string => `<span class="wn-chip" style="--c:var(--c-${esc(hue)})">${mark(ic)}${esc(label)}</span>`;
-/** Schéma d'une nouveauté : un encadré neutre, comme les sections des Réglages. */
-function visualHTML(v: Visual): string {
-  if (v.kind === 'flow') return `<div class="wn-fig wn-flow" aria-hidden="true">${v.steps.map((c, i) => `${i ? `<i class="wn-arrow">${icon('chevronRight')}</i>` : ''}${chipHTML(c)}`).join('')}</div>`;
-  if (v.kind === 'stack') return `<div class="wn-fig wn-stack" aria-hidden="true">${v.rows.map(([[label, hue, ic], text]) => `<div class="wn-row" style="--c:var(--c-${esc(hue)})"><span>${mark(ic)}${esc(label)}</span><code>${esc(text)}</code></div>`).join('')}</div>`;
-  return `<div class="wn-fig wn-flow" aria-hidden="true">${v.chips.slice(0, 4).map(c => chipHTML(c)).join('')}</div>`;
-}
-/** En-tête d'une fiche : l'icône dans sa case, une ligne d'informations, le titre. */
-const head = (ic: string, hue: string, meta: string[], title: string): string =>
-  `<header class="wn-head"><span class="wn-ic" style="--c:var(--c-${esc(hue)})">${icon(ic)}</span><div><p class="wn-meta">${meta.filter(Boolean).map(esc).join('<i>·</i>')}</p><h3>${esc(title)}</h3></div></header>`;
-/** Une fiche de la fenêtre : sa ligne dans le sommaire (groupe, icône, titre) et son contenu. */
-interface Entry { id: string; group: string; icon: string; title: string; html: string; where: string; go?: Item['go'] }
+/** Parcours en une ligne de texte (« A → B → C ») : le seul rendu du schéma `visual`. */
+const flowHTML = (v: Visual): string => v.kind === 'flow' && v.steps.length > 1
+  ? `<p class="nw-flow"><span>Parcours</span>${v.steps.map(([label]) => esc(label)).join('<i aria-hidden="true">→</i>')}</p>` : '';
+/** En-tête d'une fiche : date et version, discrètes, puis le titre. */
+const head = (meta: string[], title: string): string => `<header class="nw-head"><p class="nw-meta">${meta.filter(Boolean).map(esc).join('<i>·</i>')}</p><h3>${esc(title)}</h3></header>`;
+
+/** Une fiche : sa ligne dans la liste par date, son texte, son image. */
+interface Entry { id: string; group: string; title: string; html: string; where: string; go?: Item['go']; seed: string; hue: string }
 function itemEntry(n: Item): Entry {
-  const bits = `<dl class="wn-bits">${n.bits.map(([ic, key, detail]) => `<div><dt>${icon(ic)}<span>${rich(key)}</span></dt><dd>${rich(detail)}</dd></div>`).join('')}</dl>`;
-  return { id: n.id, group: day(n.date), icon: n.icon, title: n.title,
-    html: `${head(n.icon, n.hue, [day(n.date), n.mac ? 'Mac' : ''], n.title)}<p class="wn-lead">${rich(n.lead)}</p>${visualHTML(n.visual)}${bits}`,
-    where: n.where?.length ? `<p class="wn-where"><span>Où</span>${n.where.map(w => `<b>${esc(w)}</b>`).join('<i>›</i>')}</p>` : '',
+  const pts = `<ul class="nw-pts">${n.bits.slice(0, 4).map(([, key, detail]) => `<li><b>${rich(key)}</b><span>${rich(detail)}</span></li>`).join('')}</ul>`;
+  return { id: n.id, group: day(n.date), title: n.title, seed: n.id, hue: n.hue,
+    html: `${head([day(n.date), n.mac ? 'Mac' : ''], n.title)}<p class="nw-lead">${rich(n.lead)}</p>${pts}${flowHTML(n.visual)}`,
+    where: n.where?.length ? `<p class="nw-where"><span>Où</span>${n.where.map(w => `<b>${esc(w)}</b>`).join('<i>›</i>')}</p>` : '',
     ...(n.go ? { go: n.go } : {}) };
 }
 function installedEntry(v: Installed): Entry {
   const list = changeList(v.notes);
-  const page = v.page.startsWith('https://github.com/') ? `<p class="wn-link"><a href="${esc(v.page)}" target="_blank" rel="noopener">Voir le détail sur GitHub</a></p>` : '';
+  const page = v.page.startsWith('https://github.com/') ? `<p class="nw-link"><a href="${esc(v.page)}" target="_blank" rel="noopener">Voir le détail sur GitHub</a></p>` : '';
   const title = `Studio ${v.tag}`;
-  return { id: '', group: 'Mise à jour', icon: 'check', title, where: '',
-    html: head('check', 'green', ['Mise à jour installée'], title)
-      + (list ? `<p class="wn-lead">Studio vient de se mettre à jour. Voici ce qui change.</p>${list}` : '<p class="wn-lead">Studio vient de se mettre à jour. Tes notes et tes réglages n’ont pas bougé.</p>') + page };
+  return { id: '', group: 'Mise à jour', title, where: '', seed: `maj-${v.tag}`, hue: 'blue',
+    html: head(['Mise à jour installée'], title)
+      + (list ? `<p class="nw-lead">Studio vient de se mettre à jour. Voici ce qui change.</p>${list}` : '<p class="nw-lead">Studio vient de se mettre à jour. Tes notes et tes réglages n’ont pas bougé.</p>') + page };
 }
 
 /**
- * Fenêtre des nouveautés : le sommaire à gauche (rangé par date), la fiche choisie à droite.
- * Une seule fiche : pas de sommaire. `fresh` : celles à marquer d'un point tant qu'elles n'ont pas été ouvertes.
+ * Fenêtre des nouveautés : le texte d'une fiche à gauche, son image à droite. Précédent et Suivant, les flèches
+ * du clavier, ou « Toutes » (liste par date) pour changer de fiche. `fresh` : celles à marquer d'un point tant
+ * qu'elles n'ont pas été ouvertes.
  */
 function viewer(entries: Entry[], fresh: Set<string> = new Set()): void {
   if (!entries.length) return;
   const solo = entries.length === 1;
   let at = 0, group: string | null = null;
-  const nav = solo ? '' : `<nav class="wn-nav" aria-label="Nouveautés"><h2>Nouveautés</h2>${entries.map((e, k) => {
-    const title = e.group !== group && e.group ? `<p class="wn-group">${esc(e.group)}</p>` : '';
+  const index = solo ? '' : `<nav class="nw-index" aria-label="Toutes les nouveautés" hidden>${entries.map((e, k) => {
+    const title = e.group !== group && e.group ? `<p class="nw-group">${esc(e.group)}</p>` : '';
     group = e.group;
-    return `${title}<button class="wn-item" data-wn-at="${k}">${icon(e.icon)}<span>${esc(e.title)}</span>${fresh.has(e.id) ? '<i class="wn-new" title="Pas encore ouverte"></i>' : ''}</button>`;
+    return `${title}<button class="nw-item" data-nw-at="${k}"><span>${esc(e.title)}</span>${fresh.has(e.id) ? '<i class="nw-new" title="Pas encore ouverte"></i>' : ''}</button>`;
   }).join('')}</nav>`;
-  const m = modal({ cls: solo ? 'wn wn-solo' : 'wn', html: `${nav}<div class="wn-main"><div class="wn-stage"></div><footer class="wn-foot"><span class="wn-count"></span><button class="btn btn-ghost" data-wn="prev">Précédent</button><button class="btn btn-primary" data-wn="next" autofocus></button></footer></div>` });
-  const stage = need('.wn-stage', m.body), count = need('.wn-count', m.body), prev = need<HTMLButtonElement>('[data-wn="prev"]', m.body), next = need<HTMLButtonElement>('[data-wn="next"]', m.body);
-  const items = [...m.body.querySelectorAll<HTMLElement>('.wn-item')];
+  const m = modal({ cls: solo ? 'nw nw-solo' : 'nw', html: `<div class="nw-text"><div class="nw-stage"></div>${index}<footer class="nw-foot">${solo ? '<span class="nw-count"></span>' : '<button class="btn btn-ghost" data-nw="all" aria-expanded="false">Toutes</button><span class="nw-count"></span>'}<button class="btn btn-ghost" data-nw="prev">Précédent</button><button class="btn btn-primary" data-nw="next" autofocus></button></footer></div><div class="nw-fig"></div>` });
+  const stage = need('.nw-stage', m.body), fig = need('.nw-fig', m.body), count = need('.nw-count', m.body), prev = need<HTMLButtonElement>('[data-nw="prev"]', m.body), next = need<HTMLButtonElement>('[data-nw="next"]', m.body);
+  const all = m.body.querySelector<HTMLButtonElement>('[data-nw="all"]'), list = m.body.querySelector<HTMLElement>('.nw-index');
+  const items = [...m.body.querySelectorAll<HTMLElement>('.nw-item')];
+  const toggle = (on: boolean): void => { if (!list || !all) return; list.hidden = !on; stage.hidden = on; all.setAttribute('aria-expanded', String(on)); all.textContent = on ? 'Retour' : 'Toutes'; if (on) items[at]?.scrollIntoView({ block: 'nearest' }); };
   const show = (i: number): void => {
     const e = entries[i]; if (!e) return;
     at = i;
-    const end = e.where || e.go ? `<div class="wn-end">${e.where}${e.go ? `<button class="btn" data-wn="go">${esc(e.go.label)}</button>` : ''}</div>` : '';
-    stage.innerHTML = `<article class="wn-art" aria-live="polite">${e.html}${end}</article>`;
+    toggle(false);
+    const end = e.where || e.go ? `<div class="nw-end">${e.where}${e.go ? `<button class="btn" data-nw="go">${esc(e.go.label)}</button>` : ''}</div>` : '';
+    stage.innerHTML = `<article class="nw-art" aria-live="polite">${e.html}${end}</article>`;
     stage.scrollTop = 0;
+    fig.style.setProperty('--nw-hue', `var(--c-${e.hue})`);
+    fig.innerHTML = grainSVG(e.seed);
     items.forEach((b, k) => {
       if (k !== i) { b.removeAttribute('aria-current'); return; }
       b.setAttribute('aria-current', 'true');
-      b.querySelector('.wn-new')?.remove();
-      b.scrollIntoView({ block: 'nearest' });
+      b.querySelector('.nw-new')?.remove();
     });
     count.textContent = solo ? '' : `${i + 1} sur ${entries.length}`;
     prev.hidden = solo;
@@ -579,11 +644,12 @@ function viewer(entries: Entry[], fresh: Set<string> = new Set()): void {
     if (at + d >= 0) show(at + d);
   };
   m.node.addEventListener('click', e => {
-    const b = target(e).closest('[data-wn], [data-wn-at]'); if (!b) return;
-    if (b.dataset.wnAt !== undefined) { const k = Number(b.dataset.wnAt); if (k !== at) show(k); return; }
-    if (b.dataset.wn === 'next') step(1);
-    else if (b.dataset.wn === 'prev') step(-1);
-    else if (b.dataset.wn === 'go') { const go = entries[at]?.go; m.close(); if (go) void api.setView(go.view); }
+    const b = target(e).closest('[data-nw], [data-nw-at]'); if (!b) return;
+    if (b.dataset.nwAt !== undefined) { show(Number(b.dataset.nwAt)); return; }
+    if (b.dataset.nw === 'next') step(1);
+    else if (b.dataset.nw === 'prev') step(-1);
+    else if (b.dataset.nw === 'all') toggle(!!list?.hidden);
+    else if (b.dataset.nw === 'go') { const go = entries[at]?.go; m.close(); if (go) void api.setView(go.view); }
   });
   m.node.addEventListener('keydown', e => {
     if (e.key === 'ArrowRight') { e.preventDefault(); if (at < entries.length - 1) step(1); }
@@ -602,12 +668,12 @@ export function open(): void {
 /** Une nouvelle version est prête : relancer maintenant, ou la laisser s'installer à la fermeture. */
 function promptReady(): void {
   const s = update.current(); if (!s) return;
-  const list = changeList(s.notes ?? '', 5);
-  const m = modal({ cls: 'wn wn-solo', html: `<div class="wn-main"><div class="wn-stage"><article class="wn-art">${head('download', 'blue', ['Mise à jour prête'], `Studio ${s.tag ?? ''}`)}
-      <p class="wn-lead">La nouvelle version est téléchargée et vérifiée. Relance Studio pour l’utiliser : tes notes sont enregistrées avant, et l’app se rouvre en quelques secondes.</p>${list}
-      <p class="wn-hint">Plus tard, elle s’installera quand tu quitteras Studio. Si un agent Claude Code travaille en ce moment, laisse-le d’abord finir.</p></article></div>
-    <footer class="wn-foot"><span class="wn-count"></span><button class="btn btn-ghost" data-wn="later">Plus tard</button><button class="btn btn-primary" data-wn="restart" autofocus>${icon('refresh')}Relancer maintenant</button></footer></div>` });
-  const restart = need<HTMLButtonElement>('[data-wn="restart"]', m.body), later = need<HTMLButtonElement>('[data-wn="later"]', m.body);
+  const list = changeList(s.notes ?? '', 5), title = `Studio ${s.tag ?? ''}`.trim();
+  const m = modal({ cls: 'nw nw-solo', html: `<div class="nw-text"><div class="nw-stage"><article class="nw-art">${head(['Mise à jour prête'], title)}
+      <p class="nw-lead">La nouvelle version est téléchargée et vérifiée. Relance Studio pour l’utiliser : tes notes sont enregistrées avant, et l’app se rouvre en quelques secondes.</p>${list}
+      <p class="nw-hint">Plus tard, elle s’installera quand tu quitteras Studio. Si un agent Claude Code travaille en ce moment, laisse-le d’abord finir.</p></article></div>
+    <footer class="nw-foot"><span class="nw-count"></span><button class="btn btn-ghost" data-nw="later">Plus tard</button><button class="btn btn-primary" data-nw="restart" autofocus>${icon('refresh')}Relancer maintenant</button></footer></div><div class="nw-fig" style="--nw-hue:var(--c-blue)">${grainSVG(`pret-${s.tag ?? ''}`)}</div>` });
+  const restart = need<HTMLButtonElement>('[data-nw="restart"]', m.body), later = need<HTMLButtonElement>('[data-nw="later"]', m.body);
   later.onclick = () => m.close();
   restart.onclick = async () => {
     restart.disabled = later.disabled = true;

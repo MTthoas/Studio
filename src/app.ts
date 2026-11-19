@@ -30,6 +30,7 @@ import * as savedCommands from './features/commands.ts';
 import * as projectsPage from './features/projects/page.ts';
 import * as projectsModel from './features/projects/model.ts';
 import * as agentItems from './features/projects/items.ts';
+import * as agentGuard from './features/projects/guard.ts';
 import { registerBuiltins } from './plugins/builtin.ts';
 import * as plugins from './plugins/registry.ts';
 import * as caret from './ui/caret.ts';
@@ -1381,6 +1382,7 @@ async function start() {
   notifs.init(shared); github.init(shared);
   // Notes et tâches envoyées par les agents Claude Code à leur projet (app Mac) : créées ici, à leur arrivée.
   agentItems.init(shared);
+  agentGuard.init();
   if (voice.available()) document.body.insertAdjacentHTML('beforeend', `<button class="fab-mic" data-act="voice" aria-label="Note vocale">${icon('mic')}</button>`);
   for (const g of gone.filter(g => g.expired)) toast(`« ${g.title.trim() || 'Sans titre'} » s’est autodétruite`);
   const params = new URLSearchParams(location.search);
@@ -1402,4 +1404,4 @@ async function start() {
 start().catch(e => { console.error(e); document.body.insertAdjacentHTML('beforeend', `<div class="fatal">Studio n’a pas pu démarrer : ${esc(e.message)}.<br>Le stockage local du navigateur est peut-être désactivé (navigation privée ?).</div>`); });
 
 // Build de test uniquement (retiré du build normal) : accès direct aux modules pour les tests automatisés.
-if (__TEST__) Object.assign(window, { __studio: { store, vault, todo, notifs, hub, github, linear, link, biometric, usage, ai, app: { setView } } });
+if (__TEST__) Object.assign(window, { __studio: { store, vault, todo, notifs, hub, github, linear, link, biometric, usage, ai, agentGuard, news, app: { setView } } });

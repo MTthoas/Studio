@@ -20,6 +20,7 @@
 // Sur ce Mac, bulle macOS autour de l'agent et de ses commandes (AgentSandbox.swift), qui lui ouvre le terminal en mode Modifier.
 // Un appareil lié ne peut jamais demander les commandes (voir link.ts), ni changer les autorisations.
 import Foundation
+import CryptoKit
 #if os(macOS)
 
 final class Agents {
@@ -57,7 +58,8 @@ final class Agents {
     /// Claude Code (mode -p) ne lit rien en plein tour, et l'interrompre lui ferait perdre le fil : ils lui sont
     /// remis ensemble, en une seule consigne, dès qu'il a fini son tour proprement.
     /// `remote` : message venu d'un appareil lié (link.ts) ; la reprise qui l'emporte part sans terminal.
-    private struct Queued { let id: String, session: String, text: String, at: Date, machine: String, remote: Bool }
+    /// `sealed` : notes liées du message, gardées chiffrées en mémoire (jamais listées ni écrites) jusqu'au lancement.
+    private struct Queued { let id: String, session: String, text: String, at: Date, machine: String, remote: Bool; var sealed: Sealed? = nil }
     private var queues: [String: [Queued]] = [:]
     /// Sous-agents de la dernière consigne de chaque conversation : un message en attente repart avec le même réglage.
     private var teams: [String: [String: Any]] = [:]
@@ -102,14 +104,16 @@ final class Agents {
     }
 
     /// Met un message en attente pour la discussion dont l'agent travaille encore.
-    private func enqueue(project: String, session: String, text: String, machine: String, remote: Bool) -> [String: Any] {
+    private func enqueue(project: String, session: String, text: String, machine: String, remote: Bool, sealed: Sealed? = nil) -> [String: Any] {
         lock.lock(); defer { lock.unlock() }
         let key = project + "|" + session
         var q = queues[key] ?? []
         guard q.count < maxQueued else { return ["ok": false, "message": "Déjà \(maxQueued) messages en attente : attends que Claude finisse son tour."] }
-        q.append(Queued(id: UUID().uuidString, session: session, text: text, at: Date(), machine: machine, remote: remote))
+        q.append(Queued(id: UUID().uuidString, session: session, text: text, at: Date(), machine: machine, remote: remote, sealed: sealed))
         queues[key] = q
-        return ["ok": true, "queued": q.count, "session": session]
+        var r: [String: Any] = ["ok": true, "queued": q.count, "session": session]
+        if sealed != nil { r["sealed"] = true }
+        return r
     }
 
     /// Retire un message en attente (l'utilisateur a changé d'avis).
@@ -264,10 +268,16 @@ final class Agents {
         if bin.isEmpty { return done(["ok": false, "message": "Claude Code n'est pas installé sur ce Mac."]) }
         var prompt = (body["prompt"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let resume = body["session"] as? String ?? ""
+        // Notes scellées : le clair n'existe que dans la consigne donnée à Claude Code (voir Sealed), jamais envoyé à un serveur.
+        let sealedNow = Sealed(body["sealed"])
+        if body["sealed"] != nil && sealedNow == nil { return done(["ok": false, "message": "Notes liées illisibles : renvoie la consigne."]) }
+        if onServer && sealedNow != nil { return done(["ok": false, "message": "Les notes liées ne partent pas vers un serveur."]) }
         // Messages secondaires : pendant que l'agent de la discussion travaille, le message attend la fin de son tour ;
         // à la reprise suivante, tous les messages en attente partent avec la consigne, en une seule fois.
         // Les reprises lancées par l'orchestrateur (résolution de conflits) n'y touchent pas.
         var taken: [String] = []
+        /// Clair des notes liées : local à ce lancement, écrit une seule fois dans l'entrée de Claude Code.
+        var notes = ""
         // Consigne venue d'un appareil lié (posé par link.ts, jamais retiré) : jamais de terminal, même dans la bulle.
         var fromLink = body["remote"] as? Bool == true
         if !resume.isEmpty, body["internal"] as? Bool != true {
@@ -282,18 +292,26 @@ final class Agents {
             }
             if self.busy(project: pid, session: resume) {
                 guard !prompt.isEmpty, prompt.utf8.count <= 100_000 else { return done(["ok": false, "message": "Message vide ou trop long."]) }
-                return done(enqueue(project: pid, session: resume, text: prompt, machine: onServer ? "server" : "mac", remote: fromLink))
+                return done(enqueue(project: pid, session: resume, text: prompt, machine: onServer ? "server" : "mac", remote: fromLink, sealed: sealedNow))
             }
             lock.lock(); let q = queues[pid + "|" + resume] ?? []; lock.unlock()
             taken = q.map(\.id)
             if q.contains(where: \.remote) { fromLink = true }
             prompt = Self.combine(q.map(\.text), prompt)
+            let all = q.compactMap(\.sealed) + (sealedNow.map { [$0] } ?? [])
+            guard let clear = Sealed.open(all) else { return done(["ok": false, "message": "Les notes liées n’ont pas pu être déchiffrées."]) }
+            notes = clear
             if cut {
                 prompt = "L'utilisateur a interrompu ton tour en cours pour intervenir. Ce que tu avais commencé reste en l'état : "
                     + "lis son message, puis reprends en en tenant compte (ne recommence pas ce qui est déjà fait).\n\n" + prompt
             }
         }
         guard !prompt.isEmpty, prompt.utf8.count <= 100_000 else { return done(["ok": false, "message": "Consigne vide ou trop longue."]) }
+        // Pas de reprise passée par la file (nouvelle session, ou réponse sans file) : le scellé de cette requête.
+        if notes.isEmpty, let sealedNow {
+            guard let clear = Sealed.open([sealedNow]) else { return done(["ok": false, "message": "Les notes liées n’ont pas pu être déchiffrées."]) }
+            notes = clear
+        }
         lock.lock(); let full = runs.values.filter { $0.status == "running" || $0.status == "starting" }.count >= maxRunning; lock.unlock()
         if full { return done(["ok": false, "message": "\(maxRunning) agents tournent déjà : attends qu'un se termine ou arrête-en un."]) }
 
@@ -453,6 +471,12 @@ final class Agents {
         run.model = modelOK ? useModel : ""; run.effort = effortOK ? useEffort : ""; run.commands = tests; run.projectItems = items
         if !resume.isEmpty || !newWorktree.isEmpty { run.session = resume; run.cwd = cwd; run.worktree = cwd.range(of: "/.claude/worktrees/").map { String(cwd[$0.upperBound...]) } ?? newWorktree }
         run.actions.append(["at": ISO8601DateFormatter().string(from: Date()), "kind": "prompt", "text": String(prompt.prefix(4000))])
+        // Terminal sur ce Mac : chaque commande passe d'abord par le garde (AgentGuard), qui fait confirmer par
+        // Touch ID ou mot de passe toute suppression et toute installation. Sans réglages possibles, pas de lancement.
+        if !onServer && tools.contains("Bash") {
+            guard let guarded = AgentGuard.shared.settings(run: run.id, project: pid) else { return done(["ok": false, "message": "Le garde des commandes n’a pas pu être préparé : agent non lancé."]) }
+            args += ["--settings", guarded]
+        }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: bin)
         var sshSock: String?
@@ -508,15 +532,18 @@ final class Agents {
         let errDone = DispatchGroup(); errDone.enter()
 
         var answered = false
+        let hadNotes = !notes.isEmpty
         let answerOnce: ([String: Any]) -> Void = { r in
             self.lock.lock(); let first = !answered; answered = true; self.lock.unlock()
-            if first { done(r) }
+            // `sealed: true` : la page sait que les notes liées ont bien été remises à l'agent (un Mac plus ancien les ignorait).
+            if first { var r = r; if hadNotes, r["ok"] as? Bool == true { r["sealed"] = true }; done(r) }
         }
         p.terminationHandler = { proc in
             self.lock.lock()
             if run.status == "running" || run.status == "starting" { run.status = proc.terminationStatus == 0 && !run.result.isEmpty ? "done" : "error" }
             run.finished = Date(); run.process = nil
             self.lock.unlock()
+            AgentGuard.shared.release(run: run.id)
             _ = errDone.wait(timeout: .now() + 1)
             self.lock.lock()
             if run.result.isEmpty && run.status == "error", let why = Agents.stderrReason(errTail) { run.result = why }
@@ -552,7 +579,7 @@ final class Agents {
         }
         lock.unlock()
         DispatchQueue.global(qos: .utility).async {
-            try? input.fileHandleForWriting.write(contentsOf: Data((restored + prompt).utf8)); try? input.fileHandleForWriting.close()
+            try? input.fileHandleForWriting.write(contentsOf: Data((restored + prompt + (notes.isEmpty ? "" : Sealed.mark + notes + Sealed.end)).utf8)); try? input.fileHandleForWriting.close()
         }
         // Lecture du flux d'événements (une ligne JSON par événement).
         DispatchQueue.global(qos: .utility).async {
@@ -695,7 +722,8 @@ struct AgentTeam {
 
     /// Ajouté à la consigne de chaque spécialiste : le tableau d'équipe passe par la consigne de l'agent principal.
     static let boardLine = "\n\nSi l'agent principal t'indique un tableau d'équipe, lis-le avant tout, ne modifie que les fichiers qu'il te réserve, "
-        + "écris dans ton fichier du tableau ce que les autres doivent savoir (contrats, pièges, besoins), et relis-le avant de rendre."
+        + "écris dans ton fichier du tableau, au format « - [HH:MM] → destinataire : texte » (tous, principal ou le nom d'un autre sous-agent), "
+        + "ce que les autres doivent savoir (contrats, pièges, besoins) et tes questions, et relis-le avant de rendre."
 
     /// Les sous-agents sont attendus par l'agent (pas de tâche de fond : `claude -p` resterait ouvert après son
     /// compte rendu), ne délèguent pas à leur tour, et `max` au plus tournent ensemble.
@@ -708,12 +736,12 @@ struct AgentTeam {
     func prompt(edit: Bool) -> String {
         "Tu peux déléguer à des sous-agents (outil Agent), \(max) à la fois au plus. Fais-le de toi-même quand cela fait gagner du temps "
         + "ou du contexte : exploration large du code, recherches indépendantes, parties de la tâche qui ne partagent aucun fichier, "
-        + "relecture de ton travail une fois fini. Lance dans le même message ceux qui ne dépendent pas les uns des autres : ils "
+        + "relecture de ton travail une fois fini. Écris ton plan avant de déléguer. Lance dans le même message ceux qui ne dépendent pas les uns des autres : ils "
         + "travaillent en parallèle. Un sous-agent ne voit pas cette conversation : donne-lui une consigne complète (le but, les "
         + "fichiers concernés, ce qu'il doit te rendre, sous quelle forme). "
         + (edit ? "Ils travaillent dans la même copie que toi : deux sous-agents ne modifient jamais le même fichier. " : "")
         + "Pour une tâche courte ou d'un seul tenant, travaille seul. Tu restes responsable du résultat : vérifie ce qu'ils "
-        + "rendent, et le compte rendu final est le tien."
+        + "rendent, et le compte rendu final est le tien : il dit qui a fait quoi."
         + (members.isEmpty ? "" : " Spécialistes définis par l'utilisateur, à préférer quand leur rôle correspond : "
             + members.map { "\($0.name) (\($0.description))" }.joined(separator: " ; ") + ".")
     }
@@ -754,7 +782,10 @@ enum AgentBoard {
         var s = "Tableau d'équipe : le dossier \(d). C'est le canal entre toi"
             + (team ? ", tes sous-agents" : "") + (slot != nil ? ", les autres agents de ton groupe" : "")
             + " et l'utilisateur : chacun y écrit son propre fichier Markdown (le tien : \(me)) et lit ceux des autres (Glob puis Read). "
-            + "Il vit dans le .git du dépôt : jamais commité. Écris court, en lignes datées par étape, et ne modifie jamais le fichier d'un autre. "
+            + "Il vit dans le .git du dépôt : jamais commité. Écris court, une ligne par étape au format « - [HH:MM] → destinataire : texte » "
+            + "(destinataire : tous, principal, le nom d'un sous-agent ou utilisateur ; les lignes suivantes d'une même entrée sont indentées), "
+            + "et ne modifie jamais le fichier d'un autre. Quand tu as besoin de quelque chose d'un autre (réponse à une question, contrat à confirmer, "
+            + "fichier à libérer), écris-lui nommément dans ton fichier ; l'agent principal répond dans son propre fichier, et chacun relit le tableau à chaque étape pour y trouver ce qui lui est adressé. "
             + "Relis \(user) s'il existe, au début puis à chaque étape : l'utilisateur peut y laisser des consignes pendant que tu travailles, sans t'interrompre. "
             + "Si l'écriture y est refusée, mets ces notes dans ton compte rendu."
         if let n = slot {
@@ -766,6 +797,7 @@ enum AgentBoard {
             s += """
 
                 Orchestration de tes sous-agents :
+                0. Rien n'est délégué avant que le plan soit écrit dans \(me).
                 1. Évalue d'abord la demande. Petite ou d'un seul tenant (quelques fichiers liés) : fais-la seul. Plusieurs parties \
                 indépendantes, exploration large ou travail à relire : découpe.
                 2. Pour découper, écris d'abord dans \(me) le plan (une ligne par sous-tâche : qui, quoi, fichiers réservés) et les \
@@ -776,7 +808,9 @@ enum AgentBoard {
                 autres doivent savoir (contrat ajouté ou changé, piège, besoin de toucher un fichier réservé par un autre, question) ; \
                 relire le tableau avant de rendre et s'aligner sur les contrats des autres.
                 4. À leur retour, relis le tableau : réconcilie les contrats, lance au besoin une seconde vague pour ce qui dépendait des \
-                premiers résultats (intégration, tests, relecture par un sous-agent), puis vérifie l'ensemble toi-même.
+                premiers résultats (intégration, tests). Quand le travail a été découpé, ajoute avant de rendre une vague de relecture ou de \
+                vérification (un sous-agent qui relit les changements, ou les tests), puis vérifie l'ensemble toi-même. Réponds dans \(me) \
+                à ceux qui t'y écrivent. Ton compte rendu final dit qui a fait quoi, et ce qui reste à vérifier.
                 """
         }
         return s
@@ -796,8 +830,40 @@ enum AgentBoard {
             files.append((n, text, at))
         }
         files.sort { $0.at < $1.at }
-        let list: [[String: Any]] = files.suffix(maxFiles).map { ["name": $0.name, "text": $0.text, "at": Int($0.at * 1000)] }
-        return ["ok": true, "key": key(worktree), "files": list]
+        let kept = files.suffix(maxFiles)
+        let list: [[String: Any]] = kept.map { ["name": $0.name, "text": $0.text, "at": Int($0.at * 1000)] }
+        let msgs = kept.flatMap { messages(from: $0.name, text: $0.text, at: $0.at) }.sorted { $0.at < $1.at }.suffix(200)
+            .map { ["at": Int($0.at * 1000), "from": $0.from, "to": $0.to, "text": $0.text] as [String: Any] }
+        return ["ok": true, "key": key(worktree), "files": list, "messages": msgs]
+    }
+
+    private static let entryRe = try! NSRegularExpression(pattern: "^\\s*[-*]\\s*\\[(\\d{1,2}):(\\d{2})\\]\\s*(?:(?:→|->)\\s*([^:\\n]{1,40}?)\\s*:\\s*)?(.*)$")
+
+    /// Découpe un fichier en entrées : une ligne « - [HH:MM] → destinataire : texte » (ou sans destinataire) en ouvre une,
+    /// les lignes suivantes (indentées) la continuent. Heure = jour de la dernière modification du fichier + HH:MM ;
+    /// un fichier sans ligne datée donne une seule entrée, à sa date de modification.
+    static func messages(from file: String, text: String, at mtime: Double) -> [(at: Double, from: String, to: String, text: String)] {
+        let from = file.hasSuffix(".md") ? String(file.dropLast(3)) : file
+        var out: [(at: Double, from: String, to: String, text: String)] = []
+        let cal = Calendar.current, day = cal.startOfDay(for: Date(timeIntervalSince1970: mtime))
+        for line in text.components(separatedBy: "\n") {
+            let ns = line as NSString
+            if let m = entryRe.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)) {
+                let h = Int(ns.substring(with: m.range(at: 1))) ?? 0, mi = Int(ns.substring(with: m.range(at: 2))) ?? 0
+                var t = cal.date(byAdding: .minute, value: h * 60 + mi, to: day)?.timeIntervalSince1970 ?? mtime
+                if t > mtime + 120 { t -= 86_400 }
+                let to = m.range(at: 3).location == NSNotFound ? "" : ns.substring(with: m.range(at: 3))
+                out.append((t, from, to, ns.substring(with: m.range(at: 4)).trimmingCharacters(in: .whitespaces)))
+            } else if !out.isEmpty, !line.trimmingCharacters(in: .whitespaces).isEmpty, !line.hasPrefix("#") {
+                out[out.count - 1].text += "\n" + line.trimmingCharacters(in: .whitespaces)
+            }
+        }
+        out = out.filter { !$0.text.isEmpty || !$0.to.isEmpty }
+        if out.isEmpty {
+            let whole = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !whole.isEmpty { out = [(mtime, from, "", whole)] }
+        }
+        return out
     }
 
     /// Ajoute une consigne de l'utilisateur à `utilisateur.md` (les agents le relisent à chaque étape).
@@ -808,7 +874,7 @@ enum AgentBoard {
               (try? FileManager.default.createDirectory(atPath: d, withIntermediateDirectories: true)) != nil else { return ["ok": false, "message": "Tableau introuvable."] }
         let f = DateFormatter(); f.dateFormat = "HH:mm"
         let p = d + "/" + user
-        let line = "- [\(f.string(from: Date()))] " + String(t.prefix(4000)).replacingOccurrences(of: "\n", with: "\n  ") + "\n"
+        let line = "- [\(f.string(from: Date()))] → tous : " + String(t.prefix(4000)).replacingOccurrences(of: "\n", with: "\n  ") + "\n"
         if let h = FileHandle(forWritingAtPath: p) { h.seekToEndOfFile(); h.write(Data(line.utf8)); h.closeFile() }
         else if !FileManager.default.createFile(atPath: p, contents: Data(("# Consignes de l'utilisateur\n\n" + line).utf8)) { return ["ok": false, "message": "Écriture impossible."] }
         return read(project: pid, worktree: worktree)
@@ -1061,15 +1127,22 @@ enum AgentPermissions {
     static let shellPrompt = "Tu as un terminal complet (Bash), dans une bulle macOS : tu n'écris que dans ta copie (et le .git de son dépôt), "
         + "les caches des outils et /tmp ; les données de Studio, les autres projets et les autres sessions te sont illisibles. "
         + "Si une commande échoue sur « Operation not permitted », c'est la bulle : ne cherche pas à la contourner, dis-le. "
+        + guardPrompt + " "
         + "Tu peux utiliser `git` et `gh`. Par défaut, ne commite pas et ne pousse pas : Studio publie lui-même ta copie. "
         + "Mais si l'utilisateur te demande explicitement de travailler sur une branche ou une pull request (récupérer une branche, fusionner, résoudre des conflits, commiter, pousser), fais-le. "
         + "Jamais de `push --force` ni de suppression de branche distante sans demande explicite, et ne pousse jamais sur la branche principale."
+    /// Ajouté à la consigne de tout agent qui a un terminal : ce que le garde (AgentGuard) fait confirmer.
+    static let guardPrompt = "Supprimer (rm, git clean, git reset --hard, suppression de branche…) ou installer (npm install, npx, pip, brew, sudo…) "
+        + "demande la confirmation de l'utilisateur, par empreinte ou mot de passe : la commande attend sa réponse, parfois plusieurs minutes. "
+        + "Regroupe ces demandes et n'en fais que de nécessaires. S'il refuse ou ne répond pas, n'essaie pas d'y arriver autrement "
+        + "(script, autre outil, écrasement de fichier) : continue sans, et dis dans ton compte rendu ce qui reste à faire à la main."
     private static var bashRules: [String] { anyCommand ? ["Bash"] : commands.map { "Bash(\($0))" } }
 
     /// Ajouté à la consigne quand les commandes sont permises : l'agent sait d'emblée ce qu'il peut lancer.
     static var promptLine: String {
-        anyCommand ? "Tu peux lancer des commandes dans le terminal ; ne lance rien de destructeur ni hors de ton dossier de travail."
-            : "Seules ces commandes te sont permises, les autres seront refusées : " + commands.map { "`\($0)`" }.joined(separator: ", ") + "."
+        (anyCommand ? "Tu peux lancer des commandes dans le terminal ; ne lance rien de destructeur ni hors de ton dossier de travail."
+            : "Seules ces commandes te sont permises, les autres seront refusées : " + commands.map { "`\($0)`" }.joined(separator: ", ") + ".")
+            + " " + guardPrompt
     }
 
     /// Ajouté à la consigne quand l'agent peut créer des notes et des tâches : le format que relit AgentItems.extract.
@@ -1235,3 +1308,31 @@ enum AgentItems {
     }
 }
 #endif
+
+/// Notes liées scellées (`sealed` de `agent start`) : AES-256-GCM, `ct` = chiffré suivi du tag de 16 octets (comme WebCrypto),
+/// `iv` de 12 octets, `key` de 32 octets, le tout en base64. La clé ne vit qu'en mémoire (jamais UserDefaults ni journal) et le
+/// clair n'est produit qu'au lancement de Claude Code, ajouté à la fin de sa consigne entre `mark` et `end` : tout ce que Studio
+/// garde ou renvoie à la page (résumés, files, appareils liés) ne contient que la consigne de l'utilisateur.
+struct Sealed {
+    let iv: Data, ct: Data, key: Data
+    /// Délimiteurs du clair dans la consigne : Claude Code la garde dans le journal de sa session, ClaudeSessions les coupe à l'affichage.
+    static let mark = "\n\n<notes-liees>\n", end = "\n</notes-liees>"
+    init?(_ raw: Any?) {
+        guard let o = raw as? [String: Any], let a = (o["iv"] as? String).flatMap({ Data(base64Encoded: $0) }),
+              let b = (o["ct"] as? String).flatMap({ Data(base64Encoded: $0) }), let c = (o["key"] as? String).flatMap({ Data(base64Encoded: $0) }),
+              a.count == 12, c.count == 32, b.count >= 16, b.count <= 400_000 else { return nil }
+        iv = a; ct = b; key = c
+    }
+    func open() -> String? {
+        guard let nonce = try? AES.GCM.Nonce(data: iv),
+              let box = try? AES.GCM.SealedBox(nonce: nonce, ciphertext: ct.dropLast(16), tag: ct.suffix(16)),
+              let plain = try? AES.GCM.open(box, using: SymmetricKey(data: key)) else { return nil }
+        return String(decoding: plain, as: UTF8.self)
+    }
+    /// Clair de plusieurs scellés mis bout à bout ; "" sans scellé, nil si l'un d'eux ne s'ouvre pas.
+    static func open(_ all: [Sealed]) -> String? {
+        var parts: [String] = []
+        for s in all { guard let t = s.open() else { return nil }; parts.append(t) }
+        return parts.joined(separator: "\n\n")
+    }
+}

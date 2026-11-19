@@ -20,6 +20,8 @@ import * as permissions from '../permissions.ts';
 import * as voice from '../voice.ts';
 import { pickNotes } from './notepick.ts';
 import * as subagents from './subagents.ts';
+import { diffHTML, hasDiff } from './team.ts';
+import * as noteseal from '../../integrations/noteseal.ts';
 import * as infra from './infra.ts';
 import type { Project } from './model.ts';
 
@@ -27,7 +29,9 @@ interface Tokens { input: number; output: number; cacheRead: number; cacheWrite:
 export interface Session { id: string; title: string; /** Titre écrit par Claude Code lui-même, s'il y en a un. */ aiTitle?: string; firstPrompt?: string; branch: string; worktree: string; started: string; updated: string; /** Dernier vrai échange (absent avec une app Mac ancienne). */ active?: string; live: boolean; models: string[]; prompts: number; lastPrompt: string; tokens: Tokens; tools: Record<string, number>; files: string[]; /** Lignes ajoutées et retirées sur la session (absent avec une app Mac ancienne). */ lines?: { add: number; del: number } }
 interface Quota { status?: string; resetsAt?: number; rateLimitType?: string; isUsingOverage?: boolean }
 /** `add`/`del` : lignes ajoutées et retirées par une écriture (nombre, ou texte pour les agents sur serveur). */
-export interface Action { at: string; kind: string; text: string; add?: number | string; del?: number | string }
+/** `file`, `old`, `new` : sur une écriture (Edit, Write…), le chemin et les extraits avant/après ; `to`, `body` : sur une délégation
+ *  (Agent, Task), le sous-agent visé et la consigne qu'il reçoit. Absents avec une app Mac ancienne. */
+export interface Action { at: string; kind: string; text: string; add?: number | string; del?: number | string; file?: string; old?: string; new?: string; to?: string; body?: string }
 export interface AgentRun { machine?: string; host?: string; run: string; mode: string; prompt: string; status: string; session: string; worktree: string; started: string; finished: string; result: string; lastText: string; turns: number; denials: string[]; quota?: Quota | null; /** Notes et tâches envoyées au projet par ce tour (features/projects/items.ts). */ items?: { tasks?: number; notes?: number } }
 export interface Worktree {
   name: string; branch: string; /** Commit de la copie (absent avec une app Mac ancienne). */ head?: string; changes: number; ahead: number; behind?: number; pushed: boolean; conflicts?: string[];
@@ -56,10 +60,10 @@ let treesRead = false;
 /** Projet auquel appartiennent `trees` : les autres projets n'ont pas d'état de copie connu. */
 let treesFor = '';
 const ms = (iso: string) => Date.parse(iso) || 0;
-const short = (path: string, root: string | null) => root && path.includes('/.claude/worktrees/') ? path.replace(/^.*\/\.claude\/worktrees\/[^/]+\//, '') : root && path.startsWith(root + '/') ? path.slice(root.length + 1) : path.replace(/^\/Users\/[^/]+/, '~');
+const short = (path: string, root: string | null) => path.includes('/.claude/worktrees/') ? path.replace(/^.*\/\.claude\/worktrees\/[^/]+\//, '') : root && path.startsWith(root + '/') ? path.slice(root.length + 1) : path.replace(/^\/Users\/[^/]+/, '~');
 export const modelName = (m: string) => m.replace(/^claude-/, '').replace(/-(\d)-(\d)$/, ' $1.$2').replace(/-/g, ' ');
 export const live = (r: AgentRun) => r.status === 'running' || r.status === 'starting';
-export const elapsed = (r: AgentRun) => { const s = Math.max(0, Math.round(((r.finished ? ms(r.finished) : Date.now()) - ms(r.started)) / 1000)); return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')}`; };
+export const elapsed = (r: AgentRun) => { const s = Math.max(0, Math.round(((r.finished ? ms(r.finished) : Date.now()) - ms(r.started)) / 1000)); return s < 60 ? `${s} s` : s < 3600 ? `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')}` : `${Math.floor(s / 3600)} h ${String(Math.floor(s % 3600 / 60)).padStart(2, '0')}`; };
 export const STATUS: Record<string, [string, string]> = { starting: ['amber', 'Démarrage'], running: ['amber', 'En cours'], done: ['green', 'Terminé'], error: ['red', 'Erreur'], stopped: ['gray', 'Arrêté'] };
 const pill = (s: string) => { const [c, l] = STATUS[s] ?? ['gray', s]; return `<span class="ag-pill${s === 'running' || s === 'starting' ? ' live' : ''}" style="--c:var(--c-${c})">${l}</span>`; };
 
@@ -87,7 +91,8 @@ const byActivity = (list: Session[]): Session[] => [...list].sort((a, b) => ms(b
 
 // Sous-agents : les tâches que Claude délègue pendant une conversation ont chacune leur propre fil (voir Sessions.swift).
 // On en ouvre un depuis sa conversation, on passe de l'un à l'autre, et on peut l'épingler dans la barre latérale.
-interface SubAgent { id: string; title: string; type: string; started: string; updated: string; live: boolean; tokens: number; steps: number }
+/** `prompt`, `last`, `files`, `lines`, `report` : absents avec une app Mac ancienne ; `report` seulement une fois le sous-agent fini. */
+export interface SubAgent { id: string; title: string; type: string; started: string; updated: string; live: boolean; tokens: number; steps: number; prompt?: string; last?: { at: string; kind: string; text: string }; files?: { path: string; add: number; del: number }[]; lines?: { add: number; del: number }; report?: string }
 /** Sous-agent ouvert dans la conversation sélectionnée, et son nom une fois connu. */
 let sub: string | null = null, subTitle = '';
 /** Derniers sous-agents lus, par conversation. */
@@ -253,24 +258,6 @@ function setNotes(f: HTMLFormElement, ids: string[]): void {
 /** Ouvre l'onglet Claude Code du projet avec des notes déjà jointes et, éventuellement, une consigne.
  *  `fan: 'notes'` : le formulaire est réglé sur « Un agent par note » (rien n'est lancé sans le clic sur Lancer). */
 export function handoff(p: Project, { notes = [] as string[], prompt = '', fan = '' } = {}): void { pending = { project: p.id, notes, prompt, fan }; selected = null; sub = null; }
-/** Consigne finale : le texte de l'utilisateur, puis le contenu des notes jointes, puis (nouvelle conversation
- *  seulement, `ctxOf`) les contextes IA du projet, notes #contexte-ia déjà jointes exceptées. */
-function withNotes(prompt: string, ids: string[], ctxOf: Project | null = null): { text: string; refused: string[] } {
-  const parts: string[] = [], refused: string[] = []; let total = 0;
-  const MAX_NOTE = tuning.num('ctx.attach'), MAX_ALL = tuning.num('ctx.attachAll');
-  for (const id of ids) {
-    const n = store.get(id), body = n ? store.getBody(n) : null;
-    if (!n || body == null || !ai.shareable(n)) { refused.push(titleOf(id)); continue; }
-    const chunk = body.length > MAX_NOTE ? body.slice(0, MAX_NOTE) + '\n…(tronquée)' : body;
-    if (total + chunk.length > MAX_ALL) { refused.push(titleOf(id)); continue; }
-    total += chunk.length; parts.push(`## Note « ${n.title.trim() || 'Sans titre'} »\n\n${chunk}`);
-  }
-  const head = prompt || (parts.length === 1 ? 'Réalise ce que décrit la note jointe.' : 'Réalise ce que décrivent les notes jointes.');
-  const base = parts.length ? `${head}\n\n---\nNotes du projet jointes par l’utilisateur (contexte et cahier des charges) :\n\n${parts.join('\n\n')}` : head;
-  const ctx = ai.projectContext(ctxOf, ids).text;
-  return { text: ctx ? `${base}\n\n---\n${ctx}` : base, refused };
-}
-
 // ---------- Abonnement : ce qu'il reste ----------
 // Bandeau au pied de la consigne : part restante de la session de 5 heures et de la semaine, comme « /usage » dans
 // Claude Code. Les chiffres viennent du Mac (voir ClaudeUsage.swift), si l'utilisateur a accepté leur lecture.
@@ -364,7 +351,7 @@ function modelOptions(cur: string): string {
   return list.map(([v, l]) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(l)}</option>`).join('') + `<option value="${OTHER}">Autre modèle…</option>`;
 }
 /** Bouton « Sous-agents » de la consigne : dit le réglage en cours et ouvre sa fenêtre (subagents.ts). */
-const subHTML = (): string => `<button type="button" class="btn ag-sub" data-ag-sub title="${esc(subagents.HINT)}">${icon('bot')}<span>${esc(subagents.label())}</span></button>`;
+const subHTML = (pid: string): string => `<button type="button" class="btn ag-sub" data-ag-sub="${esc(pid)}" title="${esc(subagents.HINT)}">${icon('bot')}<span>${esc(subagents.label(pid))}</span></button>`;
 const tuneHTML = (c: saved.Choice): string => `<select class="field" name="model" aria-label="Modèle" title="Modèle utilisé par Claude Code. Auto : le plus économe qui suffit à la consigne en cours" data-prev="${esc(c.model)}">${modelOptions(c.model)}</select><select class="field" name="effort" aria-label="Niveau d’effort" title="Niveau d’effort : plus il est élevé, plus Claude réfléchit, et plus il consomme">${EFFORTS.map(([v, l]) => `<option value="${v}"${v === c.effort ? ' selected' : ''}>${l}</option>`).join('')}</select><span class="ag-auto" data-auto hidden></span>`;
 /** Modèle et effort réellement envoyés : « Auto » est remplacé d'après la consigne ; un effort choisi à la main est gardé. */
 const autoOf = (f: HTMLFormElement) => autoPick(f.querySelector('textarea')?.value ?? '', {
@@ -503,7 +490,7 @@ export function composerHTML(p: Project, { session = '', compact = false, machin
   // Chaque formulaire a son brouillon : un par conversation, un pour la nouvelle consigne, un pour celle de l'aperçu, un pour le serveur.
   const key = `${p.id}|${session ? `s:${session}` : machine === 'server' ? 'server' : compact ? 'quick' : 'new'}`, d = saved.draft(key);
   if (session) return `<form class="ag-compose ag-continue" data-draft="${esc(key)}" data-session="${esc(session)}"${machine ? ` data-machine="${esc(machine)}"` : ''}><textarea name="prompt" rows="2" placeholder="Réponds à Claude : précise, corrige, tranche, demande la suite…" aria-label="Répondre dans la session">${esc(d?.text ?? '')}</textarea>
-    <div class="ag-opts"><div class="ag-tools">${tuneHTML(saved.ofSession(session) ?? { model: '', effort: '' })}${subHTML()}<span class="ag-hint" data-hint>${HINT_IDLE}</span></div><span class="ag-go">${voice.micHTML('Répondre à voix haute')}<button type="button" class="btn btn-danger ag-stop" data-ag="stop" hidden>${icon('stop')}Arrêter</button><button type="button" class="btn ag-cut" data-ag-cut hidden title="Coupe le tour en cours : Claude lit ton message tout de suite, puis reprend là où il en était (⌘⇧↩)">${icon('bolt')}Intervenir</button><button class="btn btn-primary ag-send">${SEND_IDLE}</button></span></div>${lims}</form>`;
+    <div class="ag-opts"><div class="ag-tools">${tuneHTML(saved.ofSession(session) ?? { model: '', effort: '' })}${subHTML(p.id)}<span class="ag-hint" data-hint>${HINT_IDLE}</span></div><span class="ag-go">${voice.micHTML('Répondre à voix haute')}<button type="button" class="btn btn-danger ag-stop" data-ag="stop" hidden>${icon('stop')}Arrêter</button><button type="button" class="btn ag-cut" data-ag-cut hidden title="Coupe le tour en cours : Claude lit ton message tout de suite, puis reprend là où il en était (⌘⇧↩)">${icon('bolt')}Intervenir</button><button class="btn btn-primary ag-send">${SEND_IDLE}</button></span></div>${lims}</form>`;
   const pre = pending?.project === p.id ? pending : null; if (pre && !compact) pending = null;
   // Une note ou une tâche confiée à Claude s'ajoute au brouillon en cours, sans l'effacer.
   const hand = pre && !compact ? pre : null;
@@ -521,7 +508,7 @@ export function composerHTML(p: Project, { session = '', compact = false, machin
       ${machine === 'server' ? `<select class="field" name="machine" aria-label="Où travailler" data-fixed><option value="${server ? `server:${esc(server)}` : 'server'}" selected>Sur le serveur</option></select>` : machineHTML(p)}
       ${tuneHTML(saved.defaults())}
       ${compact ? '' : `<select class="field" name="fan" aria-label="Nombre d’agents" title="Plusieurs agents en parallèle, chacun dans sa copie isolée : un par note jointe, ou un par ligne de la consigne (${FAN_MAX} à la fois au plus)">${[['', 'Un agent'], ['notes', 'Un agent par note'], ['lines', 'Un agent par ligne']].map(([v, l]) => `<option value="${v}"${v === fan ? ' selected' : ''}>${l}</option>`).join('')}</select>`}
-      ${compact ? '' : subHTML()}
+      ${compact ? '' : subHTML(p.id)}
       <span class="ag-hint" data-hint>${read ? HINT_READ : HINT_EDIT}</span></div>
       <span class="ag-go">${voice.micHTML('Dicter la consigne')}<button class="btn btn-primary ag-send">${LAUNCH}</button></span></div>${lims}</form>`;
 }
@@ -561,9 +548,9 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     if (lim) { void limitsAction(lim.dataset.agLim ?? ''); return; }
     // « Intervenir » : même envoi que le bouton principal, mais le tour en cours est coupé (voir `interrupt`, Agents.swift).
     if (t.closest('[data-ag-cut]')) { f.dataset.cut = '1'; f.requestSubmit(); return; }
-    // Sous-agents : un seul réglage pour l'appareil, donc tous les boutons affichés suivent.
+    // Sous-agents : l'équipe est celle du projet, donc tous les boutons de ce projet suivent.
     if (t.closest('[data-ag-sub]')) {
-      void subagents.edit().then(ok => { if (ok) document.querySelectorAll<HTMLElement>('[data-ag-sub] span').forEach(x => { x.textContent = subagents.label(); }); });
+      void subagents.edit(p.id).then(ok => { if (ok) document.querySelectorAll<HTMLElement>(`[data-ag-sub="${CSS.escape(p.id)}"] span`).forEach(x => { x.textContent = subagents.label(p.id); }); });
       return;
     }
     const ids = () => (f.dataset.notes || '').split(',').filter(Boolean);
@@ -600,8 +587,12 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     const many = units.length > 1;
     if (units.length > FAN_MAX) { toast(`${units.length} agents demandés : ${FAN_MAX} à la fois au plus. Réduis la liste, ou lance-la en plusieurs fois.`); return; }
     if (many && !await confirmBox({ title: `Lancer ${units.length} agents ?`, text: `Ils travaillent en parallèle, chacun dans sa propre copie isolée du dépôt, avec ${fan === 'notes' ? 'une des notes jointes' : fan === 'lines' ? 'une ligne de la consigne' : 'la même consigne'}. Ils consomment ton abonnement Claude en même temps.`, ok: `Lancer ${units.length} agents` })) return;
-    const built = units.map(u => withNotes(u.text, u.notes, f.dataset.session ? null : p)), refused = [...new Set(built.flatMap(b => b.refused))];
-    if (refused.length) toast(`Non jointe${refused.length > 1 ? 's' : ''} (verrouillée, privée ou trop longue) : ${refused.join(', ')}`);
+    // Le contenu des notes ne passe plus dans la consigne : il part scellé (noteseal.ts), le Mac ne le déchiffre qu'au lancement de Claude.
+    // Nouvelle conversation seulement : les contextes IA du projet (#contexte-ia) partent scellés avec elles.
+    const built = await Promise.all(units.map(u => noteseal.seal(u.text, u.notes, f.dataset.session ? null : p))), refused = [...new Set(built.flatMap(b => b.refused))];
+    if (refused.length) toast(ai.notesAllowed() ? `Non jointe${refused.length > 1 ? 's' : ''} (verrouillée, privée ou trop longue) : ${refused.join(', ')}` : `Notes fermées à l’IA (Réglages → IA) : non jointes, ${refused.join(', ')}`);
+    // Une consigne vide dont aucune note n'a pu être jointe ne dit plus rien à l'agent : on ne la lance pas.
+    if (built.some((b, k) => !b.sealed && !(units[k]?.text ?? '').trim())) return;
     const btn = need<HTMLButtonElement>('button.btn-primary', f), label = btn.innerHTML;
     const val = (n: string) => (f.elements.namedItem(n) as HTMLInputElement | null);
     // Modèle et effort : envoyés aussi quand on répond, pour que la conversation garde (ou change) les siens.
@@ -610,24 +601,31 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     // Tous les dépôts du projet : le Mac ouvre à l'agent ceux dont il trouve un clone (copie sœur dans chacun).
     // « Auto » n'est jamais envoyé : remplacé par le modèle (et l'effort) qui suffit à cette consigne.
     const body: Record<string, unknown> = { project: p.id, ...resolveChoice(f, picked), repos: p.stack };
-    // Sous-agents : le réglage de l'appareil part avec chaque consigne, reprise comprise (l'outil se donne à chaque tour).
-    const sub = subagents.body(); if (sub) body.subagents = sub;
     if (f.dataset.session) { body.session = f.dataset.session; if (f.dataset.machine) body.machine = f.dataset.machine; if (cut) body.interrupt = true; }
     else { body.mode = f.querySelector<HTMLInputElement>('[name=mode]:checked')?.value ?? 'edit'; body.tests = !!val('tests')?.checked && !f.classList.contains('on-server'); const mc = val('machine'); if (mc && !mc.hidden) { const [m, s] = mc.value.split(':'); body.machine = m; if (s) body.server = s; } }
     btn.disabled = true;
     // Un lancement après l'autre : chaque appel revient dès que la session est créée, l'agent continue seul.
-    let last: Awaited<ReturnType<typeof bridge.call>> | null = null, started = 0, fail = '';
+    let last: Awaited<ReturnType<typeof bridge.call>> | null = null, started = 0, fail = '', unsealed = false;
+    const made: string[] = [];
     // Plusieurs agents qui modifient : une branche mère commune, une sous-branche par agent (rapatriées ensuite dans la mère).
     const group = many && body.mode === 'edit' && body.machine !== 'server' ? newGroup(counted.text || text) : '';
     for (const b of built) {
       btn.innerHTML = many ? `<span class="spin"></span>Agent ${started + 1}/${built.length}…` : '<span class="spin"></span>Envoi…';
-      const one = await bridge.call('agent', 'start', { ...body, prompt: b.text, ...(group ? { group, slot: started + 1, of: built.length } : {}) }, 60000);
+      // Sous-agents : l'équipe du projet part avec chaque consigne, reprise comprise (l'outil se donne à chaque tour) ;
+      // avec « auto », les spécialistes utiles à cette consigne y sont d'abord ajoutés.
+      const team = subagents.body(p.id, units[started]?.text ?? b.text, String(body.mode ?? 'edit'));
+      for (const n of subagents.lastCreated()) if (!made.includes(n)) made.push(n);
+      // `sealedV` : un Mac ancien ignore `sealed` et ne répond pas `sealed: true` ; l'agent n'aurait alors pas les notes.
+      const one = await bridge.call('agent', 'start', { ...body, prompt: b.text, ...(team ? { subagents: team } : {}), ...(b.sealed ? { sealed: b.sealed, sealedV: 1 } : {}), ...(group ? { group, slot: started + 1, of: built.length } : {}) }, 60000);
       if (!one.ok) { fail = one.message ?? 'Lancement impossible.'; break; }
+      if (b.sealed && one.sealed !== true) unsealed = true;
       started++; last = one;
       // La conversation lancée garde le modèle et l'effort de sa première consigne : ils sont proposés pour la suite.
       if (!f.dataset.session && typeof one.session === 'string' && one.session) saved.setSession(one.session, picked);
     }
     btn.disabled = false; btn.innerHTML = label; delete f.dataset.busy;
+    if (made.length) toast(`Sous-agents créés dans le projet : ${made.join(', ')}`);
+    if (unsealed) toast('Les notes liées n’ont pas été lues par l’agent : mets à jour l’app Studio pour Mac.');
     // En cas d'échec, le texte reste dans le formulaire et dans son brouillon.
     const r = last;
     if (!r) { toast(fail); return; }
@@ -822,6 +820,8 @@ export function feedBlocks(actions: Action[], root: string | null, working: bool
   };
   if (actions.length >= FEED_MAX) out.push({ key: 'cut', html: '<p class="ss-cut">Début de la session masqué : seules les dernières étapes sont affichées.</p>' });
   for (const a of actions) {
+    // Une écriture qui porte son texte (old/new) montre ce qu'elle a changé, en direct dans le fil, hors du groupe replié.
+    if (a.kind.startsWith('tool:') && hasDiff(a)) { flush(false); out.push({ key: key(a, 'diff'), html: diffHTML(a, short(a.file ?? '', root)) }); continue; }
     if (a.kind.startsWith('tool:')) { group.push(a); continue; }
     flush(false);
     if (a.kind === 'prompt') out.push({ key: key(a, 'user'), html: `<div class="ss-msg user"><header><strong>${asker}</strong><time>${esc(clock(a.at))}</time></header><p>${esc(a.text)}</p></div>` });

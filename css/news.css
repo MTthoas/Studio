@@ -1,0 +1,73 @@
+/* ---------- Nouveautés et mise à jour prête (features/news.ts) ----------
+   Deux colonnes éditoriales : le texte, puis une image en grain (SVG en ligne, forme unique par nouveauté).
+   Tout est neutre : la teinte --nw-hue ne fait que nuancer très légèrement la forme. Ni dégradé ni halo. */
+.modal.nw { width: min(900px, 100%); height: min(580px, calc(100dvh - 40px)); padding: 0; overflow: hidden; display: flex; }
+.modal.nw.nw-solo { width: min(780px, 100%); height: min(500px, calc(100dvh - 40px)); }
+.nw .modal-body { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); width: 100%; min-height: 0; }
+.nw-text { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.nw-stage { flex: 1; min-height: 0; overflow-y: auto; }
+.nw-art { padding: 40px 40px 20px; animation: nw-in .18s ease-out; }
+@keyframes nw-in { from { opacity: 0; } }
+.nw-meta { margin: 0 0 10px; color: var(--text-3); font-size: var(--t-1); font-weight: 500; }
+.nw-meta i, .nw-where i { font-style: normal; margin: 0 6px; }
+.nw-head h3 { margin: 0 0 12px; font-size: var(--t-5); font-weight: 600; line-height: 1.25; letter-spacing: -.01em; }
+.nw-lead { margin: 0 0 20px; color: var(--text-2); font-size: var(--t-3); line-height: 1.55; }
+.nw-art code { background: var(--code); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+
+/* Points factuels : une liste simple, mot-clé en gras puis précision. */
+.nw-pts { margin: 0 0 18px; padding: 0 0 0 18px; display: flex; flex-direction: column; gap: 9px; line-height: 1.5; list-style: disc; }
+.nw-pts li::marker { color: var(--text-3); }
+.nw-pts b { font-weight: 600; margin-right: 6px; }
+.nw-pts span { color: var(--text-2); }
+.nw-flow { margin: 0 0 4px; color: var(--text-3); font-size: var(--t-1); line-height: 1.6; }
+.nw-flow span { margin-right: 10px; }
+.nw-flow i { font-style: normal; margin: 0 7px; }
+
+.nw-end { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--border); }
+.nw-end .btn { margin-left: auto; }
+.nw-where { margin: 0; color: var(--text-3); font-size: var(--t-1); }
+.nw-where span { margin-right: 10px; }
+.nw-where b { font-weight: 500; color: var(--text-2); }
+.nw-where b:last-child { color: var(--text); }
+.nw-hint { margin: 0; color: var(--text-3); font-size: var(--t-1); line-height: 1.6; }
+.nw-link { margin: 12px 0 0; font-size: var(--t-2); }
+.nw-link a { color: var(--text); font-weight: 500; text-decoration: underline; text-decoration-color: var(--border-2); text-underline-offset: 3px; }
+
+/* Changements d'une version (aussi dans Réglages → Mises à jour) : le type en texte discret, pas en pastille. */
+.nw-list { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.nw-list li { display: flex; align-items: baseline; gap: 12px; font-size: var(--t-2); line-height: 1.45; color: var(--text); }
+.nw-kind { flex: none; min-width: 64px; color: var(--text-3); font-size: var(--t-1); font-weight: 500; }
+.nw-list .nw-more { color: var(--text-3); font-size: var(--t-1); }
+.up .nw-list { margin-top: 12px; }
+
+/* Liste par date : remplace la fiche tant qu'elle est ouverte. */
+.nw-index { flex: 1; min-height: 0; overflow-y: auto; padding: 28px 28px 12px; display: flex; flex-direction: column; gap: 1px; }
+.nw-group { margin: 14px 10px 4px; color: var(--text-3); font-size: var(--t-1); font-weight: 500; }
+.nw-group:first-child { margin-top: 0; }
+.nw-item { flex: none; display: flex; align-items: center; gap: 9px; min-height: 30px; padding: 4px 10px; border-radius: var(--r); color: var(--text-2); font-weight: 500; }
+.nw-item span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nw-item:hover { background: var(--hover); color: var(--text); }
+.nw-item[aria-current] { background: var(--active); color: var(--text); }
+.nw-new { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+.nw-foot { display: flex; align-items: center; gap: 8px; padding: 12px 20px 14px 40px; }
+.nw-foot [data-nw="all"] { margin-left: -10px; }
+.nw-count { flex: 1; color: var(--text-3); font-size: var(--t-1); font-variant-numeric: tabular-nums; }
+
+/* Image : papier grenu, forme organique ton sur ton. */
+.nw-fig { --nw-hue: var(--c-gray); position: relative; min-height: 0; overflow: hidden; border-left: 1px solid var(--border); background: var(--surface-2);
+  --nw-shape: color-mix(in srgb, var(--nw-hue) 9%, color-mix(in srgb, var(--text) 8%, var(--surface-2)));
+  --nw-fleck: color-mix(in srgb, var(--nw-hue) 10%, var(--text)); }
+.nw-svg { display: block; width: 100%; height: 100%; overflow: visible; /* le papier déborde du cadre pour couvrir tout le volet */ animation: nw-in .4s ease-out; }
+.nw-paper { fill: var(--nw-fleck); opacity: .08; }
+.nw-shape { fill: var(--nw-shape); }
+.nw-grain { fill: var(--nw-fleck); opacity: .5; }
+
+@media (prefers-reduced-motion: reduce) { .nw-art, .nw-svg { animation: none; } }
+/* Fenêtre étroite : l'image passe au-dessus, basse. */
+@media (max-width: 680px) {
+  .modal.nw, .modal.nw.nw-solo { height: min(640px, calc(100dvh - 40px)); }
+  .nw .modal-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: 88px minmax(0, 1fr); }
+  .nw-fig { order: -1; border-left: 0; border-bottom: 1px solid var(--border); }
+  .nw-art { padding: 22px 20px 14px; }
+  .nw-foot { padding-left: 20px; }
+}

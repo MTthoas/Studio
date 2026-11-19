@@ -116,7 +116,7 @@ async function send(text: string): Promise<void> {
   const chat = c;
   try {
     const r = await ai.run({ prompt, tools: TOOLS, provider, context, chat: true }, {
-      approve: hub.approve, scope: sc, notes: (attached.get(chat.id) ?? []).filter(id => store.get(id)), onWrite: app.refreshNote, signal: run.ctrl.signal,
+      approve: hub.approve, scope: sc, notes: (attached.get(chat.id) ?? []).filter(id => { const n = store.get(id); return !!n && ai.shareable(n); }), onWrite: app.refreshNote, signal: run.ctrl.signal,
       onStep: e => { run.steps.push(hub.stepLabel(e)); if (shown(chat.id)) paint(); },
     });
     chat.messages.push({ role: 'ai', text: r.text || '*(réponse vide)*', at: Date.now(), provider: ai.PROVIDERS[r.provider], ...(run.steps.length ? { steps: run.steps } : {}) });
@@ -179,6 +179,8 @@ function threadHTML(c: Chat): string {
 function ctxPaint(root: ParentNode = document): void {
   const box = root.querySelector<HTMLElement>('.cl-ctx'); if (!box) return;
   const c = current(), p = projects.byId(c ? c.project ?? '' : nextProject);
+  // Interrupteur général coupé : les notes jointes ne partent pas, on le dit au lieu de montrer des pastilles trompeuses.
+  if (!ai.notesAllowed()) { box.innerHTML = p ? `<span class="ns-closed">${icon('lock')}Notes fermées à l’IA</span><button type="button" class="ag-addnote" data-cl="allow">Autoriser dans les Réglages</button>` : ''; return; }
   const ids = (attached.get(c?.id ?? '') ?? []).filter(id => store.get(id));
   box.innerHTML = ids.map(chipHTML).join('') + (p ? `<button type="button" class="ag-addnote" data-cl="note">${icon('plus')}${ids.length ? 'Notes…' : 'Joindre des notes'}</button>` : '');
 }
@@ -242,6 +244,7 @@ async function onClick(e: MouseEvent, ta: HTMLTextAreaElement): Promise<void> {
     if (m) { try { await navigator.clipboard.writeText(m.text); toast('Réponse copiée'); } catch { toast('Copie impossible'); } }
   }
   else if (act === 'unnote' && b.dataset.id) { const k = current()?.id ?? ''; attached.set(k, (attached.get(k) ?? []).filter(x => x !== b.dataset.id)); ctxPaint(); }
+  else if (act === 'allow') hub.openConnections('ia');
   else if (act === 'note') {
     const k = current()?.id ?? '', p = projects.byId(current() ? current()?.project ?? '' : nextProject); if (!p) return;
     const next = await pickNotes(p, attached.get(k) ?? []);

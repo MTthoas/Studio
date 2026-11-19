@@ -11,6 +11,8 @@ interface Window {
     reply(payload: unknown): void;
     /** L'app Mac : un agent a envoyé des notes ou des tâches à son projet (features/projects/items.ts). */
     agentItems?(): void;
+    /** L'app Mac : un agent attend (ou n'attend plus) une confirmation avant de supprimer ou d'installer (features/projects/guard.ts). */
+    agentGuard?(): void;
   };
 }
 

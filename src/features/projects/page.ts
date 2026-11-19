@@ -22,7 +22,7 @@ import * as infra from './infra.ts';
 import * as specs from './specs.ts';
 import * as chart from '../../ui/chart.ts';
 import * as bridge from '../../integrations/remote.ts';
-import { shareable } from '../../integrations/ai.ts';
+import { shareable, notesAllowed } from '../../integrations/ai.ts';
 
 let app!: AppShell;
 export const init = (shell: AppShell): void => {
@@ -98,6 +98,8 @@ const pickable = (p: Project): Note[] => model.notesOf(p).filter(n => shareable(
 /** Barre de sélection : une invitation tant que rien n'est coché, puis les envois possibles. */
 function pickBarHTML(p: Project): string {
   const all = pickable(p), sel = picksOf(p), k = all.filter(n => sel.has(n.id)).length, cc = !!bridge.where();
+  // Interrupteur général coupé : on le dit, plutôt qu’une liste sans cases qui ne s’explique pas.
+  if (!notesAllowed()) return `<span class="pj-pickbar-t">${icon('lock')}Notes fermées à l’IA : aucune ne peut être liée à Claude.</span><span class="pj-pickbar-end"><button class="link-btn" data-open-conn="ia">Autoriser dans les Réglages</button></span>`;
   if (!all.length) return '';
   if (!k) return `<span class="pj-pickbar-t">${icon('check')}Coche des notes pour les envoyer à Claude${cc ? ' ou à Claude Code' : ''}.</span><span class="pj-pickbar-end"><button class="link-btn" data-pj="pick-all">Tout cocher (${all.length})</button></span>`;
   return `<span class="pj-pickbar-t"><b>${k}</b> note${k > 1 ? 's' : ''} cochée${k > 1 ? 's' : ''}</span>
@@ -183,12 +185,7 @@ function tabBody(p: Project, tab: string): string {
   return `${folderBox}
     ${bridge.where() ? `<section class="pj-quick">${sessions.composerHTML(p, { compact: true })}<div data-ov="agents"></div></section>` : ''}
     ${section('repos', p.stack.length > 1 ? `Dépôts · ${p.stack.length}` : 'Dépôts', 'github', reposHTML(p), 'pj-stack')}
-    ${section('activity', 'Activité', 'activity', `<div class="pj-dash">
-      ${chartCard('code', 'Commits', 'code', 'blue', 'commits', 'wide')}
-      ${chartCard('tasks', 'Tâches', 'check', 'green', 'tasks', '', tasksChart(p))}
-      ${chartCard('sessions', 'Claude Code', 'terminal', 'violet', 'tokens')}
-      ${chartCard('flux', 'Intégration continue', 'pr', 'teal', 'ci')}
-    </div>`, 'pj-act', '30 derniers jours')}
+    ${section('activity', 'Activité', 'activity', activityHTML(p), 'ac-sec', '30 derniers jours')}
     ${section('shortcuts', 'Raccourcis', 'bolt', `<div class="pj-ovs">
       ${card('code', 'Pull requests', 'pr', 'blue', p.repos.length ? 'Lecture des PR…' : 'Aucun dépôt associé')}
       ${card('site', 'Site', 'link', 'teal', p.site ? esc(p.site.replace(/^https:\/\//, '')) : 'Ajouter le site du projet')}
@@ -249,58 +246,90 @@ async function server(root: HTMLElement, p: Project): Promise<void> {
   sessions.bindComposer(box, p, r => { sessions.select(r.session || null, p.id); void go(p.id, 'sessions'); });
 }
 
-// ---------- Tableau de bord ----------
-const chartCard = (tab: string, title: string, ic: string, hue: string, key: string, cls = '', body = '<div class="pj-skel"></div>') =>
-  `<section class="pj-chart ${cls}" style="--c:var(--c-${hue})"><header><span class="pj-ico">${icon(ic)}</span><h3>${esc(title)}</h3><button class="pj-more" data-pj-tab="${tab}">Ouvrir${icon('chevronRight')}</button></header><div class="pj-chart-b" data-ch="${key}">${body}</div></section>`;
-/** Chiffre clé d'une carte : le nombre, ce qu'il compte, une tendance, puis une précision à droite. */
-const kpi = (n: string, label: string, extra = '', trend = '') => `<p class="pj-kpi"><strong>${n}</strong><span>${label}</span>${trend}${extra}</p>`;
-const muted = (t: string) => `<p class="pj-chart-empty">${t}</p>`;
-function tasksChart(p: Project): string {
+// ---------- Activité ----------
+// Un tableau de mesures, sans boîtes ni icônes : libellé, chiffre, puis une courbe en barres fines. Les deux séries
+// datées partagent la même échelle de 30 jours et un seul axe de dates. Le libellé mène à l’onglet correspondant.
+const DAYS = 30;
+const row = (tab: string, label: string, key: string, body = '<span class="ac-skel"></span>') =>
+  `<div class="ac-row"><button class="ac-name" data-pj-tab="${tab}" title="Ouvrir">${esc(label)}</button><div class="ac-cells" data-ch="${key}">${body}</div></div>`;
+/** Chiffre principal, ce qu’il compte, et une ligne de précisions (déjà échappées par l’appelant). */
+const fig = (n: string, unit: string, ...sub: string[]) => `<div class="ac-fig"><p><strong>${n}</strong><span>${esc(unit)}</span></p><small>${sub.filter(Boolean).join(' · ')}</small></div>`;
+const muted = (t: string) => `<div class="ac-fig"><p><strong>—</strong></p></div><p class="ac-empty">${t}</p>`;
+/** Évolution sur 7 jours en texte neutre : une baisse n’est pas une alerte. */
+function delta(cur: number, prev: number): string {
+  if (!cur && !prev) return '';
+  if (!prev) return '<span title="Rien les 7 jours précédents">nouveau sur 7 j</span>';
+  const pct = Math.round((cur - prev) / prev * 100);
+  return `<span title="Par rapport aux 7 jours précédents">${pct > 0 ? '+' : pct < 0 ? '−' : '±'}${Math.abs(pct)} % sur 7 j</span>`;
+}
+/** Barres fines d’une série journalière ; `tips[i]` est l’infobulle du jour i. Les jours vides gardent un trait de 1 px. */
+function acBars(points: chart.Point[], tips: string[], summary: string, unit: string): string {
+  const max = Math.max(1, ...points.map(x => x.value));
+  const word = (n: number) => `${chart.fmt(n)} ${unit}${n > 1 ? 's' : ''}`;
+  return `<div class="ac-plot"><div class="ac-bars" role="img" aria-label="${esc(summary)}">${points.map((x, i) =>
+    `<span class="ac-b${i === points.length - 1 ? ' now' : ''}" data-tip="${esc(tips[i] ?? '')}">${x.value ? `<i style="height:${Math.max(6, x.value / max * 100).toFixed(1)}%"></i>` : '<i class="z"></i>'}</span>`).join('')}</div>
+    <table class="sr-only"><caption>${esc(summary)}</caption>${points.filter(x => x.value).map(x => `<tr><th>${esc(x.label)}</th><td>${esc(word(x.value))}</td></tr>`).join('')}</table></div>`;
+}
+/** Axe des dates, commun aux séries datées : trois repères et « aujourd’hui ». */
+function axisHTML(): string {
+  const pts = chart.lastDays(DAYS, {}), at = (i: number) => new Date(`${pts[i]?.key}T12:00:00`).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  const t = [0, 10, 20].map(i => `<span style="--x:${((i + .5) / DAYS * 100).toFixed(2)}%">${esc(at(i))}</span>`).join('');
+  return `<div class="ac-row ac-ax" aria-hidden="true"><div class="ac-axis">${t}<span style="--x:100%">aujourd’hui</span></div></div>`;
+}
+function activityHTML(p: Project): string {
+  return `<div class="ac-wrap" style="--k:var(--c-${p.hue})">${row('code', 'Commits', 'commits')}${row('sessions', 'Claude Code', 'tokens')}${axisHTML()}${row('tasks', 'Tâches', 'tasks', tasksBody(p))}${row('flux', 'Intégration continue', 'ci')}</div>`;
+}
+function tasksBody(p: Project): string {
   const c = todo.ofProject(p.id), done = c.doneAll.length, total = done + c.openCount;
   if (!total) return muted('Aucune tâche dans ce projet pour l’instant.');
   const late = c.late.length, doing = c.doing.filter(t => !c.late.includes(t)).length, rest = Math.max(0, c.openCount - late - doing);
-  return `${kpi(`${Math.round(done / total * 100)} %`, 'terminées', `<em>${done} sur ${total}</em>`)}
-    ${chart.segments([{ label: 'Terminées', value: done, color: 'green' }, { label: 'En cours', value: doing, color: 'amber' }, { label: 'À faire', value: rest, color: 'gray' }, { label: 'En retard', value: late, color: 'red' }])}`;
+  const parts: [string, string, number][] = [['done', 'terminées', done], ['doing', 'en cours', doing], ['todo', 'à faire', rest], ['late', 'en retard', late]];
+  return `${fig(`${Math.round(done / total * 100)} %`, 'terminées', `${done} sur ${total}`)}
+    <div class="ac-plot"><div class="ac-segs" role="img" aria-label="${esc(parts.map(([, l, n]) => `${n} ${l}`).join(', '))}">${parts.filter(x => x[2]).map(([k, l, n]) => `<i class="s-${k}" style="flex-grow:${n}" data-tip="${esc(`${n} ${l}`)}"></i>`).join('')}</div>
+    <p class="ac-legend">${parts.filter(x => x[2]).map(([k, l, n]) => `<span class="s-${k}"><b>${n}</b> ${l}</span>`).join('')}</p></div>`;
 }
 const sum = (o: Record<string, number>) => Object.values(o).reduce((a, b) => a + b, 0);
 async function dashboard(root: HTMLElement, p: Project, f: Folder | null): Promise<void> {
   const short = (name: string) => name.split('/')[1] ?? name;
-  // Commits par jour, empilés par dépôt (couleur de son rôle) : le dossier du Mac (toutes branches), les autres depuis GitHub.
+  // Commits par jour, tous dépôts confondus (le détail par dépôt est dans l’infobulle) : le dossier du Mac (toutes branches), les autres depuis GitHub.
   void (async () => {
-    const series: chart.Series[] = [];
+    const series: { label: string; points: chart.Point[] }[] = [];
     let here: Repo | null = null, local = false;
     if (f?.path || (!bridge.local() && bridge.where())) {
-      const r = await bridge.call('agent', 'commits', { project: p.id, days: 30 }, 20000);
+      const r = await bridge.call('agent', 'commits', { project: p.id, days: DAYS }, 20000);
       if (r.ok && r.found !== false) {
         local = true;
         // Depuis un appareil lié, le remote du dossier n'est pas connu : le dossier du Mac est supposé être le dépôt principal.
         here = model.repoNamed(p, f?.remote) ?? (f ? null : p.stack[0] ?? null);
-        series.push({ label: here ? short(here.name) : 'Dossier du Mac', color: here ? model.ROLES[here.role].hue : 'blue', points: chart.lastDays(30, r.days as Record<string, number>) });
+        series.push({ label: here ? short(here.name) : 'Dossier du Mac', points: chart.lastDays(DAYS, r.days as Record<string, number>) });
       }
     }
     if (github.connected()) {
       const others = p.stack.filter(r => r.name !== here?.name);
-      const got = await Promise.allSettled(others.map(r => github.commitsPerDay(r.name, 30)));
-      others.forEach((r, i) => { const g = got[i]; if (g?.status === 'fulfilled') series.push({ label: short(r.name), color: model.ROLES[r.role].hue, points: chart.lastDays(30, g.value) }); });
+      const got = await Promise.allSettled(others.map(r => github.commitsPerDay(r.name, DAYS)));
+      others.forEach((r, i) => { const g = got[i]; if (g?.status === 'fulfilled') series.push({ label: short(r.name), points: chart.lastDays(DAYS, g.value) }); });
     }
     if (!series.length) return fill(root, '[data-ch="commits"]', muted(p.repos.length ? 'Connecte GitHub ou choisis le dossier du projet pour voir son activité.' : 'Associe un dépôt ou choisis le dossier du projet.'));
     const all = (series[0]?.points ?? []).map((pt, i) => ({ ...pt, value: series.reduce((a, s) => a + (s.points[i]?.value ?? 0), 0) }));
     const n = all.reduce((a, x) => a + x.value, 0), [cur, prev] = chart.lastVsPrev(all);
-    const src = series.length > 1 ? `${series.length} dépôts` : local ? 'toutes branches' : 'branche principale';
-    const legend = series.length > 1 ? `<ul class="ch-legend">${series.map(s => `<li style="--c:var(--c-${s.color})"><i></i>${esc(s.label)}<b>${chart.fmt(s.points.reduce((a, x) => a + x.value, 0))}</b></li>`).join('')}</ul>` : '';
-    fill(root, '[data-ch="commits"]', kpi(chart.fmt(n), `commit${n > 1 ? 's' : ''}`, `<em>${src}</em>`, chart.trend(cur, prev))
-      + chart.stacked(series, { unit: 'commit', summary: `${n} commits sur 30 jours` }) + legend);
+    const src = series.length > 1 ? series.map(s => `${esc(s.label)} ${chart.fmt(s.points.reduce((a, x) => a + x.value, 0))}`).join(', ') : local ? 'toutes branches' : 'branche principale';
+    const tips = all.map((d, i) => {
+      const by = series.length > 1 ? series.filter(s => s.points[i]?.value).map(s => `${s.label} ${s.points[i]?.value}`).join(', ') : '';
+      return `${d.label} · ${chart.fmt(d.value)} commit${d.value > 1 ? 's' : ''}${by ? ` (${by})` : ''}`;
+    });
+    fill(root, '[data-ch="commits"]', fig(chart.fmt(n), `commit${n > 1 ? 's' : ''}`, delta(cur, prev), src)
+      + acBars(all, tips, `${n} commits sur 30 jours`, 'commit'));
   })();
   // Claude Code : tokens écrits par jour.
   void (async () => {
     if (!bridge.where()) return fill(root, '[data-ch="tokens"]', muted('La consommation de Claude Code se lit depuis l’app Mac, ou depuis un appareil lié au Mac.'));
     if (bridge.local() && !f?.path) return fill(root, '[data-ch="tokens"]', muted('Choisis le dossier du projet pour suivre Claude Code.'));
-    const r = await bridge.call('agent', 'daily', { project: p.id, days: 30 }, 30000);
+    const r = await bridge.call('agent', 'daily', { project: p.id, days: DAYS }, 30000);
     const tok = (r.tokens as Record<string, number>) ?? {}, n = sum(tok), ses = sum((r.sessions as Record<string, number>) ?? {});
     if (!n) return fill(root, '[data-ch="tokens"]', muted('Aucune session Claude Code ces 30 derniers jours.'));
-    const pts = chart.lastDays(30, tok), [cur, prev] = chart.lastVsPrev(pts);
-    fill(root, '[data-ch="tokens"]', kpi(chart.fmt(n), 'tokens écrits', `<em>${ses} session${ses > 1 ? 's' : ''}</em>`, chart.trend(cur, prev))
-      + chart.stacked([{ label: 'Claude Code', color: 'violet', points: pts }], { unit: 'token', summary: `${n} tokens écrits par Claude Code sur 30 jours` }));
+    const pts = chart.lastDays(DAYS, tok), [cur, prev] = chart.lastVsPrev(pts);
+    fill(root, '[data-ch="tokens"]', fig(chart.fmt(n), 'tokens écrits', delta(cur, prev), `${ses} session${ses > 1 ? 's' : ''}`)
+      + acBars(pts, pts.map(d => `${d.label} · ${chart.fmt(d.value)} token${d.value > 1 ? 's' : ''}`), `${n} tokens écrits par Claude Code sur 30 jours`, 'token'));
   })();
   // CI : les dernières exécutions sur la branche principale, une ligne par dépôt.
   void (async () => {
@@ -311,13 +340,13 @@ async function dashboard(root: HTMLElement, p: Project, f: Folder | null): Promi
     const runs = rows.flatMap(x => x.fl.history), done = runs.filter(x => x.state !== 'pending'), ok = done.filter(x => x.state === 'success').length;
     if (!runs.length) return fill(root, '[data-ch="ci"]', muted('Aucune exécution de CI sur les branches principales.'));
     const rate = (h: chart.Run[]): number | null => { const d = h.filter(x => x.state !== 'pending'); return d.length ? Math.round(d.filter(x => x.state === 'success').length / d.length * 100) : null; };
-    const main = rows[0], rel0 = main?.fl.releases[0];
-    fill(root, '[data-ch="ci"]', kpi(done.length ? `${Math.round(ok / done.length * 100)} %` : '—', 'réussies', `<em>${runs.length} exécutions</em>`)
-      + `<div class="pj-ci-rows">${rows.map(({ r, fl }) => {
+    const main = rows[0], rel0 = main?.fl.releases[0], WORD = { success: 'réussie', failure: 'en échec', pending: 'en cours' };
+    const run = (x: chart.Run) => { const tip = esc(`${x.label} · ${WORD[x.state]}`), at = `class="ac-run s-${x.state}" data-tip="${tip}" aria-label="${tip}"`; return x.url ? `<a ${at} role="listitem" href="${esc(x.url)}" target="_blank" rel="noopener"></a>` : `<span ${at} role="listitem"></span>`; };
+    fill(root, '[data-ch="ci"]', fig(done.length ? `${Math.round(ok / done.length * 100)} %` : '—', 'réussies', `${runs.length} exécutions`)
+      + `<div class="ac-plot"><div class="ac-ci">${rows.map(({ r, fl }) => {
         const pc = rate(fl.history), st = fl.history[fl.history.length - 1]?.state;
-        return `<div class="pj-ci-row">${model.roleTag(r.role, 'sm')}<code title="${esc(r.name)}">${esc(short(r.name))}</code>${fl.history.length ? chart.strip(fl.history) : '<span class="pj-ci-none">pas de CI</span>'}<b class="${st === 'failure' ? 'err' : st === 'pending' ? 'warn' : 'ok'}">${pc === null ? '—' : `${pc} %`}</b></div>`;
-      }).join('')}</div>`
-      + (main && rel0 ? `<p class="pj-chart-foot">Dernière version de ${esc(short(main.r.name))} : <b>${esc(rel0.tag)}</b></p>` : ''));
+        return `<div class="ac-ci-row"><code title="${esc(r.name)}">${esc(short(r.name))}</code>${fl.history.length ? `<div class="ac-runs" role="list">${fl.history.map(run).join('')}</div>` : '<span class="ac-none">pas de CI</span>'}<b class="${st === 'failure' ? 'err' : ''}">${pc === null ? '—' : `${pc} %`}</b></div>`;
+      }).join('')}</div>${main && rel0 ? `<p class="ac-foot">Dernière version de ${esc(short(main.r.name))} : <code>${esc(rel0.tag)}</code></p>` : ''}</div>`);
   })();
   chart.bindTips(root);
 }

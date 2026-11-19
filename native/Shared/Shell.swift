@@ -69,6 +69,10 @@ enum Shell {
         _ = NotificationCenter.default.addObserver(forName: AgentItems.changed, object: nil, queue: .main) { [weak web] _ in
             web?.evaluateJavaScript("window.carnet && window.carnet.agentItems && window.carnet.agentItems()", completionHandler: nil)
         }
+        // Un agent attend une confirmation (suppression, installation), ou n'en attend plus : la page relit la liste (agent.guard).
+        _ = NotificationCenter.default.addObserver(forName: AgentGuard.changed, object: nil, queue: .main) { [weak web] _ in
+            web?.evaluateJavaScript("window.carnet && window.carnet.agentGuard && window.carnet.agentGuard()", completionHandler: nil)
+        }
         #endif
         web.navigationDelegate = coordinator
         web.uiDelegate = coordinator
@@ -274,6 +278,9 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
         // Notes et tâches envoyées par les agents à leur projet : la page les lit, les crée, puis confirme (AgentItems).
         case "items": send(AgentItems.list())
         case "itemsDone": send(AgentItems.done(body["run"] as? String ?? ""))
+        // Suppressions et installations qu'un agent demande à faire confirmer (AgentGuard) : la page les lit et y répond.
+        case "guard": send(AgentGuard.shared.list())
+        case "guardAnswer": AgentGuard.shared.answer(id: body["ask"] as? String ?? "", allow: body["allow"] as? Bool == true, done: send)
         case "unqueue": send(Agents.shared.unqueue(project: pid, id: body["queued"] as? String ?? ""))
         case "stop": send(Agents.shared.stop(body["run"] as? String ?? ""))
         case "worktrees": bg { folders.worktrees(pid, fresh: body["fresh"] as? Bool == true) }

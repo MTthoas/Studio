@@ -100,14 +100,15 @@ function build(box: HTMLElement, p: Project, first: Product | null): void {
     if (!st.useNote || !st.product) return '';
     try {
       const notes = notesFor(p, { kind: 'product', id: st.product.id, name: st.product.title, handle: st.product.handle });
-      return notes.map(n => store.getBody(n) ?? '').filter(Boolean).join('\n\n---\n\n').slice(0, 4000);
+      // Même règle que partout : seules les notes que l’IA a le droit de lire partent (interrupteur général, #privé, chiffrées).
+      return notes.filter(n => ai.shareable(n)).map(n => store.getBody(n) ?? '').filter(Boolean).join('\n\n---\n\n').slice(0, 4000);
     } catch { return ''; }
   }
   async function countNotes(): Promise<void> {
     const x = st.product; st.noteN = null;
     if (!x) return;
     try {
-      const n = notesFor(p, { kind: 'product', id: x.id, name: x.title, handle: x.handle }).length;
+      const n = notesFor(p, { kind: 'product', id: x.id, name: x.title, handle: x.handle }).filter(y => ai.shareable(y)).length;
       if (st.product === x) { st.noteN = n; render(); }
     } catch { /* pas de note liée */ }
   }

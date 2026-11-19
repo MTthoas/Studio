@@ -12,7 +12,9 @@
 //   est rangé sous un autre ; des dossiers au-dessus, seuls les attributs (stat) se lisent.
 // - Écriture dans le dossier personnel : la copie de l'agent (et ses copies sœurs), le .git de leurs dépôts (sauf
 //   hooks/), ~/.claude (sauf réglages, hooks, commandes…), les caches des outils et le trousseau. Hors du dossier
-//   personnel (/tmp, dossiers temporaires) : permis.
+//   personnel : les dossiers temporaires (/tmp, /var/folders) et /dev seulement ; /Applications, /opt/homebrew,
+//   /usr/local, /Library… sont fermés (pas d'installation globale depuis la bulle).
+// - Supprimer ou installer : confirmé par Touch ID ou mot de passe avant chaque commande (AgentGuard.swift).
 // - Réseau : ouvert (git push, npm install, gh). Ce qu'il peut envoyer se limite à ce qu'il peut lire.
 // Le profil est vérifié par macOS avant chaque lancement ; refusé, l'agent part sans bulle et sans terminal.
 import Foundation
@@ -82,6 +84,8 @@ enum AgentSandbox {
               let pWrite = paths(work + commons + caches), let pHooks = paths(commons.map { $0 + "/hooks" } + [logs]),
               let pOwnLogs = paths(ownLogs), let pSsh = paths([sshAgent]), let pTools = paths(readable),
               let pHomeRead = paths([home, "/Volumes", "/Users/Shared"]) else { return nil }
+        // Seuls endroits inscriptibles hors du dossier personnel (par leurs deux chemins : /tmp est un lien vers /private/tmp).
+        guard let pTemp = paths(["/private/tmp", "/tmp", "/private/var/folders", "/var/folders", "/private/var/tmp", "/var/tmp", "/dev"]) else { return nil }
         let pToolFiles = toolFiles.compactMap(literal).joined(separator: " ")
         // Attributs des dossiers au-dessus du projet et de la liste blanche (~/.local, ~/.config, ~/Library…).
         let up = unique((mine + readable + toolFiles).flatMap(ancestors)).compactMap(literal)
@@ -101,7 +105,12 @@ enum AgentSandbox {
                      // Sans ça, git et node échouent sur « Operation not permitted » quand le projet est rangé dans
                      // le dossier d'un autre projet (ils remontent l'arborescence en résolvant les chemins).
                      "(allow file-read-metadata \(pUp))",
-                     // Écriture : rien dans le dossier personnel, sauf la copie, le .git, les caches et l'état de Claude Code.
+                     // Écriture : fermée partout (dossier personnel, /Applications, /opt/homebrew, /usr/local, /Library…),
+                     // sauf les dossiers temporaires et /dev (terminaux, /dev/null), puis la copie, le .git, les caches
+                     // et l'état de Claude Code. Avant, seul le dossier personnel était fermé : un agent pouvait écrire
+                     // dans /Applications ou remplacer un programme de Homebrew, que tu lances ensuite hors de la bulle.
+                     "(deny file-write* (regex #\"^/\"))",
+                     "(allow file-write* \(pTemp))",
                      "(deny file-write* \(pHome))",
                      "(allow file-write* \(pWrite) \(claudeState))",
                      "(deny file-write* \(studioData) \(claudeConfig) \(pHooks) \(pSsh))",
