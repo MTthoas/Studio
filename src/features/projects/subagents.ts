@@ -1,16 +1,18 @@
 // Sous-agents d'une consigne Claude Code : par défaut, Claude reçoit l'outil Agent et délègue de lui-même
 // (exploration, parties indépendantes, relecture), en parallèle. Cette fenêtre règle le reste : les couper,
 // combien tournent ensemble, leur modèle, et des spécialistes (nom, rôle, consigne, modèle, accès) que Claude
-// utilise quand leur rôle correspond. Le réglage est gardé sur l'appareil (drafts.ts) et part avec chaque
-// consigne (`subagents` de `agent start`) ; le Mac le revalide (AgentTeam, Agents.swift).
+// utilise quand leur rôle correspond. L'équipe appartient au projet (drafts.ts, une par projet) et part avec chaque
+// consigne (`subagents` de `agent start`) ; le Mac le revalide (AgentTeam, Agents.swift). Avec « créer les
+// spécialistes utiles », Studio ajoute lui-même à l'équipe ceux dont la consigne a besoin (autoteam.ts).
 import * as ai from '../../integrations/ai.ts';
 import * as saved from './drafts.ts';
+import { pick } from './autoteam.ts';
 import { esc } from '../../lib/markdown.ts';
 import { icon, menu, modal, need, $$ } from '../../ui/kit.ts';
 import type { Member, Team } from './drafts.ts';
 
 /** Points de départ proposés par « Ajouter un spécialiste ». */
-const PRESETS: [label: string, m: Member][] = [
+export const PRESETS: [label: string, m: Member][] = [
   ['Explorateur', { name: 'explorateur', model: 'haiku', access: 'read',
     description: 'Recherche dans le code, sans rien modifier : où et comment une chose est faite. Pour toute exploration large.',
     prompt: 'Tu explores le dépôt pour l’agent principal. Cherche avec Grep et Glob avant de lire, et ne lis que les passages utiles. Rends une réponse courte : les fichiers et lignes concernés (chemin:ligne), ce que fait le code, les pièges repérés. Ne propose pas de modification si on ne te le demande pas.' }],
@@ -32,20 +34,35 @@ const options = (list: [string, string][], cur: string): string =>
   [...list, ...(cur && !list.some(x => x[0] === cur) ? [[cur, cur] as [string, string]] : [])].map(([v, l]) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(l)}</option>`).join('');
 
 /** Libellé du bouton de la consigne. */
-export function label(): string {
-  const t = saved.team();
+export function label(pid: string): string {
+  const t = saved.team(pid);
   return !t.on ? 'Sans sous-agent' : t.members.length ? `Sous-agents : auto + ${t.members.length}` : 'Sous-agents : auto';
 }
-export const HINT = 'Sous-agents : Claude confie de lui-même des parties de la consigne à des sous-agents qui travaillent en parallèle. Clique pour les régler, ajouter des spécialistes ou les couper';
+export const HINT = 'Sous-agents : Claude confie de lui-même des parties de la consigne à des sous-agents qui travaillent en parallèle. Clique pour régler l’équipe de ce projet, ajouter des spécialistes ou les couper';
 
-/** Ce qui part avec la consigne ; `undefined` quand les sous-agents sont coupés. */
-export function body(): Record<string, unknown> | undefined {
-  const t = saved.team();
-  return t.on ? { on: true, max: t.max, model: t.model, members: t.members } : undefined;
+/** Spécialistes que le dernier `body` vient d'ajouter à l'équipe du projet (pour le toast de l'appelant). */
+let created: string[] = [];
+export const lastCreated = (): string[] => [...created];
+
+/** Ce qui part avec la consigne ; `undefined` quand les sous-agents sont coupés. Avec `auto`, les spécialistes utiles
+ *  à la consigne qui manquent à l'équipe du projet y sont ajoutés d'abord : ils y restent, modifiables dans la fenêtre. */
+export function body(pid: string, prompt = '', mode = 'edit'): Record<string, unknown> | undefined {
+  created = [];
+  const t = saved.team(pid);
+  if (!t.on) return undefined;
+  if (t.auto && prompt.trim()) {
+    for (const role of pick(prompt, mode)) {
+      const preset = PRESETS.find(([, m]) => m.name === role)?.[1];
+      if (!preset || t.members.length >= saved.TEAM_SIZE || t.members.some(m => m.name === preset.name)) continue;
+      t.members.push({ ...preset, auto: true }); created.push(preset.name);
+    }
+    if (created.length) saved.setTeam(pid, t);
+  }
+  return { on: true, max: t.max, model: t.model, members: t.members.map(({ auto: _auto, ...m }) => m) };
 }
 
-const cardHTML = (m: Member): string => `<div class="sa-card" data-m>
-  <div class="sa-top"><input class="field" name="name" value="${esc(m.name)}" placeholder="nom-court" aria-label="Nom du spécialiste" maxlength="40" spellcheck="false" autocapitalize="off">
+const cardHTML = (m: Member): string => `<div class="sa-card" data-m${m.auto ? ' data-auto' : ''}>
+  <div class="sa-top"><input class="field" name="name" value="${esc(m.name)}" placeholder="nom-court" aria-label="Nom du spécialiste" maxlength="40" spellcheck="false" autocapitalize="off">${m.auto ? '<span class="sa-auto-tag" title="Ajouté par Studio d’après une consigne">créé automatiquement</span>' : ''}
     <select class="field" name="model" aria-label="Modèle" title="Modèle de ce spécialiste">${options(MODELS, m.model)}</select>
     <select class="field" name="access" aria-label="Accès" title="Lecture seule : il lit et cherche, sans modifier ni lancer de commande">${options([['all', 'Outils de l’agent'], ['read', 'Lecture seule']], m.access)}</select>
     <button type="button" class="icon-btn" data-del title="Retirer ce spécialiste" aria-label="Retirer ce spécialiste">${icon('trash')}</button></div>
@@ -54,15 +71,18 @@ const cardHTML = (m: Member): string => `<div class="sa-card" data-m>
 </div>`;
 
 /** Ouvre le réglage ; rend `true` s'il a été enregistré. */
-export function edit(): Promise<boolean> {
-  const t: Team = saved.team();
+export function edit(pid: string): Promise<boolean> {
+  const t: Team = saved.team(pid);
   return new Promise(res => {
     let done = false;
     const m = modal({ title: 'Sous-agents', cls: 'sa', onClose: () => res(done), html: `<form novalidate>
+      <p class="modal-text">Cette équipe appartient à <strong>ce projet</strong> : les autres projets ont la leur.</p>
       <p class="modal-text">Claude Code peut confier des parties d’une même consigne à des sous-agents : ils explorent, modifient ou relisent <strong>en parallèle</strong>, chacun avec son propre contexte, puis lui rendent un résumé. Il décide seul quand cela vaut le coup : il écrit d’abord un plan (sous-tâches, fichiers réservés, contrats partagés), lance une vague, puis une seconde pour intégrer et relire.</p>
       <p class="modal-text">En mode Modifier, ils se parlent par un <strong>tableau d’équipe</strong> (dans le <code>.git</code> du dépôt, jamais commité) : chacun y note ses contrats, pièges et besoins, et relit ceux des autres. Tu le suis, et tu peux y laisser une consigne sans interrompre, depuis l’Espace agents (bouton tableau d’une vue, ou T).</p>
       <div class="ag-seg sa-seg" role="radiogroup" aria-label="Sous-agents"><label><input type="radio" name="on" value="1"${t.on ? ' checked' : ''}><span>${icon('sparkle')}Automatiques</span></label><label><input type="radio" name="on" value=""${t.on ? '' : ' checked'}><span>${icon('stop')}Coupés</span></label></div>
       <div data-body>
+        <label class="ag-check sa-auto"><input type="checkbox" name="auto"${t.auto ? ' checked' : ''}><span>Créer les spécialistes utiles selon la consigne</span></label>
+        <p class="sa-note">Une consigne longue, en plusieurs parties ou qui parle de tests ou de documentation ajoute un explorateur, un relecteur, un testeur, un rédacteur ou un intégrateur à l’équipe du projet. Ils y restent, tu peux les modifier ou les retirer.</p>
         <div class="sa-row">
           <label class="sa-field"><span>En parallèle, au plus</span><select class="field" name="max">${Array.from({ length: saved.TEAM_PARALLEL }, (_, i) => `<option${i + 1 === t.max ? ' selected' : ''}>${i + 1}</option>`).join('')}</select></label>
           <label class="sa-field"><span>Modèle par défaut des sous-agents</span><select class="field" name="model" title="Un modèle plus léger pour les sous-agents économise ton abonnement">${options(MODELS, t.model)}</select></label>
@@ -112,9 +132,10 @@ export function edit(): Promise<boolean> {
           : !description ? `Donne un rôle à « ${name} » : c’est ce qui dit à Claude quand l’appeler.` : '';
         if (bad) { err.textContent = bad; c.querySelector<HTMLElement>(`[name=${description || !saved.MEMBER_RE.test(name) || seen.has(name) ? 'name' : 'description'}]`)?.focus(); return; }
         seen.add(name);
-        members.push({ name, description, prompt: val('prompt'), model: val('model'), access: val('access') === 'read' ? 'read' : 'all' });
+        // Un spécialiste créé automatiquement le reste tant qu'il garde son nom ; le modifier n'y change rien.
+        members.push({ name, description, prompt: val('prompt'), model: val('model'), access: val('access') === 'read' ? 'read' : 'all', ...(c.hasAttribute('data-auto') ? { auto: true } : {}) });
       }
-      saved.setTeam({ on: !!f.querySelector<HTMLInputElement>('[name=on]:checked')?.value, max: Number(need<HTMLSelectElement>('[name=max]', f).value) || 4,
+      saved.setTeam(pid, { auto: f.querySelector<HTMLInputElement>('[name=auto]')?.checked ?? true, on: !!f.querySelector<HTMLInputElement>('[name=on]:checked')?.value, max: Number(need<HTMLSelectElement>('[name=max]', f).value) || 4,
         model: need<HTMLSelectElement>('.sa-row [name=model]', f).value, members });
       done = true; m.close();
     });

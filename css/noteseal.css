@@ -1,0 +1,4 @@
+/* Notes fermées à l'IA : état sobre, texte atténué et un bouton, sans couleur d'alerte. */
+.ns-closed { display: inline-flex; align-items: center; gap: 6px; font-size: var(--t-1); color: var(--text-3); }
+.ns-closed .ic { flex: none; width: 12px; height: 12px; }
+.ns-closed-box { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 8px 0; }

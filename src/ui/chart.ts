@@ -76,12 +76,6 @@ export function trend(cur: number, prev: number, span = '7 j'): string {
   if (pct === 0) return `<span class="ch-trend" title="Par rapport aux ${span} précédents">= · ${span}</span>`;
   return `<span class="ch-trend ${pct > 0 ? 'up' : 'down'}" title="Par rapport aux ${span} précédents">${pct > 0 ? '↑' : '↓'} ${Math.abs(pct)} % · ${span}</span>`;
 }
-/** Barre segmentée (répartition) et sa légende. */
-export function segments(parts: { label: string; value: number; color: string }[]): string {
-  const total = parts.reduce((a, p) => a + p.value, 0) || 1;
-  return `<div class="ch-segs" role="img" aria-label="${esc(parts.map(p => `${p.label} ${p.value}`).join(', '))}">${parts.filter(p => p.value).map(p => `<i style="--c:var(--c-${p.color});flex-grow:${p.value}" data-tip="${esc(`${p.label} · ${p.value} (${Math.round(p.value / total * 100)} %)`)}"></i>`).join('')}</div>
-    <ul class="ch-legend">${parts.map(p => `<li style="--c:var(--c-${p.color})"><i></i>${esc(p.label)}<b>${p.value}</b></li>`).join('')}</ul>`;
-}
 
 /** Jauge d'avancement (une seule couleur) : `done` sur `total`. */
 export function meter(done: number, total: number, color = 'green'): string {

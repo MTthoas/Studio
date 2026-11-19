@@ -1,0 +1,74 @@
+/* Activité d'un projet (src/features/projects/page.ts, activityHTML) : un tableau de mesures sans boîtes ni icônes.
+   Libellé, chiffre, puis barres fines sur la même échelle de 30 jours. La couleur du projet (--k) ne sert qu'aux commits. */
+.ac-wrap { --ac-lab: 8.5rem; --ac-fig: 13.5rem; font-size: var(--t-1); }
+.ac-row { display: grid; grid-template-columns: var(--ac-lab) var(--ac-fig) minmax(0, 1fr); align-items: start; column-gap: 16px; padding: 12px 0; border-top: 1px solid var(--border); min-width: 0; }
+.ac-row:first-child { border-top: 0; padding-top: 4px; }
+.ac-cells { display: contents; }
+.ac-name { justify-self: start; padding: 0; color: var(--text-3); font-size: var(--t-1); font-variant-caps: all-small-caps; letter-spacing: .06em; font-weight: 600; line-height: 22px; text-transform: lowercase; }
+.ac-name:hover { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+.ac-name:focus-visible { border-radius: 3px; }
+
+/* Chiffre principal et précisions à côté. */
+.ac-fig { min-width: 0; }
+.ac-fig p { display: flex; align-items: baseline; gap: 6px; margin: 0; }
+.ac-fig strong { color: var(--text); font-size: var(--t-5); font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -.01em; line-height: 22px; }
+.ac-fig span { color: var(--text-2); }
+.ac-fig small { display: block; margin-top: 2px; color: var(--text-3); font-size: var(--t-1); font-variant-numeric: tabular-nums; line-height: 1.4; }
+
+.ac-plot { min-width: 0; }
+.ac-empty { align-self: center; margin: 0; color: var(--text-3); line-height: 1.5; }
+
+/* Barres fines, une couleur par mesure ; le jour courant est plein, les jours vides gardent un trait. */
+.ac-bars { display: flex; align-items: flex-end; gap: 2px; height: 40px; border-bottom: 1px solid var(--border-2); }
+.ac-b { flex: 1 1 0; display: flex; align-items: flex-end; justify-content: center; height: 100%; }
+.ac-b i { display: block; width: 100%; max-width: 8px; background: var(--text-3); opacity: .55; }
+.ac-cells[data-ch="commits"] .ac-b i { background: var(--k); opacity: .75; }
+.ac-b i.z { height: 1px; opacity: .3; }
+.ac-b.now i { opacity: 1; }
+.ac-b:hover { background: var(--hover); }
+.ac-b:hover i { opacity: 1; }
+
+/* Axe des dates, aligné sur la colonne des barres. */
+.ac-ax { padding: 0; border-top: 0; margin-top: -4px; }
+.ac-axis { grid-column: 3; position: relative; height: 16px; color: var(--text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
+.ac-axis span { position: absolute; left: var(--x); transform: translateX(-50%); white-space: nowrap; }
+.ac-axis span:first-child { transform: none; left: 0; }
+.ac-axis span:last-child { transform: translateX(-100%); }
+
+/* Tâches : une barre fine répartie par état, puis la légende en texte. */
+.ac-segs { display: flex; gap: 2px; height: 6px; margin-top: 8px; }
+.ac-segs i { flex-basis: 0; min-width: 3px; background: var(--text-3); }
+.ac-segs .s-done { background: var(--text); opacity: .8; }
+.ac-segs .s-doing { background: var(--text-2); opacity: .7; }
+.ac-segs .s-todo { opacity: .4; }
+.ac-segs .s-late { background: var(--c-red); }
+.ac-legend { display: flex; flex-wrap: wrap; gap: 2px 14px; margin: 8px 0 0; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.ac-legend b { color: var(--text-2); font-weight: 500; }
+.ac-legend .s-late b { color: var(--c-red); }
+
+/* Intégration continue : une ligne par dépôt, ticks fins (réussie en gris, échec en rouge, en cours en creux). */
+.ac-ci { display: grid; gap: 6px; }
+.ac-ci-row { display: grid; grid-template-columns: minmax(0, 8em) minmax(0, 1fr) 3.2em; align-items: center; gap: 10px; }
+.ac-ci-row code { font: var(--t-1) var(--mono); color: var(--text-2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ac-ci-row b { text-align: right; font-weight: 500; font-variant-numeric: tabular-nums; color: var(--text-2); }
+.ac-ci-row b.err { color: var(--c-red); }
+.ac-runs { display: flex; gap: 2px; height: 14px; }
+.ac-run { flex: 0 1 6px; min-width: 2px; background: var(--text-3); opacity: .55; }
+.ac-run:hover { opacity: 1; }
+.ac-run.s-failure { background: var(--c-red); opacity: .9; }
+.ac-run.s-pending { background: none; box-shadow: inset 0 0 0 1px var(--text-3); }
+.ac-none, .ac-foot { color: var(--text-3); }
+.ac-foot { margin: 8px 0 0; }
+.ac-foot code { font: var(--t-1) var(--mono); color: var(--text-2); }
+
+.ac-skel { grid-column: 2 / -1; height: 22px; border-radius: 4px; background: var(--active); animation: ac-wait 1.6s ease-in-out infinite; }
+@keyframes ac-wait { 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .ac-skel { animation: none; } }
+
+/* Étroit : libellé et chiffre sur une ligne, la courbe dessous sur toute la largeur. */
+@media (max-width: 720px) {
+  .ac-row { grid-template-columns: var(--ac-lab) minmax(0, 1fr); row-gap: 8px; }
+  .ac-plot, .ac-empty { grid-column: 1 / -1; }
+  .ac-axis { grid-column: 1 / -1; }
+  .ac-ci-row { grid-template-columns: minmax(0, 6em) minmax(0, 1fr) 3em; }
+}

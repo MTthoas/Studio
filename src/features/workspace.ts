@@ -10,21 +10,28 @@
 // mettre à jour, fusionner dans la branche mère d'un groupe, revue, VS Code, nouvelle branche, suppression
 // (copyStrip / copyAct de sessions.ts). Le tableau d'équipe (AgentBoard, Agents.swift) montre ce que l'agent, ses
 // sous-agents et les agents de son groupe s'écrivent, et l'utilisateur peut leur y laisser une consigne.
+// Les sous-agents sont des agents à part entière : une bande « équipe » sous l'en-tête de leur conversation, leur propre vue
+// (`Pane.sub`, fil en lecture seule), leur ligne indentée dans la liste tant qu'ils travaillent, et le fil « Échanges »
+// du tableau (team.ts) qui réunit consignes, délégations, comptes rendus et messages. Le rendu pur est dans team.ts.
 import * as bridge from '../integrations/remote.ts';
 import * as projects from './projects/model.ts';
 import * as subagents from './projects/subagents.ts';
 import { feedBlocks, syncFeed, nameOf, live, STATUS, modelName, agentCount, COUNT_HINT, newGroup, copyStrip, copyAct, COPY_ACTS, groupOfCopy } from './projects/sessions.ts';
-import type { AgentRun, Session, Action, Queued, Worktree } from './projects/sessions.ts';
+import { exchanges, exchangeBlocks, teamHTML, settled } from './projects/team.ts';
+import type { BoardMsg } from './projects/team.ts';
+import type { AgentRun, Session, Action, Queued, Worktree, SubAgent } from './projects/sessions.ts';
 import type { Project } from './projects/model.ts';
 import { esc, renderMarkdown } from '../lib/markdown.ts';
 import { fold } from '../lib/fuzzy.ts';
 import { $, $$, icon, kbd, rel, modal, need, toast, target, paintIfChanged, menu } from '../ui/kit.ts';
 
-/** Une vue : la conversation qu'elle suit (`session`), ou un agent qui démarre (`run`), ou rien (nouvel agent). */
-interface Pane { project: string; session: string; run?: string }
+/** Une vue : la conversation qu'elle suit (`session`), ou un agent qui démarre (`run`), ou rien (nouvel agent).
+ *  `sub` : un sous-agent de cette conversation (fil en lecture seule) ; `auto` : ouverte d'office par le mode Auto, donc rendue
+ *  quand le sous-agent a fini depuis plus d'une minute. */
+interface Pane { project: string; session: string; run?: string; sub?: string; auto?: boolean }
 interface State { layout: number; panes: (Pane | null)[]; focus: number; max: number; filter: string; draftProject: string; /** Montrer d'office les agents qui travaillent. */ auto: boolean; /** Barre de la liste réduite à une colonne d'icônes (réduction visuelle seulement). */ mini: boolean; /** Conversations au travail que l'utilisateur a retirées de leur vue : pas remises d'office tant qu'elles travaillent. */ dismissed: string[] }
-interface Detail extends Partial<Session> { actions: Action[]; message?: string; at: number }
-interface Row { p: Project; s: Session; status: 'running' | 'error' | 'review' | 'idle' }
+interface Detail extends Partial<Session> { actions: Action[]; message?: string; at: number; /** Sous-agents de la conversation (absent avec une app Mac ancienne). */ subagents?: SubAgent[]; /** Fil d'un sous-agent : lui-même. */ agent?: SubAgent }
+interface Row { p: Project; s: Session; status: 'running' | 'error' | 'review' | 'idle'; subs: SubAgent[] }
 
 export const LAYOUTS = [1, 2, 3, 4, 6, 8];
 const KEY = 'studio.workspace', SEEN = 'studio.workspace.seen', TICK = 2500;
@@ -47,14 +54,21 @@ const details = new Map<string, Detail>();
 const treesBy = new Map<string, { list: Worktree[]; at: number }>();
 /** Tableau d'équipe, par projet et copie (`projet/copie`) ; `open` : vues (par conversation) qui l'affichent. */
 interface BoardFile { name: string; text: string; at: number }
-const boards = new Map<string, { files: BoardFile[]; at: number; missing?: boolean }>();
+/** `messages` : le tableau découpé en entrées par le Mac (absent avec une app Mac ancienne : on montre alors les fichiers). */
+const boards = new Map<string, { files: BoardFile[]; messages?: BoardMsg[]; at: number; missing?: boolean }>();
 const boardOpen = new Set<string>(read<string[]>('studio.workspace.boards', []));
+/** Onglet du tableau par vue : « x » (échanges) ou « f » (fichiers bruts) ; bande équipe repliée par vue. */
+const boardTab = new Map<string, string>(), teamFold = new Set<string>();
+/** Spécialistes que Studio vient d'ajouter à l'équipe d'un projet en lançant des agents : annoncés d'un seul toast. */
+const made = new Set<string>();
 let root: HTMLElement | null = null, timer: ReturnType<typeof setInterval> | undefined, tick = 0, cursor = 0, listing = false;
 /** Conversations d'agents déjà réclamées à la liste du Mac (relue une fois pour chacune, pas à chaque tour). */
 const asked = new Set<string>();
 
 const ms = (iso?: string) => Date.parse(iso || '') || 0;
-const pkey = (p: Pane) => `${p.project}/${p.session}`;
+/** Clé d'une vue ; celle d'un sous-agent prolonge celle de sa conversation (`mkey`). */
+const pkey = (p: Pane) => `${p.project}/${p.session}${p.sub ? `/${p.sub}` : ''}`;
+const mkey = (p: Pane) => `${p.project}/${p.session}`;
 const proj = (id: string) => projects.projects().find(p => p.id === id);
 const panes = (): (Pane | null)[] => Array.from({ length: st.layout }, (_, i) => st.panes[i] ?? null);
 
@@ -73,7 +87,7 @@ function rows(): Row[] {
       const mine = runs.filter(r => r.session === s.id), last = mine.reduce<AgentRun | undefined>((a, r) => !a || ms(r.started) > ms(a.started) ? r : a, undefined);
       const act = ms(s.active || s.updated);
       const status = mine.some(live) || s.live ? 'running' : last?.status === 'error' ? 'error' : act > (seen[s.id] ?? 0) && Date.now() - act < 3 * 864e5 ? 'review' : 'idle';
-      out.push({ p, s, status });
+      out.push({ p, s, status, subs: details.get(`${p.id}/${s.id}`)?.subagents ?? [] });
     }
   }
   return out.sort((a, b) => ms(b.s.active || b.s.updated) - ms(a.s.active || a.s.updated));
@@ -96,18 +110,30 @@ async function loadTrees(pid: string): Promise<void> {
   const r = await bridge.call('agent', 'worktrees', { project: pid }, 30000);
   if (r.ok) treesBy.set(pid, { list: (r.worktrees as Worktree[] | undefined) ?? [], at: Date.now() });
 }
+const boardOf = (r: object) => ({ files: ((r as { files?: BoardFile[] }).files) ?? [], messages: Array.isArray((r as { messages?: unknown }).messages) ? (r as { messages: BoardMsg[] }).messages : undefined, at: Date.now() });
 async function loadBoard(pid: string, wt: string): Promise<void> {
   const r = await bridge.call('agent', 'board', { project: pid, worktree: wt }, 10000);
-  boards.set(`${pid}/${wt}`, r.ok ? { files: (r.files as BoardFile[] | undefined) ?? [], at: Date.now() } : { files: [], at: Date.now(), missing: true });
+  boards.set(`${pid}/${wt}`, r.ok ? boardOf(r) : { files: [], at: Date.now(), missing: true });
 }
 /** Copie où travaille l'agent d'une vue : celle de sa conversation, sinon celle de son lancement. */
 function paneTree(x: Pane): string {
+  if (x.sub) return ''; // un sous-agent travaille dans la copie de sa conversation, qu'on gère depuis la vue de celle-ci
   const d = details.get(pkey(x));
   if (d?.worktree) return d.worktree;
   const r = (runsBy.get(x.project) ?? []).filter(y => (!!x.session && y.session === x.session) || (!!x.run && y.run === x.run)).find(y => y.worktree);
   return r?.worktree ?? '';
 }
 async function loadDetail(p: Pane): Promise<void> {
+  if (p.sub) {
+    const a = await bridge.call('project', 'subagent', { project: p.project, session: p.session, agent: p.sub }, 20000);
+    const old = a.message === 'Action inconnue.' || a.message === 'Action non autorisée à distance.';
+    details.set(pkey(p), a.ok && a.agent ? { ...(a as unknown as Partial<Session>), id: p.session, actions: (a.actions as Action[] | undefined) ?? [], agent: a.agent as SubAgent, at: Date.now() }
+      : { actions: [], message: old ? 'Mets à jour l’app Studio pour Mac pour lire les fils des sous-agents.' : a.message ?? 'Sous-agent introuvable.', at: Date.now() });
+    // La réponse porte aussi la liste des sous-agents : la conversation (bande équipe, liste) la reprend sans attendre son tour.
+    const parent = details.get(mkey(p));
+    if (parent && Array.isArray(a.subagents)) parent.subagents = a.subagents as SubAgent[];
+    return;
+  }
   const d = await bridge.call('project', 'session', { project: p.project, session: p.session }, 20000);
   details.set(pkey(p), d.ok ? { ...(d as unknown as Partial<Session>), id: p.session, actions: (d.actions as Action[] | undefined) ?? [], at: Date.now() } : { actions: [], message: d.message ?? 'Conversation introuvable.', at: Date.now() });
 }
@@ -130,9 +156,15 @@ async function refresh(): Promise<void> {
   for (const x of shown) if (!x.session && x.run) { const r = runsBy.get(x.project)?.find(y => y.run === x.run); if (r?.session) { x.session = r.session; save(); } }
   // Les fils : à chaque tour tant que l'agent travaille, une fois sur quatre au repos.
   await Promise.all(shown.filter(x => x.session).map(x => {
-    const d = details.get(pkey(x)), working = d?.live || (runsBy.get(x.project) ?? []).some(r => r.session === x.session && live(r));
+    const d = details.get(pkey(x)), working = x.sub ? !!d?.agent?.live : d?.live || (runsBy.get(x.project) ?? []).some(r => r.session === x.session && live(r));
     return !d || working || tick % 4 === 0 ? loadDetail(x) : Promise.resolve();
   }));
+  // Une vue de sous-agent a besoin de sa conversation (nom de l'agent dont il dépend) ; les conversations qui travaillent
+  // sans vue sont relues aussi (4 au plus) : c'est d'elles que vient la liste de leurs sous-agents au travail.
+  const mains = new Set(shown.filter(x => x.session && !x.sub).map(mkey));
+  const wanted = [...shown.filter(x => x.sub && !mains.has(mkey(x)) && !details.has(mkey(x))).map(x => ({ project: x.project, session: x.session })),
+    ...rows().filter(r => r.status === 'running' && !mains.has(`${r.p.id}/${r.s.id}`)).slice(0, 4).map(r => ({ project: r.p.id, session: r.s.id }))];
+  await Promise.all([...new Map(wanted.map(w => [mkey(w), w])).values()].filter(w => !details.has(mkey(w)) || tick % 2 === 0).map(w => loadDetail(w)));
   // Les copies des projets affichés (étape, branche, gestes possibles) : toutes les 15 s, et tout de suite pour un nouveau projet.
   const withTree = [...new Set(shown.filter(x => paneTree(x)).map(x => x.project))];
   // Une copie que la liste ne connaît pas encore (agent qui vient d'être lancé) fait relire son projet tout de suite.
@@ -163,7 +195,7 @@ const GROUPS: [Row['status'], string][] = [['running', 'En cours'], ['review', '
 const initial = (t: string) => (t.match(/[\p{L}\p{N}]/u)?.[0] ?? '·').toUpperCase();
 function paintList(): void {
   const box = root && $('.aw-list', root); if (!box) return;
-  const q = fold(st.filter.trim()), open = new Map(panes().map((x, i) => [x?.session ?? '', i + 1]));
+  const q = fold(st.filter.trim()), open = new Map(panes().map((x, i) => [x ? `${x.session}/${x.sub ?? ''}` : '', i + 1]));
   const list = rows().filter(r => !q || fold(`${nameOf(r.s)} ${r.p.name}`).includes(q));
   const scroll = box.scrollTop;
   cursor = Math.min(cursor, Math.max(0, list.length - 1));
@@ -172,8 +204,13 @@ function paintList(): void {
     const g = list.filter(r => r.status === k).slice(0, k === 'idle' ? 40 : 99);
     if (!g.length) return '';
     return `<div class="aw-group"><h4>${label}<span>${g.length}</span></h4>${g.map(r => {
-      const n = open.get(r.s.id), idx = i++;
-      return `<button class="aw-row${idx === cursor ? ' cur' : ''}${n ? ' shown' : ''}" draggable="true" data-row="${idx}" data-p="${esc(r.p.id)}" data-s="${esc(r.s.id)}" title="${esc(`${nameOf(r.s)} · ${r.p.name}`)}" aria-label="${esc(nameOf(r.s))}">${ICON[r.status]}<i class="aw-ini" style="--c:var(--c-${r.p.hue})" aria-hidden="true">${esc(initial(nameOf(r.s)))}</i><span class="aw-rt">${esc(nameOf(r.s))}</span><span class="aw-rp"><i class="tag-dot" style="--c:var(--c-${r.p.hue})"></i>${esc(r.p.name)}</span><time>${esc(rel(ms(r.s.active || r.s.updated)))}</time>${n ? `<b class="aw-in">${n}</b>` : ''}</button>`;
+      const n = open.get(`${r.s.id}/`), idx = i++;
+      // Les sous-agents au travail, indentés sous leur conversation : ils s'ouvrent comme elle (clic, J/K, Entrée, glisser).
+      const subs = r.subs.filter(a => a.live).slice(0, 6).map(a => {
+        const m = open.get(`${r.s.id}/${a.id}`), at = i++, name = a.type || a.title || 'Sous-agent';
+        return `<button class="aw-row aw-subrow${at === cursor ? ' cur' : ''}${m ? ' shown' : ''}" draggable="true" data-row="${at}" data-p="${esc(r.p.id)}" data-s="${esc(r.s.id)}" data-sa="${esc(a.id)}" title="${esc(`${name} : ${a.title}`)}"><span class="aw-ring"></span><span class="aw-rt">${esc(name)}</span><span class="aw-rp">${esc(a.last ? (a.last.kind.startsWith('tool:') ? `${a.last.kind.slice(5)} ${shortPath(a.last.text.replace(/\s+/g, ' '))}` : a.last.text.replace(/\s+/g, ' ')) : a.title)}</span>${m ? `<b class="aw-in">${m}</b>` : ''}</button>`;
+      }).join('');
+      return `<button class="aw-row${idx === cursor ? ' cur' : ''}${n ? ' shown' : ''}" draggable="true" data-row="${idx}" data-p="${esc(r.p.id)}" data-s="${esc(r.s.id)}" title="${esc(`${nameOf(r.s)} · ${r.p.name}`)}" aria-label="${esc(nameOf(r.s))}">${ICON[r.status]}<i class="aw-ini" style="--c:var(--c-${r.p.hue})" aria-hidden="true">${esc(initial(nameOf(r.s)))}</i><span class="aw-rt">${esc(nameOf(r.s))}</span><span class="aw-rp"><i class="tag-dot" style="--c:var(--c-${r.p.hue})"></i>${esc(r.p.name)}</span><time>${esc(rel(ms(r.s.active || r.s.updated)))}</time>${n ? `<b class="aw-in">${n}</b>` : ''}</button>${subs}`;
     }).join('')}</div>`;
   }).join('');
   const loading = projects.projects().some(p => !sessionsBy.has(p.id));
@@ -190,17 +227,27 @@ function newHTML(): string {
     <div class="aw-new-row"><label class="aw-sel">${icon('folder')}<select name="project" aria-label="Projet">${projectOptions(cur)}</select></label>
       <div class="cx-seg aw-mode" role="radiogroup" aria-label="Mode"><label><input type="radio" name="mode" value="edit" checked>${icon('pencil')}Modifier</label><label><input type="radio" name="mode" value="read">${icon('search')}Analyser</label></div></div>
     <textarea name="prompt" class="aw-big" placeholder="Décris ce que l’agent doit faire… ${COUNT_HINT}" aria-label="Consigne du nouvel agent"></textarea>
-    <div class="aw-new-foot"><button type="button" class="btn btn-ghost aw-sub" data-w="sub" title="${esc(subagents.HINT)}">${icon('sparkle')}<span>${esc(subagents.label())}</span></button><span>ou glisse une conversation de la liste ici</span><button class="btn btn-primary">${icon('play')}Lancer ${kbd('mod+enter')}</button></div></form>`;
+    <div class="aw-new-foot"><button type="button" class="btn btn-ghost aw-sub" data-w="sub" title="${esc(subagents.HINT)}">${icon('sparkle')}<span>${esc(subagents.label(cur))}</span></button><span>ou glisse une conversation de la liste ici</span><button class="btn btn-primary">${icon('play')}Lancer ${kbd('mod+enter')}</button></div></form>`;
 }
 function paneShell(x: Pane | null, i: number): string {
   const act = (a: string, ic: string, t: string, k = '') => `<button type="button" class="icon-btn" data-w="${a}" title="${esc(t)}${k ? ` (${k})` : ''}" aria-label="${esc(t)}">${icon(ic)}</button>`;
+  // Sous-agent : un fil en lecture seule, sans arrêt, tableau ni champ de réponse (il répond à l'agent principal, pas à l'utilisateur).
+  if (x?.sub) return `<header class="aw-ph"><b class="aw-num">${i + 1}</b><div class="aw-ph-main"></div><div class="aw-ph-acts">${act('open', 'chevronRight', 'Ouvrir la conversation dans le projet')}${act('max', 'focus', 'Agrandir', 'F')}${act('close', 'x', 'Vider la vue', 'X')}</div></header>
+    <div class="aw-body"><div class="ss-feed aw-feed" role="log" tabindex="0" aria-label="Fil du sous-agent ${i + 1}"></div></div>
+    <p class="aw-ro">${icon('eye')}Fil en lecture seule : ce sous-agent rend compte à l’agent principal.</p>`;
   return `<header class="aw-ph"><b class="aw-num">${i + 1}</b><div class="aw-ph-main"></div><div class="aw-ph-acts">${x ? act('stop', 'stop', 'Arrêter l’agent') + act('team', 'board', 'Tableau d’équipe', 'T') + act('open', 'chevronRight', 'Ouvrir dans le projet') : ''}${act('max', 'focus', 'Agrandir', 'F')}${x ? act('close', 'x', 'Vider la vue', 'X') : ''}</div></header>
-    ${x ? `<div class="aw-copy-slot"></div><div class="aw-body"><div class="ss-feed aw-feed" role="log" tabindex="0" aria-label="Fil de l’agent ${i + 1}"></div><aside class="aw-board" hidden aria-label="Tableau d’équipe de l’agent ${i + 1}"><div class="aw-board-list"></div><form class="aw-board-say"><input name="note" placeholder="Consigne pour l’équipe, lue à sa prochaine étape…" aria-label="Consigne pour l’équipe" maxlength="4000"><button class="btn" title="Ajouter au tableau (sans interrompre)">${icon('play')}</button></form></aside></div>
+    ${x ? `<div class="aw-copy-slot"></div><div class="aw-team-slot tm-team"></div><div class="aw-body"><div class="ss-feed aw-feed" role="log" tabindex="0" aria-label="Fil de l’agent ${i + 1}"></div><aside class="aw-board" hidden aria-label="Tableau d’équipe de l’agent ${i + 1}"><div class="aw-board-tabs" role="tablist" aria-label="Contenu du tableau" hidden><button type="button" role="tab" data-w="btab" data-tab="x">Échanges</button><button type="button" role="tab" data-w="btab" data-tab="f">Fichiers</button></div><div class="aw-board-x" role="log" aria-label="Échanges de l’équipe" hidden></div><div class="aw-board-list"></div><form class="aw-board-say"><input name="note" placeholder="Consigne pour l’équipe, lue à sa prochaine étape…" aria-label="Consigne pour l’équipe" maxlength="4000"><button class="btn" title="Ajouter au tableau (sans interrompre)">${icon('play')}</button></form></aside></div>
     <form class="aw-reply"><textarea name="prompt" rows="1" placeholder="Répondre à l’agent…" aria-label="Réponse à l’agent ${i + 1}"></textarea><button class="btn btn-primary" title="Envoyer (⌘↵) · ⇧⌘↵ interrompt le tour en cours">${icon('play')}</button></form>`
     : `<div class="aw-body aw-blank">${newHTML()}</div>`}`;
 }
 function headHTML(x: Pane | null): string {
   if (!x) return `<span class="aw-pt muted">Nouvel agent</span>`;
+  if (x.sub) {
+    // Un sous-agent dit de qui il dépend : un clic ramène à l'agent principal dans cette vue.
+    const d = details.get(pkey(x)), a = d?.agent, par = details.get(mkey(x)), p = proj(x.project);
+    const name = a ? a.type || a.title || 'Sous-agent' : 'Sous-agent', up = par?.id ? nameOf({ id: x.session, title: par.title ?? '', aiTitle: par.aiTitle, firstPrompt: par.firstPrompt, prompts: par.prompts ?? 0 }) : 'Conversation';
+    return `<i class="ss-live${a?.live ? ' on' : ''}"></i><span class="aw-pt" title="${esc(a?.title ?? name)}">${esc(name)}</span><span class="aw-dep">dépend de <button type="button" class="link-btn" data-w="parent" title="Ouvrir l’agent principal dans cette vue" aria-label="Ouvrir l’agent principal ${esc(up)} dans cette vue">${esc(up)}</button></span>${p ? `<span class="aw-rp"><i class="tag-dot" style="--c:var(--c-${p.hue})"></i>${esc(p.name)}</span>` : ''}<span class="ag-pill${a?.live ? ' live' : ''}" style="--c:var(--c-${a?.live ? 'amber' : 'gray'})">${a ? (a.live ? 'Au travail' : 'Fini') : 'Lecture…'}</span>${a?.lines ? `<span class="tm-n aw-meta"><b class="tm-add">+${a.lines.add}</b><b class="tm-del">−${a.lines.del}</b></span>` : ''}`;
+  }
   const p = proj(x.project), d = details.get(pkey(x)), runs = (runsBy.get(x.project) ?? []).filter(r => r.session === x.session || (x.run && r.run === x.run));
   const run = runs.find(live) ?? runs.reduce<AgentRun | undefined>((a, r) => !a || ms(r.started) > ms(a.started) ? r : a, undefined);
   const working = !!runs.find(live) || !!d?.live;
@@ -233,10 +280,19 @@ function paint(): void {
     if (!x) return;
     const feed = $('.aw-feed', el), d = x.session ? details.get(pkey(x)) : undefined;
     if (!feed) return;
+    if (x.sub) {
+      if (d?.message) { syncFeed(feed, [{ key: 'msg', html: `<p class="ss-cut">${esc(d.message)}</p>` }]); return; }
+      const endSub = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 40;
+      if (syncFeed(feed, feedBlocks(d?.actions ?? [], null, !!d?.agent?.live || !d, [], false, true)) && endSub) feed.scrollTop = feed.scrollHeight;
+      return;
+    }
     const runs = (runsBy.get(x.project) ?? []).filter(r => r.session === x.session || (x.run && r.run === x.run));
     const working = runs.some(live) || !!d?.live;
     $<HTMLButtonElement>('[data-w="stop"]', el)!.hidden = !runs.some(live);
     paintCopy(el, x, working);
+    // Bande « équipe » : une ligne par sous-agent de la conversation, mise à jour en place.
+    const ts = $('.aw-team-slot', el);
+    if (ts) paintIfChanged(ts, teamHTML(d?.subagents ?? [], { fold: teamFold.has(pkey(x)), shown: new Set(st.panes.filter(y => y?.sub && mkey(y) === mkey(x)).map(y => y?.sub ?? '')), shorten: shortPath }));
     if (d?.message) { syncFeed(feed, [{ key: 'msg', html: `<p class="ss-cut">${esc(d.message)}</p>` }]); return; }
     const end = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 40;
     if (syncFeed(feed, feedBlocks(d?.actions ?? [], null, working || !d, (queuedBy.get(x.project) ?? []).filter(q => q.session === x.session))) && end) feed.scrollTop = feed.scrollHeight;
@@ -245,6 +301,11 @@ function paint(): void {
   paintList();
 }
 
+/** Chemin raccourci pour une ligne étroite : sans le préfixe de la copie de l'agent, et les trois derniers segments d'un chemin absolu. */
+const shortPath = (p: string): string => {
+  const t = p.replace(/^.*\/\.claude\/worktrees\/[^/]+\//, '');
+  return t.startsWith('/') ? `…/${t.split('/').slice(-3).join('/')}` : t;
+};
 /** Bandeau de la copie et tableau d'équipe d'une vue. */
 function paintCopy(el: HTMLElement, x: Pane, working: boolean): void {
   const wt = paneTree(x), slot = $('.aw-copy-slot', el), board = $('.aw-board', el), team = $<HTMLButtonElement>('[data-w="team"]', el);
@@ -255,10 +316,20 @@ function paintCopy(el: HTMLElement, x: Pane, working: boolean): void {
   const open = !!wt && boardOpen.has(pkey(x));
   board.hidden = !open; team?.setAttribute('aria-pressed', String(open));
   if (!open) return;
-  const b = boards.get(`${x.project}/${wt}`), list = need('.aw-board-list', board);
+  const b = boards.get(`${x.project}/${wt}`), list = need('.aw-board-list', board), xl = need('.aw-board-x', board), tabs = need('.aw-board-tabs', board);
+  // Avec un Mac à jour, le tableau est découpé en messages : « Échanges » (par défaut) ou « Fichiers ». Sinon, les fichiers seuls.
+  const modern = !!b?.messages, tab = boardTab.get(pkey(x)) ?? 'x', chat = modern && tab === 'x';
+  tabs.hidden = !modern; xl.hidden = !chat; list.hidden = chat;
+  $$('[data-tab]', tabs).forEach(t => t.setAttribute('aria-selected', String(t.dataset.tab === (chat ? 'x' : 'f'))));
   const who = (n: string) => n === 'utilisateur.md' ? 'Toi' : n === 'principal.md' ? 'Agent principal' : n.replace(/\.md$/, '').replace(/^agent-(\d)$/, 'Agent $1').replace(/^agent-(\d)-/, 'Agent $1 · ');
   const g = groupOfCopy(wt);
   const empty = `<p class="aw-board-empty">${icon('board')}${b?.missing ? 'Pas de tableau pour cette copie (agent sur serveur, mode Analyser, ou app Mac à mettre à jour).' : `Le tableau se remplit quand l’agent découpe son travail en sous-agents${g ? ' ou que les agents du groupe partagent leurs découvertes' : ''}. Ta consigne ci-dessous y est lue à chaque étape, sans interrompre.`}</p>`;
+  if (chat) {
+    const d = details.get(mkey(x)), list2 = exchangeBlocks(exchanges(d?.actions ?? [], d?.subagents ?? [], b?.messages ?? []));
+    const end = xl.scrollHeight - xl.scrollTop - xl.clientHeight < 40;
+    if (syncFeed(xl, list2.length ? list2 : [{ key: 'empty', html: empty }]) && end) xl.scrollTop = xl.scrollHeight;
+    return;
+  }
   const html = !b ? '<p class="aw-board-empty"><span class="spin"></span>Lecture du tableau…</p>' : !b.files.length ? empty
     : b.files.map(f => `<article class="aw-note${f.name === 'utilisateur.md' ? ' me' : ''}"><header><b>${esc(who(f.name))}</b><time>${esc(rel(f.at))}</time></header><div class="md">${renderMarkdown(f.text)}</div></article>`).join('');
   const end = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
@@ -270,7 +341,8 @@ async function boardNote(f: HTMLFormElement, i: number): Promise<void> {
   const r = await bridge.call('agent', 'board', { project: x.project, worktree: wt, note: text }, 10000);
   if (!r.ok) { toast(r.message === 'Action inconnue.' ? 'Mets à jour l’app Studio pour Mac.' : r.message ?? 'Écriture impossible.'); return; }
   input.value = '';
-  boards.set(`${x.project}/${wt}`, { files: (r.files as BoardFile[] | undefined) ?? [], at: Date.now() });
+  boards.set(`${x.project}/${wt}`, { ...boardOf(r), messages: boardOf(r).messages ?? boards.get(`${x.project}/${wt}`)?.messages });
+  void loadBoard(x.project, wt).then(paint); // la réponse ne porte pas toujours les messages découpés
   paint();
   // L'agent ne lit le tableau qu'à ses étapes : au repos, il faut lui répondre pour qu'il en tienne compte.
   const working = (runsBy.get(x.project) ?? []).some(y => live(y) && y.worktree === wt);
@@ -316,15 +388,24 @@ function toggleBoard(i: number): void {
 // ---------- Actions ----------
 function setPane(i: number, x: Pane | null): void {
   // Une conversation n'est suivie que par une vue à la fois : on la déplace plutôt que de la dupliquer.
-  if (x?.session) st.panes = st.panes.map((y, j) => j !== i && y?.session === x.session ? null : y);
+  if (x?.session) st.panes = st.panes.map((y, j) => j !== i && y?.session === x.session && (y.sub ?? '') === (x.sub ?? '') ? null : y);
   st.panes[i] = x; st.focus = i; save(); paint();
   if (x?.session && !details.has(pkey(x))) void loadDetail(x).then(paint);
 }
 function openRow(btn: HTMLElement, where = st.focus): void {
-  const pid = btn.dataset.p ?? '', sid = btn.dataset.s ?? '';
-  const already = panes().findIndex(x => x?.session === sid);
+  const pid = btn.dataset.p ?? '', sid = btn.dataset.s ?? '', sa = btn.dataset.sa ?? '';
+  const already = panes().findIndex(x => x?.session === sid && (x.sub ?? '') === sa);
   if (already >= 0) { focusPane(already); return; }
-  setPane(where, { project: pid, session: sid });
+  setPane(where, { project: pid, session: sid, ...(sa ? { sub: sa } : {}) });
+}
+/** Vue pour un sous-agent ouvert à la main : une vue vide, sinon une disposition plus grande, sinon la suivante. */
+function openSub(project: string, session: string, sub: string): void {
+  const already = panes().findIndex(x => x?.session === session && x.sub === sub);
+  if (already >= 0) { focusPane(already); return; }
+  let at = panes().findIndex(x => !x);
+  if (at < 0) { const bigger = LAYOUTS.find(n => n > st.layout); if (bigger) { at = st.layout; setLayout(bigger); } else at = (st.focus + 1) % st.layout; }
+  st.dismissed = st.dismissed.filter(k => k !== `${session}/${sub}`);
+  setPane(at, { project, session, sub });
 }
 function focusPane(i: number, field = false): void {
   if (i >= st.layout) return;
@@ -338,46 +419,65 @@ function setLayout(n: number): void {
 /** Donne une vue à chaque agent qui travaille et n'en a pas : d'abord les vues vides (sauf un brouillon en cours),
  *  puis une disposition plus grande, enfin, à 8 vues, les vues d'agents au repos (sans réponse en cours d'écriture). */
 function autoShow(): void {
-  const working = rows().filter(r => r.status === 'running');
-  const busy = new Set(working.map(r => r.s.id));
+  const all = rows(), working = all.filter(r => r.status === 'running');
+  // Sous-agents au travail, par `conversation/sous-agent` (la clé de `dismissed`).
+  const subs = all.flatMap(r => r.subs.filter(a => a.live).map(a => ({ r, a, k: `${r.s.id}/${a.id}` })));
+  const busy = new Set([...working.map(r => r.s.id), ...subs.map(x => x.k)]);
   // Une conversation retirée à la main redevient candidate quand elle a fini (son prochain tour la remontrera).
   const kept = st.dismissed.filter(id => busy.has(id));
   if (kept.length !== st.dismissed.length) { st.dismissed = kept; save(); }
   if (!st.auto) return;
-  const shown = panes(), on = new Set(shown.map(x => x?.session).filter(Boolean));
+  let changed = false;
+  // Un sous-agent ouvert d'office qui a fini depuis plus d'une minute rend sa vue.
+  st.panes.forEach((x, i) => {
+    if (!x?.sub || !x.auto || i === st.focus) return;
+    const a = details.get(pkey(x))?.agent;
+    if (a && settled(a)) { st.panes[i] = null; if (st.max === i) st.max = -1; changed = true; }
+  });
+  const shown = panes(), on = new Set(shown.map(x => x && !x.sub ? x.session : '').filter(Boolean));
   const shownRuns = new Set(shown.map(x => x?.run).filter(Boolean));
   const missing = working.filter(r => !on.has(r.s.id) && !st.dismissed.includes(r.s.id)
     && !(runsBy.get(r.p.id) ?? []).some(x => x.session === r.s.id && shownRuns.has(x.run)));
-  if (!missing.length) return;
   const typed = (i: number) => !!$$<HTMLTextAreaElement>(`.aw-pane[data-i="${i}"] textarea`, root ?? document).some(t => t.value.trim());
   const free = () => panes().map((x, i) => (!x && !typed(i) ? i : -1)).filter(i => i >= 0);
-  // Pas assez de vues vides : la plus petite disposition qui les loge tous.
-  const need = missing.length - free().length;
-  if (need > 0) {
-    const want = LAYOUTS.find(n => n >= st.layout + need) ?? 8;
-    if (want > st.layout) setLayout(want);
+  if (missing.length) {
+    // Pas assez de vues vides : la plus petite disposition qui les loge tous.
+    const need = missing.length - free().length;
+    if (need > 0) {
+      const want = LAYOUTS.find(n => n >= st.layout + need) ?? 8;
+      if (want > st.layout) setLayout(want);
+    }
+    let slots = free();
+    if (slots.length < missing.length) {
+      const idle = panes().map((x, i) => {
+        if (!x || i === st.focus || typed(i)) return -1;
+        const busyHere = x.sub ? busy.has(`${x.session}/${x.sub}`) : busy.has(x.session) || (runsBy.get(x.project) ?? []).some(y => live(y) && (y.session === x.session || (!!x.run && y.run === x.run)));
+        return busyHere ? -1 : i;
+      }).filter(i => i >= 0);
+      slots = [...slots, ...idle];
+    }
+    for (const r of missing) {
+      const i = slots.shift(); if (i === undefined) break;
+      st.panes[i] = { project: r.p.id, session: r.s.id }; changed = true;
+      if (!details.has(`${r.p.id}/${r.s.id}`)) void loadDetail({ project: r.p.id, session: r.s.id }).then(paint);
+    }
   }
-  let slots = free();
-  if (slots.length < missing.length) {
-    const idle = panes().map((x, i) => {
-      if (!x || i === st.focus || typed(i)) return -1;
-      const busyHere = busy.has(x.session) || (runsBy.get(x.project) ?? []).some(y => live(y) && (y.session === x.session || (!!x.run && y.run === x.run)));
-      return busyHere ? -1 : i;
-    }).filter(i => i >= 0);
-    slots = [...slots, ...idle];
-  }
-  let changed = false;
-  for (const r of missing) {
-    const i = slots.shift(); if (i === undefined) break;
-    st.panes[i] = { project: r.p.id, session: r.s.id }; changed = true;
-    if (!details.has(`${r.p.id}/${r.s.id}`)) void loadDetail({ project: r.p.id, session: r.s.id }).then(paint);
+  // Puis les sous-agents au travail, seulement tant qu'il reste de la place : jamais au détriment d'un agent principal.
+  const there = new Set(panes().map(x => x?.sub ? `${x.session}/${x.sub}` : ''));
+  const spare = free();
+  for (const { r, a, k } of subs) {
+    if (there.has(k) || st.dismissed.includes(k)) continue;
+    const i = spare.shift(); if (i === undefined) break;
+    st.panes[i] = { project: r.p.id, session: r.s.id, sub: a.id, auto: true }; changed = true;
+    void loadDetail(st.panes[i]!).then(paint);
   }
   if (changed) save();
 }
 /** Retire la vue `i` ; un agent qui y travaillait n'y est pas remis d'office. */
 function closePane(i: number): void {
   const x = st.panes[i];
-  if (x?.session && rows().some(r => r.s.id === x.session && r.status === 'running')) st.dismissed = [...st.dismissed, x.session];
+  if (x?.sub) { const k = `${x.session}/${x.sub}`; if (rows().some(r => r.subs.some(a => a.live && `${r.s.id}/${a.id}` === k))) st.dismissed = [...st.dismissed, k]; }
+  else if (x?.session && rows().some(r => r.s.id === x.session && r.status === 'running')) st.dismissed = [...st.dismissed, x.session];
   st.panes[i] = null; if (st.max === i) st.max = -1; save(); paint();
 }
 const paintAuto = (page: HTMLElement) => $('.aw-auto', page)?.setAttribute('aria-pressed', String(st.auto));
@@ -406,22 +506,26 @@ async function launch(f: HTMLFormElement, i: number): Promise<void> {
   btn.disabled = false;
   if (!ok) { btn.innerHTML = `${icon('play')}Lancer ${kbd('mod+enter')}`; toast(fail); return; }
   save(); st.focus = i; paint();
-  toast(n > 1 ? `${ok} agent${ok > 1 ? 's' : ''} sur ${n} au travail${fail ? ` · ${fail}` : ''}` : 'Agent lancé'); void refresh();
+  toast(n > 1 ? `${ok} agent${ok > 1 ? 's' : ''} sur ${n} au travail${fail ? ` · ${fail}` : ''}` : 'Agent lancé'); announceMade(); void refresh();
   void loadSessions(p).then(paintList);
 }
 async function startAgent(p: Project, prompt: string, mode = 'edit', group?: { group: string; slot: number; of: number }): Promise<{ ok: true; session: string; run: string } | { ok: false; message: string }> {
   const body: Record<string, unknown> = { project: p.id, prompt, mode, repos: p.stack, ...group };
-  const sub = subagents.body(); if (sub) body.subagents = sub;
+  // L'équipe du projet part avec la consigne ; avec « auto », les spécialistes utiles y sont d'abord ajoutés.
+  const sub = subagents.body(p.id, prompt, mode); if (sub) body.subagents = sub;
+  subagents.lastCreated().forEach(n => made.add(n));
   const r = await bridge.call('agent', 'start', body, 60000);
   return r.ok ? { ok: true, session: typeof r.session === 'string' ? r.session : '', run: typeof r.run === 'string' ? r.run : '' } : { ok: false, message: r.message ?? 'Lancement impossible.' };
 }
 async function reply(x: Pane, prompt: string, interrupt = false): Promise<boolean> {
-  const p = proj(x.project); if (!p || !x.session) return false;
+  const p = proj(x.project); if (!p || !x.session || x.sub) return false; // un sous-agent ne reçoit pas de réponse : il répond à l'agent principal
   const body: Record<string, unknown> = { project: p.id, session: x.session, prompt, repos: p.stack, ...(interrupt ? { interrupt: true } : {}) };
-  const sub = subagents.body(); if (sub) body.subagents = sub;
+  const sub = subagents.body(p.id, prompt, 'edit'); if (sub) body.subagents = sub;
+  subagents.lastCreated().forEach(n => made.add(n));
   const r = await bridge.call('agent', 'start', body, 60000);
   if (!r.ok) { toast(r.message ?? 'Envoi impossible.'); return false; }
   if (typeof r.queued === 'number') toast('Message en attente : l’agent le lira à la fin de son tour');
+  announceMade();
   void loadRuns(x.project).then(() => loadDetail(x)).then(paint);
   return true;
 }
@@ -442,6 +546,12 @@ async function stopPane(i: number): Promise<void> {
 }
 function grow(ta: HTMLTextAreaElement): void { ta.style.height = 'auto'; ta.style.height = `${Math.min(ta.scrollHeight + 2, 220)}px`; }
 
+/** Annonce les spécialistes que Studio vient d'ajouter à l'équipe d'un projet (une fois, après le toast du lancement). */
+function announceMade(): void {
+  if (made.size) toast(`Sous-agents créés dans le projet : ${[...made].join(', ')}`);
+  made.clear();
+}
+
 /** Diffuser : la même consigne à plusieurs vues (réponse aux agents affichés, nouvel agent dans les vues vides). */
 function broadcast(): void {
   const list = panes();
@@ -450,8 +560,8 @@ function broadcast(): void {
     <div class="aw-cast-body"><textarea class="aw-big" aria-label="Consigne à diffuser" placeholder="La même consigne pour chaque vue cochée…" autofocus></textarea>
     <div class="aw-targets">${list.map((x, i) => {
       const p = x ? proj(x.project) : null, d = x ? details.get(pkey(x)) : undefined;
-      const title = x ? d?.id ? nameOf({ id: x.session, title: d.title ?? '', aiTitle: d.aiTitle, firstPrompt: d.firstPrompt, prompts: d.prompts ?? 0 }) : 'Conversation' : 'Nouvel agent';
-      return `<label class="aw-target"><input type="checkbox" data-t="${i}"${x?.session ? ' checked' : ''}><b class="aw-num">${i + 1}</b><span>${esc(title)}</span>${x ? `<em>${esc(p?.name ?? '')}</em>` : `<select data-tp="${i}" aria-label="Projet du nouvel agent ${i + 1}">${projectOptions(proj(st.draftProject)?.id ?? '')}</select>`}</label>`;
+      const title = x?.sub ? d?.agent?.type || d?.agent?.title || 'Sous-agent (lecture seule)' : x ? d?.id ? nameOf({ id: x.session, title: d.title ?? '', aiTitle: d.aiTitle, firstPrompt: d.firstPrompt, prompts: d.prompts ?? 0 }) : 'Conversation' : 'Nouvel agent';
+      return `<label class="aw-target"><input type="checkbox" data-t="${i}"${x?.session && !x.sub ? ' checked' : ''}${x?.sub ? ' disabled' : ''}><b class="aw-num">${i + 1}</b><span>${esc(title)}</span>${x ? `<em>${esc(p?.name ?? '')}</em>` : `<select data-tp="${i}" aria-label="Projet du nouvel agent ${i + 1}">${projectOptions(proj(st.draftProject)?.id ?? '')}</select>`}</label>`;
     }).join('')}</div></div>
     <div class="cap-foot"><span class="ask-status"></span><span class="ask-actions"><button class="btn" data-x>Annuler</button><button class="btn btn-primary" data-go>${icon('share')}Diffuser ${kbd('mod+enter')}</button></span></div>` });
   const ta = need<HTMLTextAreaElement>('textarea', m.node), status = need('.ask-status', m.node);
@@ -466,13 +576,14 @@ function broadcast(): void {
     for (const i of picked) {
       status.innerHTML = `<span class="spin"></span>Vue ${i + 1}…`;
       const x = list[i];
+      if (x?.sub) continue;
       if (x?.session) { if (await reply(x, text)) ok++; continue; }
       const p = proj($<HTMLSelectElement>(`[data-tp="${i}"]`, m.node)?.value ?? x?.project ?? '');
       if (!p) continue;
       const r = await startAgent(p, text);
       if (r.ok) { st.panes[i] = { project: p.id, session: r.session, run: r.run }; ok++; } else toast(r.message);
     }
-    save(); m.close(); paint(); toast(`Consigne envoyée à ${ok} vue${ok > 1 ? 's' : ''}`); void refresh();
+    save(); m.close(); paint(); toast(`Consigne envoyée à ${ok} vue${ok > 1 ? 's' : ''}`); announceMade(); void refresh();
     for (const pid of new Set(picked.map(i => st.panes[i]?.project).filter((x): x is string => !!x))) { const p = proj(pid); if (p) void loadSessions(p).then(paintList); }
   };
   need('[data-go]', m.node).onclick = () => void go();
@@ -526,7 +637,22 @@ export function mount(main: HTMLElement, toolbarLeft: string): void {
     if (w === 'stop') { void stopPane(i); return; }
     if (w === 'team') { toggleBoard(i); return; }
     if (w === 'open') { const x = panes()[i]; if (x) openInProject(x); return; }
-    if (w === 'sub') { void subagents.edit().then(ok => { if (ok) $$('.aw-sub span', page).forEach(s => { s.textContent = subagents.label(); }); }); return; }
+    if (w === 'sub') {
+      // L'équipe est celle du projet choisi dans le formulaire.
+      const f = t.closest<HTMLFormElement>('form.aw-new'), pid = (f?.elements.namedItem('project') as HTMLSelectElement | null)?.value || st.draftProject;
+      void subagents.edit(pid).then(ok => { if (ok && f?.isConnected) need('.aw-sub span', f).textContent = subagents.label(pid); });
+      return;
+    }
+    if (w === 'subview') { const sa = t.closest<HTMLElement>('[data-sa]')?.dataset.sa, x = panes()[i]; if (sa && x) openSub(x.project, x.session, sa); return; }
+    if (w === 'teamfold') { const x = panes()[i]; if (x) { const k = pkey(x); if (!teamFold.delete(k)) teamFold.add(k); paint(); } return; }
+    if (w === 'btab') { const x = panes()[i], tab = t.closest<HTMLElement>('[data-tab]')?.dataset.tab; if (x && tab) { boardTab.set(pkey(x), tab); paint(); } return; }
+    if (w === 'parent') {
+      // Retour à l'agent principal : sa vue si elle existe déjà, sinon celle-ci.
+      const x = panes()[i]; if (!x) return;
+      const there = panes().findIndex(y => y && !y.sub && y.session === x.session);
+      if (there >= 0) focusPane(there); else setPane(i, { project: x.project, session: x.session });
+      return;
+    }
     const cp = t.closest<HTMLElement>('[data-aw-copy]');
     if (cp) { void copyGesture(cp.dataset.awCopy ?? '', cp.dataset.wt ?? '', i, cp as HTMLButtonElement); return; }
     if (t.closest('[data-ag="copy"]')) { const md = t.closest('.ss-msg')?.querySelector('.md') as HTMLElement | null; if (md) void navigator.clipboard.writeText(md.innerText).then(() => toast('Réponse copiée')); return; }
@@ -542,7 +668,13 @@ export function mount(main: HTMLElement, toolbarLeft: string): void {
     if (t === search) { st.filter = search.value; cursor = 0; save(); paintList(); }
     else if (t.matches('.aw-reply textarea')) grow(t as HTMLTextAreaElement);
   });
-  page.addEventListener('change', e => { const s = e.target as HTMLElement; if (s.matches('.aw-new select[name=project]')) { st.draftProject = (s as HTMLSelectElement).value; save(); } });
+  page.addEventListener('change', e => {
+    const s = e.target as HTMLElement;
+    if (!s.matches('.aw-new select[name=project]')) return;
+    st.draftProject = (s as HTMLSelectElement).value; save();
+    // L'équipe est celle du projet : le bouton la dit pour le projet choisi.
+    const lab = s.closest('form')?.querySelector('.aw-sub span'); if (lab) lab.textContent = subagents.label(st.draftProject);
+  });
   page.addEventListener('keydown', e => {
     const t = e.target as HTMLElement, typing = t.matches('input, textarea, select, [contenteditable]');
     if (typing) {
@@ -574,15 +706,15 @@ export function mount(main: HTMLElement, toolbarLeft: string): void {
     else if (k === '/') { e.preventDefault(); if (st.mini) toggleSide(page); search.focus(); search.select(); }
   });
   // Glisser une conversation de la liste sur une vue.
-  list.addEventListener('dragstart', e => { const r = (e.target as HTMLElement).closest<HTMLElement>('.aw-row'); if (r && e.dataTransfer) { e.dataTransfer.setData('text/x-ws', JSON.stringify({ p: r.dataset.p, s: r.dataset.s })); e.dataTransfer.effectAllowed = 'move'; } });
+  list.addEventListener('dragstart', e => { const r = (e.target as HTMLElement).closest<HTMLElement>('.aw-row'); if (r && e.dataTransfer) { e.dataTransfer.setData('text/x-ws', JSON.stringify({ p: r.dataset.p, s: r.dataset.s, a: r.dataset.sa || undefined })); e.dataTransfer.effectAllowed = 'move'; } });
   grid.addEventListener('dragover', e => { const p = (e.target as HTMLElement).closest('.aw-pane'); if (p && e.dataTransfer?.types.includes('text/x-ws')) { e.preventDefault(); grid.querySelectorAll('.drop').forEach(x => x !== p && x.classList.remove('drop')); p.classList.add('drop'); } });
   grid.addEventListener('dragleave', e => { const p = (e.target as HTMLElement).closest('.aw-pane'); if (p && !p.contains(e.relatedTarget as Node)) p.classList.remove('drop'); });
   grid.addEventListener('drop', e => {
     const p = (e.target as HTMLElement).closest<HTMLElement>('.aw-pane'), raw = e.dataTransfer?.getData('text/x-ws');
     grid.querySelectorAll('.drop').forEach(x => x.classList.remove('drop'));
     if (!p || !raw) return; e.preventDefault();
-    const d = JSON.parse(raw) as { p: string; s: string };
-    setPane(Number(p.dataset.i), { project: d.p, session: d.s });
+    const d = JSON.parse(raw) as { p: string; s: string; a?: string };
+    setPane(Number(p.dataset.i), { project: d.p, session: d.s, ...(d.a ? { sub: d.a } : {}) });
   });
   paint(); start();
   if (!page.contains(document.activeElement)) page.focus({ preventScroll: true });

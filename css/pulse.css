@@ -1,0 +1,39 @@
+/* Suivi en direct d'une session (src/features/projects/pulse.ts), dans .ss-pulse : bande d'état façon terminal.
+   Neutre, chasse fixe pour chemins et commandes ; seul le point d'état pulse (lentement), coupé si le mouvement est réduit. */
+.ss-pulse:empty { display: none; }
+.lv { display: grid; gap: 8px; margin: 0 0 12px; padding: 9px 2px 10px; border-block: 1px solid var(--border); font-size: var(--t-1); color: var(--text-2); }
+.lv-head { display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+.lv-now { display: flex; align-items: baseline; gap: 8px; flex: 1; min-width: 0; }
+.lv-now b { flex: none; color: var(--text); font-size: var(--t-2); font-weight: 600; }
+.lv-now code { flex: 1; min-width: 0; font: var(--t-1) var(--mono); color: var(--text-2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.lv-dot { flex: none; align-self: center; width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); }
+.lv[data-state="work"] .lv-dot { background: var(--text); animation: lv-blink 1.8s ease-in-out infinite; }
+.lv-clock { flex: none; font: var(--t-1) var(--mono); font-variant-numeric: tabular-nums; color: var(--text-3); }
+.lv[data-state="work"] .lv-clock { color: var(--text-2); }
+.lv-rest { display: grid; gap: 8px; min-width: 0; }
+.lv-rest:empty { display: none; }
+
+/* Compteurs : une ligne de texte, chiffres tabulaires, rien d'autre. */
+.lv-meta { display: flex; flex-wrap: wrap; gap: 2px 14px; margin: 0; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.lv-meta b { font-weight: 500; color: var(--text-2); }
+.lv-meta .lv-lines { font-family: var(--mono); }
+.lv .a { color: var(--c-green); font-weight: 500; }
+.lv .d { color: var(--c-red); font-weight: 500; }
+
+/* Frise des dernières actions : segments fins neutres ; l'écriture de fichier est plus haute et plus sombre. */
+.lv-tape { display: flex; align-items: flex-end; gap: 2px; height: 14px; overflow: hidden; }
+.lv-tape i { flex: 0 0 4px; height: 6px; border-radius: 1px; background: var(--text-3); opacity: .45; }
+.lv-tape .k-edit { height: 14px; background: var(--text); opacity: .8; }
+.lv-tape .k-prompt { flex-basis: 1px; height: 14px; margin: 0 3px; background: var(--border-2); opacity: 1; }
+.lv-tape .cur { opacity: 1; animation: lv-blink 1.8s ease-in-out infinite; }
+.lv[data-state="done"] .lv-tape { opacity: .7; }
+
+/* Fichiers touchés. */
+.lv-files { display: grid; gap: 1px; }
+.lv-file { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-width: 0; }
+.lv-file code { min-width: 0; font: var(--t-1) var(--mono); color: var(--text-2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.lv-file span { flex: none; font: var(--t-1) var(--mono); font-variant-numeric: tabular-nums; }
+.lv-more { margin: 0; color: var(--text-3); }
+
+@keyframes lv-blink { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .lv-dot, .lv-tape .cur { animation: none !important; } }

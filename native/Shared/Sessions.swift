@@ -10,9 +10,14 @@ final class ClaudeSessions {
     /// `add`/`del` : lignes ajoutées et retirées par une modification de fichier (Edit, Write, MultiEdit), pour le suivi en direct.
     struct Action {
         let at: String; let kind: String; let text: String; var add = 0; var del = 0
+        /// Outils d'écriture : fichier touché et extraits avant/après. Délégation (Agent, Task) : destinataire et consigne donnée.
+        /// Tous facultatifs et absents du JSON quand ils sont vides, pour ne pas casser les anciens clients.
+        var file = ""; var old = ""; var new = ""; var to = ""; var body = ""
         var json: [String: Any] {
             var d: [String: Any] = ["at": at, "kind": kind, "text": text]
             if add > 0 { d["add"] = add }; if del > 0 { d["del"] = del }
+            if !file.isEmpty { d["file"] = file }; if !old.isEmpty { d["old"] = old }; if !new.isEmpty { d["new"] = new }
+            if !to.isEmpty { d["to"] = to }; if !body.isEmpty { d["body"] = body }
             return d
         }
     }
@@ -39,6 +44,10 @@ final class ClaudeSessions {
         var tools: [String: Int] = [:]; var files: [String] = []
         /// Lignes ajoutées et retirées sur toute la session (voir `lineDelta`).
         var added = 0, removed = 0
+        /// Lignes ajoutées et retirées par fichier (même estimation), pour le résumé d'un sous-agent.
+        var fileLines: [String: (add: Int, del: Int)] = [:]
+        /// Consigne complète (la première demande) et dernier texte écrit : consigne et compte rendu d'un sous-agent.
+        var firstFull = ""; var lastText = ""
         var actions: [Action] = []
         var quota: [String: Any]?
         var cwd = ""
@@ -97,11 +106,15 @@ final class ClaudeSessions {
                 content = blocks.compactMap { $0["text"] as? String }.joined(separator: "\n")
             }
             guard let c = content else { return }
-            let text = c.trimmingCharacters(in: .whitespacesAndNewlines)
+            // Notes liées scellées : Claude Code garde dans son journal la consigne complète, clair des notes compris
+            // (voir Sealed, dans Agents.swift). Rien de ce bloc n'est lu ni renvoyé à la page.
+            var shown = c
+            if let r = shown.range(of: "\n\n<notes-liees>\n") { shown = String(shown[..<r.lowerBound]) }
+            let text = shown.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty, !text.hasPrefix("<") else { return }
             st.prompts += 1; st.lastPrompt = clip(text, 300)
             if !ts.isEmpty { st.active = ts }
-            if st.firstPrompt.isEmpty { st.firstPrompt = st.lastPrompt }
+            if st.firstPrompt.isEmpty { st.firstPrompt = st.lastPrompt; st.firstFull = clip(text, 2000) }
             push(st, Action(at: ts, kind: "prompt", text: clip(text, 4000)))
             if (e["isSidechain"] as? Bool) != true, !ts.isEmpty, !text.hasPrefix("[Request interrupted") {
                 st.log.append(Action(at: ts, kind: "prompt", text: clip(text, 6000)))
@@ -120,7 +133,7 @@ final class ClaudeSessions {
                 if let d = Self.localDay(ts) { st.dayTokens[d, default: 0] += u["output_tokens"] as? Int ?? 0 }
             }
             for b in m["content"] as? [[String: Any]] ?? [] {
-                if b["type"] as? String == "text", let t = b["text"] as? String, !t.isEmpty { push(st, Action(at: ts, kind: "text", text: clip(t, 16000))) }
+                if b["type"] as? String == "text", let t = b["text"] as? String, !t.isEmpty { st.lastText = clip(t, 4000); push(st, Action(at: ts, kind: "text", text: clip(t, 16000))) }
                 if b["type"] as? String == "tool_use", let name = b["name"] as? String {
                     st.tools[name, default: 0] += 1
                     let input = b["input"] as? [String: Any] ?? [:]
@@ -135,7 +148,25 @@ final class ClaudeSessions {
                     let detail = path.isEmpty ? (input["description"] as? String ?? input["command"] as? String ?? input["pattern"] as? String ?? "") : path
                     let delta = Self.lineDelta(name, input)
                     st.added += delta.add; st.removed += delta.del
-                    push(st, Action(at: ts, kind: "tool:" + name, text: clip(detail, 240), add: delta.add, del: delta.del))
+                    var a = Action(at: ts, kind: "tool:" + name, text: clip(detail, 240), add: delta.add, del: delta.del)
+                    if ["Edit", "Write", "MultiEdit", "NotebookEdit"].contains(name), !path.isEmpty {
+                        a.file = path
+                        switch name {
+                        case "Write": a.new = clip(input["content"] as? String ?? "", 1500)
+                        case "Edit": a.old = clip(input["old_string"] as? String ?? "", 1500); a.new = clip(input["new_string"] as? String ?? "", 1500)
+                        case "MultiEdit":
+                            let edits = (input["edits"] as? [[String: Any]] ?? []).prefix(4)
+                            a.old = clip(edits.compactMap { $0["old_string"] as? String }.joined(separator: "\n⋯\n"), 1500)
+                            a.new = clip(edits.compactMap { $0["new_string"] as? String }.joined(separator: "\n⋯\n"), 1500)
+                        default: a.new = clip(input["new_source"] as? String ?? "", 1500)
+                        }
+                        let f = st.fileLines[path] ?? (0, 0)
+                        st.fileLines[path] = (f.add + delta.add, f.del + delta.del)
+                    }
+                    if name == "Agent" || name == "Task" {
+                        a.to = clip(input["subagent_type"] as? String ?? "", 80); a.body = clip(input["prompt"] as? String ?? "", 4000)
+                    }
+                    push(st, a)
                 }
             }
         default: break
@@ -260,9 +291,16 @@ final class ClaudeSessions {
             }
         }
         let title = meta?.title.isEmpty == false ? meta!.title : st.firstPrompt.isEmpty ? "Sous-agent" : clip(st.firstPrompt, 80)
-        return ["id": id, "title": title, "type": meta?.type ?? "", "started": st.started, "updated": st.updated,
-                "live": Date().timeIntervalSince(mtime(url)) < 45, "tokens": st.tokOut,
-                "steps": st.tools.values.reduce(0, +)]
+        let live = Date().timeIntervalSince(mtime(url)) < 45
+        var r: [String: Any] = ["id": id, "title": title, "type": meta?.type ?? "", "started": st.started, "updated": st.updated,
+                "live": live, "tokens": st.tokOut,
+                "steps": st.tools.values.reduce(0, +),
+                "prompt": st.firstFull, "lines": ["add": st.added, "del": st.removed],
+                "files": st.files.prefix(15).map { p -> [String: Any] in let l = st.fileLines[p] ?? (0, 0); return ["path": p, "add": l.add, "del": l.del] }]
+        // Dernière action, et compte rendu (dernier texte) une fois le sous-agent arrêté.
+        if let a = st.actions.last { r["last"] = ["at": a.at, "kind": a.kind, "text": clip(a.text, 240)] }
+        if !live, !st.lastText.isEmpty { r["report"] = st.lastText }
+        return r
     }
 
     /// Sous-agents d'une session, dans l'ordre où ils ont été lancés (les 60 plus récents).

@@ -4,6 +4,7 @@
 import * as store from '../../core/store.ts';
 import * as ai from '../../integrations/ai.ts';
 import * as model from './model.ts';
+import * as hub from '../hub.ts';
 import { esc } from '../../lib/markdown.ts';
 import { fold } from '../../lib/fuzzy.ts';
 import { icon, modal, need, rel, $ } from '../../ui/kit.ts';
@@ -19,9 +20,21 @@ export function attachable(p: Project, self = true): Note[] {
 
 /** Ouvre le choix des notes à joindre ; rend la nouvelle liste complète (ordre déjà choisi gardé), ou `null` si on annule. */
 export function pickNotes(p: Project, have: string[], { self = true, ok = 'Joindre' } = {}): Promise<string[] | null> {
+  if (!ai.notesAllowed()) return closed();
   return pickFrom(attachable(p, self), have, { title: `Notes de ${p.name}`, ok, sub: n => n.id === p.id ? 'note du projet' : '',
     hint: `${icon('lock')}Les notes chiffrées ou marquées #privé ne sont jamais proposées.`,
     empty: `Aucune note lisible dans ce projet. Ajoute <code>#${esc(p.tag)}</code> à une note pour la rattacher.` });
+}
+
+/** Interrupteur général coupé : au lieu d'une liste vide incompréhensible, l'état et le geste qui l'ouvre. Rend toujours `null`. */
+function closed(): Promise<string[] | null> {
+  return new Promise(res => {
+    const m = modal({ title: 'Notes fermées à l’IA', cls: 'np', onClose: () => res(null),
+      html: `<p class="modal-text">Aucune note ne part vers une IA tant que ce réglage est coupé. Une fois autorisé, seules les notes que tu coches ici sont jointes, jamais les notes chiffrées ni <code>#privé</code>.</p>
+        <div class="modal-actions"><button type="button" class="btn" data-x>Fermer</button><button type="button" class="btn btn-primary" data-allow>Autoriser dans les Réglages</button></div>` });
+    need('[data-x]', m.node).onclick = m.close;
+    need('[data-allow]', m.node).onclick = () => { m.close(); hub.openConnections('ia'); };
+  });
 }
 
 /** La fenêtre elle-même, pour n'importe quelle liste de notes. `sub` : mention à côté du titre ; `hint` et `empty` sont du HTML sûr. */
