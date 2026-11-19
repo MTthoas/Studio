@@ -163,6 +163,12 @@ export function notesOf(p: Project): Note[] {
     .sort((a, b) => (a.id === p.id ? -1 : b.id === p.id ? 1 : b.updated - a.updated));
 }
 
+/** Contextes IA d'un projet : ses notes marquées #contexte-ia (CLAUDE.md, AGENTS.md, notes d'architecture importés…).
+ *  L'IA de Studio et chaque nouvelle consigne Claude Code du projet les lisent d'office (`ai.projectContext`). */
+export const CONTEXT_TAG = 'contexte-ia';
+export const isContext = (n: Note): boolean => store.meta(n).tags.some(t => t.toLowerCase() === CONTEXT_TAG);
+export const contextsOf = (p: Project): Note[] => notesOf(p).filter(n => !n.todo && isContext(n));
+
 /** Notes que la note du projet cite (`[[Titre]]`) ou qui la citent, sans être rangées dans le projet : l'onglet
  *  Notes les propose à côté, avec de quoi les y ranger. */
 export function linkedTo(p: Project): Note[] {
@@ -191,6 +197,19 @@ export async function setNoteProject(n: Note, p: Project | null): Promise<void> 
   if (next === body) return;
   store.touch(n); store.setBody(n, next + '\n'); n.updated = Date.now();
   if (p && n.inbox) n.inbox = false;
+  await store.saveNote(n);
+}
+
+const CONTEXT_RE = /(^|\s)#contexte-ia(?=[\s,.;:!?)]|$)/giu;
+export const stripContextTag = (s: string): string => s.replace(CONTEXT_RE, '$1').replace(/[ \t]+$/gm, '');
+/** Marque (ou démarque) une note comme contexte IA de son projet : ajoute ou retire #contexte-ia à la fin. */
+export async function setContext(n: Note, on: boolean): Promise<void> {
+  const body = store.getBody(n);
+  if (body == null) throw new Error('Déverrouille la note pour la marquer comme contexte IA.');
+  if (isContext(n) === on) return;
+  let next = stripContextTag(body).replace(/\n+$/, '');
+  if (on) next += (next.trim() ? '\n\n' : '') + `#${CONTEXT_TAG}`;
+  store.touch(n); store.setBody(n, next + '\n'); n.updated = Date.now();
   await store.saveNote(n);
 }
 
