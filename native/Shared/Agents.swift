@@ -474,7 +474,7 @@ final class Agents {
         // Terminal sur ce Mac : chaque commande passe d'abord par le garde (AgentGuard), qui fait confirmer par
         // Touch ID ou mot de passe toute suppression et toute installation. Sans réglages possibles, pas de lancement.
         if !onServer && tools.contains("Bash") {
-            guard let guarded = AgentGuard.shared.settings(run: run.id, project: pid) else { return done(["ok": false, "message": "Le garde des commandes n’a pas pu être préparé : agent non lancé."]) }
+            guard let guarded = AgentGuard.shared.settings(run: run.id, project: pid, roots: mode == "edit" ? [cwd] + extraDirs : []) else { return done(["ok": false, "message": "Le garde des commandes n’a pas pu être préparé : agent non lancé."]) }
             args += ["--settings", guarded]
         }
         let p = Process()
@@ -1132,7 +1132,9 @@ enum AgentPermissions {
         + "Mais si l'utilisateur te demande explicitement de travailler sur une branche ou une pull request (récupérer une branche, fusionner, résoudre des conflits, commiter, pousser), fais-le. "
         + "Jamais de `push --force` ni de suppression de branche distante sans demande explicite, et ne pousse jamais sur la branche principale."
     /// Ajouté à la consigne de tout agent qui a un terminal : ce que le garde (AgentGuard) fait confirmer.
-    static let guardPrompt = "Supprimer (rm, git clean, git reset --hard, suppression de branche…) ou installer (npm install, npx, pip, brew, sudo…) "
+    static let guardPrompt = "Dans ton dossier de travail, supprimer passe sans confirmation (rm, rmdir, find -delete, git rm, git clean, git reset --hard), "
+        + "si chaque chemin y est écrit en clair : pas de variable, pas de `~`, pas de `sudo` ni de `xargs`. "
+        + "Supprimer ailleurs ou autrement (script, suppression de branche, de remise…) ou installer (npm install, npx, pip, brew, sudo…) "
         + "demande la confirmation de l'utilisateur, par empreinte ou mot de passe : la commande attend sa réponse, parfois plusieurs minutes. "
         + "Regroupe ces demandes et n'en fais que de nécessaires. S'il refuse ou ne répond pas, n'essaie pas d'y arriver autrement "
         + "(script, autre outil, écrasement de fichier) : continue sans, et dis dans ton compte rendu ce qui reste à faire à la main."

@@ -12,6 +12,9 @@
 // sur le texte de la commande : un script du projet qui supprime (`npm run clean`) ou un programme écrit par l'agent
 // passe sans question. La borne dure reste la bulle (AgentSandbox) : rien ne s'écrit ni ne s'efface hors de sa copie,
 // du .git de son dépôt, des caches des outils et des dossiers temporaires.
+// Chez lui, l'agent a tous les droits : une suppression dont chaque chemin, écrit en clair, tombe dans son dossier de
+// travail (sa copie et celles des autres dépôts du projet) passe sans question (`local`). Dès qu'un chemin sort, ou
+// qu'il n'est pas lisible tel quel (variable, `~`, sous-commande, script), on redemande.
 // Seule la page de ce Mac répond (« agent.guard » et « agent.guardAnswer » ne sont pas dans REMOTE_ALLOWED, link.ts).
 import Foundation
 import Network
@@ -38,7 +41,7 @@ final class AgentGuard {
     private let queue = DispatchQueue(label: "studio.agents.guard")
     private var listener: NWListener?
     private var port: UInt16 = 0
-    private var tokens: [String: (run: String, project: String)] = [:]
+    private var tokens: [String: (run: String, project: String, roots: [String])] = [:]
     private var asks: [Ask] = []
 
     // MARK: Tri des commandes
@@ -93,15 +96,159 @@ final class AgentGuard {
         return nil
     }
 
+    // MARK: Suppressions chez soi
+
+    private struct Word {
+        var text = ""
+        var expands = false    // `$`, accent grave, `~` en tête : valeur inconnue d'ici
+        var braces = false     // `{` `}` hors guillemets
+        var globAt: Int?       // position du premier `*` `?` `[` hors guillemets
+    }
+
+    /// Découpe une ligne de shell en commandes (séparées par `;` `&` `|` `(` `)` et retours à la ligne), chacune en mots,
+    /// guillemets et `\` résolus, redirections retirées. nil si la ligne contient ce qu'on ne sait pas suivre (`<<`).
+    private static func segments(_ command: String) -> [[Word]]? {
+        if command.contains("<<") { return nil }
+        var out: [[Word]] = [], seg: [Word] = [], w = Word(), has = false, skip = false
+        var quote: Character? = nil, escaped = false
+        func endWord() {
+            if has { if skip { skip = false } else { seg.append(w) } }
+            w = Word(); has = false
+        }
+        func endSeg() { endWord(); if !seg.isEmpty { out.append(seg) }; seg = [] }
+        let chars = Array(command)
+        var i = 0
+        while i < chars.count {
+            let ch = chars[i]; i += 1
+            if escaped { w.text.append(ch); has = true; escaped = false; continue }
+            if quote == "'" { if ch == "'" { quote = nil } else { w.text.append(ch) }; continue }
+            if quote == "\"" {
+                if ch == "\"" { quote = nil }
+                else if ch == "\\", i < chars.count { w.text.append(chars[i]); i += 1 }
+                else { if ch == "$" || ch == "`" { w.expands = true }; w.text.append(ch) }
+                continue
+            }
+            switch ch {
+            case "\\": escaped = true
+            case "'", "\"": quote = ch; has = true
+            case " ", "\t": endWord()
+            case ";", "&", "|", "(", ")", "\n": endSeg()
+            case ">", "<":
+                if has, w.text.allSatisfy(\.isNumber) { w = Word(); has = false } else { endWord() }
+                while i < chars.count, ">&|".contains(chars[i]) { i += 1 }
+                while i < chars.count, chars[i] == " " { i += 1 }
+                skip = true
+            default:
+                if ch == "$" || ch == "`" || (ch == "~" && !has) { w.expands = true }
+                if ch == "{" || ch == "}" { w.braces = true }
+                if "*?[".contains(ch), w.globAt == nil { w.globAt = w.text.count }
+                w.text.append(ch); has = true
+            }
+        }
+        if quote != nil || escaped { return nil }
+        endSeg()
+        return out
+    }
+
+    /// Chemin absolu, `..` et liens symboliques résolus (jusqu'à la partie qui existe), comme le verra la commande.
+    static func real(_ path: String) -> String {
+        let p = (URL(fileURLWithPath: path).standardizedFileURL.path as NSString)
+        if let r = realpath(p.fileSystemRepresentation, nil) { defer { free(r) }; return String(cString: r) }
+        let parent = p.deletingLastPathComponent
+        guard parent != p as String, !parent.isEmpty else { return p as String }
+        return (real(parent) as NSString).appendingPathComponent(p.lastPathComponent)
+    }
+
+    private static func resolve(_ path: String, from dir: String) -> String {
+        real(path.hasPrefix("/") ? path : (dir as NSString).appendingPathComponent(path))
+    }
+
+    /// Le chemin tombe-t-il dans un des dossiers ? Jamais dans un `.git` (le lien de la copie vers son dépôt).
+    /// `strict` : le dossier lui-même ne compte pas (`rm -rf .` à la racine de la copie redemande).
+    private static func inside(_ path: String, _ roots: [String], strict: Bool) -> Bool {
+        guard !path.split(separator: "/").contains(".git") else { return false }
+        return roots.contains { path.hasPrefix($0 + "/") || (!strict && path == $0) }
+    }
+
+    /// Opérande de `rm` : en clair, ou motif simple (`build/*`, `*.log`) dont le dossier est dans la copie.
+    private static func operand(_ w: Word, dir: String, roots: [String]) -> Bool {
+        guard !w.expands, !w.braces, !w.text.isEmpty else { return false }
+        guard let g = w.globAt else { return inside(resolve(w.text, from: dir), roots, strict: true) }
+        let t = Array(w.text)
+        let cut = t[..<g].lastIndex(of: "/").map { $0 + 1 } ?? 0
+        let last = String(t[cut...])
+        // Pas de `.*` (`..` selon le shell), pas de `/` après le motif (un lien vers l'extérieur serait suivi).
+        guard !last.hasPrefix("."), !last.contains("/") else { return false }
+        let base = cut == 0 ? "." : String(t[..<cut])
+        return inside(resolve(base, from: dir), roots, strict: false)
+    }
+
+    /// Suppression qui ne touche que le dossier de travail de l'agent : chaque commande risquée de la ligne est un `rm`,
+    /// `rmdir`, `unlink`, `trash`, `find … -delete`, `git rm|clean|reset --hard` dont tous les chemins, écrits en clair,
+    /// tombent dans `roots`. Les `cd` de la ligne sont suivis. Dans le doute (variable, `~`, `sudo`, `xargs`, script,
+    /// branche, remise, `.git`…), non : la demande passe par l'utilisateur comme avant.
+    static func local(_ command: String, cwd: String, roots: [String]) -> Bool {
+        guard !roots.isEmpty, cwd.hasPrefix("/"), let segs = segments(command) else { return false }
+        var dir = real(cwd)
+        for seg in segs {
+            var ws = seg[...]
+            while let f = ws.first, !f.expands, ["then", "do", "else", "elif", "if", "while", "until", "!", "{", "}"].contains(f.text) { ws = ws.dropFirst() }
+            while let f = ws.first, f.text.range(of: #"^[A-Za-z_]\w*="#, options: .regularExpression) != nil { ws = ws.dropFirst() }
+            guard let head = ws.first, !["[", "[["].contains(head.text) else { continue }
+            guard !head.expands, !head.braces, head.globAt == nil else { return false }
+            let name = (head.text as NSString).lastPathComponent
+            let args = Array(ws.dropFirst())
+            switch name {
+            case "cd", "pushd":
+                guard let to = args.first(where: { !$0.text.hasPrefix("-") }), !to.expands, !to.braces, to.globAt == nil else { return false }
+                dir = resolve(to.text, from: dir)
+            case "rm", "rmdir", "unlink", "trash":
+                var opts = true
+                for a in args {
+                    if opts && a.text == "--" { opts = false; continue }
+                    if opts && a.text.hasPrefix("-") && a.text.count > 1 && !a.expands { continue }
+                    guard operand(a, dir: dir, roots: roots) else { return false }
+                }
+            case "find":
+                var i = 0, paths: [Word] = []
+                while i < args.count, args[i].text.hasPrefix("-"), args[i].text.count > 1, ["-E", "-P", "-X", "-d", "-s", "-x"].contains(args[i].text) { i += 1 }
+                if i < args.count, ["-H", "-L"].contains(args[i].text) { return false }
+                while i < args.count, !args[i].text.hasPrefix("-"), !["!", "(", ")"].contains(args[i].text) { paths.append(args[i]); i += 1 }
+                let expr = args[i...]
+                guard !expr.contains(where: { $0.expands || ["-exec", "-execdir", "-ok", "-okdir", "-L", "-follow"].contains($0.text) }) else { return false }
+                for p in paths.isEmpty ? [Word(text: ".")] : paths {
+                    guard !p.expands, !p.braces, p.globAt == nil, inside(resolve(p.text, from: dir), roots, strict: false) else { return false }
+                }
+            case "git":
+                guard risk(seg.map(\.text).joined(separator: " ")) != nil else { continue }
+                var i = 0, at = dir
+                while i < args.count, args[i].text.hasPrefix("-") {
+                    let o = args[i].text
+                    if o == "-C", i + 1 < args.count {
+                        let p = args[i + 1]; guard !p.expands, !p.braces, p.globAt == nil else { return false }
+                        at = resolve(p.text, from: at); i += 2
+                    } else { return false }   // -c, --git-dir, --work-tree… : on ne suit pas
+                }
+                guard i < args.count, ["rm", "clean", "reset"].contains(args[i].text) else { return false }
+                // Les chemins de git restent dans le dépôt de `at` : il suffit que `at` soit dans la copie.
+                guard !args[(i + 1)...].contains(where: \.expands), inside(at, roots, strict: false) else { return false }
+            default:
+                if risk(seg.map(\.text).joined(separator: " ")) != nil { return false }
+            }
+        }
+        return true
+    }
+
     // MARK: Côté agent
 
     /// Réglages passés à Claude Code (`--settings`) pour un tour : le hook qui soumet chaque commande à ce garde.
     /// Sans serveur possible, le hook refuse toute commande : jamais de terminal sans garde.
-    func settings(run: String, project: String) -> String? {
+    /// `roots` : les dossiers où l'agent supprime sans confirmation (sa copie, celles des autres dépôts) ; vide = partout.
+    func settings(run: String, project: String, roots: [String] = []) -> String? {
         var command = "echo 'Studio : garde indisponible, commande refusée.' >&2; exit 2"
         if start() {
             let token = UUID().uuidString.replacingOccurrences(of: "-", with: "")
-            lock.lock(); tokens[token] = (run, project); let p = port; lock.unlock()
+            lock.lock(); tokens[token] = (run, project, roots.map(Self.real).filter { $0.count > 1 }); let p = port; lock.unlock()
             command = "r=$(/usr/bin/curl -s -m 570 -X POST -H 'Content-Type: application/json' --data-binary @- http://127.0.0.1:\(p)/garde/\(token)) || r=; "
                 + "[ \"$r\" = ok ] && exit 0; echo \"${r:-Studio ne répond pas : commande refusée.}\" >&2; exit 2"
         }
@@ -232,6 +379,7 @@ final class AgentGuard {
         guard o["tool_name"] as? String == "Bash" else { return send(c, "ok") }
         guard let command = (o["tool_input"] as? [String: Any])?["command"] as? String else { return send(c, "Commande illisible : refusée.") }
         guard let risk = Self.risk(command) else { return send(c, "ok") }
+        if risk.kind == "delete", let cwd = o["cwd"] as? String, Self.local(command, cwd: cwd, roots: owner.roots) { return send(c, "ok") }
         guard waiting < Self.maxPerRun else { return send(c, "Trop de confirmations en attente pour cet agent : commande refusée.") }
 
         let ask = Ask(run: owner.run, project: owner.project, kind: risk.kind, what: risk.what, command: String(command.prefix(4000)),
