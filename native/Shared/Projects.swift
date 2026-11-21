@@ -659,6 +659,19 @@ final class ProjectFolders {
         return "HEAD"
     }
 
+    /// Dépôt tout neuf, sans aucun commit : `HEAD` ne désigne rien et `git worktree add` échoue (« invalid reference: HEAD »).
+    /// On y pose un premier commit vide sur sa branche courante, sans toucher à l'index ni aux fichiers de l'utilisateur
+    /// (plomberie : arbre vide, commit-tree, update-ref). Rien n'est poussé. Renvoie un message d'erreur, ou nil.
+    func ensureFirstCommit(_ dir: String) -> String? {
+        if gitRun(["rev-parse", "-q", "--verify", "HEAD^{commit}"], in: dir).ok { return nil }
+        let tree = gitRun(["hash-object", "-w", "-t", "tree", "/dev/null"], in: dir)
+        guard tree.ok else { return "Premier commit impossible : \(Self.gitError(tree.err))" }
+        let commit = gitRun(["commit-tree", tree.out.trimmingCharacters(in: .whitespacesAndNewlines), "-m", "Initial commit"], in: dir)
+        guard commit.ok else { return "Le dépôt n'a encore aucun commit et le premier n'a pas pu être créé : \(Self.gitError(commit.err))" }
+        let ref = gitRun(["update-ref", "HEAD", commit.out.trimmingCharacters(in: .whitespacesAndNewlines)], in: dir)
+        return ref.ok ? nil : "Premier commit impossible : \(Self.gitError(ref.err))"
+    }
+
     /// Crée la copie isolée d'un agent à partir de la dernière version de la branche principale distante,
     /// jamais de la branche sur laquelle se trouve le dossier de l'utilisateur (sinon l'agent part d'une base périmée
     /// ou d'une autre branche, et sa PR arrive avec des conflits).
@@ -666,6 +679,7 @@ final class ProjectFolders {
         guard Self.validWorktree(name) else { return (nil, "Nom de copie invalide.") }
         excludeWorktrees(dir)
         let base = baseRef(dir, fetch: true), wt = dir + "/.claude/worktrees/" + name
+        if base == "HEAD", let e = ensureFirstCommit(dir) { return (nil, "Copie isolée impossible : \(e)") }
         // --no-track : la branche de l'agent ne « suit » pas la branche principale (sinon elle paraîtrait déjà poussée).
         let r = gitRun(["worktree", "add", "-q", "--no-track", "-b", "worktree-" + name, wt, base], in: dir, timeout: 60)
         return r.ok ? (wt, "") : (nil, "Copie isolée impossible : \(Self.gitError(r.err))")
@@ -758,6 +772,7 @@ final class ProjectFolders {
         // Une copie effacée à la main reste inscrite dans le dépôt et bloquerait son emplacement.
         _ = gitRun(["worktree", "prune"], in: dir)
         let base = baseRef(dir, fetch: true), wt = dir + "/.claude/worktrees/" + name
+        if base == "HEAD", let e = ensureFirstCommit(dir) { return (nil, false, "Copie isolée impossible : \(e)") }
         let baseName = base.hasPrefix("origin/") ? String(base.dropFirst(7)) : base
         if Self.validBranch(branch) && branch != baseName && branch != "main" && branch != "master" {
             if gitRun(["rev-parse", "-q", "--verify", "refs/heads/" + branch], in: dir).ok {
