@@ -1,5 +1,5 @@
-// Nouveautés : ce qui change dans Studio, dans une fenêtre éditoriale à deux colonnes (texte à gauche,
-// image en grain à droite).
+// Nouveautés : ce qui change dans Studio, une fiche à la fois, chacune en bento (une illustration de son
+// sujet sur papier en grain, puis une tuile par point).
 //   - après une mise à jour (ou à la première ouverture d'une version qui en apporte), elle liste
 //     la version installée puis chaque nouveauté pas encore vue ;
 //   - sur Mac, quand une nouvelle version est téléchargée et vérifiée, une fenêtre propose de relancer.
@@ -24,8 +24,9 @@ export interface NewsApi {
 /** Pastille d'un schéma : un libellé, une teinte (--c-…), une icône facultative. */
 type Chip = [label: string, hue: string, icon?: string];
 /**
- * Schéma d'une nouveauté. Seul `flow` est rendu (une ligne de texte « A → B → C », sous les points) ;
- * `chips` et `stack` restent en données : leurs exemples chiffrés (« 8 vCPU », « code 137 ») jureraient avec la fiche.
+ * Schéma d'une nouveauté : il devient son illustration (`sceneHTML`). `flow` : un parcours de 3 à 4 étapes ;
+ * `chips` : 3 à 4 éléments réunis sous l'icône de la fonction ; `stack` : 2 à 4 lignes d'un panneau d'exemple.
+ * La teinte d'une pastille n'est montrée que pour un état (vert, ambre, rouge), en point, dans un `stack`.
  */
 type Visual = { kind: 'flow'; steps: Chip[] } | { kind: 'chips'; chips: Chip[] } | { kind: 'stack'; rows: [tag: Chip, text: string][] };
 
@@ -37,12 +38,12 @@ interface Item {
   title: string;
   /** Une phrase factuelle au présent, 120 caractères au plus. */
   lead: string;
-  /** Deux à quatre points : icône (non affichée), mot-clé (22 caractères au plus), précision (100 au plus). `code` entre accents graves. */
+  /** Deux à quatre points, une tuile chacun : icône (neutre), mot-clé (22 caractères au plus), précision (100 au plus). `code` entre accents graves. */
   bits: [icon: string, key: string, detail: string][];
   /** Où le trouver, en fil de menus : ['Réglages', 'Extensions']. */
   where?: string[];
   icon: string;
-  /** Teinte presque neutre de l'image (une des couleurs --c-… de la feuille de style). */
+  /** Teinte à peine perceptible du papier de l'illustration (une des couleurs --c-… de la feuille de style). */
   hue: string;
   visual: Visual;
   /** Ne concerne que l'app Mac. */
@@ -586,48 +587,42 @@ export function changeList(notes: string, max = 6): string {
   return `<ul class="nw-list">${all.slice(0, max).map(c => `<li><span class="nw-kind">${KIND_LABEL[c.kind]}</span><span>${esc(c.text)}</span></li>`).join('')}${all.length > max ? `<li class="nw-more">et ${all.length - max} autre${all.length - max > 1 ? 's' : ''}</li>` : ''}</ul>`;
 }
 
-// ---------- Image en grain ----------
-// Une forme organique par identifiant, sans fichier ni bibliothèque : SVG en ligne (la CSP autorise
-// `style-src 'unsafe-inline'`, et rien n'est chargé). Le tracé vient d'un hasard déterministe : la même
-// nouveauté a toujours la même forme. Le grain est un `feTurbulence`, seuillé en fines taches.
+// ---------- Illustration ----------
+// L'illustration d'une fiche montre son sujet : elle est composée à partir du schéma `visual` de la nouveauté
+// (ses étapes, ses éléments ou ses lignes d'exemple), posée sur un papier en grain. Sans fichier ni
+// bibliothèque : HTML et SVG en ligne (la CSP autorise `style-src 'unsafe-inline'`, et rien n'est chargé).
 function hash(s: string): number { let h = 2166136261; for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619); return h >>> 0; }
-function rng(seed: number): () => number {
-  let a = seed || 1;
-  return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+/** Papier : un grain fin (`feTurbulence` seuillé en taches), propre à chaque fiche, sur toute la tuile. */
+function paperSVG(id: string): string {
+  const h = hash(id), k = `nw-${h.toString(36)}`;
+  return `<svg class="nw-svg" aria-hidden="true" focusable="false"><defs><filter id="${k}" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB"><feTurbulence type="fractalNoise" baseFrequency=".8" numOctaves="1" seed="${h % 997}" result="n"/><feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  3 0 0 0 -1.2" result="s"/><feComposite in="SourceGraphic" in2="s" operator="in"/></filter></defs><rect class="nw-paper" width="100%" height="100%" filter="url(#${k})"/></svg>`;
 }
-/** Courbe fermée irrégulière : 6 ou 7 sommets autour d'un centre, reliés en Bézier (Catmull-Rom), rayon entre 50 et 80. */
-export function shapePath(id: string): string {
-  const r = rng(hash(id)), n = 6 + Math.floor(r() * 2), rot = r() * Math.PI * 2;
-  const cx = 100 + (r() - .5) * 14, cy = 120 + (r() - .5) * 14;
-  const p: [number, number][] = [];
-  for (let k = 0; k < n; k++) {
-    const a = rot + ((k + (r() - .5) * .45) / n) * Math.PI * 2, d = 50 + r() * 30;
-    p.push([cx + Math.cos(a) * d, cy + Math.sin(a) * d * 1.08]);
-  }
-  const f = (v: number): string => v.toFixed(1);
-  let out = `M${f(p[0]![0])} ${f(p[0]![1])}`;
-  for (let i = 0; i < n; i++) {
-    const p0 = p[(i + n - 1) % n]!, p1 = p[i]!, p2 = p[(i + 1) % n]!, p3 = p[(i + 2) % n]!;
-    out += `C${f(p1[0] + (p2[0] - p0[0]) / 6)} ${f(p1[1] + (p2[1] - p0[1]) / 6)} ${f(p2[0] - (p3[0] - p1[0]) / 6)} ${f(p2[1] - (p3[1] - p1[1]) / 6)} ${f(p2[0])} ${f(p2[1])}`;
-  }
-  return `${out}Z`;
+/** Teintes qui disent un état (réussi, en cours, en échec) : les seules montrées, en point, dans une illustration. */
+const STATE = new Set(['green', 'amber', 'red']);
+/**
+ * Le sujet de la nouveauté, dessiné d'après son schéma : un parcours en escalier (`flow`), des éléments
+ * réunis sous l'icône de la fonction (`chips`), ou un panneau d'exemple (`stack`).
+ */
+function sceneHTML(v: Visual, ic: string, title: string): string {
+  const node = (label: string, i?: string): string => `<span class="nw-node">${i ? icon(i) : ''}<b>${esc(label)}</b></span>`;
+  if (v.kind === 'flow') return `<ol class="nw-sc nw-sc-flow">${v.steps.slice(0, 4).map(([label, , i], k) => `<li style="--k:${k}">${node(label, i)}</li>`).join('')}</ol>`;
+  if (v.kind === 'chips') return `<div class="nw-sc nw-sc-hub"><span class="nw-hub">${icon(ic)}</span><ul>${v.chips.slice(0, 4).map(([label, , i]) => `<li>${node(label, i)}</li>`).join('')}</ul></div>`;
+  return `<div class="nw-sc nw-sc-panel"><p class="nw-bar">${icon(ic)}<span>${esc(title)}</span></p><ul>${v.rows.slice(0, 4).map(([[label, hue, i], text]) =>
+    `<li>${i ? icon(i) : ''}<b>${esc(label)}</b><span>${esc(text)}</span>${STATE.has(hue) ? `<i style="background:var(--c-${hue})"></i>` : ''}</li>`).join('')}</ul></div>`;
 }
-/** Matière : un grain fin sur tout le volet (le papier déborde du cadre, quel que soit son format), plus un grain plus dense dans la forme, au bord légèrement rongé. */
-function grainSVG(id: string): string {
-  const h = hash(id), k = `nw-${h.toString(36)}`, seed = h % 997;
-  // Le bruit est lu en canal rouge (≈ 0,5 en moyenne) puis seuillé : alpha = a·R + b.
-  const speck = (a: number, b: number): string => `<feColorMatrix in="n" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  ${a} 0 0 0 ${b}" result="s"/>`;
-  return `<svg class="nw-svg" viewBox="0 0 200 240" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">
-    <defs>
-      <filter id="${k}-e" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB"><feTurbulence type="fractalNoise" baseFrequency="1.2" numOctaves="2" seed="${seed}" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="4" xChannelSelector="R" yChannelSelector="G"/></filter>
-      <filter id="${k}-g" x="-10%" y="-10%" width="120%" height="120%" color-interpolation-filters="sRGB"><feTurbulence type="fractalNoise" baseFrequency="1.2" numOctaves="2" seed="${seed}" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="4" xChannelSelector="R" yChannelSelector="G" result="d"/>${speck(3.4, -1.35)}<feComposite in="d" in2="s" operator="in"/></filter>
-      <filter id="${k}-p" x="0" y="0" width="100%" height="100%" color-interpolation-filters="sRGB"><feTurbulence type="fractalNoise" baseFrequency="1.6" numOctaves="1" seed="${seed + 7}" result="n"/>${speck(3, -1.2)}<feComposite in="SourceGraphic" in2="s" operator="in"/></filter>
-    </defs>
-    <rect class="nw-paper" x="-200" y="-200" width="600" height="640" filter="url(#${k}-p)"/>
-    <path class="nw-shape" d="${shapePath(id)}" filter="url(#${k}-e)"/>
-    <path class="nw-grain" d="${shapePath(id)}" filter="url(#${k}-g)"/>
-  </svg>`;
+/** Tuile d'illustration : le papier, puis la scène. Décorative : son contenu est repris en texte dans les autres tuiles. */
+const figHTML = (seed: string, hue: string, scene: string): string => `<figure class="nw-fig" style="--nw-hue:var(--c-${hue})" aria-hidden="true">${paperSVG(seed)}${scene}</figure>`;
+/**
+ * Bento d'une fiche, sur six colonnes : l'illustration (moitié gauche, deux rangées), `side` à sa droite
+ * (deux tuiles empilées, ou une seule sur toute la hauteur), puis `bottom` en une rangée de tuiles égales.
+ */
+function bentoHTML(fig: string, side: string[], bottom: string[]): string {
+  const tile = (h: string, cls: string): string => `<div class="nw-tile ${cls}">${h}</div>`;
+  const span = `nw-s${6 / Math.max(1, Math.min(3, bottom.length))}`;
+  return `<div class="nw-bento">${fig}${side.slice(0, 2).map(h => tile(h, side.length === 1 ? 'nw-tall' : '')).join('')}${bottom.slice(0, 3).map(h => tile(h, span)).join('')}</div>`;
 }
+/** Contenu d'une tuile : un intitulé (icône neutre, mot-clé) puis son texte. */
+const tileHTML = (ic: string, key: string, body: string): string => `<h4>${icon(ic)}<span>${key}</span></h4>${body}`;
 
 // ---------- Fenêtres ----------
 /** Ouvre une fenêtre dès que rien d'autre n'est ouvert et que Studio est à l'écran. */
@@ -639,32 +634,34 @@ function whenFree(run: () => void, delay: number): void {
 const day = (iso: string): string => { const d = new Date(`${iso}T12:00:00`); return Number.isNaN(d.getTime()) ? '' : d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }); };
 /** Texte court : `code` entre accents graves, le reste échappé. */
 const rich = (t: string): string => esc(t).replace(/`([^`]+)`/g, '<code>$1</code>');
-/** Parcours en une ligne de texte (« A → B → C ») : le seul rendu du schéma `visual`. */
-const flowHTML = (v: Visual): string => v.kind === 'flow' && v.steps.length > 1
-  ? `<p class="nw-flow"><span>Parcours</span>${v.steps.map(([label]) => esc(label)).join('<i aria-hidden="true">→</i>')}</p>` : '';
 /** En-tête d'une fiche : date et version, discrètes, puis le titre. */
 const head = (meta: string[], title: string): string => `<header class="nw-head"><p class="nw-meta">${meta.filter(Boolean).map(esc).join('<i>·</i>')}</p><h3>${esc(title)}</h3></header>`;
 
-/** Une fiche : sa ligne dans la liste par date, son texte, son image. */
-interface Entry { id: string; group: string; title: string; html: string; where: string; go?: Item['go']; seed: string; hue: string }
+/** Une fiche : sa ligne dans la liste par date, puis son contenu (en-tête, phrase, bento). */
+interface Entry { id: string; group: string; title: string; html: string; go?: Item['go'] }
 function itemEntry(n: Item): Entry {
-  const pts = `<ul class="nw-pts">${n.bits.slice(0, 4).map(([, key, detail]) => `<li><b>${rich(key)}</b><span>${rich(detail)}</span></li>`).join('')}</ul>`;
-  return { id: n.id, group: day(n.date), title: n.title, seed: n.id, hue: n.hue,
-    html: `${head([day(n.date), n.mac ? 'Mac' : ''], n.title)}<p class="nw-lead">${rich(n.lead)}</p>${pts}${flowHTML(n.visual)}`,
-    where: n.where?.length ? `<p class="nw-where"><span>Où</span>${n.where.map(w => `<b>${esc(w)}</b>`).join('<i>›</i>')}</p>` : '',
+  const bits = n.bits.slice(0, 4).map(([i, key, detail]) => tileHTML(i, rich(key), `<p>${rich(detail)}</p>`));
+  const where = n.where?.length ? `<p class="nw-where">${n.where.map(w => `<b>${esc(w)}</b>`).join('<i>›</i>')}</p>` : '';
+  const here = where || n.go ? [`<div class="nw-here">${tileHTML('search', 'Où le trouver', where)}${n.go ? `<button class="btn" data-nw="go">${esc(n.go.label)}</button>` : ''}</div>`] : [];
+  return { id: n.id, group: day(n.date), title: n.title,
+    html: `${head([day(n.date), n.mac ? 'Mac' : ''], n.title)}<p class="nw-lead">${rich(n.lead)}</p>`
+      + bentoHTML(figHTML(n.id, n.hue, sceneHTML(n.visual, n.icon, n.title)), bits.slice(0, 2), [...bits.slice(2), ...here]),
     ...(n.go ? { go: n.go } : {}) };
 }
+/** Illustration d'une mise à jour : ses trois étapes, la dernière étant celle où l'on se trouve. */
+const updateScene = (last: Chip): string => sceneHTML({ kind: 'flow', steps: [['Téléchargée', 'blue', 'download'], ['Vérifiée', 'blue', 'check'], last] }, 'download', '');
 function installedEntry(v: Installed): Entry {
   const list = changeList(v.notes);
   const page = v.page.startsWith('https://github.com/') ? `<p class="nw-link"><a href="${esc(v.page)}" target="_blank" rel="noopener">Voir le détail sur GitHub</a></p>` : '';
   const title = `Studio ${v.tag}`;
-  return { id: '', group: 'Mise à jour', title, where: '', seed: `maj-${v.tag}`, hue: 'blue',
-    html: head(['Mise à jour installée'], title)
-      + (list ? `<p class="nw-lead">Studio vient de se mettre à jour. Voici ce qui change.</p>${list}` : '<p class="nw-lead">Studio vient de se mettre à jour. Tes notes et tes réglages n’ont pas bougé.</p>') + page };
+  return { id: '', group: 'Mise à jour', title,
+    html: `${head(['Mise à jour installée'], title)}<p class="nw-lead">Studio vient de se mettre à jour. ${list ? 'Voici ce qui change.' : 'Tes notes et tes réglages n’ont pas bougé.'}</p>`
+      + bentoHTML(figHTML(`maj-${v.tag}`, 'blue', updateScene(['Installée', 'blue', 'sparkle'])),
+        [list ? tileHTML('sparkle', 'Ce qui change', list + page) : tileHTML('check', 'Rien à faire', `<p>Les notes, les projets et les réglages sont tels qu’avant la mise à jour.</p>${page}`)], []) };
 }
 
 /**
- * Fenêtre des nouveautés : le texte d'une fiche à gauche, son image à droite. Précédent et Suivant, les flèches
+ * Fenêtre des nouveautés : une fiche à la fois, en bento (illustration du sujet, une tuile par point). Précédent et Suivant, les flèches
  * du clavier, ou « Toutes » (liste par date) pour changer de fiche. `fresh` : celles à marquer d'un point tant
  * qu'elles n'ont pas été ouvertes.
  */
@@ -677,8 +674,8 @@ function viewer(entries: Entry[], fresh: Set<string> = new Set()): void {
     group = e.group;
     return `${title}<button class="nw-item" data-nw-at="${k}"><span>${esc(e.title)}</span>${fresh.has(e.id) ? '<i class="nw-new" title="Pas encore ouverte"></i>' : ''}</button>`;
   }).join('')}</nav>`;
-  const m = modal({ cls: solo ? 'nw nw-solo' : 'nw', html: `<div class="nw-text"><div class="nw-stage"></div>${index}<footer class="nw-foot">${solo ? '<span class="nw-count"></span>' : '<button class="btn btn-ghost" data-nw="all" aria-expanded="false">Toutes</button><span class="nw-count"></span>'}<button class="btn btn-ghost" data-nw="prev">Précédent</button><button class="btn btn-primary" data-nw="next" autofocus></button></footer></div><div class="nw-fig"></div>` });
-  const stage = need('.nw-stage', m.body), fig = need('.nw-fig', m.body), count = need('.nw-count', m.body), prev = need<HTMLButtonElement>('[data-nw="prev"]', m.body), next = need<HTMLButtonElement>('[data-nw="next"]', m.body);
+  const m = modal({ cls: solo ? 'nw nw-solo' : 'nw', html: `<div class="nw-text"><div class="nw-stage"></div>${index}<footer class="nw-foot">${solo ? '<span class="nw-count"></span>' : '<button class="btn btn-ghost" data-nw="all" aria-expanded="false">Toutes</button><span class="nw-count"></span>'}<button class="btn btn-ghost" data-nw="prev">Précédent</button><button class="btn btn-primary" data-nw="next" autofocus></button></footer></div>` });
+  const stage = need('.nw-stage', m.body), count = need('.nw-count', m.body), prev = need<HTMLButtonElement>('[data-nw="prev"]', m.body), next = need<HTMLButtonElement>('[data-nw="next"]', m.body);
   const all = m.body.querySelector<HTMLButtonElement>('[data-nw="all"]'), list = m.body.querySelector<HTMLElement>('.nw-index');
   const items = [...m.body.querySelectorAll<HTMLElement>('.nw-item')];
   const toggle = (on: boolean): void => { if (!list || !all) return; list.hidden = !on; stage.hidden = on; all.setAttribute('aria-expanded', String(on)); all.textContent = on ? 'Retour' : 'Toutes'; if (on) items[at]?.scrollIntoView({ block: 'nearest' }); };
@@ -686,11 +683,8 @@ function viewer(entries: Entry[], fresh: Set<string> = new Set()): void {
     const e = entries[i]; if (!e) return;
     at = i;
     toggle(false);
-    const end = e.where || e.go ? `<div class="nw-end">${e.where}${e.go ? `<button class="btn" data-nw="go">${esc(e.go.label)}</button>` : ''}</div>` : '';
-    stage.innerHTML = `<article class="nw-art" aria-live="polite">${e.html}${end}</article>`;
+    stage.innerHTML = `<article class="nw-art" aria-live="polite">${e.html}</article>`;
     stage.scrollTop = 0;
-    fig.style.setProperty('--nw-hue', `var(--c-${e.hue})`);
-    fig.innerHTML = grainSVG(e.seed);
     items.forEach((b, k) => {
       if (k !== i) { b.removeAttribute('aria-current'); return; }
       b.setAttribute('aria-current', 'true');
@@ -731,10 +725,11 @@ export function open(): void {
 function promptReady(): void {
   const s = update.current(); if (!s) return;
   const list = changeList(s.notes ?? '', 5), title = `Studio ${s.tag ?? ''}`.trim();
+  const hint = '<p>Plus tard, elle s’installera quand tu quitteras Studio. Si un agent Claude Code travaille en ce moment, laisse-le d’abord finir.</p>';
   const m = modal({ cls: 'nw nw-solo', html: `<div class="nw-text"><div class="nw-stage"><article class="nw-art">${head(['Mise à jour prête'], title)}
-      <p class="nw-lead">La nouvelle version est téléchargée et vérifiée. Relance Studio pour l’utiliser : tes notes sont enregistrées avant, et l’app se rouvre en quelques secondes.</p>${list}
-      <p class="nw-hint">Plus tard, elle s’installera quand tu quitteras Studio. Si un agent Claude Code travaille en ce moment, laisse-le d’abord finir.</p></article></div>
-    <footer class="nw-foot"><span class="nw-count"></span><button class="btn btn-ghost" data-nw="later">Plus tard</button><button class="btn btn-primary" data-nw="restart" autofocus>${icon('refresh')}Relancer maintenant</button></footer></div><div class="nw-fig" style="--nw-hue:var(--c-blue)">${grainSVG(`pret-${s.tag ?? ''}`)}</div>` });
+      <p class="nw-lead">La nouvelle version est téléchargée et vérifiée. Relance Studio pour l’utiliser : tes notes sont enregistrées avant, et l’app se rouvre en quelques secondes.</p>
+      ${bentoHTML(figHTML(`pret-${s.tag ?? ''}`, 'blue', updateScene(['Relance', 'blue', 'refresh'])), [list ? tileHTML('sparkle', 'Ce qui change', list) : tileHTML('hourglass', 'Plus tard', hint)], list ? [tileHTML('hourglass', 'Plus tard', hint)] : [])}</article></div>
+    <footer class="nw-foot"><span class="nw-count"></span><button class="btn btn-ghost" data-nw="later">Plus tard</button><button class="btn btn-primary" data-nw="restart" autofocus>${icon('refresh')}Relancer maintenant</button></footer></div>` });
   const restart = need<HTMLButtonElement>('[data-nw="restart"]', m.body), later = need<HTMLButtonElement>('[data-nw="later"]', m.body);
   later.onclick = () => m.close();
   restart.onclick = async () => {
