@@ -370,7 +370,7 @@ Les seules dépendances sont TypeScript et esbuild, pour le développement. Les 
 
 ```
 index.html, manifest.webmanifest   page et installation (copiés dans dist/ au build)
-css/app.css                        styles, thèmes clair et sombre (importe css/*.css : news, pulse, activity, team, noteseal, commerce/)
+css/app.css                        styles, thèmes clair et sombre (importe css/*.css : news, pulse, activity, team, noteseal, sky, commerce/)
 src/                               TypeScript strict
   app.ts            interface : vues, éditeur, palette, raccourcis (point d'entrée)
   boot.ts           thème appliqué avant le premier affichage

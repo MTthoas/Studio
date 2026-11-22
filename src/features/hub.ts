@@ -48,6 +48,8 @@ export interface HubApi {
   crumb(current: string, trail?: [string, string][]): string;
   theme(): string;
   setTheme(t: string): void;
+  backdrop(): string;
+  setBackdrop(b: string): void;
   exportJSON(): unknown;
   exportZip(): unknown;
   pickFiles(): void;
@@ -573,7 +575,8 @@ function refreshConnections(): void {
 
 function tabLook() {
   const t = app.theme();
-  return `<section class="cx-sec"><h4>Thème</h4><div class="look">${[['auto', 'Système'], ['light', 'Clair'], ['dark', 'Sombre']].map(([k, l]) => `<label class="look-opt"><input type="radio" name="theme" value="${k}"${t === k ? ' checked' : ''}><span class="look-prev look-${k}"><i></i><i></i><i></i></span><span>${l}</span></label>`).join('')}</div></section>`;
+  return `<section class="cx-sec"><h4>Thème</h4><div class="look">${[['auto', 'Système'], ['light', 'Clair'], ['dark', 'Sombre']].map(([k, l]) => `<label class="look-opt"><input type="radio" name="theme" value="${k}"${t === k ? ' checked' : ''}><span class="look-prev look-${k}"><i></i><i></i><i></i></span><span>${l}</span></label>`).join('')}</div></section>
+    <section class="cx-sec"><h4>Fond</h4><div class="look">${[['sky', 'Ciel'], ['plain', 'Uni']].map(([k, l]) => `<label class="look-opt"><input type="radio" name="backdrop" value="${k}"${app.backdrop() === k ? ' checked' : ''}><span class="look-prev look-${k}"><i></i><i></i><i></i></span><span>${l}</span></label>`).join('')}</div></section>`;
 }
 // ---------- Mises à jour ----------
 // La version web se met à jour seule ; l'app Mac se met à jour d'ici, depuis les Releases du dépôt (voir core/update.ts).
@@ -862,6 +865,7 @@ function onConnChange(e: Event): void {
   if (curTab === 'extensions' && pluginsUI.onChange(t, refreshConnections)) return;
   if (t.name === 'provider') ai.setConfig({ provider: t.value as ai.Provider });
   else if (t.name === 'theme') app.setTheme(t.value);
+  else if (t.name === 'backdrop') app.setBackdrop(t.value);
   else if (t.dataset.cfg === 'budgetM') { ai.setConfig({ budgetM: Math.max(0, Number(t.value) || 0) }); refreshConnections(); }
   else if (t.dataset.cfg) ai.setConfig({ [t.dataset.cfg]: t.value.trim() });
   else if (t.matches('[data-autolock]')) vault.setSetting('autolock', Number(t.value));

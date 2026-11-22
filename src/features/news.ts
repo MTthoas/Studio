@@ -53,6 +53,16 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'fond-ciel-menus-barre-20261122', date: '2026-11-22', icon: 'palette', hue: 'teal',
+    title: 'Fond Ciel et menus d’agents',
+    lead: 'Les colonnes flottent sur un ciel en pixels, et chaque conversation de la barre latérale a son menu d’actions.',
+    bits: [
+      ['palette', 'Fond Ciel', 'cadre noir et ciel tramé autour des panneaux ; fond uni au choix'],
+      ['more', 'Menu par ligne', 'bouton « … » au survol ou clic droit sur un projet, une conversation, un sous-agent'],
+      ['stop', 'Gestes directs', 'renommer, arrêter l’agent, publier ou supprimer la copie sans ouvrir la conversation'],
+    ],
+    where: ['Réglages', 'Apparence', 'Fond'],
+    visual: { kind: 'flow', steps: [['Barre latérale', 'gray', 'notes'], ['Clic droit', 'blue', 'more'], ['Action', 'green', 'check']] } },
   { id: 'agents-equipe-20261120', date: '2026-11-20', icon: 'bot', hue: 'violet', mac: true,
     title: 'Équipe de sous-agents visible',
     lead: 'L’Espace agents montre chaque sous-agent au travail, ses fichiers modifiés en direct et les échanges de l’équipe.',

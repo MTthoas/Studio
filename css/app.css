@@ -11,6 +11,7 @@
 @import "./pulse.css";
 @import "./activity.css";
 @import "./guard.css";
+@import "./sky.css";
 @font-face { font-family: "Inter"; font-style: normal; font-weight: 400 700; font-display: swap; src: url(../fonts/inter.woff2) format("woff2"); }
 
 :root {
@@ -680,6 +681,8 @@ body.focus .note-head { padding-top: 6vh; }
 .look-light { background: #f3f3f2; } .look-light i { background: #fff; border: 1px solid #e6e6e8; }
 .look-dark { background: #08090a; } .look-dark i { background: #16171a; border: 1px solid #26272b; }
 .look-auto { background: linear-gradient(135deg, #f2f2f3 50%, #08090a 50%); } .look-auto i { background: rgba(127, 127, 127, .35); }
+.look-sky { background: #050506; } .look-sky i { background: #a7bbbb; border: 1px solid rgb(255 255 255 / .5); } .look-sky i:first-child { background: none; border: 0; }
+.look-plain { background: #f3f3f2; } .look-plain i { background: #fff; border: 1px solid #e6e6e8; }
 .look-opt:has(input:checked) { color: var(--text); }
 .look-opt:has(input:checked) .look-prev { border-color: var(--text); box-shadow: 0 0 0 1px var(--text); }
 
@@ -1252,6 +1255,13 @@ button.lv-chip:hover, .lv-chip.sel { color: var(--text); background: var(--btn);
 .side-sub4 { height: 22px; gap: 8px; padding-left: 72px; font-weight: 400; font-size: var(--t-1); color: var(--text-3); }
 .side-sub4 .ss-live { width: 5px; height: 5px; }
 .side-sub4.sel { color: var(--text); font-weight: 500; }
+/* « … » d'une ligne de projet (projet, conversation, sous-agent, serveur) : visible au survol ; le clic droit ouvre le même menu. */
+.side-more { display: none; flex: none; place-items: center; width: 20px; height: 20px; margin: 0 -4px 0 auto; border-radius: 4px; color: var(--text-3); }
+.side-item .side-more .ic { width: 14px; height: 14px; color: currentColor; }
+.side-item:hover .side-more, .side-item:focus-visible .side-more { display: inline-grid; }
+.side-item:hover .side-stage { display: none; }
+.side-more:hover { background: var(--active); color: var(--text); }
+@media (hover: none) { .side-item.sel .side-more { display: inline-grid; } }
 /* Arborescence des sous-notes (`treeHTML`) : --d = profondeur */
 .side-tree { gap: 6px; height: 26px; padding-left: calc(4px + var(--d, 0) * 14px); font-weight: 400; font-size: var(--t-2); }
 .side-tree .ic { width: 13px; height: 13px; }

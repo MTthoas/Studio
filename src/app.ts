@@ -44,13 +44,14 @@ import * as vault from './core/vault.ts';
 import * as link from './integrations/link.ts';
 import { $, $$, el, icon, logo, kbd, keys, matches, isMac, rel, until, full, menu, modal, confirmBox, toast, download, closeTop, topLayer, need, target, errMsg, num, hue, paintIfChanged } from './ui/kit.ts';
 import type { MenuItem } from './ui/kit.ts';
+import * as sky from './ui/sky.ts';
 import type { Note, Version, ViewState } from './types.ts';
 import type { Graph, GraphInput } from './lib/graph.ts';
 
 // ---------- Préférences ----------
 /** État d'interface mémorisé entre deux visites. */
 interface UiState {
-  view: ViewState; id: string | null; mode: 'edit' | 'split' | 'read'; side: boolean; theme: string; tagsOpen: boolean;
+  view: ViewState; id: string | null; mode: 'edit' | 'split' | 'read'; side: boolean; theme: string; /** Fond : `sky` (ciel en pixels, css/sky.css) ou `plain` (uni). */ backdrop: 'sky' | 'plain'; tagsOpen: boolean;
   /** Section « Arborescence » de la barre latérale dépliée, et notes dont les sous-notes y sont affichées. */
   treeSec: boolean; treeOpen: string[];
 }
@@ -78,7 +79,7 @@ const editing = (): OpenEditor | null => (ed && ed.ta ? ed as OpenEditor : null)
 
 const read = <T>(k: string, d: T): T => { try { return (JSON.parse(localStorage.getItem(k) || 'null') as T | null) ?? d; } catch { return d; } };
 const write = (k: string, v: unknown): void => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* stockage indisponible */ } };
-const ui: UiState = Object.assign({ view: { type: 'home' }, id: null, mode: 'split', side: true, theme: 'auto', tagsOpen: true, treeSec: true, treeOpen: [] } as UiState, read<Partial<UiState>>('carnet.ui', {}));
+const ui: UiState = Object.assign({ view: { type: 'home' }, id: null, mode: 'split', side: true, theme: 'auto', backdrop: 'sky', tagsOpen: true, treeSec: true, treeOpen: [] } as UiState, read<Partial<UiState>>('carnet.ui', {}));
 const saveUI = () => write('carnet.ui', ui);
 let focusMode = false, ed: Editor | null = null, graph: Graph | null = null;
 
@@ -101,11 +102,17 @@ const WIDE = new Set(['workspace', 'models', 'commerce', 'graph', 'home', 'claud
 function applyTheme() {
   const dark = ui.theme === 'dark' || (ui.theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-  $('meta[name=theme-color]')?.setAttribute('content', dark ? '#08090a' : '#f2f2f3');
+  const skyOn = ui.backdrop !== 'plain';
+  document.documentElement.dataset.backdrop = skyOn ? 'sky' : 'plain';
+  if (skyOn) sky.paint(dark);
+  $('meta[name=theme-color]')?.setAttribute('content', skyOn ? '#050506' : dark ? '#08090a' : '#f2f2f3');
   window.webkit?.messageHandlers?.carnet?.postMessage({ type: 'theme', dark }); // app native : la fenêtre suit le thème
   graph?.redraw();
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+// Le ciel est dessiné à la taille de l'écran : à redessiner seulement si la fenêtre passe sur un écran plus grand.
+let skyTimer: ReturnType<typeof setTimeout> | undefined;
+addEventListener('resize', () => { clearTimeout(skyTimer); skyTimer = setTimeout(() => { if (ui.backdrop !== 'plain') sky.paint(document.documentElement.dataset.theme === 'dark'); }, 400); });
 
 // ---------- Enregistrement (différé, par note) ----------
 const pending = new Map();
@@ -213,12 +220,12 @@ function renderSidebar() {
         const talks = open ? projectsPage.sideSessions(p.id) : [], talking = tab === 'sessions' && talks.some(s => s.sel);
         // Sous « Serveur » : les serveurs du projet, celui qui est affiché en surbrillance.
         const servers = open ? projectsPage.sideServers(p.id) : [], serving = tab === 'server' && servers.some(s => s.sel);
-        return `<button class="side-item side-sub${open && tab === 'overview' ? ' sel' : ''}${open ? ' open' : ''}" data-pj-open="${esc(p.id)}"><i class="tag-dot" style="--c:var(--c-${p.hue})"></i><span>${esc(p.name)}</span></button>`
+        return `<button class="side-item side-sub${open && tab === 'overview' ? ' sel' : ''}${open ? ' open' : ''}" data-pj-open="${esc(p.id)}"><i class="tag-dot" style="--c:var(--c-${p.hue})"></i><span>${esc(p.name)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`
           + (open ? projectsPage.tabsOf(p, tab ?? '').slice(1).map(([k, l, ic]) => `<button class="side-item side-sub2${tab === k && !(k === 'sessions' && talking) && !(k === 'server' && serving) ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="${k}"${k === 'sessions' ? ' data-pj-session=""' : ''}>${icon(ic)}<span>${esc(l)}</span></button>`
-            + (k === 'server' ? servers.map(s => `<button class="side-item side-sub3${tab === 'server' && s.sel ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="server" data-pj-server="${esc(s.id)}" title="${esc(s.dest)}">${icon('server')}<span>${esc(s.name)}</span></button>`).join('') : '')
-            + (k === 'sessions' ? talks.map(s => `<button class="side-item side-sub3${tab === 'sessions' && s.sel && !s.subs.some(a => a.sel) ? ' sel' : ''}${!s.live && s.stage ? ` ${s.stage.cls}` : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="sessions" data-pj-session="${esc(s.id)}" title="${esc(s.title)}${s.live ? ' · en cours' : s.stage ? ` · ${esc(s.stage.label)}` : ''}"><i class="ss-live${s.live ? ' on' : s.stage ? ` ${s.stage.cls}` : ''}"></i><span>${esc(s.title)}</span>${!s.live && s.stage?.cls === 'st-review' ? `<em class="side-stage">${esc(s.stage.label)}</em>` : ''}</button>`
+            + (k === 'server' ? servers.map(s => `<button class="side-item side-sub3${tab === 'server' && s.sel ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="server" data-pj-server="${esc(s.id)}" title="${esc(s.dest)}">${icon('server')}<span>${esc(s.name)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('') : '')
+            + (k === 'sessions' ? talks.map(s => `<button class="side-item side-sub3${tab === 'sessions' && s.sel && !s.subs.some(a => a.sel) ? ' sel' : ''}${!s.live && s.stage ? ` ${s.stage.cls}` : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="sessions" data-pj-session="${esc(s.id)}" title="${esc(s.title)}${s.live ? ' · en cours' : s.stage ? ` · ${esc(s.stage.label)}` : ''}"><i class="ss-live${s.live ? ' on' : s.stage ? ` ${s.stage.cls}` : ''}"></i><span>${esc(s.title)}</span>${!s.live && s.stage?.cls === 'st-review' ? `<em class="side-stage">${esc(s.stage.label)}</em>` : ''}<i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`
               // Sous la conversation : ses sous-agents épinglés, et celui dont on lit le fil.
-              + s.subs.map(a => `<button class="side-item side-sub4${tab === 'sessions' && a.sel ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="sessions" data-pj-session="${esc(s.id)}" data-pj-sub="${esc(a.id)}" title="Sous-agent : ${esc(a.title)}"><i class="ss-live${a.live ? ' on' : ''}"></i><span>${esc(a.title)}</span></button>`).join('')).join('') : '')).join('') : '');
+              + s.subs.map(a => `<button class="side-item side-sub4${tab === 'sessions' && a.sel ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="sessions" data-pj-session="${esc(s.id)}" data-pj-sub="${esc(a.id)}" title="Sous-agent : ${esc(a.title)}"><i class="ss-live${a.live ? ' on' : ''}"></i><span>${esc(a.title)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('')).join('') : '')).join('') : '');
       }).join('')}${item('tasks')}${item('agents')}</div>
       <div class="side-label">Connexions</div>
       <div class="side-group">${item('linear')}${item('github')}</div>
@@ -255,6 +262,33 @@ function treeHTML(live: Note[]): string {
   return `<button class="side-label" data-act="tree" aria-expanded="${ui.treeSec}">${icon('chevron')}Arborescence</button>${ui.treeSec ? `<div class="side-group">${roots.map(r => branch(r, 0)).join('')}</div>` : ''}`;
 }
 
+/** Clic sur une ligne de projet de la barre latérale (projet, onglet, conversation, sous-agent, serveur). */
+async function openSideRow(d: Record<string, string | undefined>): Promise<void> {
+  if (d.pjOpen && d.pjSession !== undefined) projectsPage.openSession(d.pjOpen, d.pjSession || null, d.pjSub || null);
+  if (d.pjOpen && d.pjServer !== undefined) projectsPage.openServer(d.pjOpen, d.pjServer);
+  await setView({ type: 'projets', project: d.pjOpen || d.projectOpen || null, ...(d.pjTab ? { tab: d.pjTab } : {}) });
+}
+/** Menu d'une ligne de projet de la barre latérale : bouton « … » au survol, ou clic droit sur la ligne. */
+function sideRowMenu(row: HTMLElement, anchor: Element | { x: number; y: number }): void {
+  const d = { ...row.dataset }, p = projectsModel.byId(d.pjOpen ?? ''); if (!p) return;
+  const go = () => void openSideRow(d);
+  if (d.pjSession) return projectsPage.sideMenu(anchor, p, d.pjSession, d.pjSub ?? '', go);
+  if (d.pjServer) {
+    const s = projectsPage.sideServers(p.id).find(x => x.id === d.pjServer);
+    menu(anchor, [
+      { label: 'Ouvrir le serveur', icon: 'server', run: go },
+      ...(s?.dest ? [{ label: 'Copier l’adresse', icon: 'copy', hint: s.dest, run: () => navigator.clipboard.writeText(s.dest).then(() => toast('Adresse copiée'), () => toast('Copie impossible.')) }] : []),
+    ]);
+    return;
+  }
+  const open = (tab: string) => () => void setView({ type: 'projets', project: p.id, tab });
+  menu(anchor, [
+    { label: p.name },
+    ...projectsPage.tabsOf(p).map(([k, l, ic]) => ({ label: l, icon: ic, run: open(k) })),
+    ...(projectsPage.claudeAvailable() ? ['-' as const, { label: 'Nouvelle conversation', icon: 'compose', run: () => { projectsPage.openSession(p.id, null); open('sessions')(); } }] : []),
+  ]);
+}
+
 function workspaceMenu(anchor: HTMLElement) {
   menu(anchor, [
     { label: 'Réglages', icon: 'gear', keys: SC.settings, run: () => hub.openConnections('coffre') },
@@ -266,6 +300,10 @@ function workspaceMenu(anchor: HTMLElement) {
     { label: 'Automatique', checked: ui.theme === 'auto', run: () => setTheme('auto') },
     { label: 'Clair', checked: ui.theme === 'light', run: () => setTheme('light') },
     { label: 'Sombre', checked: ui.theme === 'dark', run: () => setTheme('dark') },
+    '-',
+    { label: 'Fond' },
+    { label: 'Ciel', checked: ui.backdrop !== 'plain', run: () => setBackdrop('sky') },
+    { label: 'Uni', checked: ui.backdrop === 'plain', run: () => setBackdrop('plain') },
     '-',
     { label: 'Importer des fichiers…', icon: 'upload', run: () => need('#file').click() },
     { label: 'Exporter une sauvegarde', icon: 'download', run: exportJSON },
@@ -971,6 +1009,7 @@ function commands() {
   ];
 }
 function setTheme(t: string) { ui.theme = t; saveUI(); applyTheme(); }
+function setBackdrop(b: string) { ui.backdrop = b === 'plain' ? 'plain' : 'sky'; saveUI(); applyTheme(); }
 
 const hl = (text: string, pos: number[]) => { const set = new Set(pos); let out = ''; [...text.normalize('NFC')].forEach((ch, i) => { out += set.has(i) ? `<b>${esc(ch)}</b>` : esc(ch); }); return out; };
 
@@ -1171,7 +1210,8 @@ async function onClick(e: MouseEvent): Promise<void> {
   if (await plugins.click(t)) return;
   if (await hub.click(e)) return;
   let x: HTMLElement | null;
-  if ((x = t.closest('[data-pj-open], [data-project-open]')) && !t.closest('.pj')) { if (x.dataset.pjOpen && x.dataset.pjSession !== undefined) projectsPage.openSession(x.dataset.pjOpen, x.dataset.pjSession || null, x.dataset.pjSub || null); if (x.dataset.pjOpen && x.dataset.pjServer !== undefined) projectsPage.openServer(x.dataset.pjOpen, x.dataset.pjServer); await setView({ type: 'projets', project: x.dataset.pjOpen || x.dataset.projectOpen || null, ...(x.dataset.pjTab ? { tab: x.dataset.pjTab } : {}) }); return; }
+  if ((x = t.closest('#sidebar [data-side-more]'))) { const row = x.closest<HTMLElement>('[data-pj-open]'); if (row) sideRowMenu(row, x); return; }
+  if ((x = t.closest('[data-pj-open], [data-project-open]')) && !t.closest('.pj')) { await openSideRow(x.dataset); return; }
   if ((x = t.closest('[data-chat]'))) { await setView(x.dataset.chat ? { type: 'claude', chat: x.dataset.chat } : { type: 'claude' }); return; }
   if ((x = t.closest('[data-view]'))) { await setView({ type: x.dataset.view ?? 'home' }); return; }
   if ((x = t.closest('[data-open-note]')) && store.get(x.dataset.openNote)) { await openNote(x.dataset.openNote ?? ''); return; }
@@ -1200,6 +1240,8 @@ document.addEventListener('change', e => {
 });
 
 document.addEventListener('contextmenu', e => {
+  const row = target(e).closest('#sidebar [data-pj-open]');
+  if (row) { e.preventDefault(); sideRowMenu(row, { x: e.clientX, y: e.clientY }); return; }
   const item = target(e).closest('#list .note-item[data-id]'); if (!item) return;
   const n = store.get(item.dataset.id); if (!n) return;
   e.preventDefault(); moreMenu({ x: e.clientX, y: e.clientY }, n);
@@ -1360,7 +1402,7 @@ async function start() {
   });
   hub.init({
     openNote, setView, renderMain, flush, flushAll, refreshNote, capture: quickCapture, crumb,
-    theme: () => ui.theme, setTheme, exportJSON, exportZip, pickFiles: () => need('#file').click(), openHelp,
+    theme: () => ui.theme, setTheme, backdrop: () => ui.backdrop, setBackdrop, exportJSON, exportZip, pickFiles: () => need('#file').click(), openHelp,
     refreshPreview: () => renderPreview(), current: () => store.get(ui.id), view: () => ui.view.type, tbLeft,
     selection: () => { if (!ed?.ta) return null; const { selectionStart: a, selectionEnd: b, value: v } = ed.ta, [ls] = lineBounds(v, a), [, le] = lineBounds(v, b); return { text: a === b ? v.slice(ls, le) : v.slice(a, b), end: le }; },
     insertAtLineEnd: (pos, text) => { if (ed?.ta) replaceRange(ed.ta, pos, pos, text); },
