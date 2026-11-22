@@ -1,26 +1,27 @@
-/* Fond « Ciel » (`data-backdrop="sky"` sur <html>, choix `ui.backdrop` d'app.ts) : cadre noir, barre latérale posée sur le noir,
-   liste et contenu en panneaux arrondis qui flottent sur un ciel en pixels tramés (`--sky`, dessiné par src/ui/sky.ts). */
-:root[data-backdrop="sky"] { --frame: #050506; }
-:root[data-backdrop="sky"] #sidebar, :root[data-backdrop="sky"] #list, :root[data-backdrop="sky"] #main { grid-row: 1; }
+/* Fonds (`data-backdrop` sur <html>, choix `ui.backdrop` d'app.ts) : `horizon` (paysage de nuit, src/ui/horizon.ts), `image` (image choisie),
+   `sky` (ciel en pixels tramés, src/ui/sky.ts), `plain` (uni, aucune règle ici). Les trois premiers partagent le cadre noir, la barre latérale
+   aux teintes sombres et les panneaux arrondis ; l'image du fond arrive dans `--sky`. */
+:root:not([data-backdrop="plain"]) { --frame: #050506; }
+:root:not([data-backdrop="plain"]) #sidebar, :root:not([data-backdrop="plain"]) #list, :root:not([data-backdrop="plain"]) #main { grid-row: 1; }
 /* Le ciel : un pseudo-élément de la grille, sous les colonnes 2 et 3 (liste et contenu). */
-:root[data-backdrop="sky"] #app::before {
+:root:not([data-backdrop="plain"]) #app::before {
   content: ""; grid-column: 2 / 4; grid-row: 1; border-radius: 14px; pointer-events: none;
   background: var(--sky, none) center bottom / var(--sky-size, cover) no-repeat, linear-gradient(#7f99a2, #a7bbbb);
   image-rendering: pixelated;
 }
-:root[data-backdrop="sky"][data-theme="dark"] #app::before { background: var(--sky, none) center bottom / var(--sky-size, cover) no-repeat, linear-gradient(#141c27, #2e3f52); }
+:root:not([data-backdrop="plain"])[data-theme="dark"] #app::before { background: var(--sky, none) center bottom / var(--sky-size, cover) no-repeat, linear-gradient(#141c27, #2e3f52); }
 
-:root[data-backdrop="sky"] #list, :root[data-backdrop="sky"] #main {
+:root:not([data-backdrop="plain"]) #list, :root:not([data-backdrop="plain"]) #main {
   position: relative; z-index: 1; margin: 12px; border: 1px solid rgb(255 255 255 / .45); border-radius: 12px;
   box-shadow: 0 24px 60px -24px rgb(16 28 38 / .5), 0 2px 6px rgb(16 28 38 / .12);
 }
-:root[data-backdrop="sky"] #list { margin-right: 0; }
-:root[data-backdrop="sky"] #main { margin-left: 10px; }
-:root[data-backdrop="sky"] body:is(.no-list, .focus) #main { margin-left: 12px; border-radius: 12px; }
-:root[data-backdrop="sky"][data-theme="dark"] #list, :root[data-backdrop="sky"][data-theme="dark"] #main { border-color: rgb(255 255 255 / .08); box-shadow: 0 24px 60px -24px rgb(0 0 0 / .7); }
+:root:not([data-backdrop="plain"]) #list { margin-right: 0; }
+:root:not([data-backdrop="plain"]) #main { margin-left: 10px; }
+:root:not([data-backdrop="plain"]) body:is(.no-list, .focus) #main { margin-left: 12px; border-radius: 12px; }
+:root:not([data-backdrop="plain"])[data-theme="dark"] #list, :root:not([data-backdrop="plain"])[data-theme="dark"] #main { border-color: rgb(255 255 255 / .08); box-shadow: 0 24px 60px -24px rgb(0 0 0 / .7); }
 
 /* Barre latérale : toujours sur le noir du cadre, donc avec les teintes du thème sombre, quel que soit le thème. */
-:root[data-backdrop="sky"] #sidebar {
+:root:not([data-backdrop="plain"]) #sidebar {
   color-scheme: dark; color: var(--text);
   --bg: #0b0b0c; --surface: #141516; --surface-2: #1a1b1d;
   --text: #f1f2f4; --text-2: #a2a6ad; --text-3: #6b6f77;
@@ -33,6 +34,45 @@
 }
 
 @media (max-width: 640px) {
-  :root[data-backdrop="sky"] #app::before { display: none; }
-  :root[data-backdrop="sky"] #list, :root[data-backdrop="sky"] #main, :root[data-backdrop="sky"] body:is(.no-list, .focus) #main { margin: 0; border: 0; border-radius: 0; box-shadow: none; }
+  :root:not([data-backdrop="plain"]) #app::before { display: none; }
+  :root:not([data-backdrop="plain"]) #list, :root:not([data-backdrop="plain"]) #main, :root:not([data-backdrop="plain"]) body:is(.no-list, .focus) #main { margin: 0; border: 0; border-radius: 0; box-shadow: none; }
+}
+
+/* ---------- Horizon et Mon image : la scène occupe toute la fenêtre, barre latérale comprise ---------- */
+:root:is([data-backdrop="horizon"], [data-backdrop="image"]) #app::before {
+  position: fixed; inset: 0; z-index: 0; border-radius: 0; image-rendering: auto;
+  /* En attendant le dessin : le même paysage, en aplats. */
+  background: var(--sky, none) center / cover no-repeat, linear-gradient(#020204 0 24.3%, #6a4416 24.6%, #1a110a 44%, #0c0806);
+}
+:root[data-backdrop="image"] #app::before { background: var(--sky, none) center / cover no-repeat, #050506; }
+:root:is([data-backdrop="horizon"], [data-backdrop="image"]) #sidebar { position: relative; z-index: 1; margin: -8px 0; padding: 8px 0; --hover: rgba(255, 255, 255, .08); --active: rgba(255, 255, 255, .14); text-shadow: 0 1px 2px rgb(0 0 0 / .6); }
+/* Un voile sous la barre latérale : la scène reste lisible derrière, le texte aussi. */
+:root:is([data-backdrop="horizon"], [data-backdrop="image"]) #sidebar::before { content: ""; position: absolute; inset: 0; z-index: -1; background: rgb(4 4 5 / .46); -webkit-backdrop-filter: blur(14px) saturate(1.1); backdrop-filter: blur(14px) saturate(1.1); border-right: 1px solid rgb(255 255 255 / .06); pointer-events: none; }
+:root:is([data-backdrop="horizon"], [data-backdrop="image"]) #list, :root:is([data-backdrop="horizon"], [data-backdrop="image"]) #main { border-color: rgb(255 255 255 / .1); box-shadow: 0 30px 80px -30px rgb(0 0 0 / .9), 0 2px 8px rgb(0 0 0 / .35); }
+/* Thème sombre : des neutres à peine réchauffés, accordés à la scène. */
+:root[data-theme="dark"]:is([data-backdrop="horizon"], [data-backdrop="image"]) { --bg: #100f0e; --bg-list: #0e0d0c; --surface: #1a1917; --surface-2: #21201d; --border: #24221f; --border-2: #302d29; }
+
+/* Accueil : pas de panneau, le contenu flotte sur la scène dans des plaques de verre fumé. */
+:root:is([data-backdrop="horizon"], [data-backdrop="image"]) body[data-v="home"] #main {
+  background: none; border-color: transparent; box-shadow: none; color-scheme: dark; color: var(--text);
+  --bg: #0b0b0c; --surface: #141516; --surface-2: #1a1b1d;
+  --text: #f4f2ee; --text-2: #b9b4ab; --text-3: #8a857c;
+  --border: rgb(255 255 255 / .1); --border-2: rgb(255 255 255 / .16);
+  --hover: rgba(255, 255, 255, .07); --active: rgba(255, 255, 255, .12); --sel: rgba(255, 255, 255, .09);
+  --btn: rgba(255, 255, 255, .1); --btn-hover: rgba(255, 255, 255, .15); --btn-active: rgba(255, 255, 255, .2);
+  --accent-text: #FF7A55; --code: rgba(255, 255, 255, .08); --danger: #F0587A;
+  --c-gray: #7c8088; --c-blue: #5ba2f5; --c-green: #4cb782; --c-amber: #f2c94c; --c-orange: #f2994a;
+  --c-red: #f26b70; --c-violet: #b38df0; --c-pink: #ec6cb9; --c-teal: #2fc6b0; --c-indigo: #8a93f0;
+}
+:root:is([data-backdrop="horizon"], [data-backdrop="image"]) body[data-v="home"] :is(.hm-date, .hm-hello, .hm-sum) { text-shadow: 0 1px 12px rgb(0 0 0 / .7); }
+:root:is([data-backdrop="horizon"], [data-backdrop="image"]) body[data-v="home"] :is(.hm-sec, .hm-capture) {
+  background: rgb(9 8 8 / .58); -webkit-backdrop-filter: blur(22px) saturate(1.15); backdrop-filter: blur(22px) saturate(1.15);
+  border: 1px solid rgb(255 255 255 / .09); border-radius: 12px; box-shadow: 0 18px 50px -24px rgb(0 0 0 / .8);
+}
+:root:is([data-backdrop="horizon"], [data-backdrop="image"]) body[data-v="home"] .hm-sec { padding: 14px 16px 12px; }
+:root:is([data-backdrop="horizon"], [data-backdrop="image"]) body[data-v="home"] .hm-col { gap: 16px; }
+:root:is([data-backdrop="horizon"], [data-backdrop="image"]) body[data-v="home"] .hm-grid { gap: 0 16px; }
+@media (max-width: 640px) {
+  :root:is([data-backdrop="horizon"], [data-backdrop="image"]) #app::before { display: block; }
+  :root:is([data-backdrop="horizon"], [data-backdrop="image"]) body[data-v="home"] #main { background: none; }
 }

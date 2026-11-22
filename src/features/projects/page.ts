@@ -17,6 +17,7 @@ import * as sessions from './sessions.ts';
 import * as review from './review.ts';
 import * as site from './site.ts';
 import * as mobile from './mobile.ts';
+import * as stack from './stack.ts';
 import * as docker from './docker.ts';
 import * as commerce from '../commerce/page.ts';
 import * as infra from './infra.ts';
@@ -153,8 +154,15 @@ const section = (id: string, title: string, ic: string, body: string, cls = '', 
 
 /** Sous-menus d'un projet (aussi affichés dans la barre latérale). */
 export const TABS: [string, string, string][] = [
-  ['overview', 'Vue d’ensemble', 'home'], ['sessions', 'Claude Code', 'terminal'], ['code', 'Code', 'code'], ['flux', 'Flux', 'pr'], ['server', 'Serveur', 'server'], ['docker', 'Docker', 'container'],
-  ['tasks', 'Tâches', 'check'], ['notes', 'Notes', 'notes'], ['site', 'Site', 'link'], ['mobile', 'Mobile', 'phone'], ['boutique', 'Boutique', 'shop'],
+  ['overview', 'Vue d’ensemble', 'home'], ['sessions', 'Claude Code', 'terminal'], ['tasks', 'Tâches', 'check'], ['notes', 'Notes', 'notes'],
+  ['code', 'Code', 'code'], ['archi', 'Architecture', 'graph'], ['api', 'API', 'plug'], ['data', 'Données', 'database'], ['tests', 'Tests', 'shield'],
+  ['site', 'Site', 'link'], ['mobile', 'Mobile', 'phone'], ['docker', 'Docker', 'container'], ['env', 'Environnements', 'gear'],
+  ['flux', 'Flux', 'pr'], ['server', 'Serveur', 'server'], ['boutique', 'Boutique', 'shop'],
+];
+/** Familles de la barre d'onglets : l'ordre de TABS suit celui-ci. */
+const FAMILIES: [string, string[]][] = [
+  ['Piloter', ['overview', 'sessions', 'tasks', 'notes']], ['Construire', ['code', 'archi', 'api', 'data', 'tests']],
+  ['Faire tourner', ['site', 'mobile', 'docker', 'env']], ['Livrer', ['flux', 'server', 'boutique']],
 ];
 /** Les onglets montrés pour ce projet : « Boutique » seulement s'il a une boutique ou un compte publicitaire, « Mobile »
  *  seulement s'il a un dépôt de rôle mobile ou une app mobile dans son dossier (ou si on y est). */
@@ -184,12 +192,14 @@ function tabBody(p: Project, tab: string): string {
   if (tab === 'tasks') return `${section('tasks', 'Tâches', 'check', taskBox(p))}${panelsHTML(p, 'tasks')}`;
   if (tab === 'notes') return section('notes', 'Notes', 'notes', noteRows(p));
   if (tab === 'mobile') return mobile.tabHTML(section);
+  if (stack.isTab(tab)) return stack.tabHTML(tab);
   if (tab === 'site') return `${section('site-local', 'En local', 'terminal', site.localHTML())}${section('site', 'En ligne', 'link', siteHTML(p))}${section('site-prod', 'En production', 'server', site.soonHTML())}`;
   const notes = model.notesOf(p).length - 1;
   return `${folderBox}
     ${bridge.where() ? `<section class="pj-quick">${sessions.composerHTML(p, { compact: true })}<div data-ov="agents"></div></section>` : ''}
     ${section('repos', p.stack.length > 1 ? `Dépôts · ${p.stack.length}` : 'Dépôts', 'github', reposHTML(p), 'pj-stack')}
     ${section('activity', 'Activité', 'activity', activityHTML(p), 'ac-sec', '30 derniers jours')}
+    ${section('state', 'État du projet', 'activity', '<div data-sk-state><div class="pj-skel"></div></div>')}
     ${section('shortcuts', 'Raccourcis', 'bolt', `<div class="pj-ovs">
       ${card('code', 'Pull requests', 'pr', 'blue', p.repos.length ? 'Lecture des PR…' : 'Aucun dépôt associé')}
       ${card('site', 'Site', 'link', 'teal', p.site ? esc(p.site.replace(/^https:\/\//, '')) : 'Ajouter le site du projet')}
@@ -360,7 +370,14 @@ async function agentsStrip(root: HTMLElement, p: Project): Promise<void> {
   box.innerHTML = list.map(x => `<button class="pj-agent" data-pj-agent="${esc(x.session)}"><i class="ss-live on"></i><span>${esc(x.prompt)}</span><em>${esc(x.lastText || 'Démarrage…')}</em>${icon('chevronRight')}</button>`).join('');
 }
 
-const tabsHTML = (p: Project, tab: string): string => tabsOf(p, tab).map(([k, l]) => `<button data-pj-tab="${k}" class="${k === tab ? 'sel' : ''}">${esc(l)}</button>`).join('');
+/** Onglets rangés par famille (Piloter, Construire, Faire tourner, Livrer) ; chaque bouton garde `data-pj-tab` et `.sel`. */
+const tabsHTML = (p: Project, tab: string): string => {
+  const have = tabsOf(p, tab);
+  return FAMILIES.map(([title, keys]) => {
+    const btns = have.filter(t => keys.includes(t[0])).map(([k, l]) => `<button data-pj-tab="${k}" class="${k === tab ? 'sel' : ''}"${k === tab ? ' aria-current="page"' : ''}>${esc(l)}</button>`).join('');
+    return btns ? `<div class="sk-fam" role="group" aria-label="${esc(title)}"><span class="sk-fam-t">${esc(title)}</span>${btns}</div>` : '';
+  }).join('');
+};
 
 function detailHTML(p: Project, tab: string): string {
   return `<div class="pj-head" style="--c:var(--c-${p.hue})"><button class="lv-back" data-pj-open="">${icon('back')}Projets</button>
@@ -392,12 +409,13 @@ async function hydrate(root: HTMLElement, p: Project, tab: string): Promise<void
   }
   if (tab === 'site') site.mount(root, p);
   if (tab === 'mobile') mobile.mount(root, p);
+  if (stack.isTab(tab)) stack.mount(root, p, tab, prompt => toClaude(p, { prompt }));
   if (tab === 'site' && p.site && native.available()) void checkSite(root, p);
   if (tab === 'server') void server(root, p);
   if (tab === 'docker') { const box = $('.dk-box', root); if (box) docker.mount(box, p, f?.path ?? null); }
   if (tab === 'boutique') { const box = $('.cm-box', root); if (box) commerce.mount(box, p); }
   if (tab === 'overview') {
-    void overview(root, p, f); void dashboard(root, p, f); void agentsStrip(root, p); void docker.fillCard(root, p);
+    void stack.overviewFill(root, p); void overview(root, p, f); void dashboard(root, p, f); void agentsStrip(root, p); void docker.fillCard(root, p);
     sessions.bindComposer(root, p, r => { sessions.select(r.session || null, p.id); void go(p.id, 'sessions'); });
   }
 }

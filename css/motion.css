@@ -1,0 +1,178 @@
+/* Mouvement : un seul système pour toute l'application (jetons, surfaces, contrôles, indicateurs glissants, contenu).
+   Piloté par src/ui/motion.ts (niveau `data-motion` sur <html> : full | subtle | off). Importé EN DERNIER par css/app.css :
+   les sélecteurs sont préfixés de `:root` pour l'emporter à spécificité égale, sans `!important`.
+   Règles du système : durées de 90 à 420 ms, ressorts brefs (4 % de dépassement au plus), seuls transform / opacity / clip-path
+   bougent, aucune boucle hors états « au travail ». Les propriétés individuelles `translate` et `scale` sont utilisées pour ne
+   jamais entrer en conflit avec les `transform` existants. `prefers-reduced-motion` est déjà coupé globalement par css/app.css. */
+
+/* ---------- 1. Jetons ---------- */
+:root {
+  --mo-k: 1;                                   /* multiplicateur de durée : 0 = rien */
+  --mo-d1: calc(90ms * var(--mo-k));           /* survol, fondu minimal */
+  --mo-d2: calc(140ms * var(--mo-k));          /* couleurs, petits états */
+  --mo-d3: calc(200ms * var(--mo-k));          /* entrées courantes */
+  --mo-d4: calc(300ms * var(--mo-k));          /* surfaces, ressorts */
+  --mo-d5: calc(420ms * var(--mo-k));          /* grandes surfaces */
+  --mo-out: cubic-bezier(.2, .8, .2, 1);       /* sortie douce : arrive vite, se pose */
+  --mo-in: cubic-bezier(.4, 0, 1, 1);          /* accélère : pour sortir */
+  --mo-in-out: cubic-bezier(.45, 0, .2, 1);    /* déplacements d'un point à un autre */
+  --mo-spring: cubic-bezier(.3, 1.25, .5, 1);  /* repli si linear() manque : bref dépassement */
+  --mo-dx: 14px;                               /* glissement horizontal entre vues et onglets */
+  --mo-dy: 8px;                                /* montée des blocs */
+  --mo-s: .96;                                 /* échelle de départ des surfaces */
+  --mo-press: .97;                             /* échelle à l'appui */
+  --mo-press-row: .985;                        /* échelle à l'appui d'une ligne large */
+}
+@supports (transition-timing-function: linear(0, 1)) {
+  :root { --mo-spring: linear(0, 0.042 4.2%, 0.143 8.3%, 0.275 12.5%, 0.415 16.7%, 0.55 20.8%, 0.672 25%, 0.775 29.2%, 0.858 33.3%, 0.922 37.5%, 0.969 41.7%, 1.001 45.8%, 1.022 50%, 1.033 54.2%, 1.038 58.3%, 1.038 62.5%, 1.035 66.7%, 1.03 70.8%, 1.025 75%, 1.02 79.2%, 1.015 83.3%, 1.01 87.5%, 1.007 91.7%, 1.004 95.8%, 1); }
+}
+/* Discret : fondus et micro-déplacements seulement, pas de ressort. */
+:root[data-motion="subtle"] {
+  --mo-k: .7; --mo-dx: 0px; --mo-dy: 3px; --mo-s: .99; --mo-press: .99; --mo-press-row: .995;
+  --mo-spring: var(--mo-out);
+}
+/* Aucun : tout est coupé, sauf les indicateurs d'attente (tourniquet, point « en direct »). */
+:root[data-motion="off"] { --mo-k: 0; --mo-dx: 0px; --mo-dy: 0px; --mo-s: 1; --mo-press: 1; --mo-press-row: 1; }
+:root[data-motion="off"] *:not(.spin, .st.live, .ss-live.on, .mo-work > *, .sa-wait i, .caret),
+:root[data-motion="off"] *:not(.spin, .st.live, .ss-live.on, .mo-work > *, .sa-wait i, .caret)::before,
+:root[data-motion="off"] *:not(.spin, .st.live, .ss-live.on, .mo-work > *, .sa-wait i, .caret)::after { animation: none; transition: none; }
+
+/* ---------- 2. Calques : menus, fenêtres, palette, toasts ---------- */
+/* Menu : sort de son point d'origine (--mo-ox / --mo-oy posés par motion.ts d'après le déclencheur), ses lignes suivent en cascade. */
+:root .menu { transform-origin: var(--mo-ox, 100%) var(--mo-oy, 0); animation: mo-menu var(--mo-d3) var(--mo-spring) backwards; }
+:root .menu > .menu-item, :root .menu > .menu-label { animation: mo-item var(--mo-d3) var(--mo-out) backwards; animation-delay: calc(var(--i, 0) * 14ms * var(--mo-k) + 20ms * var(--mo-k)); }
+:root .menu > :nth-child(1) { --i: 0; } :root .menu > :nth-child(2) { --i: 1; } :root .menu > :nth-child(3) { --i: 2; } :root .menu > :nth-child(4) { --i: 3; }
+:root .menu > :nth-child(5) { --i: 4; } :root .menu > :nth-child(6) { --i: 5; } :root .menu > :nth-child(7) { --i: 6; } :root .menu > :nth-child(n+8) { --i: 7; }
+@keyframes mo-menu { from { opacity: 0; scale: var(--mo-s, .96); translate: 0 -3px; } }
+@keyframes mo-item { from { opacity: 0; translate: 0 -4px; } }
+:root .menu-item { transition: background-color var(--mo-d1) var(--mo-out), color var(--mo-d1) var(--mo-out); }
+
+/* Fenêtre : monte avec un ressort bref pendant que le fond s'assombrit. */
+:root .backdrop { animation: mo-fade var(--mo-d3) var(--mo-out) backwards; }
+:root .modal { animation: mo-modal var(--mo-d4) var(--mo-spring) backwards; }
+:root .backdrop:has(.palette, .capture, .ask) .modal { transform-origin: 50% 0; animation-name: mo-pal; }
+@keyframes mo-fade { from { opacity: 0; } }
+@keyframes mo-modal { from { opacity: 0; scale: .97; translate: 0 calc(var(--mo-dy) * 1.5); } }
+@keyframes mo-pal { from { opacity: 0; scale: .985; translate: 0 calc(var(--mo-dy) * -1); } }
+/* Sorties : motion.ts rejoue un clone du calque retiré (classe mo-ghost), détruit à la fin ; le code appelant n'attend rien. */
+:root .mo-ghost { pointer-events: none; }
+:root .mo-ghost * { animation: none; pointer-events: none; }
+:root .mo-ghost .menu .menu-item, :root .mo-ghost .menu .menu-label { animation: none; }
+:root .mo-ghost.backdrop { animation: mo-fade-out var(--mo-d2) var(--mo-in) forwards; }
+:root .mo-ghost.backdrop .modal { animation: mo-modal-out var(--mo-d2) var(--mo-in) forwards; }
+:root .mo-ghost.menu-backdrop .menu { animation: mo-menu-out var(--mo-d2) var(--mo-in) forwards; }
+@keyframes mo-fade-out { to { opacity: 0; } }
+@keyframes mo-modal-out { to { opacity: 0; scale: .985; translate: 0 calc(var(--mo-dy) * .75); } }
+@keyframes mo-menu-out { to { opacity: 0; scale: calc(1 - (1 - var(--mo-s, .96)) / 2); } }
+
+/* Toasts : entrent avec un ressort, sortent en glissant ; les voisins se réarrangent par FLIP (motion.ts). */
+:root .toast { animation: mo-toast var(--mo-d5) var(--mo-spring) backwards; transition: opacity var(--mo-d3) var(--mo-in), translate var(--mo-d3) var(--mo-in), scale var(--mo-d3) var(--mo-in); }
+:root .toast.out { opacity: 0; transform: none; translate: 0 10px; scale: .97; }
+:root .toast.mo-ghost { animation: mo-toast-out var(--mo-d3) var(--mo-in) forwards; }
+@keyframes mo-toast { from { opacity: 0; translate: 0 calc(var(--mo-dy) * 2.5); scale: .94; } }
+@keyframes mo-toast-out { to { opacity: 0; translate: 0 10px; scale: .97; } }
+
+/* ---------- 3. Contrôles ---------- */
+/* Pression : l'échelle baisse à l'appui, revient avec un ressort bref au relâchement. */
+:root :is(.btn, .icon-btn, .ag-seg label, .lv-tabs button, .pj-tabs button, .set-nav button, .ss-sub, .pj-cc, .hm-agent > button) {
+  transition: background-color var(--mo-d2) var(--mo-out), color var(--mo-d2) var(--mo-out), border-color var(--mo-d2) var(--mo-out),
+    box-shadow var(--mo-d2) var(--mo-out), opacity var(--mo-d2) var(--mo-out), scale var(--mo-d4) var(--mo-spring);
+}
+:root :is(.side-item, .pal-item, .hist-item) {
+  transition: background-color var(--mo-d2) var(--mo-out), color var(--mo-d2) var(--mo-out), opacity var(--mo-d2) var(--mo-out), scale var(--mo-d4) var(--mo-spring);
+}
+:root :is(.btn, .icon-btn, .ag-seg label, .lv-tabs button, .pj-tabs button, .set-nav button, .ss-sub, .pj-cc, .hm-agent > button):active { scale: var(--mo-press); transition-duration: var(--mo-d1); }
+:root :is(.side-item, .hist-item):active { scale: var(--mo-press-row); transition-duration: var(--mo-d1); }
+:root :is(.btn, .icon-btn):disabled { scale: 1; }
+@media (hover: hover) {
+  :root .icon-btn .ic { transition: scale var(--mo-d3) var(--mo-spring); }
+  :root .icon-btn:hover .ic { scale: 1.08; }
+  :root .icon-btn:active .ic { scale: 1; }
+}
+/* Chevrons : rotation à ressort (les règles d'origine donnent l'angle, motion.css leur donne la courbe). */
+:root :is(.side-tree .tree-tog .ic, .ss-tools > summary .ic:last-child, .ss-more > summary .ic, button.side-label .ic, .jr-gh > .ic, .jr-files > summary > .ic) { transition: transform var(--mo-d4) var(--mo-spring); }
+
+/* Focus qui s'installe : l'anneau se resserre en 160 ms (aucune spécificité, ne gêne aucune animation propre à l'élément). */
+:where(button, a, input, textarea, select, summary, [tabindex]):focus-visible { animation: mo-focus var(--mo-d3) var(--mo-out); }
+@keyframes mo-focus { from { outline-offset: 4px; outline-color: transparent; } }
+/* Champs qui s'ouvrent : bordure et halo en fondu. */
+:root :is(.field, .lock-card input, .w-capture input) { transition: border-color var(--mo-d2) var(--mo-out), box-shadow var(--mo-d3) var(--mo-out), background-color var(--mo-d2) var(--mo-out); }
+
+/* Cases : la coche se dessine (transition de clip-path : rien ne rejoue quand une liste est repeinte déjà cochée). */
+:root input[type="checkbox"] { transition: background-color var(--mo-d2) var(--mo-out), border-color var(--mo-d2) var(--mo-out), scale var(--mo-d4) var(--mo-spring); }
+:root input[type="checkbox"]:active { scale: .88; transition-duration: var(--mo-d1); }
+:root input[type="checkbox"]::after { content: ""; width: 6px; height: 3.5px; border: solid #fff; border-width: 0 0 1.6px 1.6px; transform: translateY(-.5px) rotate(-45deg); clip-path: inset(0 100% 0 0); transition: clip-path var(--mo-d1) var(--mo-in); }
+:root input[type="checkbox"]:checked::after { clip-path: inset(-2px -2px -2px -2px); transition: clip-path var(--mo-d3) var(--mo-out) var(--mo-d1); }
+
+/* Zones repliables : grille 0fr -> 1fr (classe `mo-fold`, `open` pour déplier). */
+.mo-fold { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows var(--mo-d4) var(--mo-out), opacity var(--mo-d3) var(--mo-out); }
+.mo-fold.open { grid-template-rows: 1fr; opacity: 1; }
+.mo-fold > * { min-height: 0; overflow: hidden; }
+
+/* Colonnes latérales : la grille se transforme déjà ; le contenu se fond pendant qu'elle se referme (au lieu d'un cut sec). */
+:root #app { transition: grid-template-columns var(--mo-d4) var(--mo-in-out), padding var(--mo-d4) var(--mo-in-out); }
+:root #sidebar, :root #list { transition: opacity var(--mo-d3) var(--mo-out), visibility 0s linear 0s; }
+:root body.no-side #sidebar, :root body.focus #sidebar, :root body.focus #list, :root body.no-list #list { opacity: 0; transition: opacity var(--mo-d2) var(--mo-in), visibility 0s linear var(--mo-d4); }
+:root #main { position: relative; }
+
+/* ---------- 4. Indicateurs glissants ----------
+   La pastille de sélection est le pseudo-élément de la ligne/onglet actif ; motion.ts la déplace (FLIP via element.animate
+   sur le pseudo-élément) de l'ancienne position vers la nouvelle quand la sélection change, même si la barre est repeinte. */
+:root :is(.side-item.sel, .set-nav button[aria-current], .pal-item.sel, .ag-seg input:checked + span, .hist-item.sel) { position: relative; isolation: isolate; background: transparent; box-shadow: none; }
+:root :is(.side-item.sel, .set-nav button[aria-current], .pal-item.sel, .hist-item.sel)::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: var(--active); pointer-events: none; }
+:root .ag-seg input:checked + span::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: var(--bg); box-shadow: 0 1px 2px rgba(0, 0, 0, .12); pointer-events: none; }
+/* Onglets soulignés : le trait est un pseudo-élément (la bordure du bouton reste transparente). */
+:root :is(.lv-tabs, .pj-tabs) button { position: relative; }
+:root :is(.lv-tabs, .pj-tabs) button.sel { border-bottom-color: transparent; }
+:root :is(.lv-tabs, .pj-tabs) button.sel::after { content: ""; position: absolute; left: 0; right: 0; bottom: -2px; height: 2px; border-radius: 1px; background: var(--c, var(--text)); pointer-events: none; transform-origin: 0 50%; }
+
+/* ---------- 5. Contenu ---------- */
+/* Fantôme de vue : l'ancien contenu de #main, rejoué en sortie au-dessus du nouveau (motion.view), puis détruit. */
+:root .mo-pane-ghost { position: absolute; inset: 0; z-index: 5; display: flex; flex-direction: column; overflow: hidden; pointer-events: none; background: var(--bg); border-radius: inherit; }
+:root .mo-pane-ghost * { pointer-events: none; animation: none; }
+/* View Transitions (Safari 18+, via motion.transition) : seule la zone principale transitionne, le reste de la page ne se fond pas. */
+:root[data-mo-vt] #main { view-transition-name: mo-main; }
+:root[data-mo-vt]::view-transition-old(root), :root[data-mo-vt]::view-transition-new(root) { animation: none; mix-blend-mode: normal; }
+:root[data-mo-vt]::view-transition-group(mo-main) { animation-duration: var(--mo-d4); animation-timing-function: var(--mo-in-out); }
+:root[data-mo-vt]::view-transition-old(mo-main) { animation: mo-vt-out var(--mo-d2) var(--mo-in) both; }
+:root[data-mo-vt]::view-transition-new(mo-main) { animation: mo-vt-in var(--mo-d4) var(--mo-out) both; }
+:root[data-mo-vt="back"]::view-transition-old(mo-main) { animation-name: mo-vt-out-back; }
+:root[data-mo-vt="back"]::view-transition-new(mo-main) { animation-name: mo-vt-in-back; }
+@keyframes mo-vt-out { to { opacity: 0; translate: calc(var(--mo-dx) * -1) 0; } }
+@keyframes mo-vt-in { from { opacity: 0; translate: var(--mo-dx) 0; } }
+@keyframes mo-vt-out-back { to { opacity: 0; translate: var(--mo-dx) 0; } }
+@keyframes mo-vt-in-back { from { opacity: 0; translate: calc(var(--mo-dx) * -1) 0; } }
+
+/* Lancement avec le fond « horizon » : les panneaux montent doucement, une seule fois (data-mo-boot posé 1 s par init()). */
+:root[data-mo-boot][data-backdrop="horizon"] #sidebar { animation: mo-boot var(--mo-d5) var(--mo-out) backwards; }
+:root[data-mo-boot][data-backdrop="horizon"] #list { animation: mo-boot var(--mo-d5) var(--mo-out) 50ms backwards; }
+:root[data-mo-boot][data-backdrop="horizon"] #main { animation: mo-boot var(--mo-d5) var(--mo-out) 100ms backwards; }
+@keyframes mo-boot { from { opacity: 0; translate: 0 calc(var(--mo-dy) * 2); } }
+
+/* Squelettes : plus lents et plus discrets (un souffle, pas un balayage). */
+:root .pj-skel { animation-duration: 2.2s; opacity: .4; }
+/* « Au travail » : barre fine, seule boucle admise (à poser sur un conteneur de 2 px : <div class="mo-work"><i></i></div>). */
+.mo-work { position: relative; height: 2px; overflow: hidden; border-radius: 1px; background: color-mix(in srgb, var(--text) 8%, transparent); }
+.mo-work > i { position: absolute; inset: 0 auto 0 0; width: 38%; border-radius: inherit; background: var(--text-3); animation: mo-work 1.4s var(--mo-in-out) infinite; }
+@keyframes mo-work { from { translate: -100% 0; } to { translate: 270% 0; } }
+
+/* Chiffres qui roulent, confirmation, erreur (jouées par motion.count / pulse / shake via WAAPI ; classes pour usage CSS direct). */
+.mo-pulse { animation: mo-pulse var(--mo-d4) var(--mo-spring); }
+@keyframes mo-pulse { 40% { scale: 1.04; } }
+.mo-shake { animation: mo-shake calc(320ms * var(--mo-k)) var(--mo-in-out); }
+@keyframes mo-shake { 20% { translate: -5px 0; } 45% { translate: 4px 0; } 70% { translate: -2px 0; } }
+:root .shake { animation: mo-shake calc(320ms * var(--mo-k)) var(--mo-in-out); }
+[data-mo="count"] { display: inline-block; font-variant-numeric: tabular-nums; }
+
+/* Entrée d'un nouveau venu dans un fil ou une liste : un cran plus sobre que les blocs de vue. */
+.mo-new { will-change: transform, opacity; }
+
+/* ---------- 6. Glisser-déposer ---------- */
+:root :is(.mo-drop, [data-mo-drop]) { transition: border-color var(--mo-d2) var(--mo-out), background-color var(--mo-d2) var(--mo-out), box-shadow var(--mo-d3) var(--mo-out), scale var(--mo-d4) var(--mo-spring); }
+:root :is(.mo-drop, [data-mo-drop]):is(.over, .mo-over, [data-over], .drag, .dragover) { border-color: var(--text-3); background-color: var(--hover); box-shadow: 0 0 0 3px var(--hover); scale: 1.004; }
+/* Kanban : la carte saisie se soulève, la colonne survolée se creuse. */
+:root .kb-card { transition: box-shadow var(--mo-d2) var(--mo-out), border-color var(--mo-d2) var(--mo-out), opacity var(--mo-d2) var(--mo-out), scale var(--mo-d4) var(--mo-spring); }
+:root .kb-card:active { scale: 1.015; box-shadow: 0 8px 20px -10px rgba(0, 0, 0, .35); }
+:root .kb-card.dragging { scale: .98; opacity: .4; }
+:root .kb-col.over { box-shadow: inset 0 0 0 1px var(--border-2); }
+:root .kb-cards { transition: background-color var(--mo-d2) var(--mo-out); }

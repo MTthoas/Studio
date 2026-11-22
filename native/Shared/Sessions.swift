@@ -13,11 +13,14 @@ final class ClaudeSessions {
         /// Outils d'écriture : fichier touché et extraits avant/après. Délégation (Agent, Task) : destinataire et consigne donnée.
         /// Tous facultatifs et absents du JSON quand ils sont vides, pour ne pas casser les anciens clients.
         var file = ""; var old = ""; var new = ""; var to = ""; var body = ""
+        /// Prompt : chemins des images jointes (AgentImages), que la page relit par `agent` / `image`.
+        var images: [String] = []
         var json: [String: Any] {
             var d: [String: Any] = ["at": at, "kind": kind, "text": text]
             if add > 0 { d["add"] = add }; if del > 0 { d["del"] = del }
             if !file.isEmpty { d["file"] = file }; if !old.isEmpty { d["old"] = old }; if !new.isEmpty { d["new"] = new }
             if !to.isEmpty { d["to"] = to }; if !body.isEmpty { d["body"] = body }
+            if !images.isEmpty { d["images"] = images }
             return d
         }
     }
@@ -110,12 +113,14 @@ final class ClaudeSessions {
             // (voir Sealed, dans Agents.swift). Rien de ce bloc n'est lu ni renvoyé à la page.
             var shown = c
             if let r = shown.range(of: "\n\n<notes-liees>\n") { shown = String(shown[..<r.lowerBound]) }
+            // Images jointes : le bloc qui liste leurs chemins n'est pas affiché ; les chemins vont à la page, qui montre des vignettes.
+            let pics = AgentImages.split(shown); shown = pics.text
             let text = shown.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty, !text.hasPrefix("<") else { return }
             st.prompts += 1; st.lastPrompt = clip(text, 300)
             if !ts.isEmpty { st.active = ts }
             if st.firstPrompt.isEmpty { st.firstPrompt = st.lastPrompt; st.firstFull = clip(text, 2000) }
-            push(st, Action(at: ts, kind: "prompt", text: clip(text, 4000)))
+            push(st, Action(at: ts, kind: "prompt", text: clip(text, 4000), images: pics.paths))
             if (e["isSidechain"] as? Bool) != true, !ts.isEmpty, !text.hasPrefix("[Request interrupted") {
                 st.log.append(Action(at: ts, kind: "prompt", text: clip(text, 6000)))
                 if st.log.count > 4000 { st.log.removeFirst(st.log.count - 4000) }

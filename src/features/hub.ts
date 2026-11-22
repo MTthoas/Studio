@@ -27,6 +27,8 @@ import * as shopUI from './commerce/shop.ts';
 import * as adsUI from './commerce/ads.ts';
 import * as pluginsUI from './plugins.ts';
 import * as registry from '../plugins/registry.ts';
+import * as horizon from '../ui/horizon.ts';
+import * as motion from '../ui/motion.ts';
 import type { AppEvent } from '../core/events.ts';
 import { renderMarkdown, esc, plain } from '../lib/markdown.ts';
 import { fold } from '../lib/fuzzy.ts';
@@ -576,7 +578,11 @@ function refreshConnections(): void {
 function tabLook() {
   const t = app.theme();
   return `<section class="cx-sec"><h4>Thème</h4><div class="look">${[['auto', 'Système'], ['light', 'Clair'], ['dark', 'Sombre']].map(([k, l]) => `<label class="look-opt"><input type="radio" name="theme" value="${k}"${t === k ? ' checked' : ''}><span class="look-prev look-${k}"><i></i><i></i><i></i></span><span>${l}</span></label>`).join('')}</div></section>
-    <section class="cx-sec"><h4>Fond</h4><div class="look">${[['sky', 'Ciel'], ['plain', 'Uni']].map(([k, l]) => `<label class="look-opt"><input type="radio" name="backdrop" value="${k}"${app.backdrop() === k ? ' checked' : ''}><span class="look-prev look-${k}"><i></i><i></i><i></i></span><span>${l}</span></label>`).join('')}</div></section>`;
+    <section class="cx-sec"><h4>Fond</h4><div class="look">${[['horizon', 'Horizon'], ['image', 'Mon image'], ['sky', 'Ciel'], ['plain', 'Uni']].filter(([k]) => k !== 'image' || horizon.hasImage()).map(([k, l]) => `<label class="look-opt"><input type="radio" name="backdrop" value="${k}"${app.backdrop() === k ? ' checked' : ''}><span class="look-prev look-${k}"><i></i><i></i><i></i></span><span>${l}</span></label>`).join('')}</div>
+      <p class="look-note">Horizon est un paysage calculé dans l’app. Pour un environnement à toi, choisis une image (générée par une IA, une photo…) : elle reste sur cet appareil.</p>
+      <div class="cx-row"><label class="btn look-file">${horizon.hasImage() ? 'Changer d’image…' : 'Choisir une image…'}<input type="file" name="backdrop-file" accept="image/png,image/jpeg,image/webp,image/avif"></label>${horizon.hasImage() ? '<button class="btn btn-ghost" data-v="backdrop-clear">Retirer l’image</button>' : ''}</div></section>
+    <section class="cx-sec"><h4>Mouvement</h4><div class="ag-seg" role="radiogroup" aria-label="Mouvement">${[['full', 'Complet'], ['subtle', 'Discret'], ['off', 'Aucun']].map(([k, l]) => `<label><input type="radio" name="motion" value="${k}"${motion.level() === k ? ' checked' : ''}><span>${l}</span></label>`).join('')}</div>
+      <p class="look-note">Transitions entre vues, indicateurs glissants, menus et fenêtres. « Discret » garde les fondus ; le réglage « Réduire les animations » du système coupe tout.</p></section>`;
 }
 // ---------- Mises à jour ----------
 // La version web se met à jour seule ; l'app Mac se met à jour d'ici, depuis les Releases du dépôt (voir core/update.ts).
@@ -783,6 +789,7 @@ async function onConnClick(e: MouseEvent) {
   const fg = t.closest('[data-dev-forget]'); if (fg) { if (await confirmBox({ title: 'Oublier cet appareil ?', text: 'La liaison sera supprimée ici. Fais de même sur l’autre appareil.', ok: 'Oublier', danger: true })) await link.forget(fg.dataset.devForget ?? ''); return; }
   const pk = t.closest('[data-dev-packet]'); if (pk) { const dev = link.devices().find(d => d.secret === pk.dataset.devPacket); if (dev) await sendPacket(dev); return; }
   const v = t.closest('[data-v]')?.dataset.v; if (!v) return;
+  if (v === 'backdrop-clear') { await horizon.clearImage(); if (app.backdrop() === 'image') app.setBackdrop('horizon'); refreshConnections(); return; }
   if (v === 'lock') { await app.flushAll(); try { sessionStorage.setItem('studio.manualLock', '1'); } catch { /* ignoré */ } vault.lock(); }
   if (v === 'pw') {
     const old = await askPassword({ title: 'Mot de passe actuel', text: 'Saisis le mot de passe actuel du coffre.' }); if (!old) return;
@@ -866,6 +873,11 @@ function onConnChange(e: Event): void {
   if (t.name === 'provider') ai.setConfig({ provider: t.value as ai.Provider });
   else if (t.name === 'theme') app.setTheme(t.value);
   else if (t.name === 'backdrop') app.setBackdrop(t.value);
+  else if (t.name === 'motion') motion.setLevel(t.value as motion.Level);
+  else if (t.name === 'backdrop-file') {
+    const f = t.files?.[0]; t.value = '';
+    if (f) void horizon.setImage(f).then(() => { app.setBackdrop('image'); refreshConnections(); toast('Image posée en fond'); }, e => toast(errMsg(e)));
+  }
   else if (t.dataset.cfg === 'budgetM') { ai.setConfig({ budgetM: Math.max(0, Number(t.value) || 0) }); refreshConnections(); }
   else if (t.dataset.cfg) ai.setConfig({ [t.dataset.cfg]: t.value.trim() });
   else if (t.matches('[data-autolock]')) vault.setSetting('autolock', Number(t.value));

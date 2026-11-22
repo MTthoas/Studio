@@ -13,6 +13,9 @@
 @import "./mobile.css";
 @import "./guard.css";
 @import "./sky.css";
+@import "./attach.css";
+@import "./stack.css";
+@import "./motion.css";
 @font-face { font-family: "Inter"; font-style: normal; font-weight: 400 700; font-display: swap; src: url(../fonts/inter.woff2) format("woff2"); }
 
 :root {
@@ -683,6 +686,10 @@ body.focus .note-head { padding-top: 6vh; }
 .look-dark { background: #08090a; } .look-dark i { background: #16171a; border: 1px solid #26272b; }
 .look-auto { background: linear-gradient(135deg, #f2f2f3 50%, #08090a 50%); } .look-auto i { background: rgba(127, 127, 127, .35); }
 .look-sky { background: #050506; } .look-sky i { background: #a7bbbb; border: 1px solid rgb(255 255 255 / .5); } .look-sky i:first-child { background: none; border: 0; }
+.look-horizon { background: linear-gradient(#020204 0 26%, #a06a22 27%, #2a1b0f 52%, #3d2f24); } .look-horizon i { background: #100f0e; border: 1px solid rgb(255 255 255 / .16); } .look-horizon i:first-child { background: rgb(4 4 5 / .5); border: 0; }
+.look-image { background: var(--look-image, repeating-linear-gradient(45deg, var(--surface-2) 0 6px, var(--bg) 6px 12px)) center / cover; } .look-image i { background: rgb(16 15 14 / .8); border: 1px solid rgb(255 255 255 / .16); } .look-image i:first-child { background: rgb(4 4 5 / .5); border: 0; }
+.look-file { position: relative; overflow: hidden; } .look-file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+.look-note { margin: 10px 0 0; color: var(--text-3); font-size: var(--t-1); max-width: 62ch; }
 .look-plain { background: #f3f3f2; } .look-plain i { background: #fff; border: 1px solid #e6e6e8; }
 .look-opt:has(input:checked) { color: var(--text); }
 .look-opt:has(input:checked) .look-prev { border-color: var(--text); box-shadow: 0 0 0 1px var(--text); }
