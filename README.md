@@ -176,11 +176,13 @@ Une note ou une tâche y appartient avec le tag `#projet/studio` — posé par l
 | **Docker** | Les conteneurs du projet sur ce Mac (en cours ou arrêtés, ports cliquables, ceux lancés par un agent) et ses images (app Mac) ; ceux du serveur sont dans l'onglet Serveur |
 | **Tâches · Notes** | Ce qui est tagué `#projet/<nom>`. L'onglet Notes commence par la note du projet, puis ses sous-notes et les notes taguées ; en dessous, les notes que la note du projet cite ou qui la citent (`[[Titre]]`), avec « Ranger ici » |
 | **Site** | Le site du projet : lancé **en local** depuis le Mac (adresse, pages vues, requêtes), **construit** (`build` et ses variantes `build:prod`…, notification à la fin), et vérifié **en ligne** (code, temps de réponse) |
+| **Mobile** | L'app mobile du projet (Expo, React Native, Flutter, Capacitor, Xcode, Gradle) : lancée sur un **simulateur iOS** ou un **émulateur Android** du Mac, avec l'**écran de l'appareil** en direct et ses réglages de test. L'onglet n'apparaît que si le projet a une app mobile |
 
 - Le **dossier local** est choisi dans le sélecteur de macOS et reste dans les réglages de l'app Mac : il n'est jamais écrit dans une note ni synchronisé. L'app n'en lit l'état Git qu'en lecture seule.
 - **Revue IA** : le diff est lu en local, montré, puis envoyé à l'IA branchée seulement après ton clic ; la revue peut être enregistrée comme note du projet.
 - **Sessions** : l'app Mac lit les journaux locaux de Claude Code (`~/.claude/projects/…`), en lecture seule ; rien ne quitte la machine.
 - **Site en local** (app Mac) : l'onglet Site cherche un site dans le dossier du projet (racine, `site/`, `web/`, `docs/`, `dist/`…). Un dossier avec un `index.html` est servi par Studio lui-même, sur `127.0.0.1` uniquement, avec le compte des pages vues, des requêtes et des données servies. Un projet Next.js, Astro, Vite, Nuxt ou SvelteKit est lancé avec son script (`npm run dev`, ou pnpm, yarn, bun selon le fichier de verrou) : Studio affiche l'adresse annoncée et la sortie du serveur. Tout s'arrête d'un clic, et à la fermeture de l'app. Le suivi du site en production (monitoring, consommation, visiteurs) viendra avec le serveur du projet.
+- **Mobile** (app Mac) : l'onglet Mobile cherche une app dans le dossier du projet (racine, `mobile/`, `app/`, `ios/`, `android/`, `apps/mobile/`…) et la lance sur l'appareil choisi : `expo start --ios`, `react-native run-ios`, `flutter run` (avec **Recharger** à chaud), `cap run`, un build Xcode suivi de son installation sur le simulateur, ou `./gradlew installDebug` ; une notification annonce la fin d'un build natif. La liste des appareils réunit les simulateurs iOS (Xcode) et les émulateurs Android (SDK dans `~/Library/Android/sdk` ou `ANDROID_HOME`) : Studio les démarre, les éteint, et montre l'écran de celui qui est choisi, rafraîchi toutes les deux secondes. À côté, ce qu'on vérifie sans cesse : apparence **claire ou sombre**, **taille du texte** (jusqu'aux tailles d'accessibilité), **barre d'état de démonstration** (9:41, réseau et batterie pleins), **lien profond** à ouvrir (`monapp://ecran`), **capture** en pleine définition sur le Bureau. Comme pour le site, la page ne transmet ni chemin ni commande, et rien de cela ne se pilote à distance. Les agents Claude Code lancés dans un dépôt qui contient une app mobile reçoivent une consigne en plus : penser zones sûres, clavier, mode sombre et grandes tailles de texte, et regarder l'écran du simulateur démarré (`xcrun simctl io booted screenshot`) plutôt que lancer un build natif.
 - **Docker** (app Mac, lecture seule) : Studio lit le moteur Docker par sa socket (Docker Desktop, OrbStack, Colima, Rancher Desktop), sans lancer `docker` ni aucun shell, et ne peut ni lancer, ni arrêter, ni supprimer quoi que ce soit. Un conteneur appartient au projet quand il a été lancé par Docker Compose ou un devcontainer depuis le dossier d'un de ses dépôts, ou depuis la copie isolée d'un agent (marqué « agent »), ou qu'il en monte un dossier ; une image, quand un de ses conteneurs l'utilise ou que Compose l'a construite pour lui. L'onglet se relit toutes les 5 secondes, la vue d'ensemble a sa carte, et l'**accueil** liste les conteneurs en cours du Mac avec leur projet.
 
 ### Agents Claude Code
@@ -400,7 +402,7 @@ src/                               TypeScript strict
                       review.ts (revue IA), sessions.ts (agents Claude Code, publication), notepick.ts (choix des notes à joindre),
                       subagents.ts (équipe de sous-agents du projet), autoteam.ts (spécialistes créés selon la consigne),
                       team.ts (bande Équipe, diffs en direct, fil Échanges),
-                      items.ts (notes et tâches créées par les agents), site.ts (site du projet lancé en local), docker.ts (conteneurs et images)
+                      items.ts (notes et tâches créées par les agents), site.ts (site du projet lancé en local), mobile.ts (app mobile, simulateurs, écran en direct), docker.ts (conteneurs et images)
     news.ts           nouveautés présentées après une mise à jour, fenêtre « mise à jour prête »
     permissions.ts    réglages des autorisations des agents Claude Code (commandes, web, notes et tâches, PATH), gardés sur le Mac
     automations.ts, help.ts, onboarding.ts
@@ -435,6 +437,7 @@ native/             apps Mac et iPhone (Swift) et leurs scripts de build
     SSHKeys.swift       clés SSH de Studio : trousseau, agent SSH privé
     ServerExtensions.swift  extensions du serveur : Docker, Kubernetes
     Sites.swift         site d'un projet en local : détection, serveur de fichiers, script dev, builds notifiés
+    Mobile.swift        app mobile d'un projet : détection, simulateurs et émulateurs, lancement, écran, réglages de test
     Docker.swift        conteneurs et images Docker du Mac (lecture seule, par la socket du moteur)
     Models.swift        Ollama sur le Mac ou sur un serveur (par SSH) : état, installation, modèles, chat
   macOS/, iOS/        points d'entrée de chaque plateforme

@@ -158,6 +158,18 @@
         agent: a, actions: subActions[a.id], subagents: subs };
     }
     if (action === 'repos') return { repos: [], found: [], missing: [] };
+    if (action === 'mobile') {
+      // Onglet Mobile : une app Expo, deux simulateurs dont un démarré, un émulateur Android éteint ; l'écran n'est pas simulé.
+      if (msg.op === 'probe') return { folder: true, count: 1 };
+      if (msg.op === 'screen') return { ok: false, message: 'Écran non simulé' };
+      if (msg.op) return {};
+      return { folder: true, tools: { xcode: true, android: true },
+        apps: [{ rel: 'apps/mobile', kind: 'expo', label: 'Expo', platforms: ['ios', 'android'], commands: { ios: 'npx expo start --ios', android: 'npx expo start --android' } }],
+        devices: [{ id: 'SIM-1', name: 'iPhone 17 Pro', os: 'ios', runtime: 'iOS 26.5', booted: true, tablet: false },
+          { id: 'SIM-2', name: 'iPhone 17 Pro Max', os: 'ios', runtime: 'iOS 26.5', booted: false, tablet: false },
+          { id: 'SIM-3', name: 'iPad Air 11 pouces (M3)', os: 'ios', runtime: 'iOS 26.5', booted: false, tablet: true },
+          { id: 'avd:Pixel_9', name: 'Pixel 9', os: 'android', runtime: 'Émulateur', booted: false, tablet: false }] };
+    }
     if (action === 'branches') return { branches: ['main'] };
     if (action === 'journal') return { stats: [] };
     return undefined;

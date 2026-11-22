@@ -53,6 +53,17 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'onglet-mobile-20261122', date: '2026-11-22', icon: 'phone', hue: 'blue', mac: true,
+    title: 'Onglet Mobile des projets',
+    lead: 'Studio lance l’app mobile du projet sur un simulateur du Mac et en montre l’écran en direct.',
+    bits: [
+      ['phone', 'App détectée', 'Expo, React Native, Flutter, Capacitor, Xcode ou Gradle, lancée d’un clic sur iOS ou Android'],
+      ['devices', 'Appareils', 'simulateurs iOS et émulateurs Android : démarrer, éteindre, voir l’écran sans quitter Studio'],
+      ['moon', 'Réglages de test', 'clair ou sombre, taille du texte, barre d’état `9:41`, lien profond, capture sur le Bureau'],
+      ['bot', 'Agents avertis', 'dans un dépôt mobile, ils regardent l’écran du simulateur au lieu de lancer un build'],
+    ],
+    where: ['Projets', 'un projet', 'Mobile'],
+    visual: { kind: 'flow', steps: [['App détectée', 'gray', 'phone'], ['Simulateur', 'blue', 'devices'], ['Écran en direct', 'green', 'eye']] } },
   { id: 'fond-ciel-menus-barre-20261122', date: '2026-11-22', icon: 'palette', hue: 'teal',
     title: 'Fond Ciel et menus d’agents',
     lead: 'Les colonnes flottent sur un ciel en pixels, et chaque conversation de la barre latérale a son menu d’actions.',

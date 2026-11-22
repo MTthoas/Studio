@@ -463,7 +463,9 @@ final class Agents {
         if !addDirs.isEmpty { args += ["--add-dir"] + addDirs }
         // Notes et tâches du projet : permises par les réglages, jamais pour l'orchestrateur (résolution de conflits).
         let items = AgentPermissions.projectItems && body["internal"] as? Bool != true
-        let added = [AgentTuning.prompt(mode: mode, tests: tests, items: items, shell: shell), team?.prompt(edit: mode == "edit") ?? "", repoNote, groupNote, board?.prompt ?? "", browse?.prompt ?? ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        // App mobile dans le dossier : conseils et moyen de voir l'écran du simulateur (jamais sur serveur : pas de simulateur).
+        let mobileNote = onServer || body["internal"] as? Bool == true ? "" : Mobile.shared.agentNote(dir: cwd, shell: shell)
+        let added = [AgentTuning.prompt(mode: mode, tests: tests, items: items, shell: shell), team?.prompt(edit: mode == "edit") ?? "", repoNote, mobileNote, groupNote, board?.prompt ?? "", browse?.prompt ?? ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
         if !added.isEmpty { args += ["--append-system-prompt", added] }
         args += ["--allowedTools"] + AgentPermissions.allowed(tools: tools, commands: tests, shell: shell) + (browse == nil ? [] : ["mcp__\(AgentPermissions.browserServer)"])
 

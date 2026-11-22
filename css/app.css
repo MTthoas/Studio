@@ -10,6 +10,7 @@
 @import "./news.css";
 @import "./pulse.css";
 @import "./activity.css";
+@import "./mobile.css";
 @import "./guard.css";
 @import "./sky.css";
 @font-face { font-family: "Inter"; font-style: normal; font-weight: 400 700; font-display: swap; src: url(../fonts/inter.woff2) format("woff2"); }

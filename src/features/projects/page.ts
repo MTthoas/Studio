@@ -16,6 +16,7 @@ import * as flux from './flux.ts';
 import * as sessions from './sessions.ts';
 import * as review from './review.ts';
 import * as site from './site.ts';
+import * as mobile from './mobile.ts';
 import * as docker from './docker.ts';
 import * as commerce from '../commerce/page.ts';
 import * as infra from './infra.ts';
@@ -153,10 +154,12 @@ const section = (id: string, title: string, ic: string, body: string, cls = '', 
 /** Sous-menus d'un projet (aussi affichés dans la barre latérale). */
 export const TABS: [string, string, string][] = [
   ['overview', 'Vue d’ensemble', 'home'], ['sessions', 'Claude Code', 'terminal'], ['code', 'Code', 'code'], ['flux', 'Flux', 'pr'], ['server', 'Serveur', 'server'], ['docker', 'Docker', 'container'],
-  ['tasks', 'Tâches', 'check'], ['notes', 'Notes', 'notes'], ['site', 'Site', 'link'], ['boutique', 'Boutique', 'shop'],
+  ['tasks', 'Tâches', 'check'], ['notes', 'Notes', 'notes'], ['site', 'Site', 'link'], ['mobile', 'Mobile', 'phone'], ['boutique', 'Boutique', 'shop'],
 ];
-/** Les onglets montrés pour ce projet : « Boutique » seulement s'il a une boutique ou un compte publicitaire (ou si on y est). */
-export const tabsOf = (p: Project, tab = ''): [string, string, string][] => TABS.filter(t => t[0] !== 'boutique' || tab === 'boutique' || (commerce.available() && commerce.concerns(p)));
+/** Les onglets montrés pour ce projet : « Boutique » seulement s'il a une boutique ou un compte publicitaire, « Mobile »
+ *  seulement s'il a un dépôt de rôle mobile ou une app mobile dans son dossier (ou si on y est). */
+export const tabsOf = (p: Project, tab = ''): [string, string, string][] => TABS.filter(t => t[0] === tab
+  || (t[0] === 'boutique' ? commerce.available() && commerce.concerns(p) : t[0] === 'mobile' ? mobile.concerns(p) : true));
 const curTab = (): string => { const t = app.viewState().tab; return t && TABS.some(x => x[0] === t) ? t : 'overview'; };
 const panelsHTML = (p: Project, tab: string) => registry.projectPanels(p, tab).map(x => section(x.id, x.title, x.icon, '<p class="nf-empty">Chargement…</p>', 'pj-panel')).join('');
 const card = (tab: string, title: string, ic: string, hue: string, body: string) => `<button class="pj-ov" data-pj-tab="${tab}" style="--c:var(--c-${hue})"><span class="pj-ov-h"><span class="pj-ico">${icon(ic)}</span>${esc(title)}${icon('chevronRight')}</span><span class="pj-ov-b" data-ov="${tab}">${body}</span></button>`;
@@ -180,6 +183,7 @@ function tabBody(p: Project, tab: string): string {
   if (tab === 'boutique') return '<div class="cm-box"></div>';
   if (tab === 'tasks') return `${section('tasks', 'Tâches', 'check', taskBox(p))}${panelsHTML(p, 'tasks')}`;
   if (tab === 'notes') return section('notes', 'Notes', 'notes', noteRows(p));
+  if (tab === 'mobile') return mobile.tabHTML(section);
   if (tab === 'site') return `${section('site-local', 'En local', 'terminal', site.localHTML())}${section('site', 'En ligne', 'link', siteHTML(p))}${section('site-prod', 'En production', 'server', site.soonHTML())}`;
   const notes = model.notesOf(p).length - 1;
   return `${folderBox}
@@ -356,11 +360,13 @@ async function agentsStrip(root: HTMLElement, p: Project): Promise<void> {
   box.innerHTML = list.map(x => `<button class="pj-agent" data-pj-agent="${esc(x.session)}"><i class="ss-live on"></i><span>${esc(x.prompt)}</span><em>${esc(x.lastText || 'Démarrage…')}</em>${icon('chevronRight')}</button>`).join('');
 }
 
+const tabsHTML = (p: Project, tab: string): string => tabsOf(p, tab).map(([k, l]) => `<button data-pj-tab="${k}" class="${k === tab ? 'sel' : ''}">${esc(l)}</button>`).join('');
+
 function detailHTML(p: Project, tab: string): string {
   return `<div class="pj-head" style="--c:var(--c-${p.hue})"><button class="lv-back" data-pj-open="">${icon('back')}Projets</button>
       <div class="pj-title"><span class="pj-dot"></span><h1>${esc(p.name)}</h1><button class="btn pj-note" data-pj="edit">${icon('notes')}Note du projet</button><button class="btn pj-note" data-pj="claude" title="Conversation bornée à ce projet : Claude ne voit que ses données">${icon('sparkle')}Claude</button></div>
       <div class="pj-links" data-k="${esc(`${model.formatRepos(p.stack)}|${p.site ?? ''}|${p.linear ?? ''}`)}">${p.stack.map(r => `<a class="lv-chip pj-chip-repo" href="https://github.com/${esc(r.name)}" target="_blank" rel="noopener" title="${esc(`${model.ROLES[r.role].label} · ${r.name}`)}">${model.roleTag(r.role, 'sm')}${esc(r.name.split('/')[1] ?? r.name)}</a>`).join('')}${p.linear ? `<span class="lv-chip">${icon('linear')}${esc(p.linear)}</span>` : ''}${p.site ? `<a class="lv-chip" href="${esc(p.site)}" target="_blank" rel="noopener">${icon('link')}${esc(p.site.replace(/^https:\/\//, ''))}</a>` : ''}<span class="lv-chip">#${esc(p.tag)}</span></div>
-      <nav class="lv-tabs pj-tabs">${tabsOf(p, tab).map(([k, l]) => `<button data-pj-tab="${k}" class="${k === tab ? 'sel' : ''}">${esc(l)}</button>`).join('')}</nav></div>
+      <nav class="lv-tabs pj-tabs">${tabsHTML(p, tab)}</nav></div>
     <div class="pj-body" data-tab="${tab}">${tabBody(p, tab)}</div>`;
 }
 
@@ -370,6 +376,12 @@ async function hydrate(root: HTMLElement, p: Project, tab: string): Promise<void
     void Promise.resolve().then(() => x.render(p)).then(html => fill(root, `[data-sec="${CSS.escape(x.id)}"] .pj-sec-body`, html))
       .catch(e => fill(root, `[data-sec="${CSS.escape(x.id)}"] .pj-sec-body`, `<p class="nf-empty">${esc(errMsg(e))}</p>`));
   }
+  // Une app mobile dans le dossier fait apparaître l'onglet Mobile (regardé une fois par session, sur le Mac).
+  void mobile.probe(p).then(changed => {
+    if (!changed) return;
+    app.renderSidebar();
+    const nav = $('.pj-tabs', root); if (nav?.isConnected) nav.innerHTML = tabsHTML(p, tab);
+  });
   if (tab === 'flux') { const box = $('.pj-flux', root); if (box) { void flux.mount(box, p); chart.bindTips(root); } }
   const f = await folderOf(p);
   fill(root, '.pj-folder-box', folderHTML(p, f));
@@ -379,6 +391,7 @@ async function hydrate(root: HTMLElement, p: Project, tab: string): Promise<void
     fill(root, '[data-sec="branches"] .pj-sec-body', list.length ? list.map(b => `<div class="pj-br"><code>${esc(b.name)}</code>${b.name === f?.branch ? '<em class="pj-badge approved">actuelle</em>' : ''}${b.upstream ? '' : '<em class="pj-badge">locale</em>'}<span>${b.ahead ? `↑${b.ahead} ` : ''}${b.behind ? `↓${b.behind}` : ''}</span><time>${esc(rel(Date.parse(b.date)))}</time></div>`).join('') : '<p class="hm-empty">Choisis le dossier du projet pour voir ses branches.</p>');
   }
   if (tab === 'site') site.mount(root, p);
+  if (tab === 'mobile') mobile.mount(root, p);
   if (tab === 'site' && p.site && native.available()) void checkSite(root, p);
   if (tab === 'server') void server(root, p);
   if (tab === 'docker') { const box = $('.dk-box', root); if (box) docker.mount(box, p, f?.path ?? null); }
