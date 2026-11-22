@@ -1,35 +1,42 @@
 /* ---------- Nouveautés et mise à jour prête (features/news.ts) ----------
-   Deux colonnes éditoriales : le texte, puis une image en grain (SVG en ligne, forme unique par nouveauté).
-   Tout est neutre : la teinte --nw-hue ne fait que nuancer très légèrement la forme. Ni dégradé ni halo. */
-.modal.nw { width: min(900px, 100%); height: min(580px, calc(100dvh - 40px)); padding: 0; overflow: hidden; display: flex; }
-.modal.nw.nw-solo { width: min(780px, 100%); height: min(500px, calc(100dvh - 40px)); }
-.nw .modal-body { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); width: 100%; min-height: 0; }
-.nw-text { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+   Une fiche à la fois : en-tête, phrase, puis un bento sur six colonnes (illustration du sujet sur papier en
+   grain, une tuile par point). Tout est neutre : filets fins, ni dégradé ni halo ; la teinte --nw-hue ne fait
+   que nuancer le papier, et seule une pastille d'état porte une couleur. */
+.modal.nw { width: min(940px, 100%); height: min(660px, calc(100dvh - 40px)); padding: 0; overflow: hidden; display: flex; }
+.modal.nw.nw-solo { width: min(860px, 100%); height: min(600px, calc(100dvh - 40px)); }
+.nw .modal-body { display: flex; width: 100%; min-height: 0; }
+.nw-text { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .nw-stage { flex: 1; min-height: 0; overflow-y: auto; }
-.nw-art { padding: 40px 40px 20px; animation: nw-in .18s ease-out; }
+.nw-art { display: flex; flex-direction: column; min-height: 100%; padding: 32px 32px 12px; animation: nw-in .18s ease-out; }
 @keyframes nw-in { from { opacity: 0; } }
 .nw-meta { margin: 0 0 10px; color: var(--text-3); font-size: var(--t-1); font-weight: 500; }
 .nw-meta i, .nw-where i { font-style: normal; margin: 0 6px; }
 .nw-head h3 { margin: 0 0 12px; font-size: var(--t-5); font-weight: 600; line-height: 1.25; letter-spacing: -.01em; }
-.nw-lead { margin: 0 0 20px; color: var(--text-2); font-size: var(--t-3); line-height: 1.55; }
+.nw-lead { margin: 0 0 20px; max-width: 64ch; color: var(--text-2); font-size: var(--t-3); line-height: 1.55; }
 .nw-art code { background: var(--code); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
 
-/* Points factuels : une liste simple, mot-clé en gras puis précision. */
-.nw-pts { margin: 0 0 18px; padding: 0 0 0 18px; display: flex; flex-direction: column; gap: 9px; line-height: 1.5; list-style: disc; }
-.nw-pts li::marker { color: var(--text-3); }
-.nw-pts b { font-weight: 600; margin-right: 6px; }
-.nw-pts span { color: var(--text-2); }
-.nw-flow { margin: 0 0 4px; color: var(--text-3); font-size: var(--t-1); line-height: 1.6; }
-.nw-flow span { margin-right: 10px; }
-.nw-flow i { font-style: normal; margin: 0 7px; }
-
-.nw-end { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--border); }
-.nw-end .btn { margin-left: auto; }
-.nw-where { margin: 0; color: var(--text-3); font-size: var(--t-1); }
-.nw-where span { margin-right: 10px; }
+/* Bento : l'illustration tient la moitié gauche sur deux rangées, deux tuiles à sa droite, puis une rangée de tuiles égales. */
+.nw-bento { flex: 1; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); grid-auto-rows: minmax(104px, auto); gap: 10px; }
+.nw-tile, .nw-fig { margin: 0; min-width: 0; border: 1px solid var(--border); border-radius: 12px; animation: nw-up .26s cubic-bezier(.2, .7, .2, 1) backwards; }
+.nw-tile { grid-column: span 3; padding: 14px 16px 15px; background: var(--surface); }
+.nw-tile.nw-tall { grid-row: span 2; }
+.nw-tile.nw-s2 { grid-column: span 2; }
+.nw-tile.nw-s6 { grid-column: span 6; }
+.nw-bento > :nth-child(2) { animation-delay: .04s; }
+.nw-bento > :nth-child(3) { animation-delay: .08s; }
+.nw-bento > :nth-child(4) { animation-delay: .12s; }
+.nw-bento > :nth-child(5) { animation-delay: .16s; }
+.nw-bento > :nth-child(6) { animation-delay: .2s; }
+@keyframes nw-up { from { opacity: 0; transform: translateY(6px); } }
+.nw-tile h4 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font-size: var(--t-2); font-weight: 600; line-height: 1.3; }
+.nw-tile h4 .ic { flex: none; width: 15px; height: 15px; color: var(--text-3); }
+.nw-tile p { margin: 0; color: var(--text-2); font-size: var(--t-2); line-height: 1.5; }
+/* Tuile « Où le trouver » : le fil de menus, puis le raccourci en bas. */
+.nw-here { display: flex; flex-direction: column; align-items: flex-start; height: 100%; }
+.nw-here .btn { margin-top: auto; }
+.nw-here .nw-where { margin-bottom: 10px; }
 .nw-where b { font-weight: 500; color: var(--text-2); }
 .nw-where b:last-child { color: var(--text); }
-.nw-hint { margin: 0; color: var(--text-3); font-size: var(--t-1); line-height: 1.6; }
 .nw-link { margin: 12px 0 0; font-size: var(--t-2); }
 .nw-link a { color: var(--text); font-weight: 500; text-decoration: underline; text-decoration-color: var(--border-2); text-underline-offset: 3px; }
 
@@ -49,25 +56,49 @@
 .nw-item:hover { background: var(--hover); color: var(--text); }
 .nw-item[aria-current] { background: var(--active); color: var(--text); }
 .nw-new { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
-.nw-foot { display: flex; align-items: center; gap: 8px; padding: 12px 20px 14px 40px; }
+.nw-foot { display: flex; align-items: center; gap: 8px; padding: 12px 20px 14px 32px; }
 .nw-foot [data-nw="all"] { margin-left: -10px; }
 .nw-count { flex: 1; color: var(--text-3); font-size: var(--t-1); font-variant-numeric: tabular-nums; }
 
-/* Image : papier grenu, forme organique ton sur ton. */
-.nw-fig { --nw-hue: var(--c-gray); position: relative; min-height: 0; overflow: hidden; border-left: 1px solid var(--border); background: var(--surface-2);
-  --nw-shape: color-mix(in srgb, var(--nw-hue) 9%, color-mix(in srgb, var(--text) 8%, var(--surface-2)));
-  --nw-fleck: color-mix(in srgb, var(--nw-hue) 10%, var(--text)); }
-.nw-svg { display: block; width: 100%; height: 100%; overflow: visible; /* le papier déborde du cadre pour couvrir tout le volet */ animation: nw-in .4s ease-out; }
-.nw-paper { fill: var(--nw-fleck); opacity: .08; }
-.nw-shape { fill: var(--nw-shape); }
-.nw-grain { fill: var(--nw-fleck); opacity: .5; }
+/* Illustration : papier grenu, puis la scène tirée du schéma de la nouveauté. */
+.nw-fig { --nw-hue: var(--c-gray); grid-column: span 3; grid-row: span 2; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; padding: 18px; min-height: 218px;
+  background: color-mix(in srgb, var(--nw-hue) 4%, var(--surface-2)); }
+.nw-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.nw-paper { fill: color-mix(in srgb, var(--nw-hue) 10%, var(--text)); opacity: .1; }
+.nw-sc { position: relative; min-width: 0; max-width: 100%; margin: 0; padding: 0; list-style: none; font-size: var(--t-3); --nw-line: color-mix(in srgb, var(--text) 30%, transparent); }
+.nw-sc ul { margin: 0; padding: 0; list-style: none; }
+.nw-sc .ic { flex: none; width: 16px; height: 16px; color: var(--text-3); }
+.nw-node { display: inline-flex; align-items: center; gap: 9px; max-width: 100%; padding: 9px 15px 9px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text-2); }
+.nw-node b, .nw-bar span, .nw-sc-panel li span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nw-node b { font-weight: 500; }
+/* Parcours : un escalier, chaque étape reliée à la précédente par un coude ; la dernière ressort. */
+.nw-sc-flow { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
+.nw-sc-flow li { position: relative; margin-left: calc(var(--k) * 36px); }
+.nw-sc-flow li + li::before { content: ''; position: absolute; left: -18px; top: -12px; width: 18px; height: calc(50% + 12px); border: solid var(--nw-line); border-width: 0 0 1px 1px; border-bottom-left-radius: 8px; }
+.nw-sc-flow li:last-child .nw-node { border-color: var(--nw-line); color: var(--text); }
+.nw-sc-flow li:last-child .ic { color: var(--text); }
+/* Éléments : l'icône de la fonction, reliée d'un trait au groupe de ce qu'elle réunit. */
+.nw-sc-hub { display: flex; flex-direction: column; align-items: center; }
+.nw-hub { display: grid; place-items: center; width: 46px; height: 46px; border: 1px solid var(--nw-line); border-radius: 10px; background: var(--surface); }
+.nw-sc .nw-hub .ic { width: 20px; height: 20px; color: var(--text); }
+.nw-sc-hub ul { position: relative; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 16px; padding: 12px; border: 1px dashed var(--nw-line); border-radius: 14px; }
+.nw-sc-hub ul::before { content: ''; position: absolute; left: 50%; top: -17px; height: 16px; border-left: 1px solid var(--nw-line); }
+/* Panneau d'exemple : une barre de titre, puis ses lignes ; l'état en point de couleur. */
+.nw-sc-panel { width: min(100%, 340px); font-size: var(--t-2); border: 1px solid var(--border); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.nw-bar { display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--text-3); font-size: var(--t-1); font-weight: 500; }
+.nw-sc-panel li { display: flex; align-items: center; gap: 9px; padding: 10px 12px; }
+.nw-sc-panel li + li { border-top: 1px solid var(--border); }
+.nw-sc-panel li b { flex: none; font-weight: 500; }
+.nw-sc-panel li span { flex: 1; color: var(--text-3); font-size: var(--t-1); text-align: right; }
+.nw-sc-panel li i { flex: none; width: 6px; height: 6px; border-radius: 50%; }
 
-@media (prefers-reduced-motion: reduce) { .nw-art, .nw-svg { animation: none; } }
-/* Fenêtre étroite : l'image passe au-dessus, basse. */
+@media (prefers-reduced-motion: reduce) { .nw-art, .nw-tile, .nw-fig { animation: none; } }
+/* Fenêtre étroite : une colonne, l'illustration en tête. */
 @media (max-width: 680px) {
-  .modal.nw, .modal.nw.nw-solo { height: min(640px, calc(100dvh - 40px)); }
-  .nw .modal-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: 88px minmax(0, 1fr); }
-  .nw-fig { order: -1; border-left: 0; border-bottom: 1px solid var(--border); }
-  .nw-art { padding: 22px 20px 14px; }
-  .nw-foot { padding-left: 20px; }
+  .modal.nw, .modal.nw.nw-solo { height: min(680px, calc(100dvh - 40px)); }
+  .nw-art { padding: 22px 16px 10px; }
+  .nw-bento { grid-template-columns: minmax(0, 1fr); grid-auto-rows: auto; }
+  .nw-bento > * { grid-column: auto !important; grid-row: auto !important; }
+  .nw-fig { min-height: 0; padding: 16px; }
+  .nw-foot { padding-left: 16px; }
 }
