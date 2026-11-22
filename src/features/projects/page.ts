@@ -587,6 +587,8 @@ export const sideServers = (pid: string) => infra.sideServers(pid);
 export const openServer = (pid: string, id: string): void => { const p = model.byId(pid); if (p) infra.use(p, id); };
 export const openSession =(pid: string, id: string | null, agent: string | null = null): void => sessions.select(id, pid, agent);
 /** Ouvre une conversation d'agent dans l'onglet Claude Code de son projet (depuis l'Espace agents). */
+/** Menu d'une conversation ou d'un sous-agent de la barre latérale. */
+export const sideMenu = sessions.sideMenu;
 export const openAgent = (pid: string, id: string): void => { sessions.select(id, pid); void go(pid, 'sessions'); };
 
 // ---------- Page ----------

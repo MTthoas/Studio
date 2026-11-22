@@ -9,7 +9,7 @@ import * as tuning from '../../integrations/tuning.ts';
 import * as github from '../../integrations/github/api.ts';
 import { esc, renderMarkdown } from '../../lib/markdown.ts';
 import { fold } from '../../lib/fuzzy.ts';
-import { icon, rel, modal, need, toast, confirmBox, errMsg, $, paintIfChanged } from '../../ui/kit.ts';
+import { icon, rel, modal, menu, need, toast, confirmBox, errMsg, $, paintIfChanged } from '../../ui/kit.ts';
 import * as review from './review.ts';
 import * as store from '../../core/store.ts';
 import * as model from './model.ts';
@@ -1462,6 +1462,52 @@ async function removeSession(p: Project, id: string): Promise<void> {
   toast('Conversation supprimée');
   if (selected === id) open(null);
   else { notify(); if (cur?.box.isConnected) void paint(cur.box, cur.p); }
+}
+
+/** Nom choisi à la main : il n'est plus jamais remplacé par le nommage automatique (`n` hors d'atteinte, voir `wantsName`). */
+function renameSession(id: string, now: string): void {
+  const m = modal({ title: 'Renommer la conversation', html: `<form class="ss-rename">
+    <input class="field" name="t" value="${esc(now)}" maxlength="80" spellcheck="false" autocomplete="off" autofocus required>
+    <div class="modal-actions"><button type="button" class="btn" data-x>Annuler</button><button class="btn btn-primary">Renommer</button></div></form>` });
+  const f = need<HTMLFormElement>('form', m.body), input = need<HTMLInputElement>('input', f);
+  input.select();
+  need('[data-x]', f).addEventListener('click', () => m.close());
+  f.addEventListener('submit', e => {
+    e.preventDefault();
+    const t = input.value.replace(/\s+/g, ' ').trim();
+    if (!t) return;
+    delete titles[id]; titles[id] = { t, n: 1e9 }; saveTitles();
+    if (id === selected) selTitle = t;
+    m.close(); notify();
+  });
+}
+
+/** Menu d'une conversation, ou d'un de ses sous-agents, dans la barre latérale (« … » au survol ou clic droit).
+ *  `go` fait la même chose qu'un clic sur la ligne. */
+export function sideMenu(anchor: Element | { x: number; y: number }, p: Project, id: string, agent: string, go: () => void): void {
+  if (agent) {
+    menu(anchor, [
+      { label: 'Ouvrir le fil', icon: 'eye', run: go },
+      { label: 'Retirer de la barre latérale', icon: 'pin', run: () => togglePin(p.id, id, agent) },
+    ]);
+    return;
+  }
+  const s = known.get(p.id)?.list.find(x => x.id === id), name = id === selected && selTitle ? selTitle : s ? nameOf(s) : 'Conversation';
+  const busy = runs.filter(r => r.session === id && live(r)), wt = s?.worktree || busy.find(r => r.worktree)?.worktree || '';
+  const copy = (act: string) => () => void copyAct(p, act, wt).then(() => { if (cur?.box.isConnected) void paint(cur.box, cur.p); });
+  menu(anchor, [
+    { label: 'Ouvrir', icon: 'eye', run: go },
+    { label: 'Renommer…', icon: 'pencil', run: () => renameSession(id, name) },
+    { label: 'Copier l’identifiant', icon: 'copy', hint: 'claude --resume', run: () => navigator.clipboard.writeText(id).then(() => toast('Identifiant copié'), () => toast('Copie impossible.')) },
+    ...(busy.length ? ['-' as const, { label: 'Arrêter l’agent', icon: 'stop', run: async () => { for (const r of busy) await bridge.call('agent', 'stop', { run: r.run }, 10000); toast('Agent arrêté'); } }] : []),
+    ...(wt && !remote ? ['-' as const, { label: 'Copie de l’agent' },
+      { label: 'Publier', icon: 'upload', hint: 'branche + pull request', run: copy('push') },
+      { label: 'Mettre à jour', icon: 'refresh', hint: 'depuis la branche principale', run: copy('sync') },
+      { label: 'Relire les changements', icon: 'eye', run: copy('review') },
+      { label: 'Ouvrir dans VS Code', icon: 'code', run: copy('vscode') },
+      { label: 'Supprimer la copie', icon: 'trash', danger: true, run: copy('discard') }] : []),
+    ...(remote ? [] : ['-' as const, { label: 'Supprimer la conversation', icon: 'trash', danger: true, run: () => removeSession(p, id) }]),
+  ]);
 }
 
 /** Ménage : choisir d'un coup les conversations au repos à supprimer (celles qui travaillent ne sont pas proposées). */

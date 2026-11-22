@@ -1,0 +1,38 @@
+/* Fond « Ciel » (`data-backdrop="sky"` sur <html>, choix `ui.backdrop` d'app.ts) : cadre noir, barre latérale posée sur le noir,
+   liste et contenu en panneaux arrondis qui flottent sur un ciel en pixels tramés (`--sky`, dessiné par src/ui/sky.ts). */
+:root[data-backdrop="sky"] { --frame: #050506; }
+:root[data-backdrop="sky"] #sidebar, :root[data-backdrop="sky"] #list, :root[data-backdrop="sky"] #main { grid-row: 1; }
+/* Le ciel : un pseudo-élément de la grille, sous les colonnes 2 et 3 (liste et contenu). */
+:root[data-backdrop="sky"] #app::before {
+  content: ""; grid-column: 2 / 4; grid-row: 1; border-radius: 14px; pointer-events: none;
+  background: var(--sky, none) center bottom / var(--sky-size, cover) no-repeat, linear-gradient(#7f99a2, #a7bbbb);
+  image-rendering: pixelated;
+}
+:root[data-backdrop="sky"][data-theme="dark"] #app::before { background: var(--sky, none) center bottom / var(--sky-size, cover) no-repeat, linear-gradient(#141c27, #2e3f52); }
+
+:root[data-backdrop="sky"] #list, :root[data-backdrop="sky"] #main {
+  position: relative; z-index: 1; margin: 12px; border: 1px solid rgb(255 255 255 / .45); border-radius: 12px;
+  box-shadow: 0 24px 60px -24px rgb(16 28 38 / .5), 0 2px 6px rgb(16 28 38 / .12);
+}
+:root[data-backdrop="sky"] #list { margin-right: 0; }
+:root[data-backdrop="sky"] #main { margin-left: 10px; }
+:root[data-backdrop="sky"] body:is(.no-list, .focus) #main { margin-left: 12px; border-radius: 12px; }
+:root[data-backdrop="sky"][data-theme="dark"] #list, :root[data-backdrop="sky"][data-theme="dark"] #main { border-color: rgb(255 255 255 / .08); box-shadow: 0 24px 60px -24px rgb(0 0 0 / .7); }
+
+/* Barre latérale : toujours sur le noir du cadre, donc avec les teintes du thème sombre, quel que soit le thème. */
+:root[data-backdrop="sky"] #sidebar {
+  color-scheme: dark; color: var(--text);
+  --bg: #0b0b0c; --surface: #141516; --surface-2: #1a1b1d;
+  --text: #f1f2f4; --text-2: #a2a6ad; --text-3: #6b6f77;
+  --border: #1c1d20; --border-2: #2a2c30;
+  --hover: rgba(255, 255, 255, .05); --active: rgba(255, 255, 255, .09); --sel: rgba(255, 255, 255, .07);
+  --btn: rgba(255, 255, 255, .07); --btn-hover: rgba(255, 255, 255, .1); --btn-active: rgba(255, 255, 255, .14);
+  --accent-text: #FF7A55; --code: rgba(255, 255, 255, .05);
+  --c-gray: #7c8088; --c-blue: #5ba2f5; --c-green: #4cb782; --c-amber: #f2c94c; --c-orange: #f2994a;
+  --c-red: #f26b70; --c-violet: #b38df0; --c-pink: #ec6cb9; --c-teal: #2fc6b0; --c-indigo: #8a93f0;
+}
+
+@media (max-width: 640px) {
+  :root[data-backdrop="sky"] #app::before { display: none; }
+  :root[data-backdrop="sky"] #list, :root[data-backdrop="sky"] #main, :root[data-backdrop="sky"] body:is(.no-list, .focus) #main { margin: 0; border: 0; border-radius: 0; box-shadow: none; }
+}
