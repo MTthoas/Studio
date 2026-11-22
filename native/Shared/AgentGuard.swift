@@ -90,10 +90,79 @@ final class AgentGuard {
 
     /// Ce qu'une commande s'apprête à faire de risqué (`delete` ou `install`, et sa description), ou nil.
     static func risk(_ command: String) -> (kind: String, what: String)? {
+        let command = scanned(command)
         let r = NSRange(command.startIndex..., in: command)
         for (re, what) in deletes where re.firstMatch(in: command, range: r) != nil { return ("delete", what) }
         for (re, what) in installs where re.firstMatch(in: command, range: r) != nil { return ("install", what) }
         return nil
+    }
+
+    // MARK: Texte qui n'est pas du code
+
+    /// Programmes qui exécutent du texte passé entre guillemets ou par `<<` : avec eux, tout le texte compte.
+    private static let runsText = try? NSRegularExpression(pattern: at + #"(?:sh|bash|zsh|dash|ksh|fish|eval|source|python[\d.]*|node|deno|bun|ruby|perl|php|awk|gawk|osascript|swift|xargs|ssh|parallel|watch|script|su|doas)\b"#, options: [.anchorsMatchLines])
+
+    /// La commande sans le texte qui n'est que des données : corps des `<<` (`bodies`), puis contenu des guillemets en plus
+    /// (`plain`). Un message écrit sur le tableau (`cat >> principal.md <<'EOF'`, `echo "… npm install …"`) ne déclenche
+    /// plus de demande. Un guillemet qui contient `$(` ou un accent grave est gardé : il s'exécute.
+    private static func strip(_ s: String) -> (bodies: String, plain: String) {
+        let c = Array(s)
+        var bodies = "", plain = "", i = 0, pending: [(word: String, tabs: Bool)] = []
+        func put(_ x: String, plain keep: Bool = true) { bodies += x; if keep { plain += x } }
+        while i < c.count {
+            let ch = c[i]
+            if ch == "\\", i + 1 < c.count { put(String(c[i...i + 1])); i += 2; continue }
+            if ch == "'" || ch == "\"" {
+                var j = i + 1
+                while j < c.count, c[j] != ch { if ch == "\"" && c[j] == "\\" { j += 1 }; j += 1 }
+                let inner = String(c[min(i + 1, c.count)..<min(j, c.count)])
+                let live = ch == "\"" && (inner.contains("$(") || inner.contains("`"))
+                put(String(ch)); put(inner, plain: live); if j < c.count { put(String(ch)) }
+                i = j + 1; continue
+            }
+            if ch == "<", i + 1 < c.count, c[i + 1] == "<", i + 2 >= c.count || c[i + 2] != "<", i == 0 || c[i - 1] != "<" {
+                var j = i + 2, tabs = false
+                if j < c.count, c[j] == "-" { tabs = true; j += 1 }
+                while j < c.count, c[j] == " " || c[j] == "\t" { j += 1 }
+                var word = ""
+                if j < c.count, c[j] == "'" || c[j] == "\"" {
+                    let q = c[j]; j += 1
+                    while j < c.count, c[j] != q { word.append(c[j]); j += 1 }
+                    j += 1
+                } else {
+                    while j < c.count, !" \t\n;&|<>()".contains(c[j]) { if c[j] != "\\" { word.append(c[j]) }; j += 1 }
+                }
+                put(String(c[i..<min(j, c.count)]))
+                if !word.isEmpty { pending.append((word, tabs)) }
+                i = j; continue
+            }
+            if ch == "\n", !pending.isEmpty {
+                put("\n"); i += 1
+                for d in pending {
+                    while i < c.count {
+                        var e = i; while e < c.count, c[e] != "\n" { e += 1 }
+                        var line = String(c[i..<e]); i = min(e + 1, c.count)
+                        if d.tabs { line = String(line.drop { $0 == "\t" }) }
+                        if line == d.word { break }
+                    }
+                }
+                pending = []; continue
+            }
+            put(String(ch)); i += 1
+        }
+        return (bodies, plain)
+    }
+
+    /// Le texte sur lequel trier : sans les données, sauf si un programme de la ligne exécute du texte.
+    private static func executes(_ plain: String) -> Bool {
+        runsText?.firstMatch(in: plain, range: NSRange(plain.startIndex..., in: plain)) != nil
+    }
+
+    private static func scanned(_ command: String) -> String {
+        let s = strip(command)
+        guard executes(s.plain) else { return s.plain }
+        // Texte exécuté (`bash -c 'rm …'`, `ssh hôte "rm …"`) : chaque guillemet ouvre une commande.
+        return command.replacingOccurrences(of: "'", with: ";").replacingOccurrences(of: "\"", with: ";")
     }
 
     // MARK: Suppressions chez soi
@@ -106,9 +175,15 @@ final class AgentGuard {
     }
 
     /// Découpe une ligne de shell en commandes (séparées par `;` `&` `|` `(` `)` et retours à la ligne), chacune en mots,
-    /// guillemets et `\` résolus, redirections retirées. nil si la ligne contient ce qu'on ne sait pas suivre (`<<`).
+    /// guillemets et `\` résolus, redirections retirées. nil si la ligne contient ce qu'on ne sait pas suivre.
     private static func segments(_ command: String) -> [[Word]]? {
-        if command.contains("<<") { return nil }
+        var command = command
+        if command.contains("<<") {
+            // Corps des `<<` retirés s'ils ne sont que des données ; sinon on ne sait pas suivre.
+            let s = strip(command)
+            guard !executes(s.plain) else { return nil }
+            command = s.bodies
+        }
         var out: [[Word]] = [], seg: [Word] = [], w = Word(), has = false, skip = false
         var quote: Character? = nil, escaped = false
         func endWord() {
