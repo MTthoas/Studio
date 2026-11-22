@@ -55,8 +55,8 @@ import type { Graph, GraphInput } from './lib/graph.ts';
 type Backdrop = 'sky' | 'plain';
 interface UiState {
   view: ViewState; id: string | null; mode: 'edit' | 'split' | 'read'; side: boolean; theme: string; /** Fond : `plain` (uni, défaut) ou `sky` (ciel en pixels, css/sky.css). */ backdrop: Backdrop; tagsOpen: boolean; /** Groupe « Plus » de la barre latérale déplié. */ moreOpen: boolean;
-  /** Section « Arborescence » de la barre latérale dépliée, et notes dont les sous-notes y sont affichées. */
-  treeSec: boolean; treeOpen: string[];
+  /** Notes dont les sous-notes sont dépliées dans l’arborescence (sous « Notes » dans la barre latérale). */
+  treeOpen: string[];
 }
 /** Note ouverte dans l'éditeur et ses éléments. */
 interface Editor {
@@ -82,7 +82,7 @@ const editing = (): OpenEditor | null => (ed && ed.ta ? ed as OpenEditor : null)
 
 const read = <T>(k: string, d: T): T => { try { return (JSON.parse(localStorage.getItem(k) || 'null') as T | null) ?? d; } catch { return d; } };
 const write = (k: string, v: unknown): void => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* stockage indisponible */ } };
-const ui: UiState = Object.assign({ view: { type: 'home' }, id: null, mode: 'split', side: true, theme: 'auto', backdrop: 'plain', tagsOpen: true, moreOpen: false, treeSec: true, treeOpen: [] } as UiState, read<Partial<UiState>>('carnet.ui', {}));
+const ui: UiState = Object.assign({ view: { type: 'home' }, id: null, mode: 'split', side: true, theme: 'auto', backdrop: 'plain', tagsOpen: true, moreOpen: false, treeOpen: [] } as UiState, read<Partial<UiState>>('carnet.ui', {}));
 const saveUI = () => write('carnet.ui', ui);
 // Les fonds « Horizon » et « Mon image » ont été retirés : qui les avait retrouve le Ciel.
 // Uni par défaut : le ciel ne revient que s'il a été choisi depuis (drapeau studio.backdrop.v3, lu aussi par boot.ts).
@@ -96,7 +96,7 @@ const SC = {
 };
 const VIEWS: Record<string, { label: string; icon: string }> = {
   home: { label: 'Accueil', icon: 'home' }, workspace: { label: 'Espace agents', icon: 'board' }, models: { label: 'Modèles', icon: 'cpu' }, commerce: { label: 'Boutiques', icon: 'shop' }, claude: { label: 'Claude', icon: 'sparkle' }, agents: { label: 'Automatisations', icon: 'bot' }, help: { label: 'Aide', icon: 'help' }, projets: { label: 'Projets', icon: 'folder' }, settings: { label: 'Réglages', icon: 'gear' },
-  today: { label: 'Aujourd’hui', icon: 'today' }, journal: { label: 'Journal', icon: 'journal' }, tasks: { label: 'Tâches', icon: 'check' }, linear: { label: 'Linear', icon: 'linear' }, github: { label: 'GitHub', icon: 'github' }, all: { label: 'Toutes les notes', icon: 'notes' },
+  today: { label: 'Aujourd’hui', icon: 'today' }, journal: { label: 'Journal', icon: 'journal' }, tasks: { label: 'Tâches', icon: 'check' }, linear: { label: 'Linear', icon: 'linear' }, github: { label: 'GitHub', icon: 'github' }, all: { label: 'Notes', icon: 'notes' },
   inbox: { label: 'Boîte de réception', icon: 'inbox' }, ephemeral: { label: 'Éphémères', icon: 'hourglass' },
   graph: { label: 'Graphe', icon: 'graph' }, trash: { label: 'Corbeille', icon: 'trash' },
 };
@@ -202,7 +202,7 @@ async function openByTitle(title: string) {
 // ---------- Rendu : barre latérale ----------
 function renderSidebar() {
   const idx = store.index(), v = ui.view;
-  const count: Record<string, number> = { inbox: idx.live.filter(n => n.inbox).length, tasks: todo.openCount(), linear: notifs.unreadCount(), github: github.unseenCount(), ephemeral: idx.live.filter(n => n.expiresAt).length };
+  const count: Record<string, number> = { tasks: todo.openCount(), linear: notifs.unreadCount(), github: github.unseenCount(), ephemeral: idx.live.filter(n => n.expiresAt).length };
   const item = (type: string) => `<button class="side-item${v.type === type ? ' sel' : ''}" data-view="${type}">${icon(VIEWS[type]?.icon ?? 'notes')}<span>${VIEWS[type]?.label ?? type}</span>${count[type] ? `<span class="side-count">${count[type]}</span>` : ''}</button>`;
   const tags = [...idx.tags].filter(([t]) => !t.startsWith('projet/')).sort((a, b) => a[0].localeCompare(b[0], 'fr'));
   const devs = vault.isOpen() ? link.devices().length : 0;
@@ -217,7 +217,7 @@ function renderSidebar() {
       <button class="icon-btn" data-act="new" title="Nouvelle note (${keys(SC.newNote)})" aria-label="Nouvelle note">${icon('compose')}</button>
     </div>
     <div class="side-scroll">
-      <div class="side-group">${item('home')}${item('inbox')}${item('today')}${item('all')}</div>
+      <div class="side-group">${item('home')}${item('all')}${treeHTML(idx.live)}</div>
       <div class="side-group side-gap">${projectsPage.claudeAvailable() ? item('workspace') : ''}${item('projets')}${projectsModel.projects().slice(0, 8).map(p => {
         const open = v.type === 'projets' && v.project === p.id, tab = v.tab ?? 'overview';
         // Sous « Claude Code » : les conversations récentes du projet, celle qui est ouverte en surbrillance.
@@ -232,7 +232,6 @@ function renderSidebar() {
               // Sous la conversation : ses sous-agents épinglés, et celui dont on lit le fil.
               + s.subs.map(a => `<button class="side-item side-sub4${tab === 'sessions' && a.sel ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="sessions" data-pj-session="${esc(s.id)}" data-pj-sub="${esc(a.id)}" title="Sous-agent : ${esc(a.title)}"><i class="ss-live${a.live ? ' on' : ''}"></i><span>${esc(a.title)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('')).join('') : '')).join('') : '');
       }).join('')}</div>
-      ${treeHTML(idx.live)}
       ${tags.length ? `<button class="side-label" data-act="tags" aria-expanded="${ui.tagsOpen}">${icon('chevron')}Tags</button>${ui.tagsOpen ? `<div class="side-group">${tags.map(([t, c]) => `<button class="side-item${v.type === 'tag' && v.tag === t ? ' sel' : ''}" data-tag="${esc(t)}"><i class="tag-dot" style="--c:var(--c-${hue(t)})"></i><span>${esc(t)}</span><span class="side-count">${c}</span></button>`).join('')}</div>` : ''}` : ''}
       <button class="side-label" data-act="more-views" aria-expanded="${moreOpen}">${icon('chevron')}Plus${!moreOpen && moreCount ? `<span class="side-count">${moreCount}</span>` : ''}</button>${moreOpen ? `<div class="side-group">${more.map(item).join('')}</div>` : ''}
     </div>
@@ -247,7 +246,7 @@ function renderSidebar() {
   plugins.refresh(); // #plug-side, redessiné aussi seul par les plugins
 }
 
-// Arborescence des sous-notes : chaque note qui en a, à partir des racines, dépliable (ui.treeOpen).
+// Arborescence des sous-notes, rangée sous « Notes » : chaque note qui en a, à partir des racines, dépliable (ui.treeOpen).
 const byTitle = (a: Note, b: Note) => titleOf(a).localeCompare(titleOf(b), 'fr', { numeric: true }) || a.created - b.created;
 function treeHTML(live: Note[]): string {
   const kids = new Map<string, Note[]>();
@@ -262,7 +261,7 @@ function treeHTML(live: Note[]): string {
       + `${icon(n.enc ? 'lock' : 'notes')}<span>${esc(titleOf(n))}</span>${ch.length ? `<span class="side-count">${ch.length}</span>` : ''}</button>`
       + (open ? ch.map(c => branch(c, d + 1)).join('') : '');
   };
-  return `<button class="side-label" data-act="tree" aria-expanded="${ui.treeSec}">${icon('chevron')}Arborescence</button>${ui.treeSec ? `<div class="side-group">${roots.map(r => branch(r, 0)).join('')}</div>` : ''}`;
+  return roots.map(r => branch(r, 1)).join('');
 }
 
 /** Clic sur une ligne de projet de la barre latérale (projet, onglet, conversation, sous-agent, serveur). */
@@ -1174,7 +1173,6 @@ async function onClick(e: MouseEvent): Promise<void> {
   if (cmd) { await savedCommands.copy(cmd.dataset.cmdCopy ?? ''); return; }
   const anchor = t.closest('[data-act]'), act = anchor?.dataset.act, n = store.get(ui.id);
   if (anchor && act) {
-    if (act === 'tree') { ui.treeSec = !ui.treeSec; saveUI(); renderSidebar(); return; }
     if (act === 'new') { await newNote(); return; }
     if (act === 'workspace') { workspaceMenu(anchor); return; }
     if (act === 'more-views') { ui.moreOpen = !ui.moreOpen; saveUI(); renderSidebar(); return; }

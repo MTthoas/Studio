@@ -158,13 +158,14 @@ export interface SideSub { id: string; title: string; live: boolean; sel: boolea
 /** Conversations récentes d'un projet, pour la barre latérale, chacune avec ses sous-agents épinglés (et celui qui est ouvert). */
 export function sideSessions(pid: string): { id: string; title: string; live: boolean; sel: boolean; subs: SideSub[]; stage: { cls: string; label: string } | null }[] {
   const list = known.get(pid)?.list ?? [], sel = selFor === pid ? selected : null, mine = pins.filter(x => x.p === pid);
-  const top = list.slice(0, 6), extra = list.slice(6).filter(s => s.id === sel || mine.some(x => x.s === s.id));
   const subs = (sid: string): SideSub[] => {
     const ids = mine.filter(x => x.s === sid).map(x => x.a);
     if (sid === sel && sub && !ids.includes(sub)) ids.push(sub);
     return ids.map(a => ({ id: a, title: sid === sel && a === sub && subTitle ? subTitle : subName(sid, a), live: !!subsOf.get(sid)?.find(x => x.id === a)?.live, sel: sid === sel && a === sub }));
   };
-  return [...top, ...extra].map(s => ({ id: s.id, title: s.id === sel && selTitle ? selTitle : nameOf(s), live: s.live || runs.some(r => r.session === s.id && live(r)), sel: s.id === sel, subs: subs(s.id), stage: sideStage(pid, s) }));
+  // Seulement les agents au travail et les PR en attente (plus la conversation ouverte, pour garder sa surbrillance).
+  return list.map(s => ({ id: s.id, title: s.id === sel && selTitle ? selTitle : nameOf(s), live: s.live || runs.some(r => r.session === s.id && live(r)), sel: s.id === sel, subs: subs(s.id), stage: sideStage(pid, s) }))
+    .filter(s => s.live || s.sel || s.stage?.cls === 'st-pr');
 }
 /** État de la copie d'une conversation, pour teinter son point dans la barre latérale (seulement pour le projet dont les copies sont connues). */
 function sideStage(pid: string, s: Session): { cls: string; label: string } | null {
