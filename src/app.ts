@@ -45,13 +45,16 @@ import * as link from './integrations/link.ts';
 import { $, $$, el, icon, logo, kbd, keys, matches, isMac, rel, until, full, menu, modal, confirmBox, toast, download, closeTop, topLayer, need, target, errMsg, num, hue, paintIfChanged } from './ui/kit.ts';
 import type { MenuItem } from './ui/kit.ts';
 import * as sky from './ui/sky.ts';
+import * as horizon from './ui/horizon.ts';
+import * as motion from './ui/motion.ts';
 import type { Note, Version, ViewState } from './types.ts';
 import type { Graph, GraphInput } from './lib/graph.ts';
 
 // ---------- Préférences ----------
 /** État d'interface mémorisé entre deux visites. */
+type Backdrop = 'horizon' | 'image' | 'sky' | 'plain';
 interface UiState {
-  view: ViewState; id: string | null; mode: 'edit' | 'split' | 'read'; side: boolean; theme: string; /** Fond : `sky` (ciel en pixels, css/sky.css) ou `plain` (uni). */ backdrop: 'sky' | 'plain'; tagsOpen: boolean;
+  view: ViewState; id: string | null; mode: 'edit' | 'split' | 'read'; side: boolean; theme: string; /** Fond (css/sky.css) : `horizon` (paysage de nuit calculé, src/ui/horizon.ts), `image` (image choisie), `sky` (ciel en pixels) ou `plain` (uni). */ backdrop: Backdrop; tagsOpen: boolean;
   /** Section « Arborescence » de la barre latérale dépliée, et notes dont les sous-notes y sont affichées. */
   treeSec: boolean; treeOpen: string[];
 }
@@ -79,8 +82,12 @@ const editing = (): OpenEditor | null => (ed && ed.ta ? ed as OpenEditor : null)
 
 const read = <T>(k: string, d: T): T => { try { return (JSON.parse(localStorage.getItem(k) || 'null') as T | null) ?? d; } catch { return d; } };
 const write = (k: string, v: unknown): void => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* stockage indisponible */ } };
-const ui: UiState = Object.assign({ view: { type: 'home' }, id: null, mode: 'split', side: true, theme: 'auto', backdrop: 'sky', tagsOpen: true, treeSec: true, treeOpen: [] } as UiState, read<Partial<UiState>>('carnet.ui', {}));
+const BACKDROPS = ['horizon', 'image', 'sky', 'plain'] as const;
+const ui: UiState = Object.assign({ view: { type: 'home' }, id: null, mode: 'split', side: true, theme: 'auto', backdrop: 'horizon', tagsOpen: true, treeSec: true, treeOpen: [] } as UiState, read<Partial<UiState>>('carnet.ui', {}));
 const saveUI = () => write('carnet.ui', ui);
+// « Horizon » devient le fond par défaut : appliqué une fois à qui avait gardé le Ciel (retour possible dans Réglages → Apparence).
+if (!localStorage.getItem('studio.backdrop.v2')) { localStorage.setItem('studio.backdrop.v2', '1'); if (ui.backdrop === 'sky') { ui.backdrop = 'horizon'; saveUI(); } }
+if (!BACKDROPS.includes(ui.backdrop)) ui.backdrop = 'horizon';
 let focusMode = false, ed: Editor | null = null, graph: Graph | null = null;
 
 const SC = {
@@ -103,8 +110,8 @@ function applyTheme() {
   const dark = ui.theme === 'dark' || (ui.theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   const skyOn = ui.backdrop !== 'plain';
-  document.documentElement.dataset.backdrop = skyOn ? 'sky' : 'plain';
-  if (skyOn) sky.paint(dark);
+  document.documentElement.dataset.backdrop = ui.backdrop;
+  paintBackdrop(dark);
   $('meta[name=theme-color]')?.setAttribute('content', skyOn ? '#050506' : dark ? '#08090a' : '#f2f2f3');
   window.webkit?.messageHandlers?.carnet?.postMessage({ type: 'theme', dark }); // app native : la fenêtre suit le thème
   graph?.redraw();
@@ -112,7 +119,17 @@ function applyTheme() {
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
 // Le ciel est dessiné à la taille de l'écran : à redessiner seulement si la fenêtre passe sur un écran plus grand.
 let skyTimer: ReturnType<typeof setTimeout> | undefined;
-addEventListener('resize', () => { clearTimeout(skyTimer); skyTimer = setTimeout(() => { if (ui.backdrop !== 'plain') sky.paint(document.documentElement.dataset.theme === 'dark'); }, 400); });
+addEventListener('resize', () => { clearTimeout(skyTimer); skyTimer = setTimeout(() => paintBackdrop(document.documentElement.dataset.theme === 'dark'), 400); });
+/** Dessine le fond choisi dans `--sky`. Les deux dessinateurs se partagent la variable : celui qui ne sert pas est relâché. */
+function paintBackdrop(dark: boolean): void {
+  if (ui.backdrop === 'sky') { horizon.release(); sky.paint(dark); }
+  else if (ui.backdrop === 'horizon') { sky.release(); horizon.paint(); }
+  else if (ui.backdrop === 'image') {
+    sky.release();
+    // Image retirée ou jamais choisie sur cet appareil : retour au paysage.
+    void horizon.paintImage().then(ok => { if (!ok && ui.backdrop === 'image') setBackdrop('horizon'); });
+  }
+}
 
 // ---------- Enregistrement (différé, par note) ----------
 const pending = new Map();
@@ -221,7 +238,8 @@ function renderSidebar() {
         // Sous « Serveur » : les serveurs du projet, celui qui est affiché en surbrillance.
         const servers = open ? projectsPage.sideServers(p.id) : [], serving = tab === 'server' && servers.some(s => s.sel);
         return `<button class="side-item side-sub${open && tab === 'overview' ? ' sel' : ''}${open ? ' open' : ''}" data-pj-open="${esc(p.id)}"><i class="tag-dot" style="--c:var(--c-${p.hue})"></i><span>${esc(p.name)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`
-          + (open ? projectsPage.tabsOf(p, tab ?? '').slice(1).map(([k, l, ic]) => `<button class="side-item side-sub2${tab === k && !(k === 'sessions' && talking) && !(k === 'server' && serving) ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="${k}"${k === 'sessions' ? ' data-pj-session=""' : ''}>${icon(ic)}<span>${esc(l)}</span></button>`
+          // La barre d'onglets de la page porte les seize onglets ; ici, seulement ce qui a des enfants (conversations, serveurs) et l'onglet ouvert.
+          + (open ? projectsPage.tabsOf(p, tab ?? '').slice(1).filter(([k]) => k === 'sessions' || k === tab || (k === 'server' && servers.length > 0)).map(([k, l, ic]) => `<button class="side-item side-sub2${tab === k && !(k === 'sessions' && talking) && !(k === 'server' && serving) ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="${k}"${k === 'sessions' ? ' data-pj-session=""' : ''}>${icon(ic)}<span>${esc(l)}</span></button>`
             + (k === 'server' ? servers.map(s => `<button class="side-item side-sub3${tab === 'server' && s.sel ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="server" data-pj-server="${esc(s.id)}" title="${esc(s.dest)}">${icon('server')}<span>${esc(s.name)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('') : '')
             + (k === 'sessions' ? talks.map(s => `<button class="side-item side-sub3${tab === 'sessions' && s.sel && !s.subs.some(a => a.sel) ? ' sel' : ''}${!s.live && s.stage ? ` ${s.stage.cls}` : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="sessions" data-pj-session="${esc(s.id)}" title="${esc(s.title)}${s.live ? ' · en cours' : s.stage ? ` · ${esc(s.stage.label)}` : ''}"><i class="ss-live${s.live ? ' on' : s.stage ? ` ${s.stage.cls}` : ''}"></i><span>${esc(s.title)}</span>${!s.live && s.stage?.cls === 'st-review' ? `<em class="side-stage">${esc(s.stage.label)}</em>` : ''}<i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`
               // Sous la conversation : ses sous-agents épinglés, et celui dont on lit le fil.
@@ -302,7 +320,9 @@ function workspaceMenu(anchor: HTMLElement) {
     { label: 'Sombre', checked: ui.theme === 'dark', run: () => setTheme('dark') },
     '-',
     { label: 'Fond' },
-    { label: 'Ciel', checked: ui.backdrop !== 'plain', run: () => setBackdrop('sky') },
+    { label: 'Horizon', checked: ui.backdrop === 'horizon', run: () => setBackdrop('horizon') },
+    ...(horizon.hasImage() ? [{ label: 'Mon image', checked: ui.backdrop === 'image', run: () => setBackdrop('image') }] : []),
+    { label: 'Ciel', checked: ui.backdrop === 'sky', run: () => setBackdrop('sky') },
     { label: 'Uni', checked: ui.backdrop === 'plain', run: () => setBackdrop('plain') },
     '-',
     { label: 'Importer des fichiers…', icon: 'upload', run: () => need('#file').click() },
@@ -1009,7 +1029,7 @@ function commands() {
   ];
 }
 function setTheme(t: string) { ui.theme = t; saveUI(); applyTheme(); }
-function setBackdrop(b: string) { ui.backdrop = b === 'plain' ? 'plain' : 'sky'; saveUI(); applyTheme(); }
+function setBackdrop(b: string) { ui.backdrop = BACKDROPS.includes(b as Backdrop) ? b as Backdrop : 'horizon'; saveUI(); applyTheme(); }
 
 const hl = (text: string, pos: number[]) => { const set = new Set(pos); let out = ''; [...text.normalize('NFC')].forEach((ch, i) => { out += set.has(i) ? `<b>${esc(ch)}</b>` : esc(ch); }); return out; };
 
@@ -1154,6 +1174,7 @@ function render() {
   document.body.dataset.v = ui.view.type;
   document.body.classList.toggle('no-list', WIDE.has(ui.view.type));
   renderSidebar(); renderList(); renderMain();
+  motion.view(need('#main'), ui.view.type, ui.view.type === 'projets' ? (ui.view.project ?? '') : '');
 }
 
 store.onChange((kind, id, remote) => {
@@ -1385,7 +1406,7 @@ Les notes chiffrées et celles taguées \`#privé\` ne sont jamais envoyées à 
 window.carnet = { flush: async () => { await flushAll(); }, settings: () => hub.openConnections('coffre'), voice: (p: unknown) => voice.onNative(p), bio: (p: unknown) => biometric.onNative(p as biometric.BioReply), reply: (p: unknown) => native.onReply(p) };
 
 async function start() {
-  applyTheme();
+  applyTheme(); motion.init();
   if (!VIEWS[ui.view?.type] && ui.view?.type !== 'tag') ui.view = { type: 'home' };
   await hub.gate(); // coffre : rien n'est lu avant le déverrouillage
   const gone = await store.init();

@@ -15,6 +15,7 @@ import * as store from '../../core/store.ts';
 import * as model from './model.ts';
 import { AUTO, pickFor as autoPick, label as autoLabel } from './autopick.ts';
 import * as saved from './drafts.ts';
+import * as attach from './attach.ts';
 import { paintPulse } from './pulse.ts';
 import * as permissions from '../permissions.ts';
 import * as voice from '../voice.ts';
@@ -31,7 +32,7 @@ interface Quota { status?: string; resetsAt?: number; rateLimitType?: string; is
 /** `add`/`del` : lignes ajoutées et retirées par une écriture (nombre, ou texte pour les agents sur serveur). */
 /** `file`, `old`, `new` : sur une écriture (Edit, Write…), le chemin et les extraits avant/après ; `to`, `body` : sur une délégation
  *  (Agent, Task), le sous-agent visé et la consigne qu'il reçoit. Absents avec une app Mac ancienne. */
-export interface Action { at: string; kind: string; text: string; add?: number | string; del?: number | string; file?: string; old?: string; new?: string; to?: string; body?: string }
+export interface Action { at: string; kind: string; text: string; add?: number | string; del?: number | string; file?: string; old?: string; new?: string; to?: string; body?: string; /** Chemins des images jointes à cette consigne (absent avec une app Mac ancienne). */ images?: string[] }
 export interface AgentRun { machine?: string; host?: string; run: string; mode: string; prompt: string; status: string; session: string; worktree: string; started: string; finished: string; result: string; lastText: string; turns: number; denials: string[]; quota?: Quota | null; /** Notes et tâches envoyées au projet par ce tour (features/projects/items.ts). */ items?: { tasks?: number; notes?: number } }
 export interface Worktree {
   name: string; branch: string; /** Commit de la copie (absent avec une app Mac ancienne). */ head?: string; changes: number; ahead: number; behind?: number; pushed: boolean; conflicts?: string[];
@@ -53,7 +54,7 @@ const hasWork = (c: Pick<Worktree, 'changes' | 'ahead' | 'merged' | 'upToDate'>)
 
 let selected: string | null = null, timer: ReturnType<typeof setInterval> | undefined, tick = 0;
 /** Message secondaire : écrit pendant que l'agent travaillait, remis à la fin de son tour (voir Agents.swift). */
-export interface Queued { id: string; session: string; text: string; at: string }
+export interface Queued { id: string; session: string; text: string; at: string; images?: string[] }
 let runs: AgentRun[] = [], trees: Worktree[] = [], jobs: Job[] = [], queued: Queued[] = [];
 /** La liste des copies a été lue au moins une fois (sinon une copie absente n'est pas forcément supprimée). */
 let treesRead = false;
@@ -336,6 +337,7 @@ function syncStop(box: HTMLElement): void {
   const cutBtn = $<HTMLButtonElement>('.ag-cut', f); if (cutBtn) cutBtn.hidden = !run;
   if (send && !send.disabled) send.innerHTML = run ? SEND_BUSY : SEND_IDLE;
   if (hint) hint.innerHTML = run ? HINT_BUSY : HINT_IDLE;
+  attach.sync(f);
 }
 
 const HINT_EDIT = `${icon('shield')}Copie isolée du dépôt : ton dossier reste intact.`, HINT_READ = `${icon('eye')}Lecture seule : analyse et propose, sans rien modifier.`;
@@ -400,6 +402,7 @@ function showFan(f: HTMLFormElement): void {
   const btn = f.querySelector<HTMLButtonElement>('.ag-send'); if (!btn || btn.disabled || !f.querySelector('select[name=fan]')) return;
   const fan = fanOf(f), n = fan === 'notes' ? (f.dataset.notes || '').split(',').filter(Boolean).length : fan === 'lines' ? fanLines(f.querySelector('textarea')?.value ?? '').length : agentCount(f.querySelector('textarea')?.value ?? '').n;
   btn.innerHTML = n > 1 ? `${icon('play')}Lancer ${n} agents<kbd>⌘↩</kbd>` : LAUNCH;
+  attach.sync(f);
 }
 /** Le champ suit la hauteur du texte, sans limite. */
 function grow(ta: HTMLTextAreaElement): void { ta.style.height = 'auto'; ta.style.height = `${ta.scrollHeight + 2}px`; }
@@ -465,6 +468,7 @@ function showMachine(f: HTMLFormElement): void {
   const v = (f.elements.namedItem('machine') as HTMLSelectElement | null)?.value ?? 'mac', far = v.startsWith('server');
   f.classList.toggle('on-server', far);
   f.querySelectorAll<HTMLElement>('[data-mac-only]').forEach(el => { el.hidden = far; });
+  attach.sync(f);
 }
 /** Lit les serveurs du projet et met à jour le choix de machine des formulaires de lancement de `root`. */
 async function fillMachines(root: HTMLElement, p: Project): Promise<void> {
@@ -489,8 +493,8 @@ export function composerHTML(p: Project, { session = '', compact = false, machin
   const lims = machine === 'server' ? '' : `<div class="ag-lims" data-mac-only${macOnly} aria-label="Utilisation de l’abonnement Claude">${limsHTML()}</div>`;
   // Chaque formulaire a son brouillon : un par conversation, un pour la nouvelle consigne, un pour celle de l'aperçu, un pour le serveur.
   const key = `${p.id}|${session ? `s:${session}` : machine === 'server' ? 'server' : compact ? 'quick' : 'new'}`, d = saved.draft(key);
-  if (session) return `<form class="ag-compose ag-continue" data-draft="${esc(key)}" data-session="${esc(session)}"${machine ? ` data-machine="${esc(machine)}"` : ''}><textarea name="prompt" rows="2" placeholder="Réponds à Claude : précise, corrige, tranche, demande la suite…" aria-label="Répondre dans la session">${esc(d?.text ?? '')}</textarea>
-    <div class="ag-opts"><div class="ag-tools">${tuneHTML(saved.ofSession(session) ?? { model: '', effort: '' })}${subHTML(p.id)}<span class="ag-hint" data-hint>${HINT_IDLE}</span></div><span class="ag-go">${voice.micHTML('Répondre à voix haute')}<button type="button" class="btn btn-danger ag-stop" data-ag="stop" hidden>${icon('stop')}Arrêter</button><button type="button" class="btn ag-cut" data-ag-cut hidden title="Coupe le tour en cours : Claude lit ton message tout de suite, puis reprend là où il en était (⌘⇧↩)">${icon('bolt')}Intervenir</button><button class="btn btn-primary ag-send">${SEND_IDLE}</button></span></div>${lims}</form>`;
+  if (session) return `<form class="ag-compose ag-continue" data-draft="${esc(key)}" data-session="${esc(session)}"${machine ? ` data-machine="${esc(machine)}"` : ''}><textarea name="prompt" rows="2" placeholder="Réponds à Claude : précise, corrige, tranche, demande la suite…" aria-label="Répondre dans la session">${esc(d?.text ?? '')}</textarea>${attach.stripHTML()}
+    <div class="ag-opts"><div class="ag-tools">${tuneHTML(saved.ofSession(session) ?? { model: '', effort: '' })}${subHTML(p.id)}<span class="ag-hint" data-hint>${HINT_IDLE}</span></div><span class="ag-go">${attach.buttonHTML()}${voice.micHTML('Répondre à voix haute')}<button type="button" class="btn btn-danger ag-stop" data-ag="stop" hidden>${icon('stop')}Arrêter</button><button type="button" class="btn ag-cut" data-ag-cut hidden title="Coupe le tour en cours : Claude lit ton message tout de suite, puis reprend là où il en était (⌘⇧↩)">${icon('bolt')}Intervenir</button><button class="btn btn-primary ag-send">${SEND_IDLE}</button></span></div>${lims}</form>`;
   const pre = pending?.project === p.id ? pending : null; if (pre && !compact) pending = null;
   // Une note ou une tâche confiée à Claude s'ajoute au brouillon en cours, sans l'effacer.
   const hand = pre && !compact ? pre : null;
@@ -500,7 +504,7 @@ export function composerHTML(p: Project, { session = '', compact = false, machin
   const read = d?.mode === 'read', inRead = permissions.commandsInRead(), tests = (!read || inRead) && !!d?.tests;
   const fan = compact ? '' : hand?.fan || d?.fan || '';
   if (hand) saved.saveDraft(key, { text, notes, mode: read ? 'read' : 'edit', tests, fan });
-  return `<form class="ag-compose${compact ? ' compact' : ''}${far ? ' on-server' : ''}" data-draft="${esc(key)}" data-notes="${esc(notes.join(','))}"><textarea name="prompt" rows="${compact ? 1 : 3}" placeholder="Que doit faire Claude Code dans ${esc(p.name)} ? Ex. « Ajoute des tests au parseur de dates ». ${COUNT_HINT}" aria-label="Consigne pour Claude Code">${esc(text)}</textarea>
+  return `<form class="ag-compose${compact ? ' compact' : ''}${far ? ' on-server' : ''}" data-draft="${esc(key)}" data-notes="${esc(notes.join(','))}"><textarea name="prompt" rows="${compact ? 1 : 3}" placeholder="Que doit faire Claude Code dans ${esc(p.name)} ? Ex. « Ajoute des tests au parseur de dates ». ${COUNT_HINT}" aria-label="Consigne pour Claude Code">${esc(text)}</textarea>${attach.stripHTML()}
     <div class="ag-ctx">${ctxHTML(notes)}</div>
     <div class="ag-opts"><div class="ag-tools">
       <div class="ag-seg" role="radiogroup" aria-label="Mode"><label><input type="radio" name="mode" value="edit"${read ? '' : ' checked'}><span>${icon('pencil')}Modifier</span></label><label><input type="radio" name="mode" value="read"${read ? ' checked' : ''}><span>${icon('search')}Analyser</span></label></div>
@@ -510,13 +514,14 @@ export function composerHTML(p: Project, { session = '', compact = false, machin
       ${compact ? '' : `<select class="field" name="fan" aria-label="Nombre d’agents" title="Plusieurs agents en parallèle, chacun dans sa copie isolée : un par note jointe, ou un par ligne de la consigne (${FAN_MAX} à la fois au plus)">${[['', 'Un agent'], ['notes', 'Un agent par note'], ['lines', 'Un agent par ligne']].map(([v, l]) => `<option value="${v}"${v === fan ? ' selected' : ''}>${l}</option>`).join('')}</select>`}
       ${compact ? '' : subHTML(p.id)}
       <span class="ag-hint" data-hint>${read ? HINT_READ : HINT_EDIT}</span></div>
-      <span class="ag-go">${voice.micHTML('Dicter la consigne')}<button class="btn btn-primary ag-send">${LAUNCH}</button></span></div>${lims}</form>`;
+      <span class="ag-go">${attach.buttonHTML()}${voice.micHTML('Dicter la consigne')}<button class="btn btn-primary ag-send">${LAUNCH}</button></span></div>${lims}</form>`;
 }
 
 /** Branche les formulaires de consigne présents dans `root` (lancement, reprise, raccourci ⌘↩). */
 export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: AgentRun) => void): void {
   void loadLimits();
   permissions.preload();
+  attach.bind(root);
   // Formulaires fraîchement rendus (brouillon repris) : hauteur du texte et choix « Auto » à jour.
   requestAnimationFrame(() => root.querySelectorAll<HTMLFormElement>('.ag-compose').forEach(f => { const ta = f.querySelector('textarea'); if (ta) grow(ta); showAuto(f); showFan(f); showMachine(f); }));
   if (bridge.where() && root.querySelector('.ag-compose:not(.ag-continue) select[name=machine]:not([data-fixed])')) void fillMachines(root, p);
@@ -537,6 +542,7 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     if (t.name !== 'mode') return;
     const hint = $('[data-hint]', f), tests = $<HTMLInputElement>('[name=tests]', f);
     if (hint) hint.innerHTML = t.value === 'edit' ? HINT_EDIT : HINT_READ;
+    attach.sync(f);
     if (tests) { tests.disabled = t.value !== 'edit' && !permissions.commandsInRead(); if (tests.disabled) tests.checked = false; }
     keepDraft(f);
   });
@@ -575,8 +581,11 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     if (f.querySelector<HTMLButtonElement>('button.btn-primary')?.disabled) return; // envoi déjà parti
     if (f.querySelector('.vc-mic.live')) voice.cancel(); // sinon la dictée réécrirait le champ vidé après l'envoi
     const ta = need<HTMLTextAreaElement>('textarea', f), noteIds = (f.dataset.notes || '').split(',').filter(Boolean);
-    if (!ta.value.trim() && !noteIds.length) { ta.focus(); return; }
-    const text = ta.value.trim();
+    const pics = attach.count(f);
+    if (!ta.value.trim() && !noteIds.length && !pics) { ta.focus(); return; }
+    if (pics) { const why = attach.blocked(f); if (why) { toast(why); return; } }
+    // Des images sans un mot : consigne par défaut, pour que l'agent aille les lire.
+    const text = ta.value.trim() || (pics ? attach.DEFAULT_PROMPT : '');
     // Répartition : une consigne par note jointe, ou par ligne ; sinon une seule (toujours une seule quand on répond).
     const fan = f.dataset.session ? '' : fanOf(f), lines = fan === 'lines' ? fanLines(text) : [];
     // « 3× … » en tête : le même travail confié à plusieurs agents (pas quand on répond, ni avec une autre répartition).
@@ -605,7 +614,8 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     else { body.mode = f.querySelector<HTMLInputElement>('[name=mode]:checked')?.value ?? 'edit'; body.tests = !!val('tests')?.checked && !f.classList.contains('on-server'); const mc = val('machine'); if (mc && !mc.hidden) { const [m, s] = mc.value.split(':'); body.machine = m; if (s) body.server = s; } }
     btn.disabled = true;
     // Un lancement après l'autre : chaque appel revient dès que la session est créée, l'agent continue seul.
-    let last: Awaited<ReturnType<typeof bridge.call>> | null = null, started = 0, fail = '', unsealed = false;
+    const images = attach.payload(f);
+    let last: Awaited<ReturnType<typeof bridge.call>> | null = null, started = 0, fail = '', unsealed = false, oldApp = false;
     const made: string[] = [];
     // Plusieurs agents qui modifient : une branche mère commune, une sous-branche par agent (rapatriées ensuite dans la mère).
     const group = many && body.mode === 'edit' && body.machine !== 'server' ? newGroup(counted.text || text) : '';
@@ -616,9 +626,10 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
       const team = subagents.body(p.id, units[started]?.text ?? b.text, String(body.mode ?? 'edit'));
       for (const n of subagents.lastCreated()) if (!made.includes(n)) made.push(n);
       // `sealedV` : un Mac ancien ignore `sealed` et ne répond pas `sealed: true` ; l'agent n'aurait alors pas les notes.
-      const one = await bridge.call('agent', 'start', { ...body, prompt: b.text, ...(team ? { subagents: team } : {}), ...(b.sealed ? { sealed: b.sealed, sealedV: 1 } : {}), ...(group ? { group, slot: started + 1, of: built.length } : {}) }, 60000);
+      const one = await bridge.call('agent', 'start', { ...body, prompt: b.text, ...(team ? { subagents: team } : {}), ...(b.sealed ? { sealed: b.sealed, sealedV: 1 } : {}), ...(group ? { group, slot: started + 1, of: built.length } : {}), ...(images.length ? { images } : {}) }, images.length ? 120000 : 60000);
       if (!one.ok) { fail = one.message ?? 'Lancement impossible.'; break; }
       if (b.sealed && one.sealed !== true) unsealed = true;
+      if (!attach.confirmed(one, images.length)) oldApp = true;
       started++; last = one;
       // La conversation lancée garde le modèle et l'effort de sa première consigne : ils sont proposés pour la suite.
       if (!f.dataset.session && typeof one.session === 'string' && one.session) saved.setSession(one.session, picked);
@@ -626,6 +637,7 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     btn.disabled = false; btn.innerHTML = label; delete f.dataset.busy;
     if (made.length) toast(`Sous-agents créés dans le projet : ${made.join(', ')}`);
     if (unsealed) toast('Les notes liées n’ont pas été lues par l’agent : mets à jour l’app Studio pour Mac.');
+    if (oldApp) toast(attach.OLD_APP);
     // En cas d'échec, le texte reste dans le formulaire et dans son brouillon.
     const r = last;
     if (!r) { toast(fail); return; }
@@ -637,7 +649,7 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
       onStarted({ ...(r as unknown as AgentRun), session: '' });
       return;
     }
-    ta.value = ''; grow(ta); showAuto(f); f.dataset.notes = ''; f.querySelectorAll('.ag-note').forEach(x => x.remove()); showFan(f);
+    ta.value = ''; grow(ta); showAuto(f); f.dataset.notes = ''; f.querySelectorAll('.ag-note').forEach(x => x.remove()); attach.clear(f); showFan(f);
     if (f.dataset.draft) saved.dropDraft(f.dataset.draft);
     // L'agent travaille encore : le message attend la fin de son tour (il apparaît dans le fil, « en attente »).
     if (typeof r.queued === 'number') {
@@ -824,14 +836,14 @@ export function feedBlocks(actions: Action[], root: string | null, working: bool
     if (a.kind.startsWith('tool:') && hasDiff(a)) { flush(false); out.push({ key: key(a, 'diff'), html: diffHTML(a, short(a.file ?? '', root)) }); continue; }
     if (a.kind.startsWith('tool:')) { group.push(a); continue; }
     flush(false);
-    if (a.kind === 'prompt') out.push({ key: key(a, 'user'), html: `<div class="ss-msg user"><header><strong>${asker}</strong><time>${esc(clock(a.at))}</time></header><p>${esc(a.text)}</p></div>` });
+    if (a.kind === 'prompt') out.push({ key: key(a, 'user'), html: `<div class="ss-msg user"><header><strong>${asker}</strong><time>${esc(clock(a.at))}</time></header><p>${esc(a.text)}</p>${attach.galleryHTML(a.images)}</div>` });
     else out.push({ key: key(a, 'ai'), html: `<div class="ss-msg ai"><header><strong>${answerer}</strong><time>${esc(clock(a.at))}</time><button class="icon-btn ss-copy" data-ag="copy" title="Copier la réponse" aria-label="Copier la réponse">${icon('copy')}</button></header><div class="md">${answerHTML(a.text)}</div></div>` });
   }
   flush(true);
   if (!actions.length) out.push({ key: 'empty', html: `<p class="ss-cut">${working ? 'La session démarre…' : 'Aucune étape dans cette session.'}</p>` });
   if (working) out.push({ key: 'working', html: `<div class="ss-working"><span class="spin"></span>${sidechain ? 'Le sous-agent' : 'Claude'} travaille…</div>` });
   // Messages secondaires, pas encore lus par Claude : remis ensemble à la fin de son tour.
-  for (const q of waiting) out.push({ key: `queued|${q.id}`, html: `<div class="ss-msg user queued"><header><strong>Toi</strong><em class="ss-wait">${icon('history')}en attente</em><time>${esc(clock(q.at))}</time><button class="icon-btn" data-ag="unqueue" data-q="${esc(q.id)}" title="Retirer ce message" aria-label="Retirer ce message">${icon('trash')}</button></header><p>${esc(q.text)}</p></div>` });
+  for (const q of waiting) out.push({ key: `queued|${q.id}`, html: `<div class="ss-msg user queued"><header><strong>Toi</strong><em class="ss-wait">${icon('history')}en attente</em><time>${esc(clock(q.at))}</time><button class="icon-btn" data-ag="unqueue" data-q="${esc(q.id)}" title="Retirer ce message" aria-label="Retirer ce message">${icon('trash')}</button></header><p>${esc(q.text)}</p>${attach.galleryHTML(q.images)}</div>` });
   // Le tour s'est fini sans eux (agent arrêté ou en erreur) : ils partent quand l'utilisateur le décide.
   if (waiting.length && stalled) out.push({ key: 'queued-send', html: `<p class="ss-cut">${waiting.length > 1 ? 'Ces messages n’ont pas été transmis' : 'Ce message n’a pas été transmis'} : l’agent s’est arrêté avant la fin de son tour. <button class="link-btn" data-ag="flush">${icon('play')}Envoyer maintenant</button></p>` });
   return out;
@@ -921,7 +933,9 @@ function showDetail(zone: HTMLElement, raw: Partial<Session> & { actions?: Actio
   // Messages en attente restés en plan : le dernier tour s'est terminé autrement que normalement (arrêt, erreur).
   const latest = own.reduce<AgentRun | undefined>((a, r) => !a || ms(r.started) > ms(a.started) ? r : a, undefined);
   const stalled = !working && !!latest && !live(latest) && latest.status !== 'done';
-  if (!syncFeed(feed, feedBlocks(s.actions, root, working, agent ? [] : queued.filter(q => q.session === s.id), stalled, !!agent))) return;
+  const drew = syncFeed(feed, feedBlocks(s.actions, root, working, agent ? [] : queued.filter(q => q.session === s.id), stalled, !!agent));
+  if (cur) attach.hydrate(feed, cur.p.id);
+  if (!drew) return;
   if (first || end) feed.scrollTop = feed.scrollHeight;
   else need('.ss-jump', zone).hidden = false;
 }

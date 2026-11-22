@@ -59,7 +59,8 @@ final class Agents {
     /// remis ensemble, en une seule consigne, dès qu'il a fini son tour proprement.
     /// `remote` : message venu d'un appareil lié (link.ts) ; la reprise qui l'emporte part sans terminal.
     /// `sealed` : notes liées du message, gardées chiffrées en mémoire (jamais listées ni écrites) jusqu'au lancement.
-    private struct Queued { let id: String, session: String, text: String, at: Date, machine: String, remote: Bool; var sealed: Sealed? = nil }
+    /// `images` : chemins des images jointes au message (écrites par AgentImages), remises à l'agent avec lui.
+    private struct Queued { let id: String, session: String, text: String, at: Date, machine: String, remote: Bool; var sealed: Sealed? = nil; var images: [String] = [] }
     private var queues: [String: [Queued]] = [:]
     /// Sous-agents de la dernière consigne de chaque conversation : un message en attente repart avec le même réglage.
     private var teams: [String: [String: Any]] = [:]
@@ -99,20 +100,25 @@ final class Agents {
         let mine = runs.values.filter { $0.project == project }.sorted { $0.started > $1.started }.prefix(20)
         let f = ISO8601DateFormatter()
         let queued = queues.filter { $0.key.hasPrefix(project + "|") }.values.flatMap { $0 }.sorted { $0.at < $1.at }
-            .map { ["id": $0.id, "session": $0.session, "text": String($0.text.prefix(4000)), "at": f.string(from: $0.at)] }
+            .map { q -> [String: Any] in
+                var d: [String: Any] = ["id": q.id, "session": q.session, "text": String(q.text.prefix(4000)), "at": f.string(from: q.at)]
+                if !q.images.isEmpty { d["images"] = q.images }
+                return d
+            }
         return ["ok": true, "runs": mine.map(summary), "queued": queued]
     }
 
     /// Met un message en attente pour la discussion dont l'agent travaille encore.
-    private func enqueue(project: String, session: String, text: String, machine: String, remote: Bool, sealed: Sealed? = nil) -> [String: Any] {
+    private func enqueue(project: String, session: String, text: String, machine: String, remote: Bool, sealed: Sealed? = nil, images: [String] = []) -> [String: Any] {
         lock.lock(); defer { lock.unlock() }
         let key = project + "|" + session
         var q = queues[key] ?? []
         guard q.count < maxQueued else { return ["ok": false, "message": "Déjà \(maxQueued) messages en attente : attends que Claude finisse son tour."] }
-        q.append(Queued(id: UUID().uuidString, session: session, text: text, at: Date(), machine: machine, remote: remote, sealed: sealed))
+        q.append(Queued(id: UUID().uuidString, session: session, text: text, at: Date(), machine: machine, remote: remote, sealed: sealed, images: images))
         queues[key] = q
         var r: [String: Any] = ["ok": true, "queued": q.count, "session": session]
         if sealed != nil { r["sealed"] = true }
+        if !images.isEmpty { r["images"] = images.count }
         return r
     }
 
@@ -122,9 +128,19 @@ final class Agents {
         for (key, q) in queues where key.hasPrefix(project + "|") && q.contains(where: { $0.id == id }) {
             let left = q.filter { $0.id != id }
             queues[key] = left.isEmpty ? nil : left
+            // Ses images ne servent plus à personne si aucun autre message ne les cite : le lot est supprimé.
+            let still = Set(queues.values.flatMap { $0 }.flatMap(\.images))
+            for path in q.first(where: { $0.id == id })?.images ?? [] where !still.contains(path) { AgentImages.removeFile(path) }
             return ["ok": true]
         }
         return ["ok": false, "message": "Ce message a déjà été transmis."]
+    }
+
+    /// Lit une image jointe à une consigne, pour la montrer dans le fil (action de pont `agent` / `image`).
+    /// Seuls les fichiers du dossier d'images du projet demandé sont lisibles (voir AgentImages.read).
+    func image(project pid: String, body: [String: Any], done: @escaping ([String: Any]) -> Void) {
+        guard let repo = ProjectFolders.shared.path(pid) else { return done(["ok": false, "message": "Projet introuvable sur ce Mac."]) }
+        done(AgentImages.read(repo: repo, path: body["path"] as? String ?? ""))
     }
 
     /// Une seule consigne pour tous les messages en attente : l'ordre est gardé, chaque message est délimité,
@@ -268,6 +284,17 @@ final class Agents {
         if bin.isEmpty { return done(["ok": false, "message": "Claude Code n'est pas installé sur ce Mac."]) }
         var prompt = (body["prompt"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let resume = body["session"] as? String ?? ""
+        // Images jointes (`images` : [{ name, type, data }]) : écrites dans le .git du dépôt, jamais envoyées à un serveur ni
+        // acceptées d'un appareil lié (la page le dit avant l'envoi ; ici, on refuse net si elle ne l'a pas fait).
+        let rawImages = body["images"] as? [Any] ?? []
+        if !rawImages.isEmpty {
+            if onServer { return done(["ok": false, "message": "Les images ne partent pas vers un serveur : lance l’agent sur le Mac."]) }
+            if body["remote"] as? Bool == true { return done(["ok": false, "message": "Les images ne se joignent pas depuis un appareil lié : envoie-les depuis Studio sur le Mac."]) }
+            if prompt.isEmpty { prompt = AgentImages.defaultPrompt }
+        }
+        var newImages: [String] = [], imagesLot = "", imagesKept = false
+        // Une consigne qui n'aboutit pas (agents au maximum, dossier introuvable…) ne laisse pas ses images derrière elle.
+        defer { if !imagesKept, !imagesLot.isEmpty { AgentImages.removeLot(repo: dir, lot: imagesLot) } }
         // Notes scellées : le clair n'existe que dans la consigne donnée à Claude Code (voir Sealed), jamais envoyé à un serveur.
         let sealedNow = Sealed(body["sealed"])
         if body["sealed"] != nil && sealedNow == nil { return done(["ok": false, "message": "Notes liées illisibles : renvoie la consigne."]) }
@@ -276,6 +303,8 @@ final class Agents {
         // à la reprise suivante, tous les messages en attente partent avec la consigne, en une seule fois.
         // Les reprises lancées par l'orchestrateur (résolution de conflits) n'y touchent pas.
         var taken: [String] = []
+        /// Images des messages en attente, remises avec eux.
+        var queuedImages: [String] = []
         /// Clair des notes liées : local à ce lancement, écrit une seule fois dans l'entrée de Claude Code.
         var notes = ""
         // Consigne venue d'un appareil lié (posé par link.ts, jamais retiré) : jamais de terminal, même dans la bulle.
@@ -288,16 +317,32 @@ final class Agents {
             // « Intervenir » : l'utilisateur coupe le tour en cours pour être lu tout de suite, au lieu d'attendre sa fin.
             if body["interrupt"] as? Bool == true, self.busy(project: pid, session: resume) {
                 guard !prompt.isEmpty, prompt.utf8.count <= 100_000 else { return done(["ok": false, "message": "Message vide ou trop long."]) }
+                // Les images d'abord : si l'une est refusée, le tour en cours n'a pas été coupé pour rien.
+                if !rawImages.isEmpty {
+                    switch AgentImages.save(repo: dir, items: rawImages) {
+                    case .failure(let e): return done(["ok": false, "message": e.message])
+                    case .success(let w): newImages = w.paths; imagesLot = w.lot
+                    }
+                }
                 cut = self.interrupt(project: pid, session: resume)
             }
             if self.busy(project: pid, session: resume) {
                 guard !prompt.isEmpty, prompt.utf8.count <= 100_000 else { return done(["ok": false, "message": "Message vide ou trop long."]) }
-                return done(enqueue(project: pid, session: resume, text: prompt, machine: onServer ? "server" : "mac", remote: fromLink, sealed: sealedNow))
+                if !rawImages.isEmpty && newImages.isEmpty {
+                    switch AgentImages.save(repo: dir, items: rawImages) {
+                    case .failure(let e): return done(["ok": false, "message": e.message])
+                    case .success(let w): newImages = w.paths; imagesLot = w.lot
+                    }
+                }
+                let queuedReply = enqueue(project: pid, session: resume, text: prompt, machine: onServer ? "server" : "mac", remote: fromLink, sealed: sealedNow, images: newImages)
+                imagesKept = queuedReply["ok"] as? Bool == true
+                return done(queuedReply)
             }
             lock.lock(); let q = queues[pid + "|" + resume] ?? []; lock.unlock()
             taken = q.map(\.id)
             if q.contains(where: \.remote) { fromLink = true }
             prompt = Self.combine(q.map(\.text), prompt)
+            queuedImages = q.flatMap(\.images)
             let all = q.compactMap(\.sealed) + (sealedNow.map { [$0] } ?? [])
             guard let clear = Sealed.open(all) else { return done(["ok": false, "message": "Les notes liées n’ont pas pu être déchiffrées."]) }
             notes = clear
@@ -314,6 +359,17 @@ final class Agents {
         }
         lock.lock(); let full = runs.values.filter { $0.status == "running" || $0.status == "starting" }.count >= maxRunning; lock.unlock()
         if full { return done(["ok": false, "message": "\(maxRunning) agents tournent déjà : attends qu'un se termine ou arrête-en un."]) }
+        if !rawImages.isEmpty && newImages.isEmpty {
+            switch AgentImages.save(repo: dir, items: rawImages) {
+            case .failure(let e): return done(["ok": false, "message": e.message])
+            case .success(let w): newImages = w.paths; imagesLot = w.lot
+            }
+        }
+        // Toutes les images de ce tour : celles des messages qui attendaient, puis celles de ce message.
+        let allImages = queuedImages + newImages
+        // Le dossier des images est ouvert à l'outil Read de l'agent (--add-dir), dans la bulle comme hors bulle,
+        // dès qu'il existe : une réponse plus tard dans la discussion peut relire une image d'un tour précédent.
+        let imageDirs = onServer || body["internal"] as? Bool == true ? [] : AgentImages.existing(repo: dir).map { [$0] } ?? []
 
         var cwd = dir, mode = body["mode"] as? String == "edit" ? "edit" : "read", newWorktree = "", restored = "", groupNote = ""
         var args = ["-p", "--output-format", "stream-json", "--verbose", "--restricted", "--permission-mode", "dontAsk",
@@ -459,7 +515,7 @@ final class Agents {
         if modelOK { args += ["--model", useModel] }
         if effortOK { args += ["--effort", useEffort] }
         // Hors bulle, le tableau d'équipe est ouvert par --add-dir (dans la bulle, le .git du dépôt l'est déjà).
-        let addDirs = extraDirs + (bubble == nil ? board.map { [$0.dir] } ?? [] : [])
+        let addDirs = extraDirs + (bubble == nil ? board.map { [$0.dir] } ?? [] : []) + imageDirs
         if !addDirs.isEmpty { args += ["--add-dir"] + addDirs }
         // Notes et tâches du projet : permises par les réglages, jamais pour l'orchestrateur (résolution de conflits).
         let items = AgentPermissions.projectItems && body["internal"] as? Bool != true
@@ -538,7 +594,8 @@ final class Agents {
         let answerOnce: ([String: Any]) -> Void = { r in
             self.lock.lock(); let first = !answered; answered = true; self.lock.unlock()
             // `sealed: true` : la page sait que les notes liées ont bien été remises à l'agent (un Mac plus ancien les ignorait).
-            if first { var r = r; if hadNotes, r["ok"] as? Bool == true { r["sealed"] = true }; done(r) }
+            // `images` : combien d'images ont été écrites pour ce message (un Mac plus ancien ne répond rien : la page le signale).
+            if first { var r = r; if hadNotes, r["ok"] as? Bool == true { r["sealed"] = true }; if !newImages.isEmpty, r["ok"] as? Bool == true { r["images"] = newImages.count }; done(r) }
         }
         p.terminationHandler = { proc in
             self.lock.lock()
@@ -565,6 +622,7 @@ final class Agents {
             answerOnce(["ok": false, "message": run.result.isEmpty ? "Claude Code s'est arrêté avant de démarrer." : run.result])
         }
         do { try p.run() } catch { errDone.leave(); return done(["ok": false, "message": "Impossible de lancer Claude Code."]) }
+        imagesKept = true
         DispatchQueue.global(qos: .utility).async {
             while true {
                 let chunk = errOut.fileHandleForReading.availableData
@@ -581,7 +639,7 @@ final class Agents {
         }
         lock.unlock()
         DispatchQueue.global(qos: .utility).async {
-            try? input.fileHandleForWriting.write(contentsOf: Data((restored + prompt + (notes.isEmpty ? "" : Sealed.mark + notes + Sealed.end)).utf8)); try? input.fileHandleForWriting.close()
+            try? input.fileHandleForWriting.write(contentsOf: Data((restored + prompt + AgentImages.block(allImages) + (notes.isEmpty ? "" : Sealed.mark + notes + Sealed.end)).utf8)); try? input.fileHandleForWriting.close()
         }
         // Lecture du flux d'événements (une ligne JSON par événement).
         DispatchQueue.global(qos: .utility).async {
@@ -746,6 +804,152 @@ struct AgentTeam {
         + "rendent, et le compte rendu final est le tien : il dit qui a fait quoi."
         + (members.isEmpty ? "" : " Spécialistes définis par l'utilisateur, à préférer quand leur rôle correspond : "
             + members.map { "\($0.name) (\($0.description))" }.joined(separator: " ; ") + ".")
+    }
+}
+
+/// Images jointes à une consigne (`images` de `agent start`). La page les envoie en base64 ; ici elles sont validées
+/// (type reconnu à leurs premiers octets, taille, nombre), puis écrites dans le .git du dépôt principal du projet :
+/// `.git/studio-images/<lot>/<n>-<nom>.<ext>`, un lot par message. Jamais commitées, lisibles depuis la bulle (qui ouvre le
+/// .git commun) et ouvertes à l'outil Read de l'agent par --add-dir. La consigne qui part sur l'entrée de Claude Code reste
+/// du texte : un bloc `<images-jointes>` y liste les chemins absolus (ClaudeSessions le retire à l'affichage et en tire les
+/// vignettes du fil). Les lots de plus de 30 jours, et ceux au-delà de 200, sont supprimés à chaque lancement avec images.
+enum AgentImages {
+    static let folder = "studio-images"
+    static let maxCount = 6, maxBytes = 8 * 1024 * 1024, maxTotal = 24 * 1024 * 1024, keepDays = 30.0, keepLots = 200
+    static let defaultPrompt = "Regarde les images jointes."
+    /// Délimiteurs du bloc dans la consigne : voir `block` et ClaudeSessions.
+    static let mark = "\n\n<images-jointes>\n", end = "\n</images-jointes>"
+    struct Failure: Error { let message: String }
+
+    /// Dossier des images du dépôt s'il existe déjà (à ouvrir à l'agent).
+    static func existing(repo: String) -> String? {
+        var isDir: ObjCBool = false
+        let d = repo + "/.git/" + folder
+        return FileManager.default.fileExists(atPath: d, isDirectory: &isDir) && isDir.boolValue ? d : nil
+    }
+
+    /// Type reconnu d'après les premiers octets (jamais d'après le type annoncé par la page) : extension et type MIME.
+    static func sniff(_ d: Data) -> (ext: String, mime: String)? {
+        let b = [UInt8](d.prefix(12))
+        if b.count >= 8, b[0] == 0x89, b[1] == 0x50, b[2] == 0x4E, b[3] == 0x47, b[4] == 0x0D, b[5] == 0x0A, b[6] == 0x1A, b[7] == 0x0A { return ("png", "image/png") }
+        if b.count >= 3, b[0] == 0xFF, b[1] == 0xD8, b[2] == 0xFF { return ("jpg", "image/jpeg") }
+        if b.count >= 6, b[0] == 0x47, b[1] == 0x49, b[2] == 0x46, b[3] == 0x38, (b[4] == 0x37 || b[4] == 0x39), b[5] == 0x61 { return ("gif", "image/gif") }
+        if b.count >= 12, b[0] == 0x52, b[1] == 0x49, b[2] == 0x46, b[3] == 0x46, b[8] == 0x57, b[9] == 0x45, b[10] == 0x42, b[11] == 0x50 { return ("webp", "image/webp") }
+        return nil
+    }
+
+    /// Nom de fichier sûr : sans accents ni signes, 40 caractères au plus, sans l'extension d'origine.
+    static func slug(_ name: String) -> String {
+        var base = (name as NSString).lastPathComponent
+        if let dot = base.lastIndex(of: "."), dot != base.startIndex { base = String(base[..<dot]) }
+        let folded = base.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: nil).lowercased()
+        let mapped = String(folded.map { ($0.isASCII && ($0.isLetter || $0.isNumber)) ? $0 : "-" })
+        let parts = mapped.split(separator: "-").joined(separator: "-")
+        let cut = String(parts.prefix(40))
+        return cut.isEmpty ? "image" : cut
+    }
+
+    /// Valide et écrit les images d'une consigne. Succès : le lot (nom du dossier) et les chemins absolus, dans l'ordre.
+    static func save(repo: String, items: [Any]) -> Result<(lot: String, paths: [String]), Failure> {
+        guard items.count <= maxCount else { return .failure(Failure(message: "\(maxCount) images au plus par consigne.")) }
+        var decoded: [(name: String, data: Data, ext: String)] = []
+        var total = 0
+        for (i, raw) in items.enumerated() {
+            guard let o = raw as? [String: Any], let b64 = o["data"] as? String, !b64.isEmpty else { return .failure(Failure(message: "Image \(i + 1) illisible : renvoie la consigne.")) }
+            let name = (o["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "image"
+            // Avant de décoder : la taille du base64 borne celle de l'image (4 octets pour 3).
+            guard b64.utf8.count <= maxBytes / 3 * 4 + 8 else { return .failure(Failure(message: "« \(name) » dépasse 8 Mo.")) }
+            guard let data = Data(base64Encoded: b64, options: .ignoreUnknownCharacters), !data.isEmpty else { return .failure(Failure(message: "« \(name) » est illisible.")) }
+            guard data.count <= maxBytes else { return .failure(Failure(message: "« \(name) » dépasse 8 Mo.")) }
+            guard let kind = sniff(data) else { return .failure(Failure(message: "« \(name) » n’est pas une image PNG, JPEG, WebP ou GIF.")) }
+            total += data.count
+            guard total <= maxTotal else { return .failure(Failure(message: "Les images pèsent plus de 24 Mo au total : joins-en moins, ou plus légères.")) }
+            decoded.append((name, data, kind.ext))
+        }
+        guard !decoded.isEmpty else { return .success((lot: "", paths: [])) }
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: repo + "/.git", isDirectory: &isDir), isDir.boolValue else {
+            return .failure(Failure(message: "Les images se rangent dans le dossier .git du projet : ce dossier n’est pas un dépôt Git ordinaire."))
+        }
+        let root = repo + "/.git/" + folder, fm = FileManager.default
+        do { try fm.createDirectory(atPath: root, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]) }
+        catch { return .failure(Failure(message: "Impossible de créer le dossier des images dans .git.")) }
+        sweep(root)
+        let stamp = DateFormatter(); stamp.locale = Locale(identifier: "en_US_POSIX"); stamp.dateFormat = "yyyyMMdd-HHmmss"
+        let lot = stamp.string(from: Date()) + "-" + String(UUID().uuidString.prefix(6)).lowercased()
+        let dir = root + "/" + lot
+        do { try fm.createDirectory(atPath: dir, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700]) }
+        catch { return .failure(Failure(message: "Impossible de créer le dossier des images dans .git.")) }
+        var paths: [String] = []
+        for (i, d) in decoded.enumerated() {
+            let path = dir + "/\(i + 1)-" + slug(d.name) + "." + d.ext
+            do { try d.data.write(to: URL(fileURLWithPath: path), options: .atomic) }
+            catch { try? fm.removeItem(atPath: dir); return .failure(Failure(message: "Écriture des images impossible (disque plein ?).")) }
+            paths.append(path)
+        }
+        return .success((lot: lot, paths: paths))
+    }
+
+    /// Supprime les lots trop anciens (30 jours) et, au-delà de 200, les plus vieux.
+    static func sweep(_ root: String) {
+        let fm = FileManager.default
+        let lots = ((try? fm.contentsOfDirectory(atPath: root)) ?? []).filter { !$0.hasPrefix(".") }.sorted()
+        let limit = Date().addingTimeInterval(-keepDays * 86_400)
+        var kept: [String] = []
+        for l in lots {
+            let p = root + "/" + l
+            let at = ((try? fm.attributesOfItem(atPath: p))?[.modificationDate] as? Date) ?? .distantFuture
+            if at < limit { try? fm.removeItem(atPath: p) } else { kept.append(l) }
+        }
+        for l in kept.dropLast(keepLots) { try? fm.removeItem(atPath: root + "/" + l) }
+    }
+
+    /// Supprime un lot écrit par cet appel (consigne refusée). Le nom vient de `save`, jamais de la page ; on revérifie quand même.
+    static func removeLot(repo: String, lot: String) {
+        guard lot.range(of: "^[0-9]{8}-[0-9]{6}-[0-9a-f]{6}$", options: .regularExpression) != nil else { return }
+        try? FileManager.default.removeItem(atPath: repo + "/.git/" + folder + "/" + lot)
+    }
+    /// Retire un fichier d'image (message en attente retiré) puis son lot s'il est vide.
+    static func removeFile(_ path: String) {
+        guard path.contains("/.git/" + folder + "/"), !path.contains("/../") else { return }
+        let fm = FileManager.default, dir = (path as NSString).deletingLastPathComponent
+        try? fm.removeItem(atPath: path)
+        if ((try? fm.contentsOfDirectory(atPath: dir)) ?? []).isEmpty { try? fm.removeItem(atPath: dir) }
+    }
+
+    /// Bloc ajouté à la fin de la consigne : les chemins absolus, et l'ordre de les lire avant de répondre.
+    static func block(_ paths: [String]) -> String {
+        guard !paths.isEmpty else { return "" }
+        let list = paths.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
+        return mark + "Studio a joint \(paths.count == 1 ? "une image" : "\(paths.count) images") à ce message. Lis-\(paths.count == 1 ? "la" : "les") avec ton outil Read (chemins absolus ci-dessous) avant de répondre : elles font partie de la demande.\n" + list + end
+    }
+
+    /// Chemins d'images d'un bloc `<images-jointes>` dans un texte, et le texte sans le bloc. Pour ClaudeSessions.
+    static func split(_ text: String) -> (text: String, paths: [String]) {
+        guard let r = text.range(of: mark) else { return (text, []) }
+        let after = text[r.upperBound...]
+        let inner = after.range(of: end).map { String(after[..<$0.lowerBound]) } ?? String(after)
+        let tail = after.range(of: end).map { String(after[$0.upperBound...]) } ?? ""
+        let paths = inner.split(separator: "\n").compactMap { line -> String? in
+            guard let dot = line.firstIndex(of: "."), line[..<dot].allSatisfy(\.isNumber), !line[..<dot].isEmpty else { return nil }
+            let p = line[line.index(after: dot)...].trimmingCharacters(in: .whitespaces)
+            return p.hasPrefix("/") && p.contains("/.git/" + folder + "/") ? p : nil
+        }
+        return (String(text[..<r.lowerBound]) + tail, paths)
+    }
+
+    /// Lecture d'une image jointe, pour le fil. Le chemin doit désigner un fichier ordinaire sous `<dépôt>/.git/studio-images/` du
+    /// projet : sans `..`, une fois les liens symboliques résolus (un lien qui sort du dossier est refusé), de taille bornée.
+    static func read(repo: String, path: String) -> [String: Any] {
+        let bad: [String: Any] = ["ok": false, "message": "Image introuvable."]
+        guard path.hasPrefix("/"), path.utf8.count < 1024, !path.contains("\0"), !path.split(separator: "/").contains("..") else { return bad }
+        let root = URL(fileURLWithPath: repo + "/.git/" + folder).resolvingSymlinksInPath().path
+        let file = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+        guard file.hasPrefix(root + "/") else { return bad }
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: file), attrs[.type] as? FileAttributeType == .typeRegular,
+              let size = attrs[.size] as? Int, size > 0, size <= maxBytes,
+              let data = FileManager.default.contents(atPath: file), data.count <= maxBytes, let kind = sniff(data) else { return bad }
+        return ["ok": true, "type": kind.mime, "data": data.base64EncodedString()]
     }
 }
 

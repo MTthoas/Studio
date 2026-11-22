@@ -53,6 +53,37 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'cockpit-projet-20261123', date: '2026-11-23', icon: 'graph', hue: 'blue', mac: true,
+    title: 'Cockpit de projet complet',
+    lead: 'Architecture, API, données, tests et environnements : tout le projet se lit et se pilote depuis sa page.',
+    bits: [
+      ['graph', 'Architecture', 'clients, services et bases détectés dans les dépôts, avec ce qui tourne sur quel port'],
+      ['plug', 'API et données', 'routes à essayer en local, modèles et migrations Prisma ou Drizzle, scripts lancés d’un clic'],
+      ['shield', 'Tests et environnements', 'suites lancées depuis Studio, résumé des échecs, variables attendues sans jamais leurs valeurs'],
+      ['bot', 'Corriger avec Claude', 'un test en échec ou une variable manquante part en consigne vers un agent'],
+    ],
+    where: ['Projets', 'un projet', 'Architecture'],
+    visual: { kind: 'flow', steps: [['Dépôts', 'gray', 'code'], ['Analyse', 'blue', 'graph'], ['Lancer et corriger', 'green', 'check']] } },
+  { id: 'images-prompt-20261123', date: '2026-11-23', icon: 'eye', hue: 'violet', mac: true,
+    title: 'Images dans les consignes',
+    lead: 'Une capture ou une maquette se colle dans la consigne : Claude Code la regarde avant de travailler.',
+    bits: [
+      ['eye', 'Coller, déposer, choisir', '`⌘V`, glisser-déposer ou bouton image ; six images par message, vignettes avant l’envoi'],
+      ['terminal', 'Partout où tu écris', 'nouvelle consigne, réponse dans un fil, Espace agents, message mis en attente'],
+      ['shield', 'Gardées sur le Mac', 'rangées dans le `.git` du dépôt, jamais commitées, effacées après trente jours'],
+    ],
+    where: ['Projets', 'un projet', 'Claude Code'],
+    visual: { kind: 'flow', steps: [['Capture', 'gray', 'eye'], ['Consigne', 'blue', 'terminal'], ['Agent', 'green', 'bot']] } },
+  { id: 'fond-horizon-mouvement-20261123', date: '2026-11-23', icon: 'palette', hue: 'orange',
+    title: 'Fond Horizon et mouvement',
+    lead: 'Un paysage de nuit derrière l’app, ou ta propre image, et des transitions sur toutes les interactions.',
+    bits: [
+      ['palette', 'Horizon', 'ciel étoilé, mer de nuages et faisceau, calculés dans l’app ; l’accueil flotte dessus'],
+      ['eye', 'Mon image', 'choisis une image générée ou une photo comme environnement : elle reste sur l’appareil'],
+      ['gear', 'Mouvement réglable', 'complet, discret ou aucun ; le réglage « Réduire les animations » du système est respecté'],
+    ],
+    where: ['Réglages', 'Apparence', 'Fond'],
+    visual: { kind: 'flow', steps: [['Apparence', 'gray', 'gear'], ['Fond', 'orange', 'palette'], ['Mouvement', 'green', 'check']] } },
   { id: 'onglet-mobile-20261122', date: '2026-11-22', icon: 'phone', hue: 'blue', mac: true,
     title: 'Onglet Mobile des projets',
     lead: 'Studio lance l’app mobile du projet sur un simulateur du Mac et en montre l’écran en direct.',

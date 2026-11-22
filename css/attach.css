@@ -1,0 +1,58 @@
+/* Images jointes à une consigne d'agent (src/features/projects/attach.ts). Préfixe at-.
+   Sobre : aplats, bordures fines, aucune ombre colorée ni dégradé. */
+
+/* Zone de dépôt : le formulaire se souligne pendant le glissement. */
+form.at-drop { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); background: color-mix(in srgb, var(--accent) 3%, var(--bg)); }
+form.at-drop textarea { pointer-events: none; }
+
+.at-strip { padding: 0 12px 8px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.at-strip[hidden] { display: none; }
+.at-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.at-item { position: relative; display: flex; align-items: center; gap: 8px; max-width: 220px; min-width: 0; padding: 4px 4px 4px 4px; border: 1px solid var(--border-2); border-radius: 8px; background: var(--surface-2); }
+.at-thumb { flex: none; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 5px; overflow: hidden; background: var(--border); cursor: zoom-in; }
+.at-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.at-thumb:focus-visible, .at-rm:focus-visible, .at-add:focus-visible, .at-gthumb:focus-visible, .at-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.at-meta { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+.at-name { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-1); color: var(--text); }
+.at-size { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.at-rm { flex: none; width: 24px; height: 24px; display: grid; place-items: center; border: 0; border-radius: 6px; background: none; color: var(--text-3); cursor: pointer; }
+.at-rm:hover { background: var(--border); color: var(--text); }
+.at-wait { padding: 0 10px; height: 48px; font-size: var(--t-1); color: var(--text-3); }
+.at-note { margin: 0; font-size: 11px; color: var(--text-3); }
+.at-warn { color: var(--c-red); }
+
+/* Bouton « Joindre » : grisé (pas désactivé) quand la machine ne peut pas les recevoir, pour garder son infobulle. */
+.at-add { width: 32px; height: 32px; border-radius: 8px; color: var(--text-3); cursor: pointer; }
+.at-add:hover { background: var(--surface-2); color: var(--text); }
+.at-add.at-off { opacity: .45; cursor: not-allowed; }
+.at-add.at-off:hover { background: none; color: var(--text-3); }
+.at-count { font-size: 11px; font-weight: 500; opacity: .85; white-space: nowrap; }
+
+/* Espace agents : la réponse passe à la ligne pour loger les vignettes au-dessus du champ. */
+.aw-reply { flex-wrap: wrap; }
+.aw-reply .at-strip { order: -1; flex: 0 0 100%; padding: 0; }
+.aw-reply .at-add { width: 34px; height: 34px; }
+.aw-new .at-strip { padding: 0; }
+.aw-new-foot .at-add { flex: none; }
+
+/* Vignettes d'un message du fil. */
+.at-gal { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.at-gthumb { width: 72px; height: 72px; padding: 0; border: 1px solid var(--border-2); border-radius: 8px; overflow: hidden; background: var(--surface-2); cursor: zoom-in; }
+.at-gthumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.at-ph { display: block; width: 100%; height: 100%; background: var(--surface-2); }
+.at-gthumb.at-gone { display: grid; place-items: center; width: auto; min-width: 72px; padding: 0 8px; cursor: default; font-size: 11px; color: var(--text-3); }
+.ss-msg.queued .at-gal { opacity: .85; }
+
+/* Visionneuse. */
+.at-view { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 32px; background: rgba(8, 9, 10, .82); cursor: zoom-out; }
+.at-view img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; cursor: default; background: var(--surface); }
+.at-close { position: absolute; top: 16px; right: 16px; width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid rgba(255, 255, 255, .25); border-radius: 50%; background: rgba(8, 9, 10, .6); color: #fff; cursor: pointer; }
+.at-close:hover { background: rgba(255, 255, 255, .16); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .at-gthumb { animation: at-in .16s ease-out; }
+  .at-view { animation: at-fade .14s ease-out; }
+  form.ag-compose, .aw-new { transition: border-color .12s, box-shadow .12s, background-color .12s; }
+}
+@keyframes at-in { from { opacity: 0; transform: scale(.96); } }
+@keyframes at-fade { from { opacity: 0; } }

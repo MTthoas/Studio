@@ -185,6 +185,12 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
                 }
                 r["id"] = id; self.answer(r)
             }
+        case "stack":
+            // Atelier du projet (voir Stack.swift) : analyse des dépôts en lecture seule, scripts déclarés lancés à la demande.
+            DispatchQueue.global(qos: .userInitiated).async {
+                var r = Stack.shared.handle(pid: pid, body: body)
+                r["id"] = id; self.answer(r)
+            }
         case "mobile":
             // Développement mobile du projet (voir Mobile.swift) : apps détectées, simulateurs, lancement, écran.
             let op = body["op"] as? String ?? "", device = body["device"] as? String ?? ""
@@ -302,6 +308,7 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
         // Suppressions et installations qu'un agent demande à faire confirmer (AgentGuard) : la page les lit et y répond.
         case "guard": send(AgentGuard.shared.list())
         case "guardAnswer": AgentGuard.shared.answer(id: body["ask"] as? String ?? "", allow: body["allow"] as? Bool == true, done: send)
+        case "image": DispatchQueue.global(qos: .userInitiated).async { Agents.shared.image(project: pid, body: body, done: send) }
         case "unqueue": send(Agents.shared.unqueue(project: pid, id: body["queued"] as? String ?? ""))
         case "stop": send(Agents.shared.stop(body["run"] as? String ?? ""))
         case "worktrees": bg { folders.worktrees(pid, fresh: body["fresh"] as? Bool == true) }

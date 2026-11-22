@@ -170,6 +170,82 @@
           { id: 'SIM-3', name: 'iPad Air 11 pouces (M3)', os: 'ios', runtime: 'iOS 26.5', booted: false, tablet: true },
           { id: 'avd:Pixel_9', name: 'Pixel 9', os: 'android', runtime: 'Émulateur', booted: false, tablet: false }] };
     }
+    if (action === 'stack') {
+      const W = (window.__stack = window.__stack || { runs: {}, t0: {} });
+      const sc = (name, command, pm, risky) => ({ name, command, run: pm + ' run ' + name, risky: !!risky });
+      const pk = (rel, name, role, frameworks, data, port, node, tool, scripts, uses) => ({ rel, name, kind: 'node', tool, frameworks, data, role, node, port, scripts: Object.assign({ dev: [], build: [], test: [], quality: [], data: [], other: [] }, scripts), runnable: true, uses: uses || [] });
+      const f = (name, type, o) => Object.assign({ name, type, optional: false, list: false, key: false, unique: false, owns: false }, o || {});
+      const repo = {
+        name: 'demo/atelier-lumiere', role: 'app', path: '~/projets/atelier-lumiere', main: true, truncated: false,
+        packages: [
+          pk('apps/api', '@atelier/api', 'api', ['Express'], ['Prisma', 'Postgres'], 4000, '20', 'pnpm', { dev: [sc('dev', 'tsx watch src/index.ts --port 4000', 'pnpm')], build: [sc('build', 'tsc -p .', 'pnpm')], test: [sc('test', 'vitest run', 'pnpm'), sc('test:e2e', 'playwright test', 'pnpm')], quality: [sc('lint', 'eslint .', 'pnpm'), sc('typecheck', 'tsc --noEmit', 'pnpm')], data: [sc('db:migrate', 'prisma migrate dev', 'pnpm'), sc('db:seed', 'tsx prisma/seed.ts', 'pnpm'), sc('db:reset', 'prisma migrate reset --force', 'pnpm', true)] }, ['packages/shared']),
+          pk('apps/web', '@atelier/web', 'site', ['Next.js', 'React'], [], 3000, '20', 'pnpm', { dev: [sc('dev', 'next dev', 'pnpm')], build: [sc('build', 'next build', 'pnpm')], test: [sc('test', 'vitest run', 'pnpm')], quality: [sc('lint', 'next lint', 'pnpm')] }, ['packages/shared']),
+          pk('apps/mobile', '@atelier/mobile', 'mobile', ['Expo', 'React Native'], [], 8081, '20', 'pnpm', { dev: [sc('start', 'expo start', 'pnpm')], test: [sc('test', 'jest', 'pnpm')] }, ['packages/shared']),
+          pk('packages/shared', '@atelier/shared', 'lib', [], [], 0, '20', 'pnpm', { build: [sc('build', 'tsup src/index.ts', 'pnpm')], test: [sc('test', 'vitest run', 'pnpm')] }, []),
+        ],
+        deploy: [{ rel: 'apps/web/vercel.json', kind: 'vercel', host: 'Vercel' }, { rel: 'apps/api/Dockerfile', kind: 'docker', host: 'Docker' }, { rel: 'apps/mobile/eas.json', kind: 'eas', host: 'Expo EAS' }],
+        hosts: ['Vercel', 'Docker', 'Expo EAS'],
+        workflows: [{ rel: '.github/workflows/ci.yml', name: 'CI', triggers: ['push', 'pull_request'], deploy: false }, { rel: '.github/workflows/deploy.yml', name: 'Déploiement production', triggers: ['push', 'workflow_dispatch'], deploy: true }],
+        api: {
+          routes: [
+            { method: 'GET', path: '/health', source: 'apps/api/src/index.ts', params: false },
+            { method: 'GET', path: '/products', summary: 'Liste des produits', source: 'apps/api/src/routes/products.ts', params: false },
+            { method: 'POST', path: '/products', summary: 'Crée un produit', source: 'apps/api/src/routes/products.ts', params: false },
+            { method: 'GET', path: '/products/:id', summary: 'Détail d’un produit', source: 'apps/api/src/routes/products.ts', params: true },
+            { method: 'PATCH', path: '/products/:id', source: 'apps/api/src/routes/products.ts', params: true },
+            { method: 'DELETE', path: '/products/:id', source: 'apps/api/src/routes/products.ts', params: true },
+            { method: 'GET', path: '/orders', summary: 'Commandes du compte', source: 'apps/api/src/routes/orders.ts', params: false },
+            { method: 'POST', path: '/orders', summary: 'Passe une commande', source: 'apps/api/src/routes/orders.ts', params: false },
+            { method: 'GET', path: '/orders/:id', source: 'apps/api/src/routes/orders.ts', params: true },
+            { method: 'POST', path: '/auth/login', source: 'apps/api/src/routes/auth.ts', params: false },
+            { method: 'GET', path: '/api/revalidate', source: 'apps/web/app/api/revalidate/route.ts', params: false },
+          ],
+          specs: [{ rel: 'apps/api/openapi.yaml', title: 'Atelier Lumière API', version: '1.2.0', servers: ['http://localhost:4000'], count: 9 }],
+          files: [{ rel: 'apps/api/requests.http', kind: 'http', count: 6 }], truncated: false,
+        },
+        data: {
+          schemas: [{ kind: 'prisma', rel: 'apps/api/prisma/schema.prisma', provider: 'postgresql', enums: [{ name: 'OrderStatus', values: ['PENDING', 'PAID', 'SHIPPED', 'CANCELLED'] }], models: [
+            { name: 'User', fields: [f('id', 'String', { key: true }), f('email', 'String', { unique: true }), f('name', 'String', { optional: true }), f('orders', 'Order', { list: true, ref: 'Order' })] },
+            { name: 'Product', fields: [f('id', 'String', { key: true }), f('title', 'String'), f('price', 'Int'), f('items', 'OrderItem', { list: true, ref: 'OrderItem' })] },
+            { name: 'Order', fields: [f('id', 'String', { key: true }), f('status', 'OrderStatus'), f('user', 'User', { ref: 'User', owns: true }), f('userId', 'String'), f('items', 'OrderItem', { list: true, ref: 'OrderItem' })] },
+            { name: 'OrderItem', fields: [f('id', 'String', { key: true }), f('order', 'Order', { ref: 'Order', owns: true }), f('product', 'Product', { ref: 'Product', owns: true }), f('qty', 'Int')] },
+          ] }],
+          migrations: [{ rel: 'apps/api/prisma/migrations', tool: 'Prisma', count: 7, last: { name: '20261112_add_order_status', at: now - 9 * 86400000 }, items: ['20261112_add_order_status', '20261030_order_items', '20261015_orders', '20260921_products', '20260918_users', '20260910_init', '20260901_extensions'].map((n, i) => ({ name: n, at: now - (9 + i * 12) * 86400000 })) }],
+          tools: ['Prisma', 'Postgres'], supabase: false,
+          scripts: [{ rel: 'apps/api', name: 'db:migrate', command: 'prisma migrate dev', run: 'pnpm run db:migrate', risky: false }, { rel: 'apps/api', name: 'db:seed', command: 'tsx prisma/seed.ts', run: 'pnpm run db:seed', risky: false }, { rel: 'apps/api', name: 'db:reset', command: 'prisma migrate reset --force', run: 'pnpm run db:reset', risky: true }],
+        },
+        env: {
+          files: [
+            { rel: 'apps/api/.env.example', stage: 'example', count: 4, set: 0, tracked: false, ignored: false, vars: [{ key: 'DATABASE_URL', set: false, note: 'Adresse Postgres' }, { key: 'JWT_SECRET', set: false, note: 'Clé de signature des sessions' }, { key: 'STRIPE_SECRET_KEY', set: false }, { key: 'SMTP_URL', set: false }] },
+            { rel: 'apps/api/.env', stage: 'dev', count: 3, set: 3, tracked: true, ignored: false, vs: 'apps/api/.env.example', missing: ['SMTP_URL'], extra: [], vars: [{ key: 'DATABASE_URL', set: true }, { key: 'JWT_SECRET', set: true }, { key: 'STRIPE_SECRET_KEY', set: true }] },
+            { rel: 'apps/web/.env.local', stage: 'dev', count: 2, set: 2, tracked: false, ignored: true, vars: [{ key: 'NEXT_PUBLIC_API_URL', set: true }, { key: 'REVALIDATE_TOKEN', set: true }] },
+            { rel: 'apps/api/.env.production', stage: 'prod', count: 4, set: 3, tracked: false, ignored: true, vs: 'apps/api/.env.example', missing: [], extra: [], vars: [{ key: 'DATABASE_URL', set: true }, { key: 'JWT_SECRET', set: true }, { key: 'STRIPE_SECRET_KEY', set: true }, { key: 'SMTP_URL', set: false }] },
+          ],
+          alerts: [], undocumented: ['SENTRY_DSN'], used: 7,
+        },
+        tests: { frameworks: [{ name: 'Vitest', command: 'pnpm run test', rel: 'apps/api' }, { name: 'Playwright', command: 'pnpm run test:e2e', rel: 'apps/api' }, { name: 'Vitest', command: 'pnpm run test', rel: 'apps/web' }, { name: 'Jest', command: 'pnpm run test', rel: 'apps/mobile' }, { name: 'Vitest', command: 'pnpm run test', rel: 'packages/shared' }], files: 31, byPackage: { 'apps/api': 14, 'apps/web': 9, 'apps/mobile': 5, 'packages/shared': 3 }, coverage: [{ rel: 'apps/api', source: 'apps/api/coverage/coverage-summary.json', at: now - 2 * 86400000, lines: 78.4, statements: 77.9, functions: 71.2, branches: 64.5 }] },
+        compose: [{ rel: 'docker-compose.yml', services: [{ name: 'db', image: 'postgres:16', build: false, ports: ['5432:5432'], kind: 'Postgres', db: true }, { name: 'cache', image: 'redis:7', build: false, ports: ['6379:6379'], kind: 'Redis', db: true }, { name: 'mail', image: 'axllent/mailpit', build: false, ports: ['8025:8025'], kind: 'Mailpit', db: false }] }],
+      };
+      repo.env.alerts = [
+        { level: 'danger', code: 'tracked', rel: 'apps/api/.env', text: 'apps/api/.env est suivi par Git : ses secrets sont dans l’historique du dépôt.', fix: 'git rm --cached apps/api/.env  puis ajoute-le au .gitignore, et change les secrets déjà publiés.' },
+        { level: 'warn', code: 'missing', rel: 'apps/api/.env', text: 'apps/api/.env : 1 variable de l’exemple absente.', fix: 'Ajoute SMTP_URL à apps/api/.env.' },
+      ];
+      const key = (m) => (m.repo || 'demo/atelier-lumiere') + '|' + (m.rel || '') + '|' + m.script;
+      const FAIL = '\n> @atelier/api@1.0.0 test\n> vitest run\n\n RUN  v1.6.0 /Users/demo/projets/atelier-lumiere/apps/api\n\n ✓ src/routes/products.test.ts (6)\n ✓ src/lib/prix.test.ts (4)\n ❯ src/routes/orders.test.ts (5 | 1 failed)\n   ✓ crée une commande\n   × refuse une commande vide\n     → expected 201 to be 400 // Object.is equality\n\n FAIL  src/routes/orders.test.ts > refuse une commande vide\nAssertionError: expected 201 to be 400\n ❯ src/routes/orders.test.ts:42:24\n\n Test Files  1 failed | 2 passed (3)\n      Tests  1 failed | 14 passed (15)\n   Duration  2.31s\n';
+      const OK = '\n> @atelier/web@0.4.0 test\n> vitest run\n\n ✓ app/page.test.tsx (3)\n ✓ lib/format.test.ts (6)\n\n Test Files  2 passed (2)\n      Tests  9 passed (9)\n   Duration  1.12s\n';
+      if (msg.op === 'run') {
+        const k = key(msg); W.t0[k] = Date.now();
+        const bad = msg.rel === 'apps/api' && msg.script === 'test';
+        W.runs[k] = { repo: 'demo/atelier-lumiere', rel: msg.rel, script: msg.script, command: 'pnpm run ' + msg.script, family: /^test/.test(msg.script) ? 'test' : 'data', status: 'running', code: 0, since: Date.now(), took: 0, log: '\n> ' + msg.script + '\n> démarrage…\n', bad };
+      } else if (msg.op === 'stop') { const r = W.runs[key(msg)]; if (r) { r.status = 'stopped'; r.ended = Date.now(); } }
+      const runs = {};
+      for (const [k, r] of Object.entries(W.runs)) {
+        const el = Date.now() - W.t0[k];
+        if (r.status === 'running' && el > 2500) { r.status = r.bad ? 'failed' : 'done'; r.code = r.bad ? 1 : 0; r.ended = Date.now(); r.log = r.bad ? FAIL : OK; r.summary = r.family === 'test' ? (r.bad ? { passed: 14, failed: 1, skipped: 0 } : { passed: 9, failed: 0, skipped: 0 }) : undefined; }
+        const { bad, ...o } = r; runs[k] = Object.assign(o, { took: Math.round(((o.ended || Date.now()) - o.since) / 1000) });
+      }
+      return { ok: true, folder: true, at: now, repos: [repo], runs, alerts: repo.env.alerts.map((a) => Object.assign({ repo: repo.name }, a)) };
+    }
     if (action === 'branches') return { branches: ['main'] };
     if (action === 'journal') return { stats: [] };
     return undefined;

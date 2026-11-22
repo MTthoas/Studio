@@ -16,6 +16,7 @@
 import * as bridge from '../integrations/remote.ts';
 import * as projects from './projects/model.ts';
 import * as subagents from './projects/subagents.ts';
+import * as attach from './projects/attach.ts';
 import { feedBlocks, syncFeed, nameOf, live, STATUS, modelName, agentCount, COUNT_HINT, newGroup, copyStrip, copyAct, COPY_ACTS, groupOfCopy } from './projects/sessions.ts';
 import { exchanges, exchangeBlocks, teamHTML, settled } from './projects/team.ts';
 import type { BoardMsg } from './projects/team.ts';
@@ -221,13 +222,13 @@ function paintList(): void {
 }
 
 const projectOptions = (cur: string) => projects.projects().map(p => `<option value="${esc(p.id)}"${p.id === cur ? ' selected' : ''}>${esc(p.name)}</option>`).join('');
-function newHTML(): string {
+function newHTML(i: number): string {
   const cur = proj(st.draftProject)?.id ?? projects.projects()[0]?.id ?? '';
-  return `<form class="aw-new">
+  return `<form class="aw-new" data-at-key="new|${i}">
     <div class="aw-new-row"><label class="aw-sel">${icon('folder')}<select name="project" aria-label="Projet">${projectOptions(cur)}</select></label>
       <div class="cx-seg aw-mode" role="radiogroup" aria-label="Mode"><label><input type="radio" name="mode" value="edit" checked>${icon('pencil')}Modifier</label><label><input type="radio" name="mode" value="read">${icon('search')}Analyser</label></div></div>
-    <textarea name="prompt" class="aw-big" placeholder="Décris ce que l’agent doit faire… ${COUNT_HINT}" aria-label="Consigne du nouvel agent"></textarea>
-    <div class="aw-new-foot"><button type="button" class="btn btn-ghost aw-sub" data-w="sub" title="${esc(subagents.HINT)}">${icon('sparkle')}<span>${esc(subagents.label(cur))}</span></button><span>ou glisse une conversation de la liste ici</span><button class="btn btn-primary">${icon('play')}Lancer ${kbd('mod+enter')}</button></div></form>`;
+    <textarea name="prompt" class="aw-big" placeholder="Décris ce que l’agent doit faire… ${COUNT_HINT}" aria-label="Consigne du nouvel agent"></textarea>${attach.stripHTML()}
+    <div class="aw-new-foot"><button type="button" class="btn btn-ghost aw-sub" data-w="sub" title="${esc(subagents.HINT)}">${icon('sparkle')}<span>${esc(subagents.label(cur))}</span></button><span>ou glisse une conversation de la liste ici</span>${attach.buttonHTML()}<button class="btn btn-primary">${icon('play')}Lancer ${kbd('mod+enter')}</button></div></form>`;
 }
 function paneShell(x: Pane | null, i: number): string {
   const act = (a: string, ic: string, t: string, k = '') => `<button type="button" class="icon-btn" data-w="${a}" title="${esc(t)}${k ? ` (${k})` : ''}" aria-label="${esc(t)}">${icon(ic)}</button>`;
@@ -237,8 +238,8 @@ function paneShell(x: Pane | null, i: number): string {
     <p class="aw-ro">${icon('eye')}Fil en lecture seule : ce sous-agent rend compte à l’agent principal.</p>`;
   return `<header class="aw-ph"><b class="aw-num">${i + 1}</b><div class="aw-ph-main"></div><div class="aw-ph-acts">${x ? act('stop', 'stop', 'Arrêter l’agent') + act('team', 'board', 'Tableau d’équipe', 'T') + act('open', 'chevronRight', 'Ouvrir dans le projet') : ''}${act('max', 'focus', 'Agrandir', 'F')}${x ? act('close', 'x', 'Vider la vue', 'X') : ''}</div></header>
     ${x ? `<div class="aw-copy-slot"></div><div class="aw-team-slot tm-team"></div><div class="aw-body"><div class="ss-feed aw-feed" role="log" tabindex="0" aria-label="Fil de l’agent ${i + 1}"></div><aside class="aw-board" hidden aria-label="Tableau d’équipe de l’agent ${i + 1}"><div class="aw-board-tabs" role="tablist" aria-label="Contenu du tableau" hidden><button type="button" role="tab" data-w="btab" data-tab="x">Échanges</button><button type="button" role="tab" data-w="btab" data-tab="f">Fichiers</button></div><div class="aw-board-x" role="log" aria-label="Échanges de l’équipe" hidden></div><div class="aw-board-list"></div><form class="aw-board-say"><input name="note" placeholder="Consigne pour l’équipe, lue à sa prochaine étape…" aria-label="Consigne pour l’équipe" maxlength="4000"><button class="btn" title="Ajouter au tableau (sans interrompre)">${icon('play')}</button></form></aside></div>
-    <form class="aw-reply"><textarea name="prompt" rows="1" placeholder="Répondre à l’agent…" aria-label="Réponse à l’agent ${i + 1}"></textarea><button class="btn btn-primary" title="Envoyer (⌘↵) · ⇧⌘↵ interrompt le tour en cours">${icon('play')}</button></form>`
-    : `<div class="aw-body aw-blank">${newHTML()}</div>`}`;
+    <form class="aw-reply" data-at-key="reply|${esc(x.project)}|${esc(x.session || x.run || String(i))}"><textarea name="prompt" rows="1" placeholder="Répondre à l’agent…" aria-label="Réponse à l’agent ${i + 1}"></textarea>${attach.buttonHTML()}<button class="btn btn-primary" data-at-bare title="Envoyer (⌘↵) · ⇧⌘↵ interrompt le tour en cours">${icon('play')}</button>${attach.stripHTML()}</form>`
+    : `<div class="aw-body aw-blank">${newHTML(i)}</div>`}`;
 }
 function headHTML(x: Pane | null): string {
   if (!x) return `<span class="aw-pt muted">Nouvel agent</span>`;
@@ -289,13 +290,18 @@ function paint(): void {
     const runs = (runsBy.get(x.project) ?? []).filter(r => r.session === x.session || (x.run && r.run === x.run));
     const working = runs.some(live) || !!d?.live;
     $<HTMLButtonElement>('[data-w="stop"]', el)!.hidden = !runs.some(live);
+    // Un agent lancé sur un serveur ne reçoit pas d'images (elles restent sur le Mac).
+    const rf = $<HTMLFormElement>('.aw-reply', el), far = runs.some(r => r.machine === 'server') ? 'server' : '';
+    if (rf && (rf.dataset.machine ?? '') !== far) { if (far) rf.dataset.machine = far; else delete rf.dataset.machine; attach.sync(rf); }
     paintCopy(el, x, working);
     // Bande « équipe » : une ligne par sous-agent de la conversation, mise à jour en place.
     const ts = $('.aw-team-slot', el);
     if (ts) paintIfChanged(ts, teamHTML(d?.subagents ?? [], { fold: teamFold.has(pkey(x)), shown: new Set(st.panes.filter(y => y?.sub && mkey(y) === mkey(x)).map(y => y?.sub ?? '')), shorten: shortPath }));
     if (d?.message) { syncFeed(feed, [{ key: 'msg', html: `<p class="ss-cut">${esc(d.message)}</p>` }]); return; }
     const end = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 40;
-    if (syncFeed(feed, feedBlocks(d?.actions ?? [], null, working || !d, (queuedBy.get(x.project) ?? []).filter(q => q.session === x.session))) && end) feed.scrollTop = feed.scrollHeight;
+    const drew = syncFeed(feed, feedBlocks(d?.actions ?? [], null, working || !d, (queuedBy.get(x.project) ?? []).filter(q => q.session === x.session)));
+    attach.hydrate(feed, x.project);
+    if (drew && end) feed.scrollTop = feed.scrollHeight;
     if (d && x.session) { const a = ms(d.updated); if (a > (seen[x.session] ?? 0)) { seen[x.session] = a; write(SEEN, Object.fromEntries(Object.entries(seen).slice(-500))); } }
   });
   paintList();
@@ -485,55 +491,65 @@ const firstEmpty = () => { const i = panes().findIndex(x => !x); return i >= 0 ?
 
 async function launch(f: HTMLFormElement, i: number): Promise<void> {
   const ta = need<HTMLTextAreaElement>('textarea', f), { n, text } = agentCount(ta.value);
+  const images = attach.payload(f);
   const pid = (f.elements.namedItem('project') as HTMLSelectElement).value, p = proj(pid);
-  if (!text || !p) { ta.focus(); return; }
+  const pics = attach.count(f), shown = text || (pics ? attach.DEFAULT_PROMPT : '');
+  if (!shown || !p) { ta.focus(); return; }
+  if (pics) { const why = attach.blocked(f); if (why) { toast(why); return; } }
   if (n > 8) { toast(`${n} agents demandés : 8 à la fois au plus.`); return; }
   const mode = f.querySelector<HTMLInputElement>('[name=mode]:checked')?.value ?? 'edit';
   const btn = need<HTMLButtonElement>('button.btn-primary', f); btn.disabled = true;
   st.draftProject = pid; save();
   // « 3× … » : chaque agent dans sa vue, celle-ci d'abord puis les vues vides suivantes (les autres restent dans la liste).
   const free = [i, ...panes().map((x, k) => (!x && k !== i ? k : -1)).filter(k => k >= 0)];
-  let ok = 0, fail = '';
+  let ok = 0, fail = '', oldApp = false;
   // Plusieurs agents qui modifient : une branche mère commune, une sous-branche par agent (voir l'onglet Claude Code du projet).
-  const group = n > 1 && mode === 'edit' ? newGroup(text) : '';
+  const group = n > 1 && mode === 'edit' ? newGroup(shown) : '';
   for (let k = 0; k < n; k++) {
     if (n > 1) btn.innerHTML = `<span class="spin"></span>Agent ${k + 1}/${n}…`;
-    const r = await startAgent(p, text, mode, group ? { group, slot: k + 1, of: n } : undefined);
+    const r = await startAgent(p, shown, mode, group ? { group, slot: k + 1, of: n } : undefined, images);
+    if (r.ok && !r.images) oldApp = true;
     if (!r.ok) { fail = r.message; break; }
     ok++;
     const at = free[k]; if (at !== undefined) st.panes[at] = { project: pid, session: r.session, run: r.run };
   }
   btn.disabled = false;
   if (!ok) { btn.innerHTML = `${icon('play')}Lancer ${kbd('mod+enter')}`; toast(fail); return; }
+  attach.clear(f);
+  if (oldApp) toast(attach.OLD_APP);
   save(); st.focus = i; paint();
   toast(n > 1 ? `${ok} agent${ok > 1 ? 's' : ''} sur ${n} au travail${fail ? ` · ${fail}` : ''}` : 'Agent lancé'); announceMade(); void refresh();
   void loadSessions(p).then(paintList);
 }
-async function startAgent(p: Project, prompt: string, mode = 'edit', group?: { group: string; slot: number; of: number }): Promise<{ ok: true; session: string; run: string } | { ok: false; message: string }> {
+async function startAgent(p: Project, prompt: string, mode = 'edit', group?: { group: string; slot: number; of: number }, images: attach.Payload[] = []): Promise<{ ok: true; session: string; run: string; images: boolean } | { ok: false; message: string }> {
   const body: Record<string, unknown> = { project: p.id, prompt, mode, repos: p.stack, ...group };
   // L'équipe du projet part avec la consigne ; avec « auto », les spécialistes utiles y sont d'abord ajoutés.
   const sub = subagents.body(p.id, prompt, mode); if (sub) body.subagents = sub;
   subagents.lastCreated().forEach(n => made.add(n));
-  const r = await bridge.call('agent', 'start', body, 60000);
-  return r.ok ? { ok: true, session: typeof r.session === 'string' ? r.session : '', run: typeof r.run === 'string' ? r.run : '' } : { ok: false, message: r.message ?? 'Lancement impossible.' };
+  if (images.length) body.images = images;
+  const r = await bridge.call('agent', 'start', body, images.length ? 120000 : 60000);
+  return r.ok ? { ok: true, session: typeof r.session === 'string' ? r.session : '', run: typeof r.run === 'string' ? r.run : '', images: attach.confirmed(r, images.length) } : { ok: false, message: r.message ?? 'Lancement impossible.' };
 }
-async function reply(x: Pane, prompt: string, interrupt = false): Promise<boolean> {
+async function reply(x: Pane, prompt: string, interrupt = false, images: attach.Payload[] = []): Promise<boolean> {
   const p = proj(x.project); if (!p || !x.session || x.sub) return false; // un sous-agent ne reçoit pas de réponse : il répond à l'agent principal
   const body: Record<string, unknown> = { project: p.id, session: x.session, prompt, repos: p.stack, ...(interrupt ? { interrupt: true } : {}) };
   const sub = subagents.body(p.id, prompt, 'edit'); if (sub) body.subagents = sub;
   subagents.lastCreated().forEach(n => made.add(n));
-  const r = await bridge.call('agent', 'start', body, 60000);
+  if (images.length) body.images = images;
+  const r = await bridge.call('agent', 'start', body, images.length ? 120000 : 60000);
   if (!r.ok) { toast(r.message ?? 'Envoi impossible.'); return false; }
+  if (!attach.confirmed(r, images.length)) toast(attach.OLD_APP);
   if (typeof r.queued === 'number') toast('Message en attente : l’agent le lira à la fin de son tour');
   announceMade();
   void loadRuns(x.project).then(() => loadDetail(x)).then(paint);
   return true;
 }
 async function send(f: HTMLFormElement, i: number, interrupt: boolean): Promise<void> {
-  const x = panes()[i], ta = need<HTMLTextAreaElement>('textarea', f), text = ta.value.trim();
+  const x = panes()[i], ta = need<HTMLTextAreaElement>('textarea', f), pics = attach.count(f), text = ta.value.trim() || (pics ? attach.DEFAULT_PROMPT : '');
   if (!x || !text) return;
-  const btn = need<HTMLButtonElement>('button', f); btn.disabled = true;
-  if (await reply(x, text, interrupt)) { ta.value = ''; grow(ta); }
+  if (pics) { const why = attach.blocked(f); if (why) { toast(why); return; } }
+  const btn = need<HTMLButtonElement>('button.btn-primary', f); btn.disabled = true;
+  if (await reply(x, text, interrupt, attach.payload(f))) { ta.value = ''; grow(ta); attach.clear(f); }
   btn.disabled = false;
 }
 async function stopPane(i: number): Promise<void> {
@@ -658,6 +674,7 @@ export function mount(main: HTMLElement, toolbarLeft: string): void {
     if (t.closest('[data-ag="copy"]')) { const md = t.closest('.ss-msg')?.querySelector('.md') as HTMLElement | null; if (md) void navigator.clipboard.writeText(md.innerText).then(() => toast('Réponse copiée')); return; }
     if (pane && i !== st.focus) { st.focus = i; save(); grid.querySelectorAll('.aw-pane').forEach(p => p.classList.toggle('focus', p === pane)); }
   });
+  attach.bind(page);
   page.addEventListener('submit', e => {
     e.preventDefault();
     const f = e.target as HTMLFormElement, i = Number(f.closest<HTMLElement>('.aw-pane')?.dataset.i ?? st.focus);

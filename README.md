@@ -372,7 +372,7 @@ Les seules dépendances sont TypeScript et esbuild, pour le développement. Les 
 
 ```
 index.html, manifest.webmanifest   page et installation (copiés dans dist/ au build)
-css/app.css                        styles, thèmes clair et sombre (importe css/*.css : news, pulse, activity, team, noteseal, sky, commerce/)
+css/app.css                        styles, thèmes clair et sombre (importe css/*.css : news, pulse, activity, team, noteseal, sky, attach, stack, motion, commerce/)
 src/                               TypeScript strict
   app.ts            interface : vues, éditeur, palette, raccourcis (point d'entrée)
   boot.ts           thème appliqué avant le premier affichage
@@ -402,7 +402,7 @@ src/                               TypeScript strict
                       review.ts (revue IA), sessions.ts (agents Claude Code, publication), notepick.ts (choix des notes à joindre),
                       subagents.ts (équipe de sous-agents du projet), autoteam.ts (spécialistes créés selon la consigne),
                       team.ts (bande Équipe, diffs en direct, fil Échanges),
-                      items.ts (notes et tâches créées par les agents), site.ts (site du projet lancé en local), mobile.ts (app mobile, simulateurs, écran en direct), docker.ts (conteneurs et images)
+                      items.ts (notes et tâches créées par les agents), site.ts (site du projet lancé en local), mobile.ts (app mobile, simulateurs, écran en direct), stack.ts (architecture, API, données, tests, environnements), attach.ts (images jointes aux consignes), docker.ts (conteneurs et images)
     news.ts           nouveautés présentées après une mise à jour, fenêtre « mise à jour prête »
     permissions.ts    réglages des autorisations des agents Claude Code (commandes, web, notes et tâches, PATH), gardés sur le Mac
     automations.ts, help.ts, onboarding.ts
@@ -418,7 +418,8 @@ src/                               TypeScript strict
     github/           api.ts (actualité des dépôts), page.ts
   lib/              outils sans état : markdown, calc, schema, graph, qr, fuzzy, diff, zip
   plugins/          registre d'extensions, plugins maison (GitHub, Linear) et optionnels (Spotify, n8n, Figma)
-  ui/               kit.ts (icônes, menus, fenêtres), caret.ts (curseur), chart.ts (graphiques)
+  ui/               kit.ts (icônes, menus, fenêtres), caret.ts (curseur), chart.ts (graphiques),
+                    sky.ts et horizon.ts (fonds calculés, image choisie), motion.ts (transitions et animations d'interface)
   sw/sw.ts          service worker (compilé avec les types « worker »)
 native/             apps Mac et iPhone (Swift) et leurs scripts de build
   Shared/
@@ -438,6 +439,7 @@ native/             apps Mac et iPhone (Swift) et leurs scripts de build
     ServerExtensions.swift  extensions du serveur : Docker, Kubernetes
     Sites.swift         site d'un projet en local : détection, serveur de fichiers, script dev, builds notifiés
     Mobile.swift        app mobile d'un projet : détection, simulateurs et émulateurs, lancement, écran, réglages de test
+    Stack.swift         cockpit d'un projet : analyse des dépôts (paquets, routes, schémas, variables attendues, tests), scripts du package.json lancés et suivis
     Docker.swift        conteneurs et images Docker du Mac (lecture seule, par la socket du moteur)
     Models.swift        Ollama sur le Mac ou sur un serveur (par SSH) : état, installation, modèles, chat
   macOS/, iOS/        points d'entrée de chaque plateforme
