@@ -154,7 +154,7 @@ final class Sites {
     }
 
     /// Où chercher npm, pnpm… : les dossiers réglés pour les agents, puis les emplacements habituels, puis le PATH de l'app.
-    private static func searchPath() -> [String] {
+    static func searchPath() -> [String] {
         let home = NSHomeDirectory()
         let base = (ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin").split(separator: ":").map(String.init)
         let all = AgentPermissions.path + ["/opt/homebrew/bin", "/usr/local/bin", home + "/.local/bin", home + "/.bun/bin", home + "/.volta/bin", home + "/Library/pnpm"] + base
@@ -163,7 +163,7 @@ final class Sites {
         for d in all where !seen.contains(d) { seen.insert(d); out.append(d) }
         return out
     }
-    private static func find(_ tool: String) -> String? {
+    static func find(_ tool: String) -> String? {
         for d in searchPath() {
             let p = d + "/" + tool
             if FileManager.default.isExecutableFile(atPath: p) { return p }
@@ -172,7 +172,7 @@ final class Sites {
     }
 
     /// Retire les séquences de couleur du terminal.
-    private static func clean(_ s: String) -> String {
+    static func clean(_ s: String) -> String {
         s.replacingOccurrences(of: "\u{1B}\\[[0-9;?]*[A-Za-z]", with: "", options: .regularExpression)
     }
     /// Adresse locale annoncée par un serveur de développement dans sa sortie.
@@ -362,7 +362,7 @@ final class Sites {
         for id in running { stopBuild(id) }
     }
 
-    private static func descendants(of root: Int32) -> [Int32] {
+    static func descendants(of root: Int32) -> [Int32] {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/ps")
         p.arguments = ["-axo", "pid=,ppid="]

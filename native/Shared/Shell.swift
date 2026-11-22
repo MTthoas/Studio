@@ -185,6 +185,27 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
                 }
                 r["id"] = id; self.answer(r)
             }
+        case "mobile":
+            // Développement mobile du projet (voir Mobile.swift) : apps détectées, simulateurs, lancement, écran.
+            let op = body["op"] as? String ?? "", device = body["device"] as? String ?? ""
+            DispatchQueue.global(qos: .userInitiated).async {
+                var r: [String: Any]
+                switch op {
+                case "probe": r = Mobile.shared.probe(pid)
+                case "boot": r = Mobile.shared.boot(device)
+                case "shutdown": r = Mobile.shared.shutdown(device)
+                case "screen": r = Mobile.shared.screen(device)
+                case "snap": r = Mobile.shared.snap(device)
+                case "look", "text", "bar": r = Mobile.shared.tune(device, what: op, value: body["value"] as? String ?? "")
+                case "url": r = Mobile.shared.open(device, url: body["url"] as? String ?? "")
+                case "run": r = Mobile.shared.run(pid, rel: body["rel"] as? String ?? "", kind: body["kind"] as? String ?? "",
+                                                  platform: body["platform"] as? String ?? "", device: device, name: body["name"] as? String ?? "")
+                case "reload": r = Mobile.shared.reload(pid, full: body["full"] as? Bool == true)
+                case "run-stop": r = Mobile.shared.stop(pid)
+                default: r = Mobile.shared.state(pid)
+                }
+                r["id"] = id; self.answer(r)
+            }
         case "sessions":
             guard let dir = folders.path(pid) else { answer(["id": id, "ok": true, "sessions": [], "found": false]); return }
             ClaudeSessions.shared.list(project: dir) { var r = $0; r["id"] = id; self.answer(r) }

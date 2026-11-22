@@ -1,0 +1,50 @@
+/* Onglet Mobile d'un projet (mobile.ts) : app à lancer, appareils, écran en direct. Préfixe mb-. */
+.mb-apps { display: flex; flex-direction: column; gap: 12px; }
+.mb-apps .st-row .btn + .btn { margin-left: -6px; }
+.mb-devices { display: grid; grid-template-columns: minmax(200px, 260px) minmax(0, 1fr); gap: 20px; align-items: start; }
+.mb-list { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.mb-list > .modal-hint { margin: 0; }
+.mb-scroll { max-height: 560px; overflow-y: auto; padding: 4px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-2); }
+.mb-group { padding: 10px 10px 4px; color: var(--text-3); font-size: var(--t-1); font-weight: 500; }
+.mb-group:first-child { padding-top: 6px; }
+.mb-dev { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 10px; border-radius: 8px; text-align: left; color: var(--text); font-size: var(--t-2); }
+.mb-dev:hover { background: var(--hover); }
+.mb-dev.sel { background: var(--active); }
+.mb-dev span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mb-dev em { flex: none; font-style: normal; color: var(--text-3); font-size: var(--t-1); }
+.mb-dev .pj-site-dot { width: 7px; height: 7px; }
+.mb-dev .pj-site-dot:not(.up) { background: none; box-shadow: inset 0 0 0 1px var(--text-3); }
+
+.mb-stage { display: flex; gap: 24px; align-items: flex-start; min-width: 0; }
+.mb-screen { flex: none; width: 250px; aspect-ratio: 9 / 19.5; display: flex; align-items: center; justify-content: center; overflow: hidden; border-radius: 30px; border: 1px solid var(--border); background: #000; box-shadow: 0 0 0 5px var(--surface-2), 0 0 0 6px var(--border); margin: 6px; }
+.mb-screen.tablet { width: 340px; aspect-ratio: 3 / 4; border-radius: 18px; }
+.mb-screen:has(img) { aspect-ratio: auto; }
+.mb-screen img { display: block; width: 100%; height: auto; }
+.mb-screen span { padding: 0 20px; color: #8a8a8a; font-size: var(--t-1); text-align: center; line-height: 1.5; }
+.mb-off { flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 18px 20px; border: 1px dashed var(--border); border-radius: 12px; }
+.mb-off strong { font-size: var(--t-3); font-weight: 600; }
+.mb-off span { color: var(--text-3); font-size: var(--t-1); }
+.mb-off .btn { margin-top: 10px; height: 30px; }
+
+.mb-tools { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px; padding-top: 6px; }
+.mb-tool { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.mb-tool > span:first-child { color: var(--text-3); font-size: var(--t-1); font-weight: 500; }
+.mb-seg { display: inline-flex; flex-wrap: wrap; padding: 2px; border-radius: 8px; background: var(--btn); }
+.mb-seg button { height: 26px; padding: 0 11px; border-radius: 6px; color: var(--text-2); font-size: var(--t-1); font-weight: 500; }
+.mb-seg button:hover { color: var(--text); }
+.mb-seg button.sel { background: var(--bg); color: var(--text); box-shadow: 0 0 0 1px var(--border); }
+.mb-link { flex-direction: row; flex-wrap: wrap; align-items: center; }
+.mb-link > span:first-child { flex-basis: 100%; }
+.mb-link .field { flex: 1; min-width: 160px; max-width: 340px; height: 30px; margin: 0; font: 12px var(--mono); }
+.mb-link .btn, .mb-acts .btn { height: 30px; }
+.mb-acts { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 4px; }
+.mb-tools > .modal-hint { margin: 0; }
+
+@media (max-width: 900px) {
+  .mb-devices { grid-template-columns: minmax(0, 1fr); }
+  .mb-scroll { max-height: 220px; }
+}
+@media (max-width: 620px) {
+  .mb-stage { flex-direction: column; align-items: stretch; }
+  .mb-screen { align-self: center; }
+}
