@@ -23,9 +23,7 @@ export function steps(): Step[] {
     { key: 'note', label: 'Écrire une première note', hint: 'Du texte simple suffit.', done: !!f.note, action: 'data-act="new"' },
     { key: 'palette', label: 'Ouvrir la palette', hint: 'Elle trouve tout : notes et actions.', done: !!f.palette, action: 'data-act="palette"' },
     { key: 'link', label: 'Relier deux notes', hint: 'Écris [[ puis le titre d’une note.', done: !!f.link, action: 'data-view="help"' },
-    { key: 'task', label: 'Ajouter une tâche', hint: 'Ex. « Appeler Paul demain ».', done: !!todo.list(), action: 'data-view="tasks"' },
     { key: 'secure', label: 'Protéger tes notes', hint: 'Chiffrement et Touch ID.', done: vault.enabled(), action: 'data-open-conn="coffre"' },
-    { key: 'auto', label: 'Lancer une automatisation', hint: 'Un modèle prêt à l’emploi suffit.', done: hub.runLog().length > 0, action: 'data-view="agents"' },
   ];
 }
 /** Visible tant qu'il reste quelque chose à découvrir et que la personne ne l'a pas masquée. */

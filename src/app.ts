@@ -45,16 +45,16 @@ import * as link from './integrations/link.ts';
 import { $, $$, el, icon, logo, kbd, keys, matches, isMac, rel, until, full, menu, modal, confirmBox, toast, download, closeTop, topLayer, need, target, errMsg, num, hue, paintIfChanged } from './ui/kit.ts';
 import type { MenuItem } from './ui/kit.ts';
 import * as sky from './ui/sky.ts';
-import * as horizon from './ui/horizon.ts';
 import * as motion from './ui/motion.ts';
+import * as cat from './ui/cat.ts';
 import type { Note, Version, ViewState } from './types.ts';
 import type { Graph, GraphInput } from './lib/graph.ts';
 
 // ---------- Préférences ----------
 /** État d'interface mémorisé entre deux visites. */
-type Backdrop = 'horizon' | 'image' | 'sky' | 'plain';
+type Backdrop = 'sky' | 'plain';
 interface UiState {
-  view: ViewState; id: string | null; mode: 'edit' | 'split' | 'read'; side: boolean; theme: string; /** Fond (css/sky.css) : `horizon` (paysage de nuit calculé, src/ui/horizon.ts), `image` (image choisie), `sky` (ciel en pixels) ou `plain` (uni). */ backdrop: Backdrop; tagsOpen: boolean;
+  view: ViewState; id: string | null; mode: 'edit' | 'split' | 'read'; side: boolean; theme: string; /** Fond : `plain` (uni, défaut) ou `sky` (ciel en pixels, css/sky.css). */ backdrop: Backdrop; tagsOpen: boolean; /** Groupe « Plus » de la barre latérale déplié. */ moreOpen: boolean;
   /** Section « Arborescence » de la barre latérale dépliée, et notes dont les sous-notes y sont affichées. */
   treeSec: boolean; treeOpen: string[];
 }
@@ -82,12 +82,11 @@ const editing = (): OpenEditor | null => (ed && ed.ta ? ed as OpenEditor : null)
 
 const read = <T>(k: string, d: T): T => { try { return (JSON.parse(localStorage.getItem(k) || 'null') as T | null) ?? d; } catch { return d; } };
 const write = (k: string, v: unknown): void => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* stockage indisponible */ } };
-const BACKDROPS = ['horizon', 'image', 'sky', 'plain'] as const;
-const ui: UiState = Object.assign({ view: { type: 'home' }, id: null, mode: 'split', side: true, theme: 'auto', backdrop: 'horizon', tagsOpen: true, treeSec: true, treeOpen: [] } as UiState, read<Partial<UiState>>('carnet.ui', {}));
+const ui: UiState = Object.assign({ view: { type: 'home' }, id: null, mode: 'split', side: true, theme: 'auto', backdrop: 'plain', tagsOpen: true, moreOpen: false, treeSec: true, treeOpen: [] } as UiState, read<Partial<UiState>>('carnet.ui', {}));
 const saveUI = () => write('carnet.ui', ui);
-// « Horizon » devient le fond par défaut : appliqué une fois à qui avait gardé le Ciel (retour possible dans Réglages → Apparence).
-if (!localStorage.getItem('studio.backdrop.v2')) { localStorage.setItem('studio.backdrop.v2', '1'); if (ui.backdrop === 'sky') { ui.backdrop = 'horizon'; saveUI(); } }
-if (!BACKDROPS.includes(ui.backdrop)) ui.backdrop = 'horizon';
+// Les fonds « Horizon » et « Mon image » ont été retirés : qui les avait retrouve le Ciel.
+// Uni par défaut : le ciel ne revient que s'il a été choisi depuis (drapeau studio.backdrop.v3, lu aussi par boot.ts).
+if (ui.backdrop !== 'sky' || !localStorage.getItem('studio.backdrop.v3')) ui.backdrop = 'plain';
 let focusMode = false, ed: Editor | null = null, graph: Graph | null = null;
 
 const SC = {
@@ -102,7 +101,6 @@ const VIEWS: Record<string, { label: string; icon: string }> = {
   graph: { label: 'Graphe', icon: 'graph' }, trash: { label: 'Corbeille', icon: 'trash' },
 };
 /** Teinte de l'icône de chaque section dans la barre latérale. */
-const SIDE_HUE: Record<string, string> = { home: 'gray', workspace: 'violet', models: 'teal', commerce: 'green', claude: 'orange', inbox: 'blue', today: 'amber', journal: 'pink', all: 'gray', ephemeral: 'orange', tasks: 'green', agents: 'violet', help: 'blue', projets: 'orange', linear: 'indigo', github: 'gray', graph: 'teal', trash: 'gray' };
 const titleOf = (n: Note) => n.title.trim() || 'Sans titre';
 const WIDE = new Set(['workspace', 'models', 'commerce', 'graph', 'home', 'claude', 'settings', 'tasks', 'linear', 'github', 'agents', 'help', 'projets', 'journal']); // vues sans colonne de liste
 
@@ -111,7 +109,7 @@ function applyTheme() {
   document.documentElement.dataset.theme = dark ? 'dark' : 'light';
   const skyOn = ui.backdrop !== 'plain';
   document.documentElement.dataset.backdrop = ui.backdrop;
-  paintBackdrop(dark);
+  if (skyOn) sky.paint(dark);
   $('meta[name=theme-color]')?.setAttribute('content', skyOn ? '#050506' : dark ? '#08090a' : '#f2f2f3');
   window.webkit?.messageHandlers?.carnet?.postMessage({ type: 'theme', dark }); // app native : la fenêtre suit le thème
   graph?.redraw();
@@ -119,17 +117,7 @@ function applyTheme() {
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
 // Le ciel est dessiné à la taille de l'écran : à redessiner seulement si la fenêtre passe sur un écran plus grand.
 let skyTimer: ReturnType<typeof setTimeout> | undefined;
-addEventListener('resize', () => { clearTimeout(skyTimer); skyTimer = setTimeout(() => paintBackdrop(document.documentElement.dataset.theme === 'dark'), 400); });
-/** Dessine le fond choisi dans `--sky`. Les deux dessinateurs se partagent la variable : celui qui ne sert pas est relâché. */
-function paintBackdrop(dark: boolean): void {
-  if (ui.backdrop === 'sky') { horizon.release(); sky.paint(dark); }
-  else if (ui.backdrop === 'horizon') { sky.release(); horizon.paint(); }
-  else if (ui.backdrop === 'image') {
-    sky.release();
-    // Image retirée ou jamais choisie sur cet appareil : retour au paysage.
-    void horizon.paintImage().then(ok => { if (!ok && ui.backdrop === 'image') setBackdrop('horizon'); });
-  }
-}
+addEventListener('resize', () => { clearTimeout(skyTimer); skyTimer = setTimeout(() => { if (ui.backdrop !== 'plain') sky.paint(document.documentElement.dataset.theme === 'dark'); }, 400); });
 
 // ---------- Enregistrement (différé, par note) ----------
 const pending = new Map();
@@ -215,9 +203,12 @@ async function openByTitle(title: string) {
 function renderSidebar() {
   const idx = store.index(), v = ui.view;
   const count: Record<string, number> = { inbox: idx.live.filter(n => n.inbox).length, tasks: todo.openCount(), linear: notifs.unreadCount(), github: github.unseenCount(), ephemeral: idx.live.filter(n => n.expiresAt).length };
-  const item = (type: string) => `<button class="side-item${v.type === type ? ' sel' : ''}" data-view="${type}" style="--ic:var(--c-${SIDE_HUE[type] ?? 'gray'})">${icon(VIEWS[type]?.icon ?? 'notes')}<span>${VIEWS[type]?.label ?? type}</span>${count[type] ? `<span class="side-count">${count[type]}</span>` : ''}</button>`;
+  const item = (type: string) => `<button class="side-item${v.type === type ? ' sel' : ''}" data-view="${type}">${icon(VIEWS[type]?.icon ?? 'notes')}<span>${VIEWS[type]?.label ?? type}</span>${count[type] ? `<span class="side-count">${count[type]}</span>` : ''}</button>`;
   const tags = [...idx.tags].filter(([t]) => !t.startsWith('projet/')).sort((a, b) => a[0].localeCompare(b[0], 'fr'));
   const devs = vault.isOpen() ? link.devices().length : 0;
+  // Le quotidien reste à l'écran ; le reste se range sous « Plus » (déplié d'office quand la vue ouverte s'y trouve).
+  const more = ['journal', ...(count.ephemeral || v.type === 'ephemeral' ? ['ephemeral'] : []), ...(models.available() ? ['models'] : []), ...(commerce.available() ? ['commerce'] : []), 'linear', 'github', 'graph', 'trash', 'help'];
+  const moreOpen = ui.moreOpen || more.includes(v.type), moreCount = (count.linear ?? 0) + (count.github ?? 0);
   const html = `
     <div class="side-head">
       <button class="ws" data-act="workspace" aria-label="Menu Studio">${logo()}<span class="ws-name">Studio</span>${icon('chevron')}</button>
@@ -226,12 +217,8 @@ function renderSidebar() {
       <button class="icon-btn" data-act="new" title="Nouvelle note (${keys(SC.newNote)})" aria-label="Nouvelle note">${icon('compose')}</button>
     </div>
     <div class="side-scroll">
-      <div class="side-group">${item('home')}</div>
-      <div class="side-label">Notes</div>
-      <div class="side-group">${item('inbox')}${item('today')}${item('journal')}${item('all')}${count.ephemeral || v.type === 'ephemeral' ? item('ephemeral') : ''}</div>
-      ${treeHTML(idx.live)}
-      <div class="side-label">Organisation</div>
-      <div class="side-group">${projectsPage.claudeAvailable() ? item('workspace') : ''}${models.available() ? item('models') : ''}${commerce.available() ? item('commerce') : ''}${item('projets')}${projectsModel.projects().slice(0, 8).map(p => {
+      <div class="side-group">${item('home')}${item('inbox')}${item('today')}${item('all')}</div>
+      <div class="side-group side-gap">${projectsPage.claudeAvailable() ? item('workspace') : ''}${item('projets')}${projectsModel.projects().slice(0, 8).map(p => {
         const open = v.type === 'projets' && v.project === p.id, tab = v.tab ?? 'overview';
         // Sous « Claude Code » : les conversations récentes du projet, celle qui est ouverte en surbrillance.
         const talks = open ? projectsPage.sideSessions(p.id) : [], talking = tab === 'sessions' && talks.some(s => s.sel);
@@ -244,12 +231,10 @@ function renderSidebar() {
             + (k === 'sessions' ? talks.map(s => `<button class="side-item side-sub3${tab === 'sessions' && s.sel && !s.subs.some(a => a.sel) ? ' sel' : ''}${!s.live && s.stage ? ` ${s.stage.cls}` : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="sessions" data-pj-session="${esc(s.id)}" title="${esc(s.title)}${s.live ? ' · en cours' : s.stage ? ` · ${esc(s.stage.label)}` : ''}"><i class="ss-live${s.live ? ' on' : s.stage ? ` ${s.stage.cls}` : ''}"></i><span>${esc(s.title)}</span>${!s.live && s.stage?.cls === 'st-review' ? `<em class="side-stage">${esc(s.stage.label)}</em>` : ''}<i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`
               // Sous la conversation : ses sous-agents épinglés, et celui dont on lit le fil.
               + s.subs.map(a => `<button class="side-item side-sub4${tab === 'sessions' && a.sel ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="sessions" data-pj-session="${esc(s.id)}" data-pj-sub="${esc(a.id)}" title="Sous-agent : ${esc(a.title)}"><i class="ss-live${a.live ? ' on' : ''}"></i><span>${esc(a.title)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('')).join('') : '')).join('') : '');
-      }).join('')}${item('tasks')}${item('agents')}</div>
-      <div class="side-label">Connexions</div>
-      <div class="side-group">${item('linear')}${item('github')}</div>
+      }).join('')}</div>
+      ${treeHTML(idx.live)}
       ${tags.length ? `<button class="side-label" data-act="tags" aria-expanded="${ui.tagsOpen}">${icon('chevron')}Tags</button>${ui.tagsOpen ? `<div class="side-group">${tags.map(([t, c]) => `<button class="side-item${v.type === 'tag' && v.tag === t ? ' sel' : ''}" data-tag="${esc(t)}"><i class="tag-dot" style="--c:var(--c-${hue(t)})"></i><span>${esc(t)}</span><span class="side-count">${c}</span></button>`).join('')}</div>` : ''}` : ''}
-      <div class="side-label">Explorer</div>
-      <div class="side-group">${item('graph')}${item('trash')}${item('help')}</div>
+      <button class="side-label" data-act="more-views" aria-expanded="${moreOpen}">${icon('chevron')}Plus${!moreOpen && moreCount ? `<span class="side-count">${moreCount}</span>` : ''}</button>${moreOpen ? `<div class="side-group">${more.map(item).join('')}</div>` : ''}
     </div>
     <div id="plug-side"></div>
     ${update.ready() ? `<button class="side-foot side-update" data-open-conn="maj" title="La nouvelle version est téléchargée : elle s’installe à la relance, ou quand tu quittes Studio">${icon('refresh')}<span>Relancer pour mettre à jour</span></button>`
@@ -320,10 +305,8 @@ function workspaceMenu(anchor: HTMLElement) {
     { label: 'Sombre', checked: ui.theme === 'dark', run: () => setTheme('dark') },
     '-',
     { label: 'Fond' },
-    { label: 'Horizon', checked: ui.backdrop === 'horizon', run: () => setBackdrop('horizon') },
-    ...(horizon.hasImage() ? [{ label: 'Mon image', checked: ui.backdrop === 'image', run: () => setBackdrop('image') }] : []),
-    { label: 'Ciel', checked: ui.backdrop === 'sky', run: () => setBackdrop('sky') },
     { label: 'Uni', checked: ui.backdrop === 'plain', run: () => setBackdrop('plain') },
+    { label: 'Ciel', checked: ui.backdrop === 'sky', run: () => setBackdrop('sky') },
     '-',
     { label: 'Importer des fichiers…', icon: 'upload', run: () => need('#file').click() },
     { label: 'Exporter une sauvegarde', icon: 'download', run: exportJSON },
@@ -374,19 +357,8 @@ const tbLeft = () => `<div class="tb-side">${WIDE.has(ui.view.type) ? '' : tb('b
 // sans attributs, le niveau n'est pas cliquable), par exemple Projets › Mon projet › Claude Code.
 const crumb = (cur: string, trail: [string, string][] = []) => {
   const v = ui.view, parent = v.type === 'tag' ? '#' + v.tag : VIEWS[v.type]?.label, sep = icon('chevronRight');
-  return `<div class="crumb">${parent && !WIDE.has(v.type) ? `<span>${esc(parent)}</span>${sep}` : ''}${trail.map(([l, a]) => (a ? `<button ${a}>${esc(l)}</button>` : `<span>${esc(l)}</span>`) + sep).join('')}<span class="crumb-cur">${esc(cur)}</span>${CAT}</div>`;
+  return `<div class="crumb">${parent && !WIDE.has(v.type) ? `<span>${esc(parent)}</span>${sep}` : ''}${trail.map(([l, a]) => (a ? `<button ${a}>${esc(l)}</button>` : `<span>${esc(l)}</span>`) + sep).join('')}<span class="crumb-cur">${esc(cur)}</span>${cat.html(v.type + (v.type === 'projets' ? ':' + (v.project ?? '') : ''))}</div>`;
 };
-// Le petit chat assis sur le filet du bas de la barre d'outils, à droite : il respire, cligne des yeux, remue la queue,
-// tourne la tête et dresse une oreille de temps en temps (styles `.crumb-cat`). Placé dans le fil d'Ariane pour être sur toutes les vues.
-const CAT = `<span class="crumb-cat" aria-hidden="true"><svg viewBox="0 0 32 32" width="26" height="26">
-<path class="cat-tail" d="M21 30.6c5.6.6 8.6-1.6 8.4-6-.1-2.6-1.6-4.3-3.4-5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>
-<g class="cat-body"><path d="M9 32c-1-6.4.6-11.6 4.6-14.6h4.8c4 3 5.6 8.2 4.6 14.6Z"/>
-<ellipse cx="13.4" cy="31" rx="2.4" ry="1.4"/><ellipse cx="18.6" cy="31" rx="2.4" ry="1.4"/>
-<g class="cat-head"><path class="cat-ear-l" d="M9.8 11.4 10.4 3.8 14.6 8.4Z"/><path class="cat-ear-r" d="M22.2 11.4 21.6 3.8 17.4 8.4Z"/>
-<ellipse cx="16" cy="12.6" rx="6.8" ry="5.8"/>
-<g class="cat-eyes"><ellipse cx="13.3" cy="12.2" rx=".95" ry="1.25"/><ellipse cx="18.7" cy="12.2" rx=".95" ry="1.25"/></g>
-<path class="cat-nose" d="M15.2 14.6h1.6L16 15.5Z"/>
-<path class="cat-whisk" d="M10 14.4 5.8 13.8M10 15.6 6 16.6M22 14.4 26.2 13.8M22 15.6 26 16.6"/></g></g></svg></span>`;
 
 function renderMain() {
   const main = need('#main');
@@ -1029,7 +1001,7 @@ function commands() {
   ];
 }
 function setTheme(t: string) { ui.theme = t; saveUI(); applyTheme(); }
-function setBackdrop(b: string) { ui.backdrop = BACKDROPS.includes(b as Backdrop) ? b as Backdrop : 'horizon'; saveUI(); applyTheme(); }
+function setBackdrop(b: string) { ui.backdrop = b === 'sky' ? 'sky' : 'plain'; localStorage.setItem('studio.backdrop.v3', '1'); saveUI(); applyTheme(); }
 
 const hl = (text: string, pos: number[]) => { const set = new Set(pos); let out = ''; [...text.normalize('NFC')].forEach((ch, i) => { out += set.has(i) ? `<b>${esc(ch)}</b>` : esc(ch); }); return out; };
 
@@ -1205,6 +1177,7 @@ async function onClick(e: MouseEvent): Promise<void> {
     if (act === 'tree') { ui.treeSec = !ui.treeSec; saveUI(); renderSidebar(); return; }
     if (act === 'new') { await newNote(); return; }
     if (act === 'workspace') { workspaceMenu(anchor); return; }
+    if (act === 'more-views') { ui.moreOpen = !ui.moreOpen; saveUI(); renderSidebar(); return; }
     if (act === 'tags') { ui.tagsOpen = !ui.tagsOpen; saveUI(); renderSidebar(); return; }
     if (act === 'palette') { openPalette(); return; }
     if (act === 'capture') { openCapture(); return; }
@@ -1406,7 +1379,7 @@ Les notes chiffrées et celles taguées \`#privé\` ne sont jamais envoyées à 
 window.carnet = { flush: async () => { await flushAll(); }, settings: () => hub.openConnections('coffre'), voice: (p: unknown) => voice.onNative(p), bio: (p: unknown) => biometric.onNative(p as biometric.BioReply), reply: (p: unknown) => native.onReply(p) };
 
 async function start() {
-  applyTheme(); motion.init();
+  applyTheme(); motion.init(); cat.init();
   if (!VIEWS[ui.view?.type] && ui.view?.type !== 'tag') ui.view = { type: 'home' };
   await hub.gate(); // coffre : rien n'est lu avant le déverrouillage
   const gone = await store.init();

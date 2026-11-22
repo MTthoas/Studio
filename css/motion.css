@@ -143,12 +143,6 @@
 @keyframes mo-vt-out-back { to { opacity: 0; translate: var(--mo-dx) 0; } }
 @keyframes mo-vt-in-back { from { opacity: 0; translate: calc(var(--mo-dx) * -1) 0; } }
 
-/* Lancement avec le fond « horizon » : les panneaux montent doucement, une seule fois (data-mo-boot posé 1 s par init()). */
-:root[data-mo-boot][data-backdrop="horizon"] #sidebar { animation: mo-boot var(--mo-d5) var(--mo-out) backwards; }
-:root[data-mo-boot][data-backdrop="horizon"] #list { animation: mo-boot var(--mo-d5) var(--mo-out) 50ms backwards; }
-:root[data-mo-boot][data-backdrop="horizon"] #main { animation: mo-boot var(--mo-d5) var(--mo-out) 100ms backwards; }
-@keyframes mo-boot { from { opacity: 0; translate: 0 calc(var(--mo-dy) * 2); } }
-
 /* Squelettes : plus lents et plus discrets (un souffle, pas un balayage). */
 :root .pj-skel { animation-duration: 2.2s; opacity: .4; }
 /* « Au travail » : barre fine, seule boucle admise (à poser sur un conteneur de 2 px : <div class="mo-work"><i></i></div>). */

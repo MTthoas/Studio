@@ -1,0 +1,186 @@
+/* Espace agents (src/features/workspace.ts), préfixe aw-. Importé par app.css juste avant motion.css. */
+.aw-root { flex: 1; min-height: 0; display: flex; flex-direction: column; outline: none; }
+.aw-counts { display: inline-flex; gap: 8px; margin-left: 2px; }
+.aw-c { font-size: var(--t-1); white-space: nowrap; }
+.aw-c.on { color: var(--c-amber); }
+.aw-c.rv { color: var(--c-blue); }
+.aw-lay { gap: 4px; padding: 0 8px; color: var(--text-2); }
+.aw-lay .ic { width: 11px; height: 11px; opacity: .6; }
+.aw-li { height: 12px; width: auto; fill: currentColor; opacity: .85; }
+.aw-auto[aria-pressed="true"] { color: var(--text); background: var(--active); }
+.aw { flex: 1; min-height: 0; display: grid; grid-template-columns: 240px minmax(0, 1fr); }
+.aw-side { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; border-right: 1px solid var(--border); background: var(--bg); }
+.aw-side-head { display: flex; align-items: center; gap: 2px; margin: 8px 6px 2px 8px; }
+.aw-side-head .icon-btn { width: 26px; height: 26px; color: var(--text-3); }
+.aw-ini { display: none; }
+.aw-search { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0 8px; height: 28px; border: 1px solid transparent; border-radius: 7px; background: var(--hover); color: var(--text-3); }
+.aw-search:focus-within { background: var(--bg); border-color: var(--accent); }
+.aw-search .ic { width: 13px; height: 13px; flex: none; }
+.aw-search input { flex: 1; min-width: 0; border: 0; background: none; color: var(--text); font: var(--t-2) var(--font); outline: none; }
+.aw-search kbd { opacity: .6; }
+.aw-list { flex: 1; min-height: 0; overflow: auto; padding: 0 6px 10px; }
+.aw-group h4 { display: flex; align-items: center; gap: 6px; margin: 12px 8px 3px; font-size: var(--t-1); font-weight: 500; color: var(--text-3); }
+.aw-group h4 span { margin-left: auto; font-variant-numeric: tabular-nums; opacity: .7; }
+/* Une rangée = une ligne : état, titre, pastille du projet (nom en infobulle), heure courte, numéro de vue. */
+.aw-row { width: 100%; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 8px; border: 0; border-radius: 7px; background: none; color: var(--text); text-align: left; cursor: default; }
+.aw-row:hover { background: var(--hover); }
+.aw-row.cur { background: var(--active); }
+.aw-row.cur .aw-rt { font-weight: 600; }
+.aw-list:focus-within .aw-row.cur, .aw-row.cur:focus-visible { outline: none; box-shadow: 0 0 0 1px var(--border-2); }
+.aw-row > :first-child { flex: none; }
+.aw-rt { flex: 1; min-width: 0; font-size: var(--t-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-row time { flex: none; font-size: var(--t-1); color: var(--text-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.aw-pd { flex: none; margin: 0; }
+.aw-in { flex: none; min-width: 15px; height: 15px; padding: 0 3px; border: 1px solid var(--border-2); border-radius: 4px; font-size: 10px; font-weight: 600; display: inline-grid; place-items: center; color: var(--text-3); }
+.aw-rp { display: inline-flex; align-items: center; gap: 5px; min-width: 0; font-size: var(--t-1); color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aw-rp .tag-dot { margin: 0; flex: none; }
+.aw-ring { width: 12px; height: 12px; border-radius: 50%; border: 1.6px solid color-mix(in srgb, var(--c-amber) 30%, transparent); border-top-color: var(--c-amber); animation: spin .9s linear infinite; }
+.aw-st { width: 12px; height: 12px; border-radius: 50%; display: inline-grid; place-items: center; }
+.aw-st .ic { width: 9px; height: 9px; stroke-width: 2.4; }
+.aw-st.done { background: color-mix(in srgb, var(--c-green) 85%, transparent); color: var(--bg); }
+.aw-st.err { background: var(--c-red); color: var(--bg); }
+.aw-st.review { border: 1.6px solid var(--c-blue); background: radial-gradient(circle, var(--c-blue) 0 2.5px, transparent 3px); }
+/* Sous-agents au travail : indentés sous leur conversation, une ligne. */
+.aw-subrow { height: 26px; padding-left: 24px; }
+.aw-subrow .aw-rt { font-size: var(--t-1); color: var(--text-2); }
+.aw-subrow .aw-ring { width: 10px; height: 10px; }
+.aw-empty { margin: 16px 8px; color: var(--text-3); font-size: var(--t-1); display: flex; align-items: center; }
+/* Liste réduite (S) : une colonne d'initiales teintées du projet, l'état en pastille ; le nom est en infobulle. */
+.aw.mini { grid-template-columns: 52px minmax(0, 1fr); }
+.aw.mini .aw-side-head { justify-content: center; margin: 8px 0 2px; }
+.aw.mini .aw-search, .aw.mini .aw-help, .aw.mini .aw-empty { display: none; }
+.aw.mini .aw-side:has(.aw-search input:not(:placeholder-shown)) .aw-fold { color: var(--accent-text); background: var(--accent-soft); }
+.aw.mini .aw-list { padding: 2px 8px 10px; scrollbar-width: none; }
+.aw.mini .aw-group h4 { height: 0; margin: 8px 6px; border-top: 1px solid var(--border); font-size: 0; }
+.aw.mini .aw-group h4 span { display: none; }
+.aw.mini .aw-row { position: relative; display: grid; grid-template: "st" 32px / 1fr; place-items: center; height: auto; padding: 3px 0; }
+.aw.mini .aw-row > :first-child { grid-area: st; }
+.aw.mini .aw-row > .aw-st, .aw.mini .aw-row > .aw-ring { position: absolute; right: 2px; bottom: 2px; z-index: 1; box-shadow: 0 0 0 2px var(--bg); border-radius: 50%; }
+.aw.mini .aw-row:hover > .aw-st, .aw.mini .aw-row:hover > .aw-ring { box-shadow: 0 0 0 2px var(--hover); }
+.aw.mini .aw-row.cur > .aw-st, .aw.mini .aw-row.cur > .aw-ring { box-shadow: 0 0 0 2px var(--active); }
+.aw.mini .aw-rt, .aw.mini .aw-pd, .aw.mini .aw-row time { display: none; }
+.aw.mini .aw-subrow { padding: 3px 0; height: 26px; }
+.aw.mini .aw-subrow .aw-ring { position: static; box-shadow: none; }
+.aw.mini .aw-ini { grid-area: st; display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; font: 600 var(--t-1)/1 var(--font); font-style: normal; color: var(--c, var(--text-2)); background: color-mix(in srgb, var(--c, var(--text-3)) 14%, transparent); }
+.aw.mini .aw-in { position: absolute; top: 1px; right: 1px; min-width: 14px; height: 14px; padding: 0 3px; font-size: 9px; z-index: 1; background: var(--bg); }
+
+.aw-grid { min-width: 0; min-height: 0; display: grid; gap: 1px; background: var(--border); }
+.aw-grid.l1 { grid-template: 1fr / 1fr; }
+.aw-grid.l2 { grid-template: 1fr / repeat(2, minmax(0, 1fr)); }
+.aw-grid.l3 { grid-template: 1fr / repeat(3, minmax(0, 1fr)); }
+.aw-grid.l4 { grid-template: repeat(2, minmax(0, 1fr)) / repeat(2, minmax(0, 1fr)); }
+.aw-grid.l6 { grid-template: repeat(2, minmax(0, 1fr)) / repeat(3, minmax(0, 1fr)); }
+.aw-grid.l8 { grid-template: repeat(2, minmax(0, 1fr)) / repeat(4, minmax(0, 1fr)); }
+.aw-grid.maxed { grid-template: 1fr / 1fr; }
+.aw-grid.maxed > .aw-pane:not(.max) { display: none; }
+.aw-pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--bg); position: relative; }
+.aw-pane::after { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.aw-pane.drop::after { box-shadow: inset 0 0 0 2px var(--accent); background: var(--accent-soft); }
+/* En-tête : une ligne (numéro, état, titre, projet) ; les gestes se superposent à droite au survol, au clavier et sur la vue active. */
+.aw-ph { position: relative; flex: none; height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-bottom: 1px solid var(--border); background: var(--ph-bg, var(--bg)); }
+.aw-pane.focus .aw-ph { --ph-bg: var(--surface-2); }
+.aw-num { flex: none; min-width: 8px; font-size: var(--t-1); font-weight: 500; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.aw-pane.focus .aw-num { color: var(--text-2); }
+.aw-ph-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; overflow: hidden; }
+.aw-pt { flex: 1 1 0; min-width: 6ch; font-size: var(--t-2); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-pt.muted { color: var(--text-3); font-weight: 500; }
+.aw-state { flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: var(--t-1); font-weight: 500; color: var(--c); white-space: nowrap; }
+.aw-state i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.aw-state:not(.live) { color: var(--text-3); }
+.aw-state:not(.live) i { background: var(--c); }
+.aw-ph-main .aw-rp { flex: 0 1 auto; min-width: 3ch; max-width: 16ch; }
+.aw-meta { flex: none; font-size: var(--t-1); color: var(--text-3); white-space: nowrap; }
+.aw-ph-acts { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: flex; gap: 1px; padding-left: 4px; background: var(--ph-bg, var(--bg)); opacity: 0; transition: opacity .1s; }
+.aw-pane:hover .aw-ph-acts, .aw-pane:focus-within .aw-ph-acts, .aw-grid:not(.l6):not(.l8) .aw-pane.focus .aw-ph-acts { opacity: 1; }
+.aw-ph-acts .icon-btn { width: 26px; height: 26px; }
+.aw-ph-acts .icon-btn[hidden] { display: none; }
+.aw-ph-acts .icon-btn[aria-pressed="true"] { color: var(--text); background: var(--active); }
+.aw-body { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.aw-feed.ss-feed { flex: 1; max-height: none; border: 0; border-radius: 0; padding: 12px 14px; gap: 10px; }
+/* Copie de l'agent : une ligne (étape, branche, une action principale) ; revue, VS Code, mise à jour… sont dans « … ». */
+.aw-copy-slot:empty { display: none; }
+.aw-copy { flex: none; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 4px 0 10px; border-bottom: 1px solid var(--border); font-size: var(--t-1); color: var(--text-3); overflow: hidden; }
+.aw-copy > .ag-stage, .aw-copy > code { flex: none; }
+.aw-copy > code { max-width: 26ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aw-copy > em { font-style: normal; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.aw-copy-act { margin-left: auto; flex: none; display: flex; align-items: center; gap: 2px; }
+.aw-copy-act .btn { height: 24px; padding: 0 8px; gap: 5px; font-size: var(--t-1); }
+.aw-copy-act .btn:not(.btn-primary) { display: none; }
+.aw-copy-act .btn .ic { width: 13px; height: 13px; }
+.aw-copy-act .icon-btn { width: 24px; height: 24px; }
+.aw-grid:is(.l6, .l8):not(.maxed) .aw-copy-act .btn span, .aw-grid:is(.l6, .l8):not(.maxed) .aw-copy > em, .aw-grid:is(.l6, .l8):not(.maxed) .aw-copy > code { display: none; }
+.aw-grid:is(.l4, .l6, .l8):not(.maxed) .aw-meta, .aw-grid:is(.l6, .l8):not(.maxed) .aw-ph-main .aw-rp, .aw-grid:is(.l6, .l8):not(.maxed) .aw-state span { display: none; }
+/* Tableau d'équipe : ce que l'agent, ses sous-agents et son groupe s'écrivent (AgentBoard, Agents.swift). */
+.aw-board { position: absolute; inset: 0 0 0 auto; width: min(380px, 88%); display: flex; flex-direction: column; background: var(--surface); border-left: 1px solid var(--border); z-index: 2; }
+.aw-board[hidden] { display: none; }
+.aw-board-list { flex: 1; min-height: 0; overflow: auto; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.aw-board-empty { display: flex; gap: 8px; align-items: flex-start; margin: 4px 2px; font-size: var(--t-1); line-height: 1.5; color: var(--text-3); }
+.aw-board-empty .ic { flex: none; width: 15px; height: 15px; margin-top: 2px; }
+.aw-note { border: 1px solid var(--border); border-radius: 8px; background: var(--bg); padding: 8px 10px; font-size: var(--t-1); }
+.aw-note.me { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+.aw-note header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+.aw-note header b { font-weight: 600; color: var(--text); }
+.aw-note header time { margin-left: auto; color: var(--text-3); }
+.aw-note .md { color: var(--text-2); overflow-wrap: anywhere; }
+.aw-note .md > :first-child { margin-top: 0; }
+.aw-note .md > :last-child { margin-bottom: 0; }
+.aw-note .md h1, .aw-note .md h2, .aw-note .md h3 { font-size: var(--t-2); margin: 8px 0 4px; }
+.aw-board-say { flex: none; display: flex; gap: 6px; padding: 8px; border-top: 1px solid var(--border); }
+.aw-board-say input { flex: 1; min-width: 0; height: 30px; padding: 0 9px; border: 1px solid var(--border-2); border-radius: 7px; background: var(--surface-2); color: var(--text); font: var(--t-1) var(--font); }
+.aw-board-say input:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.aw-board-say .btn { height: 30px; width: 30px; padding: 0; flex: none; }
+.aw-sub { height: 28px; gap: 5px; font-size: var(--t-1); flex: none; }
+.aw-reply { flex: none; display: flex; align-items: flex-end; gap: 4px; padding: 6px; border-top: 1px solid var(--border); }
+.aw-reply textarea { flex: 1; min-width: 0; min-height: 32px; max-height: 220px; resize: none; padding: 6px 10px; border: 1px solid var(--border-2); border-radius: 7px; background: var(--surface-2); color: var(--text); font: var(--t-2)/1.45 var(--font); }
+.aw-reply textarea:focus-visible, .aw-big:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); background: var(--bg); }
+.aw-reply .btn { height: 32px; width: 32px; padding: 0; flex: none; }
+.aw-blank { padding: 10px; overflow: auto; }
+.aw-new { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 8px; }
+.aw-sel { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 2px 0 8px; border: 1px solid var(--border-2); border-radius: var(--r); background: var(--bg); color: var(--text-3); max-width: 100%; }
+.aw-sel .ic { width: 13px; height: 13px; flex: none; }
+.aw-sel select { min-width: 0; border: 0; background: none; color: var(--text); font: 500 var(--t-2) var(--font); outline: none; }
+.aw-mode.cx-seg { margin: 0; gap: 4px; }
+.aw-mode label { height: 28px; padding: 0 9px; gap: 5px; font-size: var(--t-1); }
+.aw-mode input { position: absolute; opacity: 0; pointer-events: none; }
+.aw-mode .ic { width: 12px; height: 12px; }
+.aw-big { flex: 1; min-height: 80px; width: 100%; resize: none; padding: 10px 12px; border: 1px solid var(--border-2); border-radius: 8px; background: var(--surface-2); color: var(--text); font: var(--t-2)/1.55 var(--font); }
+.aw-new-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; font-size: var(--t-1); color: var(--text-3); }
+.aw-new-foot > .btn-primary { margin-left: auto; flex: none; }
+.aw-new-foot .aw-sub { min-width: 0; max-width: 100%; flex: 0 1 auto; }
+.aw-new-foot .aw-sub span { overflow: hidden; text-overflow: ellipsis; }
+.aw-grid:is(.l4, .l6, .l8):not(.maxed) .aw-mode span { display: none; }
+.aw-grid:is(.l6, .l8):not(.maxed) .aw-new-foot .aw-sub span { display: none; }
+.aw-grid:is(.l6, .l8):not(.maxed) .aw-new-foot > .btn-primary kbd { display: none; }
+
+.aw-cast { width: min(760px, 100%); padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.aw-cast .modal-body { display: flex; flex-direction: column; min-height: 0; }
+.aw-cast-body { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px; }
+.aw-cast-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.aw-cast-head .ic { width: 15px; height: 15px; align-self: center; color: var(--accent-text); }
+.aw-cast-head b { font-size: var(--t-2); font-weight: 600; }
+.aw-cast-head span { font-size: var(--t-1); color: var(--text-3); }
+.aw-cast .aw-big { min-height: 200px; flex: none; }
+.aw-targets { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.aw-target { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 7px 10px; border: 1px solid var(--border); border-radius: 7px; font-size: var(--t-1); }
+.aw-target:has(input:checked) { border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: var(--accent-soft); }
+.aw-target span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.aw-target em { font-style: normal; color: var(--text-3); white-space: nowrap; }
+.aw-target select { max-width: 45%; border: 1px solid var(--border-2); border-radius: 5px; background: var(--bg); color: var(--text); font-size: var(--t-1); }
+
+@media (max-width: 900px) {
+  .aw { grid-template-columns: 1fr; grid-template-rows: minmax(120px, 28%) minmax(0, 1fr); }
+  .aw-side { border-right: 0; border-bottom: 1px solid var(--border); }
+  .aw.mini { grid-template-columns: 1fr; }
+  .aw-fold { display: none; }
+  .aw-grid.l3, .aw-grid.l4, .aw-grid.l6, .aw-grid.l8 { grid-template-columns: minmax(0, 1fr); grid-auto-rows: minmax(320px, 1fr); grid-template-rows: none; overflow: auto; }
+  .aw-grid.l2 { grid-template: repeat(2, minmax(0, 1fr)) / minmax(0, 1fr); }
+  .toolbar .btn span { display: none; }
+  .aw-targets { grid-template-columns: 1fr; }
+}
+@media (max-width: 600px) {
+  .aw-counts { display: none; }
+  .aw-root .toolbar .crumb { min-width: 0; }
+}
+@media (hover: none) {
+  .aw-ph-acts { opacity: 1; }
+}
