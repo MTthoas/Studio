@@ -1,0 +1,66 @@
+/* Le chat du fil d'Ariane (src/ui/cat.ts), assis sur le filet du bas de la barre d'outils, à droite.
+   Motion design : chaque geste a son anticipation et son amorti. Coordonnées en unités du viewBox (0 0 36 32) ;
+   `transform` porte les animations, `translate` / `rotate` le regard (jamais les deux sur la même propriété).
+   `--cat-x` / `--cat-y` (de -1 à 1) : direction du pointeur, posés par cat.ts sur `.crumb-cat`. */
+.toolbar { position: relative; }
+.toolbar:has(.crumb-cat) { padding-right: 48px; }
+.crumb-cat { position: absolute; right: 8px; bottom: 0; pointer-events: none; color: var(--text-3); line-height: 0; transition: color var(--mo-d3) var(--mo-out); }
+.crumb-cat svg { display: block; overflow: visible; fill: currentColor; pointer-events: auto; cursor: default; }
+.crumb-cat:hover { color: var(--text-2); }
+
+/* Repos : il respire ; la queue bat en deux segments, le bout en retard sur la base. */
+.cat-all { transform-origin: 16px 32px; }
+.cat-body { transform-origin: 16px 32px; animation: cat-breath 3.6s var(--mo-in-out) infinite; }
+.cat-tail { fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; transform-origin: 21px 30.6px; animation: cat-tail 3.2s var(--mo-in-out) infinite alternate; }
+.cat-tip { transform-origin: 29.4px 24.6px; animation: cat-tip 3.2s var(--mo-in-out) infinite alternate -.5s; }
+.cat-ear-l { transform-origin: 11.5px 10px; }
+.cat-ear-r { transform-origin: 20.5px 10px; animation: cat-ear 9s ease-in-out infinite 1.5s; }
+.cat-eyes { fill: var(--bg); transform-box: fill-box; transform-origin: center; animation: cat-blink 5.5s infinite; }
+.cat-nose { fill: var(--bg); opacity: .55; }
+.cat-whisk { fill: none; stroke: currentColor; stroke-width: .55; stroke-linecap: round; opacity: .8; }
+.cat-zz { fill: none; stroke: currentColor; stroke-width: .7; stroke-linecap: round; stroke-linejoin: round; }
+.cat-zz path { opacity: 0; }
+
+/* Regard : la tête tourne vers le pointeur, le visage glisse un peu plus loin qu'elle (parallaxe : la tête paraît en volume). */
+.cat-head { transform-origin: 16px 17px; translate: calc(var(--cat-x, 0) * 1px) calc(var(--cat-y, 0) * .7px); rotate: calc(var(--cat-x, 0) * 6deg); transition: translate var(--mo-d5) var(--mo-spring), rotate var(--mo-d5) var(--mo-spring); }
+.cat-face { translate: calc(var(--cat-x, 0) * 1.3px) calc(var(--cat-y, 0) * .9px); transition: translate var(--mo-d5) var(--mo-spring); }
+
+/* Saut (changement de vue, clic) : il se tasse, s'étire en l'air, s'écrase à la réception puis se pose. */
+.crumb-cat.hop .cat-all { animation: cat-hop 640ms var(--mo-in-out); }
+.crumb-cat.hop .cat-ear-l { animation: cat-flap 640ms var(--mo-out); }
+.crumb-cat.hop .cat-ear-r { animation: cat-flap 640ms var(--mo-out) reverse; }
+.crumb-cat.hop .cat-tail { animation: cat-whip 640ms var(--mo-out); }
+/* Réveil : les oreilles se dressent. */
+.crumb-cat.perk .cat-all { animation: cat-perk 520ms var(--mo-spring); }
+
+/* Sommeil : tête basse, yeux clos, souffle lent, queue immobile, des « z » qui montent. */
+.crumb-cat.asleep .cat-head { translate: 0 1.8px; rotate: 7deg; transition-duration: 900ms; }
+.crumb-cat.asleep .cat-eyes { animation: none; transform: scaleY(.14); }
+.crumb-cat.asleep .cat-body { animation-duration: 5.6s; }
+.crumb-cat.asleep :is(.cat-tail, .cat-tip, .cat-ear-r) { animation: none; }
+.crumb-cat.asleep .cat-zz path { animation: cat-zz 3.4s var(--mo-out) infinite; }
+.crumb-cat.asleep .cat-zz path + path { animation-delay: 1.1s; }
+
+@keyframes cat-breath { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.015, 1.035); } }
+@keyframes cat-tail { from { transform: rotate(-8deg); } to { transform: rotate(12deg); } }
+@keyframes cat-tip { from { transform: rotate(-22deg); } to { transform: rotate(26deg); } }
+@keyframes cat-ear { 0%, 88%, 100% { transform: rotate(0); } 90% { transform: rotate(-16deg); } 92% { transform: rotate(4deg); } 94% { transform: rotate(-10deg); } 96% { transform: rotate(0); } }
+@keyframes cat-blink { 0%, 90%, 96%, 100% { transform: scaleY(1); } 93% { transform: scaleY(.1); } }
+@keyframes cat-hop {
+  0% { transform: none; }
+  18% { transform: scale(1.12, .84); }
+  46% { transform: translateY(-7px) scale(.93, 1.1); }
+  68% { transform: translateY(0) scale(1.1, .87); }
+  84% { transform: scale(.98, 1.03); }
+  100% { transform: none; }
+}
+@keyframes cat-flap { 0%, 100% { transform: rotate(0); } 40% { transform: rotate(-22deg); } 72% { transform: rotate(8deg); } }
+@keyframes cat-whip { 0%, 100% { transform: rotate(0); } 40% { transform: rotate(-26deg); } 74% { transform: rotate(14deg); } }
+@keyframes cat-perk { 0% { transform: scale(1.06, .92); } 55% { transform: scale(.97, 1.06); } 100% { transform: none; } }
+@keyframes cat-zz { 0% { opacity: 0; transform: translate(-2px, 3px); } 25% { opacity: .8; } 100% { opacity: 0; transform: translate(2.5px, -4px); } }
+
+/* Mouvement « Discret » : il respire et cligne, rien d'autre. « Aucun » : immobile. */
+:root[data-motion="subtle"] :is(.cat-tail, .cat-tip, .cat-ear-r, .cat-zz path) { animation: none; }
+:root[data-motion="off"] .crumb-cat * { animation: none !important; transition: none !important; }
+@media (prefers-reduced-motion: reduce) { .crumb-cat * { animation: none !important; transition: none !important; } }
+@media (max-width: 520px) { .crumb-cat { display: none; } .toolbar:has(.crumb-cat) { padding-right: 8px; } }

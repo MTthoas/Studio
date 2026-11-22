@@ -254,7 +254,7 @@ const ctxHTML = (ids: string[]): string => `${ids.map(chip).join('')}<button typ
 function setNotes(f: HTMLFormElement, ids: string[]): void {
   f.dataset.notes = ids.join(',');
   const ctx = f.querySelector('.ag-ctx'); if (ctx) ctx.innerHTML = ctxHTML(ids);
-  keepDraft(f); showFan(f);
+  keepDraft(f); showFan(f); showSet(f);
 }
 /** Ouvre l'onglet Claude Code du projet avec des notes déjà jointes et, éventuellement, une consigne.
  *  `fan: 'notes'` : le formulaire est réglé sur « Un agent par note » (rien n'est lancé sans le clic sur Lancer). */
@@ -302,7 +302,7 @@ function limsHTML(): string {
 /** Redessine le bandeau de toutes les consignes affichées, seulement s'il a changé. */
 function paintLimits(): void {
   const html = limsHTML();
-  document.querySelectorAll<HTMLElement>('.ag-lims').forEach(x => { if (drawn.get(x) !== html) { x.innerHTML = html; drawn.set(x, html); } });
+  document.querySelectorAll<HTMLElement>('.ag-lims').forEach(x => { if (drawn.get(x) !== html) { x.innerHTML = html; drawn.set(x, html); const f = x.closest<HTMLFormElement>('form'); if (f) showSet(f); } });
 }
 /** Lit l'utilisation de l'abonnement, au plus une fois par minute. `op` : 'enable' (accord donné) ou 'refresh' (sans cache), sur le Mac seulement. */
 async function loadLimits(op = ''): Promise<void> {
@@ -322,7 +322,6 @@ async function limitsAction(op: string): Promise<void> {
 }
 
 // ---------- Consigne ----------
-const HINT_IDLE = `${icon('history')}Reprend la conversation là où elle s’est arrêtée, dans le même dossier.`;
 const HINT_BUSY = '<span class="spin"></span>Claude travaille. « Mettre en attente » : il lit ta suite à la fin de son tour. « Intervenir » : son tour est coupé, il te lit tout de suite puis reprend.';
 const SEND_IDLE = `${icon('play')}Envoyer<kbd>⌘↩</kbd>`, SEND_BUSY = `${icon('history')}Mettre en attente<kbd>⌘↩</kbd>`;
 /** Zone de réponse d'une conversation : pendant que son agent travaille, on peut l'arrêter, ou lui écrire
@@ -336,11 +335,41 @@ function syncStop(box: HTMLElement): void {
   if (stopBtn) { stopBtn.hidden = !run; stopBtn.dataset.run = state; }
   const cutBtn = $<HTMLButtonElement>('.ag-cut', f); if (cutBtn) cutBtn.hidden = !run;
   if (send && !send.disabled) send.innerHTML = run ? SEND_BUSY : SEND_IDLE;
-  if (hint) hint.innerHTML = run ? HINT_BUSY : HINT_IDLE;
+  if (hint) hint.innerHTML = run ? HINT_BUSY : '';
   attach.sync(f);
 }
 
-const HINT_EDIT = `${icon('shield')}Copie isolée du dépôt : ton dossier reste intact.`, HINT_READ = `${icon('eye')}Lecture seule : analyse et propose, sans rien modifier.`;
+const TIP_EDIT = 'Modifier : copie isolée du dépôt, ton dossier reste intact', TIP_READ = 'Analyser : lecture seule, Claude analyse et propose sans rien modifier';
+
+// Réglages de la consigne (commandes, modèle, effort, agents, sous-agents, notes, abonnement) : repliés derrière un bouton,
+// l'état replié ou déplié est retenu sur cet appareil. Les champs restent dans la page, seul leur conteneur est caché.
+const SET_KEY = 'studio.cc.settings';
+const setOpen = (): boolean => { try { return localStorage.getItem(SET_KEY) === '1'; } catch { return false; } };
+const setBtn = (): string => `<button type="button" class="btn btn-ghost ag-setbtn" data-ag-set-toggle aria-expanded="${setOpen()}" title="Commandes, modèle, effort, nombre d’agents, sous-agents, notes jointes, abonnement">${icon('gear')}<span data-set-label>Réglages</span></button>`;
+/** Le bouton « Réglages » résume ce qui s'écarte du défaut (modèle, effort, agents, commandes, machine, notes). */
+function showSet(f: HTMLFormElement): void {
+  const lab = f.querySelector<HTMLElement>('[data-set-label]'), btn = f.querySelector<HTMLElement>('[data-ag-set-toggle]'); if (!lab || !btn) return;
+  const pick = (n: string) => { const s = f.querySelector<HTMLSelectElement>(`select[name=${n}]`); return s && !s.hidden && s.value ? s.selectedOptions[0]?.textContent?.trim() ?? '' : ''; };
+  const tests = f.querySelector<HTMLInputElement>('[name=tests]'), notes = (f.dataset.notes || '').split(',').filter(Boolean).length;
+  const parts = [pick('model').replace(/ \(selon la consigne\)$/, ''), pick('effort').replace(/^Effort /, 'effort '), pick('fan'), tests?.checked ? 'commandes' : '',
+    (f.elements.namedItem('machine') as HTMLSelectElement | null)?.value !== 'mac' ? pick('machine') : '', notes ? `${notes} note${notes > 1 ? 's' : ''}` : ''].filter(Boolean);
+  // Une limite d'abonnement atteinte ou proche ne doit pas rester cachée dans le panneau replié : le bouton la dit.
+  const lim = f.querySelector('.ag-lims .ag-lim.err') ? 'limite atteinte' : f.querySelector('.ag-lims .ag-lim.warn') ? 'limite bientôt atteinte' : '';
+  if (lim) parts.unshift(lim);
+  const text = parts.join(' · ');
+  lab.textContent = text || 'Réglages'; btn.classList.toggle('on', !!text);
+  btn.classList.toggle('err', lim === 'limite atteinte'); btn.classList.toggle('warn', lim === 'limite bientôt atteinte');
+}
+function toggleSet(f: HTMLFormElement): void {
+  const panel = f.querySelector<HTMLElement>('[data-ag-set]'); if (!panel) return;
+  const open = panel.hasAttribute('hidden');
+  try { localStorage.setItem(SET_KEY, open ? '1' : '0'); } catch { /* stockage refusé : l'état ne sera pas repris */ }
+  // Tous les formulaires affichés suivent : le réglage est le même partout.
+  document.querySelectorAll<HTMLFormElement>('.ag-compose').forEach(x => {
+    x.querySelector('[data-ag-set]')?.toggleAttribute('hidden', !open); x.classList.toggle('set-open', open);
+    x.querySelector('[data-ag-set-toggle]')?.setAttribute('aria-expanded', String(open));
+  });
+}
 
 // Modèle et niveau d'effort : choisis à chaque consigne, retenus pour la suivante. Une conversation garde les siens
 // (ceux de son lancement, ou ceux qu'on lui donne en lui répondant). Voir drafts.ts.
@@ -493,8 +522,9 @@ export function composerHTML(p: Project, { session = '', compact = false, machin
   const lims = machine === 'server' ? '' : `<div class="ag-lims" data-mac-only${macOnly} aria-label="Utilisation de l’abonnement Claude">${limsHTML()}</div>`;
   // Chaque formulaire a son brouillon : un par conversation, un pour la nouvelle consigne, un pour celle de l'aperçu, un pour le serveur.
   const key = `${p.id}|${session ? `s:${session}` : machine === 'server' ? 'server' : compact ? 'quick' : 'new'}`, d = saved.draft(key);
-  if (session) return `<form class="ag-compose ag-continue" data-draft="${esc(key)}" data-session="${esc(session)}"${machine ? ` data-machine="${esc(machine)}"` : ''}><textarea name="prompt" rows="2" placeholder="Réponds à Claude : précise, corrige, tranche, demande la suite…" aria-label="Répondre dans la session">${esc(d?.text ?? '')}</textarea>${attach.stripHTML()}
-    <div class="ag-opts"><div class="ag-tools">${tuneHTML(saved.ofSession(session) ?? { model: '', effort: '' })}${subHTML(p.id)}<span class="ag-hint" data-hint>${HINT_IDLE}</span></div><span class="ag-go">${attach.buttonHTML()}${voice.micHTML('Répondre à voix haute')}<button type="button" class="btn btn-danger ag-stop" data-ag="stop" hidden>${icon('stop')}Arrêter</button><button type="button" class="btn ag-cut" data-ag-cut hidden title="Coupe le tour en cours : Claude lit ton message tout de suite, puis reprend là où il en était (⌘⇧↩)">${icon('bolt')}Intervenir</button><button class="btn btn-primary ag-send">${SEND_IDLE}</button></span></div>${lims}</form>`;
+  if (session) return `<form class="ag-compose ag-continue${setOpen() ? ' set-open' : ''}" data-draft="${esc(key)}" data-session="${esc(session)}"${machine ? ` data-machine="${esc(machine)}"` : ''}><textarea name="prompt" rows="2" placeholder="Réponds à Claude : précise, corrige, tranche, demande la suite…" aria-label="Répondre dans la session">${esc(d?.text ?? '')}</textarea>${attach.stripHTML()}
+    <div class="ag-opts"><div class="ag-tools">${setBtn()}<span class="ag-hint" data-hint></span></div><span class="ag-go">${attach.buttonHTML()}${voice.micHTML('Répondre à voix haute')}<button type="button" class="btn btn-danger ag-stop" data-ag="stop" hidden>${icon('stop')}Arrêter</button><button type="button" class="btn ag-cut" data-ag-cut hidden title="Coupe le tour en cours : Claude lit ton message tout de suite, puis reprend là où il en était (⌘⇧↩)">${icon('bolt')}Intervenir</button><button class="btn btn-primary ag-send">${SEND_IDLE}</button></span></div>
+    <div class="ag-set" data-ag-set${setOpen() ? '' : ' hidden'}><div class="ag-set-row">${tuneHTML(saved.ofSession(session) ?? { model: '', effort: '' })}${subHTML(p.id)}</div>${lims}</div></form>`;
   const pre = pending?.project === p.id ? pending : null; if (pre && !compact) pending = null;
   // Une note ou une tâche confiée à Claude s'ajoute au brouillon en cours, sans l'effacer.
   const hand = pre && !compact ? pre : null;
@@ -504,17 +534,18 @@ export function composerHTML(p: Project, { session = '', compact = false, machin
   const read = d?.mode === 'read', inRead = permissions.commandsInRead(), tests = (!read || inRead) && !!d?.tests;
   const fan = compact ? '' : hand?.fan || d?.fan || '';
   if (hand) saved.saveDraft(key, { text, notes, mode: read ? 'read' : 'edit', tests, fan });
-  return `<form class="ag-compose${compact ? ' compact' : ''}${far ? ' on-server' : ''}" data-draft="${esc(key)}" data-notes="${esc(notes.join(','))}"><textarea name="prompt" rows="${compact ? 1 : 3}" placeholder="Que doit faire Claude Code dans ${esc(p.name)} ? Ex. « Ajoute des tests au parseur de dates ». ${COUNT_HINT}" aria-label="Consigne pour Claude Code">${esc(text)}</textarea>${attach.stripHTML()}
+  return `<form class="ag-compose${compact ? ' compact' : ''}${far ? ' on-server' : ''}${setOpen() ? ' set-open' : ''}" data-draft="${esc(key)}" data-notes="${esc(notes.join(','))}"><textarea name="prompt" rows="${compact ? 1 : 3}" placeholder="Que doit faire Claude Code dans ${esc(p.name)} ? Ex. « Ajoute des tests au parseur de dates ». ${COUNT_HINT}" aria-label="Consigne pour Claude Code">${esc(text)}</textarea>${attach.stripHTML()}
     <div class="ag-ctx">${ctxHTML(notes)}</div>
     <div class="ag-opts"><div class="ag-tools">
-      <div class="ag-seg" role="radiogroup" aria-label="Mode"><label><input type="radio" name="mode" value="edit"${read ? '' : ' checked'}><span>${icon('pencil')}Modifier</span></label><label><input type="radio" name="mode" value="read"${read ? ' checked' : ''}><span>${icon('search')}Analyser</span></label></div>
+      <div class="ag-seg" role="radiogroup" aria-label="Mode" title="${read ? TIP_READ : TIP_EDIT}"><label><input type="radio" name="mode" value="edit"${read ? '' : ' checked'}><span>${icon('pencil')}Modifier</span></label><label><input type="radio" name="mode" value="read"${read ? ' checked' : ''}><span>${icon('search')}Analyser</span></label></div>
+      ${setBtn()}</div>
+      <span class="ag-go">${attach.buttonHTML()}${voice.micHTML('Dicter la consigne')}<button class="btn btn-primary ag-send">${LAUNCH}</button></span></div>
+    <div class="ag-set" data-ag-set${setOpen() ? '' : ' hidden'}><div class="ag-set-row">
       ${bridge.local() && machine !== 'server' ? `<label class="ag-check" data-mac-only${macOnly} title="Autorise les commandes réglées dans Réglages → Autorisations (par défaut npm test et npm run …) : le code du projet peut alors s’exécuter"><input type="checkbox" name="tests"${tests ? ' checked' : ''}${read && !inRead ? ' disabled' : ''}>Commandes</label>` : ''}
       ${machine === 'server' ? `<select class="field" name="machine" aria-label="Où travailler" data-fixed><option value="${server ? `server:${esc(server)}` : 'server'}" selected>Sur le serveur</option></select>` : machineHTML(p)}
       ${tuneHTML(saved.defaults())}
       ${compact ? '' : `<select class="field" name="fan" aria-label="Nombre d’agents" title="Plusieurs agents en parallèle, chacun dans sa copie isolée : un par note jointe, ou un par ligne de la consigne (${FAN_MAX} à la fois au plus)">${[['', 'Un agent'], ['notes', 'Un agent par note'], ['lines', 'Un agent par ligne']].map(([v, l]) => `<option value="${v}"${v === fan ? ' selected' : ''}>${l}</option>`).join('')}</select>`}
-      ${compact ? '' : subHTML(p.id)}
-      <span class="ag-hint" data-hint>${read ? HINT_READ : HINT_EDIT}</span></div>
-      <span class="ag-go">${attach.buttonHTML()}${voice.micHTML('Dicter la consigne')}<button class="btn btn-primary ag-send">${LAUNCH}</button></span></div>${lims}</form>`;
+      ${compact ? '' : subHTML(p.id)}</div>${lims}</div></form>`;
 }
 
 /** Branche les formulaires de consigne présents dans `root` (lancement, reprise, raccourci ⌘↩). */
@@ -523,7 +554,7 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
   permissions.preload();
   attach.bind(root);
   // Formulaires fraîchement rendus (brouillon repris) : hauteur du texte et choix « Auto » à jour.
-  requestAnimationFrame(() => root.querySelectorAll<HTMLFormElement>('.ag-compose').forEach(f => { const ta = f.querySelector('textarea'); if (ta) grow(ta); showAuto(f); showFan(f); showMachine(f); }));
+  requestAnimationFrame(() => root.querySelectorAll<HTMLFormElement>('.ag-compose').forEach(f => { const ta = f.querySelector('textarea'); if (ta) grow(ta); showAuto(f); showFan(f); showMachine(f); showSet(f); }));
   if (bridge.where() && root.querySelector('.ag-compose:not(.ag-continue) select[name=machine]:not([data-fixed])')) void fillMachines(root, p);
   if (root.dataset.agBound) return;
   root.dataset.agBound = '1';
@@ -534,14 +565,15 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
   root.addEventListener('focusin', e => { const t = e.target as HTMLElement; if (t.tagName === 'TEXTAREA' && t.closest('.ag-compose')) grow(t as HTMLTextAreaElement); });
   root.addEventListener('change', e => {
     const t = e.target as HTMLInputElement, f = t.closest<HTMLFormElement>('.ag-compose'); if (!f) return;
+    showSet(f);
     if (t.name === 'model' || t.name === 'effort') { void tune(f, t as unknown as HTMLSelectElement).then(() => showAuto(f)); return; }
     if (t.name === 'mode') showAuto(f);
     if (t.name === 'machine' && (t as unknown as HTMLSelectElement).dataset.fixed === undefined) { keepMachine(p.id, t.value); showMachine(f); }
     if (t.name === 'tests') { keepDraft(f); return; }
     if (t.name === 'fan') { keepDraft(f); showFan(f); return; }
     if (t.name !== 'mode') return;
-    const hint = $('[data-hint]', f), tests = $<HTMLInputElement>('[name=tests]', f);
-    if (hint) hint.innerHTML = t.value === 'edit' ? HINT_EDIT : HINT_READ;
+    const seg = $('.ag-seg', f), tests = $<HTMLInputElement>('[name=tests]', f);
+    if (seg) seg.title = t.value === 'edit' ? TIP_EDIT : TIP_READ;
     attach.sync(f);
     if (tests) { tests.disabled = t.value !== 'edit' && !permissions.commandsInRead(); if (tests.disabled) tests.checked = false; }
     keepDraft(f);
@@ -550,6 +582,7 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     const t = e.target as HTMLElement, f = t.closest<HTMLFormElement>('.ag-compose'); if (!f) return;
     const mic = t.closest<HTMLElement>('[data-vc-mic]');
     if (mic) { const ta = need<HTMLTextAreaElement>('textarea', f); voice.dictate(ta, mic, () => { keepDraft(f); grow(ta); showAuto(f); }); return; }
+    if (t.closest('[data-ag-set-toggle]')) { toggleSet(f); return; }
     const lim = t.closest<HTMLElement>('[data-ag-lim]');
     if (lim) { void limitsAction(lim.dataset.agLim ?? ''); return; }
     // « Intervenir » : même envoi que le bouton principal, mais le tour en cours est coupé (voir `interrupt`, Agents.swift).
@@ -715,14 +748,13 @@ function runCard(r: AgentRun): string {
   // Agent terminé dans une copie : on montre où en est son travail (à publier, PR, fusionné) plutôt qu'un simple « Terminé ».
   const w = !live(r) && r.status === 'done' && r.worktree ? trees.find(t => t.name === r.worktree) : undefined;
   const st: Stage | '' = live(r) ? 'work' : w ? stageOf(w) : '';
-  return `<article class="ag-run${live(r) ? ' live' : ''}${st ? ` st-${st}` : ''}"${st ? ` style="${stageVar(st)}"` : ''}>
-    <header>${w && st && st !== 'idle' ? stageBadge(st) : pill(r.status)}${r.machine === 'server' ? `<span class="ag-mode">${icon('server')}${esc(r.host ?? 'serveur')}</span>` : ''}<span class="ag-mode">${r.mode === 'edit' ? `${icon('pencil')}Modifier` : `${icon('search')}Analyser`}</span><time>${esc(elapsed(r))}${r.turns ? ` · ${r.turns} étape${r.turns > 1 ? 's' : ''}` : ''}</time>${live(r) ? '' : `<button class="icon-btn ag-hide" data-ag="hide-run" data-run="${esc(r.run)}" title="Retirer de la liste (la conversation reste dans Sessions)" aria-label="Retirer cet agent de la liste">${icon('x')}</button>`}</header>
-    <p class="ag-prompt">${esc(r.prompt)}</p>
-    ${live(r) && r.lastText ? `<p class="ag-last">${esc(r.lastText)}</p>` : ''}
-    ${!live(r) && r.result ? `<p class="ag-last">${esc(r.result.replace(/[#*`>]/g, '').slice(0, 220))}</p>` : ''}
+  // Une ligne : état, consigne, durée, actions. Le reste (dernier message, mode, copie, étapes) est dans l'infobulle.
+  const more = [r.mode === 'edit' ? 'Modifier' : 'Analyser', r.machine === 'server' ? `sur ${r.host ?? 'le serveur'}` : '', r.turns ? `${r.turns} étape${r.turns > 1 ? 's' : ''}` : '', r.worktree ?? ''].filter(Boolean).join(' · ');
+  const said = live(r) ? r.lastText : r.result ? r.result.replace(/[#*`>]/g, '').slice(0, 220) : '';
+  return `<article class="ag-run${live(r) ? ' live' : ''}${st ? ` st-${st}` : ''}"><div class="ag-run-row">${w && st && st !== 'idle' ? stageBadge(st) : pill(r.status)}<span class="ag-run-t" title="${esc([r.prompt, said, more].filter(Boolean).join('\n'))}">${esc(r.prompt)}</span><time>${esc(elapsed(r))}</time>
+    <span class="ag-run-act">${r.session ? `<button class="btn btn-ghost" data-ss="${esc(r.session)}">Suivre</button>` : ''}${live(r) ? `<button class="btn btn-ghost" data-ag="stop" data-run="${esc(r.run)}">Arrêter</button>` : `<button class="icon-btn ag-hide" data-ag="hide-run" data-run="${esc(r.run)}" title="Retirer de la liste (la conversation reste dans Sessions)" aria-label="Retirer cet agent de la liste">${icon('x')}</button>`}</span></div>
     ${sentHTML(r)}
-    ${r.denials.length ? `<p class="ag-denied" title="${esc(r.denials.join('\n'))}">${icon('shield')}${r.denials.length} action${r.denials.length > 1 ? 's' : ''} refusée${r.denials.length > 1 ? 's' : ''} par les garde-fous${bridge.local() ? ' · <button type="button" class="link-btn" data-open-conn="autorisations">Régler les autorisations</button>' : ''}</p>` : ''}
-    <footer>${r.worktree ? `<code>${esc(r.worktree)}</code>` : ''}${r.session ? `<button class="btn" data-ss="${esc(r.session)}">${icon('eye')}Suivre</button>` : ''}${live(r) ? `<button class="btn" data-ag="stop" data-run="${esc(r.run)}">${icon('stop')}Arrêter</button>` : ''}</footer></article>`;
+    ${r.denials.length ? `<p class="ag-denied" title="${esc(r.denials.join('\n'))}">${icon('shield')}${r.denials.length} action${r.denials.length > 1 ? 's' : ''} refusée${r.denials.length > 1 ? 's' : ''} par les garde-fous${bridge.local() ? ' · <button type="button" class="link-btn" data-open-conn="autorisations">Régler les autorisations</button>' : ''}</p>` : ''}</article>`;
 }
 
 /** Nom lisible d'une copie : celui de sa conversation la plus récente, sinon la consigne de l'agent, sinon son nom de dossier nettoyé. */
@@ -774,21 +806,23 @@ function listHTML(list: Session[]): string {
   }).join('');
   const staged = trees.filter(w => !inFamily(w)).map(w => ({ w, st: stageOf(w) }));
   const count = (st: Stage) => st === 'work' ? Math.max(running.length, staged.filter(x => x.st === st).length) : staged.filter(x => x.st === st).length;
-  const flow = `<div class="ag-flow" role="list" aria-label="Où en est le travail des agents">${STAGE_ORDER.filter(st => st !== 'idle').map(st => { const n = count(st); return `<span role="listitem" class="ag-flow-s st-${st}${n ? '' : ' none'}" style="${stageVar(st)}">${icon(STAGES[st].ic)}<b>${n}</b>${esc(STAGES[st].l)}</span>`; }).join(`<i class="ag-flow-arrow" aria-hidden="true">→</i>`)}</div>`;
+  const steps = STAGE_ORDER.filter(st => st !== 'idle').map(st => ({ st, n: count(st) })).filter(x => x.n);
+  const flow = steps.length ? `<p class="ag-flow" role="list" aria-label="Où en est le travail des agents">${steps.map(({ st, n }) => `<span role="listitem" class="ag-flow-s st-${st}" title="${esc(STAGES[st].d)}"><b>${n}</b> ${esc(STAGES[st].l)}</span>`).join('')}</p>` : '';
   const groups = STAGE_ORDER.map(st => ({ st, list: staged.filter(x => x.st === st) })).filter(g => g.list.length)
-    .map(({ st, list: l }) => `<section class="ag-group st-${st}" style="${stageVar(st)}"><h4>${icon(STAGES[st].ic)}${esc(STAGES[st].g)}<b>${l.length}</b><span>${esc(STAGES[st].d)}</span></h4><div class="ag-trees">${l.map(x => treeRow(x.w, list)).join('')}</div></section>`).join('');
-  return `${running.length || trees.length ? flow : ''}
-    ${running.length ? `<h3 class="ss-h"><span class="ss-h-dot" style="${stageVar('work')}"></span>Au travail <span>${running.length} agent${running.length > 1 ? 's' : ''} en cours</span></h3><div class="ag-runs">${running.map(runCard).join('')}</div>` : ''}
-    ${recent.length ? `<h3 class="ss-h">Terminés récemment <span>lancés depuis Studio</span>${recent.length > 1 ? `<button class="link-btn ss-h-act" data-ag="hide-runs">Retirer les terminés</button>` : ''}</h3><div class="ag-runs">${recent.map(runCard).join('')}</div>` : ''}
-    ${trees.length ? `<h3 class="ss-h">Copies des agents <span>travail isolé de ton dossier, rangé par étape</span>${!remote && trees.some(treeIdle) ? `<button class="link-btn ss-h-act" data-ag="clean-trees" title="Supprimer plusieurs copies d’un coup">Faire le ménage</button>` : ''}</h3><div class="ag-groups">${familyHTML}${groups}</div>` : ''}
-    <h3 class="ss-h">Sessions <span>tout ce que Claude Code a fait dans ce projet</span>${canClean ? `<button class="link-btn ss-h-act" data-ag="clean" title="Supprimer plusieurs conversations terminées d’un coup">Faire le ménage</button>` : ''}</h3>
-    <div class="ss-totals"><div><strong>${list.length}</strong><span>session${list.length > 1 ? 's' : ''}</span></div><div><strong>${usage.fmt(tot.output)}</strong><span>tokens écrits</span></div><div><strong>${usage.fmt(tot.input)}</strong><span>tokens lus</span></div><div><strong>${usage.fmt(tot.cacheRead)}</strong><span>relus du cache</span></div></div>
+    .map(({ st, list: l }) => `<section class="ag-group st-${st}" style="${stageVar(st)}"><h4 title="${esc(STAGES[st].d)}">${esc(STAGES[st].g)}<b>${l.length}</b></h4><div class="ag-trees">${l.map(x => treeRow(x.w, list)).join('')}</div></section>`).join('');
+  return `${flow}
+    ${running.length ? `<h3 class="ss-h">Au travail <span>${running.length}</span></h3><div class="ag-runs">${running.map(runCard).join('')}</div>` : ''}
+    ${recent.length ? `<h3 class="ss-h">Terminés récemment${recent.length > 1 ? `<button class="link-btn ss-h-act" data-ag="hide-runs">Retirer les terminés</button>` : ''}</h3><div class="ag-runs">${recent.map(runCard).join('')}</div>` : ''}
+    ${trees.length ? `<h3 class="ss-h" title="Travail isolé de ton dossier, rangé par étape">Copies des agents${!remote && trees.some(treeIdle) ? `<button class="link-btn ss-h-act" data-ag="clean-trees" title="Supprimer plusieurs copies d’un coup">Faire le ménage</button>` : ''}</h3><div class="ag-groups">${familyHTML}${groups}</div>` : ''}
+    <h3 class="ss-h" title="Tout ce que Claude Code a fait dans ce projet">Sessions <span>${list.length}</span>${canClean ? `<button class="link-btn ss-h-act" data-ag="clean" title="Supprimer plusieurs conversations terminées d’un coup">Faire le ménage</button>` : ''}</h3>
+    ${list.length ? `<p class="ss-sum">${usage.fmt(tot.output)} tokens écrits · ${usage.fmt(tot.input)} lus · ${usage.fmt(tot.cacheRead)} relus du cache</p>` : ''}
     <div class="ss-list">${list.map(s => {
-      const top = Object.entries(s.tools).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${esc(k)} ${v}`).join(' · ');
+      const top = Object.entries(s.tools).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${k} ${v}`).join(' · ');
       const st = sessionStage(s), tag = st && st !== 'idle' && st !== 'work' ? stageBadge(st) : '';
-      return `<div class="ss-row${s.id === selected ? ' sel' : ''}${st ? ` st-${st}` : ''}"><button class="ss-open" data-ss="${esc(s.id)}"><i class="ss-live${s.live ? ' on' : ''}${st && st !== 'idle' ? ` st-${st}` : ''}" title="${s.live ? 'En cours' : st && st !== 'idle' ? STAGES[st].l : 'Inactive'}"></i>
-        <span class="ss-main"><span class="ss-name"><strong>${esc(nameOf(s))}</strong>${tag}</span><em>${s.worktree ? `${icon('pencil')}copie · ` : s.branch ? `${icon('pr')}${esc(s.branch)} · ` : ''}${esc(s.models.map(modelName).join(', '))} · ${s.prompts} demande${s.prompts > 1 ? 's' : ''}${top ? ` · ${top}` : ''}</em></span>
-        <span class="ss-tok">${usage.fmt(s.tokens.output)}<small>écrits</small></span><time>${esc(rel(ms(s.updated)))}</time></button>${remote ? '' : `<button class="icon-btn ss-del" data-ag="delete" data-session="${esc(s.id)}" title="Supprimer la conversation" aria-label="Supprimer la conversation ${esc(nameOf(s))}">${icon('trash')}</button>`}</div>`;
+      const info = [s.worktree ? 'copie isolée' : s.branch ?? '', s.models.map(modelName).join(', '), `${s.prompts} demande${s.prompts > 1 ? 's' : ''}`, `${usage.fmt(s.tokens.output)} tokens écrits`, top].filter(Boolean).join(' · ');
+      return `<div class="ss-row${s.id === selected ? ' sel' : ''}${st ? ` st-${st}` : ''}"><button class="ss-open" data-ss="${esc(s.id)}" title="${esc(info)}"><i class="ss-live${s.live ? ' on' : ''}${st && st !== 'idle' ? ` st-${st}` : ''}" title="${s.live ? 'En cours' : st && st !== 'idle' ? STAGES[st].l : 'Inactive'}"></i>
+        <span class="ss-main"><span class="ss-name"><strong>${esc(nameOf(s))}</strong>${tag}</span></span>
+        <time>${esc(rel(ms(s.updated)))}</time></button>${remote ? '' : `<button class="icon-btn ss-del" data-ag="delete" data-session="${esc(s.id)}" title="Supprimer la conversation" aria-label="Supprimer la conversation ${esc(nameOf(s))}">${icon('trash')}</button>`}</div>`;
     }).join('') || '<p class="hm-empty">Aucune session Claude Code dans ce dossier pour l’instant. Donne une consigne ci-dessus pour lancer la première.</p>'}</div>`;
 }
 

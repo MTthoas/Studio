@@ -30,18 +30,18 @@
 .tm-l.del i { color: var(--c-red); }
 .tm-l.gap code, .tm-l.gap i { color: var(--text-3); }
 
-/* ---- Bande « équipe » sous l'en-tête d'une vue ---- */
+/* ---- Bande « équipe » sous l'en-tête d'une vue : une ligne repliée, une ligne par sous-agent une fois dépliée ---- */
 .tm-team:empty { display: none; }
-.tm-team { flex: none; border-bottom: 1px solid var(--border); background: var(--bg); font-size: var(--t-1); }
-.tm-head { width: 100%; display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 10px; border: 0; background: none; color: var(--text-2); font: inherit; cursor: pointer; text-align: left; }
-.tm-head:hover { background: var(--hover); }
+.tm-team { flex: none; border-bottom: 1px solid var(--border); font-size: var(--t-1); }
+.tm-head { width: 100%; display: flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border: 0; background: none; color: var(--text-3); font: inherit; cursor: pointer; text-align: left; }
+.tm-head:hover { background: var(--hover); color: var(--text-2); }
 .tm-head:focus-visible, .tm-row:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--accent-soft); }
-.tm-head .ic { flex: none; width: 12px; height: 12px; color: var(--text-3); transition: transform .12s; }
-.tm-head[aria-expanded="true"] .ic { transform: rotate(180deg); }
-.tm-title { font-weight: 600; color: var(--text); }
-.tm-sum { flex: 1; min-width: 0; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tm-head .ic { flex: none; width: 11px; height: 11px; transition: transform .12s; transform: rotate(-90deg); }
+.tm-head[aria-expanded="true"] .ic { transform: none; }
+.tm-sum { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tm-title { font-weight: 500; color: var(--text-2); }
 .tm-rows { max-height: 132px; overflow: auto; padding-bottom: 4px; }
-.tm-row { width: 100%; display: grid; grid-template-columns: 8px minmax(11ch, 20ch) auto minmax(0, 1fr) minmax(0, 18ch) auto; align-items: center; gap: 8px; min-height: 26px; padding: 0 10px; border: 0; background: none; color: var(--text-2); font: inherit; text-align: left; cursor: pointer; }
+.tm-row { width: 100%; display: grid; grid-template-columns: 8px minmax(8ch, 18ch) minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 24px; padding: 0 10px; border: 0; background: none; color: var(--text-2); font: inherit; text-align: left; cursor: pointer; }
 .tm-row:hover { background: var(--hover); }
 .tm-row.shown { background: var(--active); }
 .tm-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--c-gray); opacity: .5; }
@@ -49,32 +49,9 @@
 .tm-name { min-width: 0; display: flex; gap: 6px; align-items: baseline; overflow: hidden; white-space: nowrap; }
 .tm-name b { flex: none; max-width: 100%; /* le nom passe avant sa description, qui seule se tronque */ font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
 .tm-name em { flex: 1 1 0; min-width: 0; font-style: normal; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; }
-.tm-state { color: var(--text-3); white-space: nowrap; }
-.tm-last { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); color: var(--text-2); }
-.tm-files { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); color: var(--text-3); text-align: right; }
-/* Vues étroites : la dernière action reste, les fichiers passent dans l'infobulle. */
-.aw-grid.l6 .tm-files, .aw-grid.l8 .tm-files, .aw-grid.l6 .tm-name em, .aw-grid.l8 .tm-name em { display: none; }
-.aw-grid.l6 .tm-row, .aw-grid.l8 .tm-row { grid-template-columns: 8px minmax(60px, 12ch) auto minmax(0, 1fr) auto; }
-.aw-grid.maxed .tm-files, .aw-grid.maxed .tm-name em { display: block; }
-.aw-grid.maxed .tm-row { grid-template-columns: 8px minmax(11ch, 20ch) auto minmax(0, 1fr) minmax(0, 18ch) auto; }
+.tm-last { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); color: var(--text-3); }
+.aw-grid:is(.l4, .l6, .l8):not(.maxed) .tm-name em { display: none; }
 .tm-row .tm-n:empty { display: none; }
-
-/* ---- Vue d'un sous-agent ---- */
-.aw-dep { flex: 0 1 auto; min-width: 0; display: inline-flex; align-items: baseline; gap: 4px; overflow: hidden; white-space: nowrap; font-size: var(--t-1); color: var(--text-3); }
-.aw-dep .link-btn { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: var(--t-1); }
-.aw-ro { flex: none; display: flex; align-items: center; gap: 6px; margin: 0; padding: 8px 12px; border-top: 1px solid var(--border); font-size: var(--t-1); color: var(--text-3); }
-.aw-ro .ic { flex: none; width: 13px; height: 13px; }
-.aw-ph-main .aw-pt { flex: 0 1 auto; min-width: min(100%, 9ch); }
-.aw-ph-main .aw-dep { flex: 0 10 auto; }
-.aw-ph .aw-ph-main .aw-rp { flex: 0 20 auto; min-width: 3ch; }
-.aw-grid.l4 .aw-dep, .aw-grid.l6 .aw-dep, .aw-grid.l8 .aw-dep { display: none; }
-.aw-grid.maxed .aw-dep { display: inline-flex; }
-
-/* ---- Liste de gauche : sous-agents au travail, indentés ---- */
-.aw-subrow { padding-left: 24px; }
-.aw-subrow .aw-rt { font-weight: 400; color: var(--text-2); }
-.aw-subrow .aw-rp { font-family: var(--mono); }
-.aw-subrow .aw-ring { width: 10px; height: 10px; }
 
 /* ---- Tableau d'équipe : onglets et fil « Échanges » ---- */
 .aw-board-tabs { flex: none; display: flex; gap: 2px; padding: 6px 8px 0; border-bottom: 1px solid var(--border); }

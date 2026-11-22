@@ -1,7 +1,7 @@
 // Rendu de l'équipe d'agents, sans état : des fonctions qui prennent des données et rendent du HTML (ou des blocs
 // pour `syncFeed`). Trois morceaux :
 //   - `diffHTML` : ce qu'une écriture a changé dans un fichier (fil de l'onglet Claude Code et de l'Espace agents) ;
-//   - `teamHTML` : la bande « équipe » d'une vue (une ligne par sous-agent) ;
+//   - `teamHTML` : la bande « équipe » d'une vue (une ligne repliée par défaut, puis une ligne par sous-agent) ;
 //   - `exchangeBlocks` : le fil « Échanges » (consignes, délégations, comptes rendus, messages du tableau).
 // Tout ce qui vient du Mac passe par `esc()`. Les styles sont dans css/team.css (préfixe `tm-`).
 import { diff } from '../../lib/diff.ts';
@@ -39,7 +39,6 @@ export function diffHTML(a: Action, path: string): string {
 }
 
 // ---------- Bande « équipe » ----------
-const base = (p: string): string => p.split('/').pop() || p;
 const plural = (n: number, w: string): string => `${n} ${w}${n > 1 ? 's' : ''}`;
 const ageMs = (iso: string): number => Date.now() - (Date.parse(iso) || 0);
 
@@ -50,26 +49,24 @@ function lastLine(a: SubAgent, shorten: (p: string) => string): string {
   return l.kind.startsWith('tool:') ? `${l.kind.slice(5)} ${shorten(text)}`.trim() : text;
 }
 
-/** Une ligne par sous-agent, ceux qui travaillent d'abord. `fold` : seule la ligne de titre est montrée.
+/** Une ligne par sous-agent, ceux qui travaillent d'abord. `fold` : seule la ligne de résumé est montrée (c'est l'état par défaut).
  *  `shown` : sous-agents déjà dans une vue (un clic y ramène au lieu d'en ouvrir une autre). */
 export function teamHTML(subs: SubAgent[], o: { fold: boolean; shown: Set<string>; shorten: (p: string) => string }): string {
   if (!subs.length) return '';
   const list = [...subs].sort((a, b) => Number(b.live) - Number(a.live) || (Date.parse(b.updated) || 0) - (Date.parse(a.updated) || 0));
   const run = subs.filter(s => s.live).length;
   const add = subs.reduce((n, s) => n + (s.lines?.add ?? 0), 0), del = subs.reduce((n, s) => n + (s.lines?.del ?? 0), 0);
-  const head = `<button type="button" class="tm-head" data-w="teamfold" aria-expanded="${!o.fold}" aria-label="Équipe : ${plural(subs.length, 'sous-agent')}${run ? `, ${run} au travail` : ''}">${icon('chevron')}<span class="tm-title">Équipe</span><span class="tm-sum">${plural(subs.length, 'sous-agent')}${run ? ` · ${run} au travail` : ''}</span>${add || del ? `<span class="tm-n"><b class="tm-add">+${add}</b><b class="tm-del">−${del}</b></span>` : ''}</button>`;
+  const head = `<button type="button" class="tm-head" data-w="teamfold" aria-expanded="${!o.fold}" aria-label="Équipe : ${plural(subs.length, 'sous-agent')}${run ? `, ${run} au travail` : ''}">${icon('chevron')}<span class="tm-sum"><b class="tm-title">Équipe</b> · ${plural(subs.length, 'sous-agent')}${run ? ` · ${run} au travail` : ''}</span>${add || del ? `<span class="tm-n"><b class="tm-add">+${add}</b><b class="tm-del">−${del}</b></span>` : ''}</button>`;
   if (o.fold) return head;
   const rows = list.map(a => {
-    const name = a.type || a.title || 'Sous-agent', files = a.files ?? [], first = files.slice(0, 2).map(f => base(f.path)).join(', ');
+    const name = a.type || a.title || 'Sous-agent', files = a.files ?? [];
     const state = a.live ? 'au travail' : 'fini', last = lastLine(a, o.shorten);
     const n = a.lines ? `<span class="tm-n"><b class="tm-add">+${a.lines.add}</b><b class="tm-del">−${a.lines.del}</b></span>` : '<span class="tm-n"></span>';
     const sel = o.shown.has(a.id);
-    return `<button type="button" class="tm-row${a.live ? ' live' : ''}${sel ? ' shown' : ''}" data-w="subview" data-sa="${esc(a.id)}" aria-label="${esc(`${sel ? 'Aller à' : 'Ouvrir'} ${name}, ${state}${last ? `, ${last}` : ''}`)}" title="${esc(a.title)}">
+    return `<button type="button" class="tm-row${a.live ? ' live' : ''}${sel ? ' shown' : ''}" data-w="subview" data-sa="${esc(a.id)}" aria-label="${esc(`${sel ? 'Aller à' : 'Ouvrir'} ${name}, ${state}${last ? `, ${last}` : ''}`)}" title="${esc([a.title, ...files.map(f => f.path)].join('\n'))}">
       <i class="tm-dot${a.live ? ' live' : ''}" aria-hidden="true"></i>
       <span class="tm-name"><b>${esc(name)}</b>${a.type && a.title && a.title !== a.type ? `<em>${esc(a.title)}</em>` : ''}</span>
-      <span class="tm-state">${state}</span>
-      <span class="tm-last">${esc(last)}</span>
-      <span class="tm-files" title="${esc(files.map(f => f.path).join('\n'))}">${esc(first)}${files.length > 2 ? ` +${files.length - 2}` : ''}</span>${n}</button>`;
+      <span class="tm-last">${esc(last)}</span>${n}</button>`;
   }).join('');
   return `${head}<div class="tm-rows">${rows}</div>`;
 }

@@ -34,8 +34,6 @@ const smooth = (a: number, b: number, v: number): number => { const t = clamp((v
 const level = (t: number, n: number, x: number, y: number): number => Math.min(n - 1, Math.floor(clamp(t) * (n - 1) + (BAYER[(x & 3) + (y & 3) * 4] ?? .5)));
 
 let url = '', drawn = '';
-/** À appeler quand un autre fond a pris `--sky` : le prochain `paint` redessinera. */
-export function release(): void { drawn = ''; }
 
 /** Dessine le ciel à la taille de l'écran (une fois par thème et par taille) et le pose dans `--sky`. */
 export function paint(dark: boolean): void {

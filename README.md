@@ -419,7 +419,7 @@ src/                               TypeScript strict
   lib/              outils sans état : markdown, calc, schema, graph, qr, fuzzy, diff, zip
   plugins/          registre d'extensions, plugins maison (GitHub, Linear) et optionnels (Spotify, n8n, Figma)
   ui/               kit.ts (icônes, menus, fenêtres), caret.ts (curseur), chart.ts (graphiques),
-                    sky.ts et horizon.ts (fonds calculés, image choisie), motion.ts (transitions et animations d'interface)
+                    sky.ts (ciel du fond), motion.ts (transitions et animations d'interface)
   sw/sw.ts          service worker (compilé avec les types « worker »)
 native/             apps Mac et iPhone (Swift) et leurs scripts de build
   Shared/

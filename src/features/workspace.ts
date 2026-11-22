@@ -25,6 +25,7 @@ import type { Project } from './projects/model.ts';
 import { esc, renderMarkdown } from '../lib/markdown.ts';
 import { fold } from '../lib/fuzzy.ts';
 import { $, $$, icon, kbd, rel, modal, need, toast, target, paintIfChanged, menu } from '../ui/kit.ts';
+import type { MenuItem } from '../ui/kit.ts';
 
 /** Une vue : la conversation qu'elle suit (`session`), ou un agent qui démarre (`run`), ou rien (nouvel agent).
  *  `sub` : un sous-agent de cette conversation (fil en lecture seule) ; `auto` : ouverte d'office par le mode Auto, donc rendue
@@ -58,8 +59,8 @@ interface BoardFile { name: string; text: string; at: number }
 /** `messages` : le tableau découpé en entrées par le Mac (absent avec une app Mac ancienne : on montre alors les fichiers). */
 const boards = new Map<string, { files: BoardFile[]; messages?: BoardMsg[]; at: number; missing?: boolean }>();
 const boardOpen = new Set<string>(read<string[]>('studio.workspace.boards', []));
-/** Onglet du tableau par vue : « x » (échanges) ou « f » (fichiers bruts) ; bande équipe repliée par vue. */
-const boardTab = new Map<string, string>(), teamFold = new Set<string>();
+/** Onglet du tableau par vue : « x » (échanges) ou « f » (fichiers bruts) ; bande équipe dépliée par vue (repliée par défaut). */
+const boardTab = new Map<string, string>(), teamOpen = new Set<string>();
 /** Spécialistes que Studio vient d'ajouter à l'équipe d'un projet en lançant des agents : annoncés d'un seul toast. */
 const made = new Set<string>();
 let root: HTMLElement | null = null, timer: ReturnType<typeof setInterval> | undefined, tick = 0, cursor = 0, listing = false;
@@ -193,6 +194,14 @@ const ICON: Record<Row['status'], string> = { running: '<span class="aw-ring"></
 const GROUPS: [Row['status'], string][] = [['running', 'En cours'], ['review', 'À relire'], ['error', 'En erreur'], ['idle', 'Récentes']];
 
 /** Lettre de la conversation, pour la liste réduite. */
+/** Heure courte pour une rangée : « 14:02 » aujourd’hui, « 21 nov. » avant, « à l’instant » sous la minute devient « maint. ». */
+const shortRel = (at: number): string => {
+  const d = Date.now() - at;
+  if (d < 6e4) return 'maint.';
+  if (d < 36e5) return `${Math.floor(d / 6e4)} min`;
+  if (new Date(at).toDateString() === new Date().toDateString()) return new Date(at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  return rel(at);
+};
 const initial = (t: string) => (t.match(/[\p{L}\p{N}]/u)?.[0] ?? '·').toUpperCase();
 function paintList(): void {
   const box = root && $('.aw-list', root); if (!box) return;
@@ -209,59 +218,74 @@ function paintList(): void {
       // Les sous-agents au travail, indentés sous leur conversation : ils s'ouvrent comme elle (clic, J/K, Entrée, glisser).
       const subs = r.subs.filter(a => a.live).slice(0, 6).map(a => {
         const m = open.get(`${r.s.id}/${a.id}`), at = i++, name = a.type || a.title || 'Sous-agent';
-        return `<button class="aw-row aw-subrow${at === cursor ? ' cur' : ''}${m ? ' shown' : ''}" draggable="true" data-row="${at}" data-p="${esc(r.p.id)}" data-s="${esc(r.s.id)}" data-sa="${esc(a.id)}" title="${esc(`${name} : ${a.title}`)}"><span class="aw-ring"></span><span class="aw-rt">${esc(name)}</span><span class="aw-rp">${esc(a.last ? (a.last.kind.startsWith('tool:') ? `${a.last.kind.slice(5)} ${shortPath(a.last.text.replace(/\s+/g, ' '))}` : a.last.text.replace(/\s+/g, ' ')) : a.title)}</span>${m ? `<b class="aw-in">${m}</b>` : ''}</button>`;
+        return `<button class="aw-row aw-subrow${at === cursor ? ' cur' : ''}${m ? ' shown' : ''}" draggable="true" data-row="${at}" data-p="${esc(r.p.id)}" data-s="${esc(r.s.id)}" data-sa="${esc(a.id)}" title="${esc(`${name} : ${a.title}`)}"><span class="aw-ring"></span><span class="aw-rt">${esc(name)}</span>${m ? `<b class="aw-in">${m}</b>` : ''}</button>`;
       }).join('');
-      return `<button class="aw-row${idx === cursor ? ' cur' : ''}${n ? ' shown' : ''}" draggable="true" data-row="${idx}" data-p="${esc(r.p.id)}" data-s="${esc(r.s.id)}" title="${esc(`${nameOf(r.s)} · ${r.p.name}`)}" aria-label="${esc(nameOf(r.s))}">${ICON[r.status]}<i class="aw-ini" style="--c:var(--c-${r.p.hue})" aria-hidden="true">${esc(initial(nameOf(r.s)))}</i><span class="aw-rt">${esc(nameOf(r.s))}</span><span class="aw-rp"><i class="tag-dot" style="--c:var(--c-${r.p.hue})"></i>${esc(r.p.name)}</span><time>${esc(rel(ms(r.s.active || r.s.updated)))}</time>${n ? `<b class="aw-in">${n}</b>` : ''}</button>${subs}`;
+      return `<button class="aw-row${idx === cursor ? ' cur' : ''}${n ? ' shown' : ''}" draggable="true" data-row="${idx}" data-p="${esc(r.p.id)}" data-s="${esc(r.s.id)}" title="${esc(`${nameOf(r.s)} · ${r.p.name}`)}" aria-label="${esc(nameOf(r.s))}">${ICON[r.status]}<i class="aw-ini" style="--c:var(--c-${r.p.hue})" aria-hidden="true">${esc(initial(nameOf(r.s)))}</i><span class="aw-rt">${esc(nameOf(r.s))}</span><i class="tag-dot aw-pd" style="--c:var(--c-${r.p.hue})" aria-hidden="true"></i><time>${esc(shortRel(ms(r.s.active || r.s.updated)))}</time>${n ? `<b class="aw-in">${n}</b>` : ''}</button>${subs}`;
     }).join('')}</div>`;
   }).join('');
   const loading = projects.projects().some(p => !sessionsBy.has(p.id));
   // Réécrit seulement ce qui a changé : la liste est redemandée à chaque tour (2,5 s) et pendant la relecture des projets.
-  if (paintIfChanged(box, groups || `<p class="aw-empty">${loading ? '<span class="spin"></span>Lecture des conversations…' : q ? 'Aucune conversation ne correspond.' : 'Aucune conversation pour l’instant. Lance un agent dans une vue.'}</p>`)) box.scrollTop = scroll;
+  if (paintIfChanged(box, groups || `<p class="aw-empty">${loading ? '<span class="spin"></span>Lecture…' : q ? 'Aucun résultat.' : 'Aucun agent pour l’instant.'}</p>`)) box.scrollTop = scroll;
   const counts = { running: list.filter(r => r.status === 'running').length, review: list.filter(r => r.status === 'review').length };
-  const c = $('.aw-counts', root!); if (c) paintIfChanged(c, `${counts.running ? `<span class="aw-c run">${counts.running} en cours</span>` : ''}${counts.review ? `<span class="aw-c rev">${counts.review} à relire</span>` : ''}`);
+  const c = $('.aw-counts', root!); if (c) paintIfChanged(c, `${counts.running ? `<span class="aw-c on">${counts.running} en cours</span>` : ''}${counts.review ? `<span class="aw-c rv">${counts.review} à relire</span>` : ''}`);
 }
 
 const projectOptions = (cur: string) => projects.projects().map(p => `<option value="${esc(p.id)}"${p.id === cur ? ' selected' : ''}>${esc(p.name)}</option>`).join('');
 function newHTML(i: number): string {
   const cur = proj(st.draftProject)?.id ?? projects.projects()[0]?.id ?? '';
-  return `<form class="aw-new" data-at-key="new|${i}">
-    <div class="aw-new-row"><label class="aw-sel">${icon('folder')}<select name="project" aria-label="Projet">${projectOptions(cur)}</select></label>
-      <div class="cx-seg aw-mode" role="radiogroup" aria-label="Mode"><label><input type="radio" name="mode" value="edit" checked>${icon('pencil')}Modifier</label><label><input type="radio" name="mode" value="read">${icon('search')}Analyser</label></div></div>
-    <textarea name="prompt" class="aw-big" placeholder="Décris ce que l’agent doit faire… ${COUNT_HINT}" aria-label="Consigne du nouvel agent"></textarea>${attach.stripHTML()}
-    <div class="aw-new-foot"><button type="button" class="btn btn-ghost aw-sub" data-w="sub" title="${esc(subagents.HINT)}">${icon('sparkle')}<span>${esc(subagents.label(cur))}</span></button><span>ou glisse une conversation de la liste ici</span>${attach.buttonHTML()}<button class="btn btn-primary">${icon('play')}Lancer ${kbd('mod+enter')}</button></div></form>`;
+  return `<form class="aw-new" data-at-key="new|${i}" title="Tu peux aussi glisser une conversation de la liste ici.">
+    <textarea name="prompt" class="aw-big" placeholder="Décris ce que l’agent doit faire…" title="${esc(COUNT_HINT)}" aria-label="Consigne du nouvel agent"></textarea>${attach.stripHTML()}
+    <div class="aw-new-foot"><label class="aw-sel">${icon('folder')}<select name="project" aria-label="Projet">${projectOptions(cur)}</select></label>
+      <div class="cx-seg aw-mode" role="radiogroup" aria-label="Mode"><label title="L’agent modifie les fichiers"><input type="radio" name="mode" value="edit" checked>${icon('pencil')}<span>Modifier</span></label><label title="L’agent lit sans rien modifier"><input type="radio" name="mode" value="read">${icon('search')}<span>Analyser</span></label></div>
+      <button type="button" class="btn btn-ghost aw-sub" data-w="sub" title="${esc(subagents.HINT)}">${icon('sparkle')}<span>${esc(subagents.label(cur))}</span></button>${attach.buttonHTML()}<button class="btn btn-primary">${icon('play')}Lancer ${kbd('mod+enter')}</button></div></form>`;
 }
 function paneShell(x: Pane | null, i: number): string {
   const act = (a: string, ic: string, t: string, k = '') => `<button type="button" class="icon-btn" data-w="${a}" title="${esc(t)}${k ? ` (${k})` : ''}" aria-label="${esc(t)}">${icon(ic)}</button>`;
   // Sous-agent : un fil en lecture seule, sans arrêt, tableau ni champ de réponse (il répond à l'agent principal, pas à l'utilisateur).
-  if (x?.sub) return `<header class="aw-ph"><b class="aw-num">${i + 1}</b><div class="aw-ph-main"></div><div class="aw-ph-acts">${act('open', 'chevronRight', 'Ouvrir la conversation dans le projet')}${act('max', 'focus', 'Agrandir', 'F')}${act('close', 'x', 'Vider la vue', 'X')}</div></header>
-    <div class="aw-body"><div class="ss-feed aw-feed" role="log" tabindex="0" aria-label="Fil du sous-agent ${i + 1}"></div></div>
-    <p class="aw-ro">${icon('eye')}Fil en lecture seule : ce sous-agent rend compte à l’agent principal.</p>`;
+  if (x?.sub) return `<header class="aw-ph"><b class="aw-num">${i + 1}</b><div class="aw-ph-main"></div><div class="aw-ph-acts">${act('parent', 'back', 'Revenir à l’agent principal')}${act('open', 'chevronRight', 'Ouvrir la conversation dans le projet')}${act('max', 'focus', 'Agrandir', 'F')}${act('close', 'x', 'Vider la vue', 'X')}</div></header>
+    <div class="aw-body"><div class="ss-feed aw-feed" role="log" tabindex="0" aria-label="Fil du sous-agent ${i + 1}"></div></div>`;
   return `<header class="aw-ph"><b class="aw-num">${i + 1}</b><div class="aw-ph-main"></div><div class="aw-ph-acts">${x ? act('stop', 'stop', 'Arrêter l’agent') + act('team', 'board', 'Tableau d’équipe', 'T') + act('open', 'chevronRight', 'Ouvrir dans le projet') : ''}${act('max', 'focus', 'Agrandir', 'F')}${x ? act('close', 'x', 'Vider la vue', 'X') : ''}</div></header>
-    ${x ? `<div class="aw-copy-slot"></div><div class="aw-team-slot tm-team"></div><div class="aw-body"><div class="ss-feed aw-feed" role="log" tabindex="0" aria-label="Fil de l’agent ${i + 1}"></div><aside class="aw-board" hidden aria-label="Tableau d’équipe de l’agent ${i + 1}"><div class="aw-board-tabs" role="tablist" aria-label="Contenu du tableau" hidden><button type="button" role="tab" data-w="btab" data-tab="x">Échanges</button><button type="button" role="tab" data-w="btab" data-tab="f">Fichiers</button></div><div class="aw-board-x" role="log" aria-label="Échanges de l’équipe" hidden></div><div class="aw-board-list"></div><form class="aw-board-say"><input name="note" placeholder="Consigne pour l’équipe, lue à sa prochaine étape…" aria-label="Consigne pour l’équipe" maxlength="4000"><button class="btn" title="Ajouter au tableau (sans interrompre)">${icon('play')}</button></form></aside></div>
-    <form class="aw-reply" data-at-key="reply|${esc(x.project)}|${esc(x.session || x.run || String(i))}"><textarea name="prompt" rows="1" placeholder="Répondre à l’agent…" aria-label="Réponse à l’agent ${i + 1}"></textarea>${attach.buttonHTML()}<button class="btn btn-primary" data-at-bare title="Envoyer (⌘↵) · ⇧⌘↵ interrompt le tour en cours">${icon('play')}</button>${attach.stripHTML()}</form>`
+    ${x ? `<div class="aw-copy-slot"></div><div class="aw-team-slot tm-team"></div><div class="aw-body"><div class="ss-feed aw-feed" role="log" tabindex="0" aria-label="Fil de l’agent ${i + 1}"></div><aside class="aw-board" hidden aria-label="Tableau d’équipe de l’agent ${i + 1}"><div class="aw-board-tabs" role="tablist" aria-label="Contenu du tableau" hidden><button type="button" role="tab" data-w="btab" data-tab="x">Échanges</button><button type="button" role="tab" data-w="btab" data-tab="f">Fichiers</button></div><div class="aw-board-x" role="log" aria-label="Échanges de l’équipe" hidden></div><div class="aw-board-list"></div><form class="aw-board-say"><input name="note" placeholder="Consigne pour l’équipe…" title="Lue par l’équipe à sa prochaine étape, sans l’interrompre" aria-label="Consigne pour l’équipe" maxlength="4000"><button class="btn" title="Ajouter au tableau (sans interrompre)">${icon('play')}</button></form></aside></div>
+    <form class="aw-reply" data-at-key="reply|${esc(x.project)}|${esc(x.session || x.run || String(i))}"><textarea name="prompt" rows="1" placeholder="Répondre…" aria-label="Réponse à l’agent ${i + 1}"></textarea>${attach.buttonHTML()}<button class="btn btn-primary" data-at-bare title="Envoyer (⌘↵) · ⇧⌘↵ interrompt le tour en cours">${icon('play')}</button>${attach.stripHTML()}</form>`
     : `<div class="aw-body aw-blank">${newHTML(i)}</div>`}`;
 }
+/** État d'une vue : une pastille et son mot, jamais tronqué (à 6 et 8 vues, le mot passe en infobulle). */
+const stateHTML = (live: boolean, c: string, label: string): string => `<span class="aw-state${live ? ' live' : ''}" style="--c:var(--c-${c})" title="${esc(label)}"><i aria-hidden="true"></i><span>${esc(label)}</span></span>`;
 function headHTML(x: Pane | null): string {
   if (!x) return `<span class="aw-pt muted">Nouvel agent</span>`;
   if (x.sub) {
     // Un sous-agent dit de qui il dépend : un clic ramène à l'agent principal dans cette vue.
     const d = details.get(pkey(x)), a = d?.agent, par = details.get(mkey(x)), p = proj(x.project);
     const name = a ? a.type || a.title || 'Sous-agent' : 'Sous-agent', up = par?.id ? nameOf({ id: x.session, title: par.title ?? '', aiTitle: par.aiTitle, firstPrompt: par.firstPrompt, prompts: par.prompts ?? 0 }) : 'Conversation';
-    return `<i class="ss-live${a?.live ? ' on' : ''}"></i><span class="aw-pt" title="${esc(a?.title ?? name)}">${esc(name)}</span><span class="aw-dep">dépend de <button type="button" class="link-btn" data-w="parent" title="Ouvrir l’agent principal dans cette vue" aria-label="Ouvrir l’agent principal ${esc(up)} dans cette vue">${esc(up)}</button></span>${p ? `<span class="aw-rp"><i class="tag-dot" style="--c:var(--c-${p.hue})"></i>${esc(p.name)}</span>` : ''}<span class="ag-pill${a?.live ? ' live' : ''}" style="--c:var(--c-${a?.live ? 'amber' : 'gray'})">${a ? (a.live ? 'Au travail' : 'Fini') : 'Lecture…'}</span>${a?.lines ? `<span class="tm-n aw-meta"><b class="tm-add">+${a.lines.add}</b><b class="tm-del">−${a.lines.del}</b></span>` : ''}`;
+    return `${stateHTML(!!a?.live, 'amber', a ? (a.live ? 'Au travail' : 'Fini') : 'Lecture…')}<span class="aw-pt" title="${esc(`${a?.title ?? name} · lecture seule : ce sous-agent rend compte à l’agent principal (${up})`)}">${esc(name)}</span>${p ? `<span class="aw-rp" title="${esc(p.name)}"><i class="tag-dot" style="--c:var(--c-${p.hue})"></i>${esc(p.name)}</span>` : ''}<span class="aw-meta">lecture seule</span>${a?.lines ? `<span class="tm-n aw-meta"><b class="tm-add">+${a.lines.add}</b><b class="tm-del">−${a.lines.del}</b></span>` : ''}`;
   }
   const p = proj(x.project), d = details.get(pkey(x)), runs = (runsBy.get(x.project) ?? []).filter(r => r.session === x.session || (x.run && r.run === x.run));
   const run = runs.find(live) ?? runs.reduce<AgentRun | undefined>((a, r) => !a || ms(r.started) > ms(a.started) ? r : a, undefined);
   const working = !!runs.find(live) || !!d?.live;
   const title = d && d.id ? nameOf({ id: x.session, title: d.title ?? '', aiTitle: d.aiTitle, firstPrompt: d.firstPrompt, prompts: d.prompts ?? 0 }) : x.session ? 'Conversation' : 'L’agent démarre…';
   const [c, l] = working ? ['amber', 'En cours'] : run ? STATUS[run.status] ?? ['gray', run.status] : ['gray', 'Au repos'];
-  return `<i class="ss-live${working ? ' on' : ''}"></i><span class="aw-pt" title="${esc(title)}">${esc(title)}</span>${p ? `<span class="aw-rp"><i class="tag-dot" style="--c:var(--c-${p.hue})"></i>${esc(p.name)}</span>` : ''}<span class="ag-pill${working ? ' live' : ''}" style="--c:var(--c-${c})">${l}</span>${d?.models?.length ? `<span class="aw-meta">${esc(modelName(d.models[d.models.length - 1] ?? ''))}</span>` : ''}`;
+  return `${stateHTML(working, c, l)}<span class="aw-pt" title="${esc(title)}">${esc(title)}</span>${p ? `<span class="aw-rp" title="${esc(p.name)}"><i class="tag-dot" style="--c:var(--c-${p.hue})"></i>${esc(p.name)}</span>` : ''}${d?.models?.length ? `<span class="aw-meta">${esc(modelName(d.models[d.models.length - 1] ?? ''))}</span>` : ''}`;
 }
+
+const layoutLabel = (n: number) => `${n} vue${n > 1 ? 's' : ''}`;
+/** Le bouton de disposition montre la disposition courante (icône) ; le menu liste les six. */
+function paintLayout(page: HTMLElement): void {
+  const b = $('.aw-lay', page); if (!b) return;
+  const h = `${layoutIcon(st.layout)}${icon('chevron')}`;
+  if (b.innerHTML !== h) b.innerHTML = h;
+  b.title = `Disposition : ${layoutLabel(st.layout)} (L)`; b.setAttribute('aria-label', b.title);
+}
+function layoutMenu(b: HTMLElement): void {
+  menu(b, LAYOUTS.map(n => ({ label: layoutLabel(n), checked: n === st.layout, run: () => setLayout(n) })));
+}
+const KEYS: [string, string][] = [['Choisir une vue', '1 – 8'], ['Parcourir la liste', 'J / K'], ['Ouvrir dans la vue', '↵'], ['Nouvel agent', 'C'], ['Agrandir la vue', 'F'], ['Vider la vue', 'X'], ['Disposition', 'L'], ['Diffuser', 'D'], ['Répondre', 'R'], ['Chercher', '/'], ['Réduire la liste', 'S'], ['Tableau d’équipe', 'T'], ['Publier', 'P']];
+const keysMenu = (b: HTMLElement) => menu(b, [{ label: 'Raccourcis clavier' }, ...KEYS.map(([label, hint]): MenuItem => ({ label, hint, run: () => undefined }))]);
 
 function paint(): void {
   if (!root) return;
   const grid = need('.aw-grid', root);
   grid.className = `aw-grid l${st.layout}${st.max >= 0 && st.max < st.layout ? ' maxed' : ''}`;
-  $$('.aw-seg button', root).forEach(b => b.setAttribute('aria-pressed', String(Number(b.dataset.layout) === st.layout)));
+  paintLayout(root);
   const want = panes();
   // Les vues gardent leur DOM tant qu'elles suivent la même conversation : on ne perd ni le texte tapé ni le défilement.
   while (grid.children.length > want.length) grid.lastElementChild?.remove();
@@ -296,7 +320,7 @@ function paint(): void {
     paintCopy(el, x, working);
     // Bande « équipe » : une ligne par sous-agent de la conversation, mise à jour en place.
     const ts = $('.aw-team-slot', el);
-    if (ts) paintIfChanged(ts, teamHTML(d?.subagents ?? [], { fold: teamFold.has(pkey(x)), shown: new Set(st.panes.filter(y => y?.sub && mkey(y) === mkey(x)).map(y => y?.sub ?? '')), shorten: shortPath }));
+    if (ts) paintIfChanged(ts, teamHTML(d?.subagents ?? [], { fold: !teamOpen.has(pkey(x)), shown: new Set(st.panes.filter(y => y?.sub && mkey(y) === mkey(x)).map(y => y?.sub ?? '')), shorten: shortPath }));
     if (d?.message) { syncFeed(feed, [{ key: 'msg', html: `<p class="ss-cut">${esc(d.message)}</p>` }]); return; }
     const end = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 40;
     const drew = syncFeed(feed, feedBlocks(d?.actions ?? [], null, working || !d, (queuedBy.get(x.project) ?? []).filter(q => q.session === x.session)));
@@ -359,7 +383,12 @@ async function copyGesture(act: string, wt: string, i: number, b?: HTMLButtonEle
   const x = panes()[i], p = x && proj(x.project);
   if (!x || !p || !wt) return;
   if (act === 'more') {
+    // Les gestes rangés par le bandeau (revue, VS Code, mise à jour, PR…) sont ceux de ses boutons secondaires.
+    const ICONS: Record<string, string> = { review: 'sparkle', vscode: 'code', sync: 'refresh', pr: 'pr', push: 'upload', mergechild: 'pr' };
+    const more = b ? $$<HTMLButtonElement>('.aw-copy-act .btn:not(.btn-primary)', b.closest('.aw-copy') ?? b) : [];
     if (b) menu(b, [
+      ...more.map((m): MenuItem => ({ label: m.textContent?.trim() || m.title, icon: ICONS[m.dataset.awCopy ?? ''], hint: m.disabled ? 'agent au travail' : undefined, run: () => { if (!m.disabled) m.click(); } })),
+      ...(more.length ? ['-' as const] : []),
       { label: 'Nouvelle branche', icon: 'refresh', hint: 'repartir de la branche principale', run: () => void copyGesture('newbranch', wt, i) },
       { label: 'Ouvrir dans le projet', icon: 'chevronRight', run: () => openInProject(x) },
       '-',
@@ -625,13 +654,12 @@ export function mount(main: HTMLElement, toolbarLeft: string): void {
   }
   // Tout est dans `.aw-root` : les écouteurs disparaissent avec la page (#main, lui, sert à toutes les vues).
   main.innerHTML = `<div class="aw-root" tabindex="-1"><header class="toolbar">${toolbarLeft}<div class="crumb"><span>Espace agents</span></div><span class="aw-counts"></span>
-      <div class="tb-side tb-right"><div class="aw-seg" role="group" aria-label="Nombre de vues (L)">${LAYOUTS.map(n => `<button type="button" data-layout="${n}" title="${n} vue${n > 1 ? 's' : ''}" aria-pressed="false">${layoutIcon(n)}<span>${n}</span></button>`).join('')}</div>
-      <button class="btn btn-ghost aw-auto" data-w="auto" aria-pressed="${st.auto}" title="Ouvrir d’office chaque agent qui travaille dans une vue">${icon('bolt')}<span>Auto</span></button>
-      <button class="btn btn-ghost" data-w="cast" title="Envoyer la même consigne à plusieurs vues (D)">${icon('share')}<span>Diffuser</span></button>
+      <div class="tb-side tb-right"><button type="button" class="btn btn-ghost aw-lay" data-w="layout" aria-haspopup="menu"></button>
+      <button type="button" class="icon-btn aw-auto" data-w="auto" aria-pressed="${st.auto}" title="Auto : ouvre d’office chaque agent qui travaille dans une vue" aria-label="Auto">${icon('bolt')}</button>
+      <button type="button" class="icon-btn" data-w="cast" title="Diffuser : la même consigne à plusieurs vues (D)" aria-label="Diffuser">${icon('share')}</button>
       <button class="btn btn-primary" data-w="new" title="Nouvel agent dans la vue choisie (C)">${icon('plus')}<span>Nouvel agent</span></button></div></header>
     <div class="aw${st.mini ? ' mini' : ''}">
-      <aside class="aw-side"><div class="aw-side-head"><div class="aw-search">${icon('search')}<input type="search" placeholder="Filtrer les agents…" aria-label="Filtrer les agents" value="${esc(st.filter)}"><kbd>/</kbd></div>${sideToggle()}</div><div class="aw-list" role="listbox" aria-label="Conversations des agents"></div>
-        <p class="aw-keys">${kbd('1')}–${kbd('8')} vue · ${kbd('J')}${kbd('K')} liste · ${kbd('↵')} ouvrir · ${kbd('C')} créer · ${kbd('F')} agrandir · ${kbd('X')} vider · ${kbd('L')} disposition · ${kbd('S')} réduire la liste · ${kbd('T')} tableau d’équipe · ${kbd('P')} publier</p></aside>
+      <aside class="aw-side"><div class="aw-side-head"><div class="aw-search">${icon('search')}<input type="search" placeholder="Filtrer…" aria-label="Filtrer les agents" value="${esc(st.filter)}"><kbd>/</kbd></div><button type="button" class="icon-btn aw-help" data-w="keys" title="Raccourcis clavier" aria-label="Raccourcis clavier" aria-haspopup="menu">${icon('keyboard')}</button>${sideToggle()}</div><div class="aw-list" role="listbox" aria-label="Conversations des agents"></div></aside>
       <div class="aw-grid"></div>
     </div></div>`;
   const page = need('.aw-root', main);
@@ -639,12 +667,13 @@ export function mount(main: HTMLElement, toolbarLeft: string): void {
   const grid = need('.aw-grid', page), list = need('.aw-list', page), search = need<HTMLInputElement>('.aw-search input', page);
 
   page.addEventListener('click', e => {
-    const t = target(e), b = t.closest<HTMLElement>('[data-layout]');
-    if (b) { setLayout(Number(b.dataset.layout)); return; }
+    const t = target(e);
     const row = t.closest<HTMLElement>('.aw-row');
     if (row) { cursor = Number(row.dataset.row); openRow(row, (e as MouseEvent).metaKey || (e as MouseEvent).ctrlKey ? firstEmpty() : st.focus); return; }
     const w = t.closest<HTMLElement>('[data-w]')?.dataset.w, pane = t.closest<HTMLElement>('.aw-pane'), i = pane ? Number(pane.dataset.i) : st.focus;
     if (w === 'side') { toggleSide(page); return; }
+    if (w === 'layout') { layoutMenu(t.closest<HTMLElement>('[data-w]')!); return; }
+    if (w === 'keys') { keysMenu(t.closest<HTMLElement>('[data-w]')!); return; }
     if (w === 'cast') { broadcast(); return; }
     if (w === 'new') { const k = firstEmpty(); if (panes()[k]) setPane(k, null); focusPane(k, true); return; }
     if (w === 'max') { st.max = st.max === i ? -1 : i; save(); paint(); return; }
@@ -660,7 +689,7 @@ export function mount(main: HTMLElement, toolbarLeft: string): void {
       return;
     }
     if (w === 'subview') { const sa = t.closest<HTMLElement>('[data-sa]')?.dataset.sa, x = panes()[i]; if (sa && x) openSub(x.project, x.session, sa); return; }
-    if (w === 'teamfold') { const x = panes()[i]; if (x) { const k = pkey(x); if (!teamFold.delete(k)) teamFold.add(k); paint(); } return; }
+    if (w === 'teamfold') { const x = panes()[i]; if (x) { const k = pkey(x); if (!teamOpen.delete(k)) teamOpen.add(k); paint(); } return; }
     if (w === 'btab') { const x = panes()[i], tab = t.closest<HTMLElement>('[data-tab]')?.dataset.tab; if (x && tab) { boardTab.set(pkey(x), tab); paint(); } return; }
     if (w === 'parent') {
       // Retour à l'agent principal : sa vue si elle existe déjà, sinon celle-ci.
