@@ -374,13 +374,13 @@ function toggleSet(f: HTMLFormElement): void {
 
 // Modèle et niveau d'effort : choisis à chaque consigne, retenus pour la suivante. Une conversation garde les siens
 // (ceux de son lancement, ou ceux qu'on lui donne en lui répondant). Voir drafts.ts.
-const EFFORTS: [string, string][] = [['', 'Effort par défaut'], ['low', 'Effort faible'], ['medium', 'Effort moyen'], ['high', 'Effort élevé'], ['xhigh', 'Effort très élevé'], ['max', 'Effort maximal']];
+export const EFFORTS: [string, string][] = [['', 'Effort par défaut'], ['low', 'Effort faible'], ['medium', 'Effort moyen'], ['high', 'Effort élevé'], ['xhigh', 'Effort très élevé'], ['max', 'Effort maximal']];
 /** Valeur de l'entrée « Autre modèle… » (jamais envoyée : elle ouvre la saisie d'un identifiant). */
 const OTHER = '+';
-function modelOptions(cur: string): string {
+export function modelOptions(cur: string, other = true): string {
   const list: [string, string][] = [[AUTO, 'Auto (selon la consigne)'], ...ai.CC_MODELS.map(([v, l]): [string, string] => [v, v ? l : 'Modèle par défaut'])];
   for (const v of [...saved.extraModels(), cur]) if (v && !list.some(x => x[0] === v)) list.push([v, modelName(v)]);
-  return list.map(([v, l]) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(l)}</option>`).join('') + `<option value="${OTHER}">Autre modèle…</option>`;
+  return list.map(([v, l]) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(l)}</option>`).join('') + (other ? `<option value="${OTHER}">Autre modèle…</option>` : '');
 }
 /** Bouton « Sous-agents » de la consigne : dit le réglage en cours et ouvre sa fenêtre (subagents.ts). */
 const subHTML = (pid: string): string => `<button type="button" class="btn ag-sub" data-ag-sub="${esc(pid)}" title="${esc(subagents.HINT)}">${icon('bot')}<span>${esc(subagents.label(pid))}</span></button>`;

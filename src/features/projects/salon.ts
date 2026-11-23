@@ -12,7 +12,10 @@
 // Styles : css/salon.css (préfixe `sl-`). Tout ce qui vient du Mac passe par `esc()`.
 import * as bridge from '../../integrations/remote.ts';
 import * as quota from '../../integrations/quota.ts';
-import { syncFeed, nameOf, live, copyStage, copyAct, answerHTML, modelName } from './sessions.ts';
+import { syncFeed, nameOf, live, copyStage, copyAct, answerHTML, modelName, modelOptions, EFFORTS } from './sessions.ts';
+import * as saved from './drafts.ts';
+import * as subagents from './subagents.ts';
+import { AUTO, pickFor, label as autoLabel } from './autopick.ts';
 import { exchanges } from './team.ts';
 import { startAgent, reply } from '../workspace.ts';
 import { esc } from '../../lib/markdown.ts';
@@ -47,7 +50,7 @@ export function persona(nom: string): { name: string; role: string; hue: string 
 interface Detail { actions: Action[]; subagents?: SubAgent[]; live?: boolean; worktree?: string; models?: string[]; files?: string[]; lines?: { add: number; del: number }; message?: string }
 interface Thread { id: string; s: Session; group: 'work' | 'mine' | 'recent'; act: number }
 interface Who extends Persona { id: string; base: string; model?: string; me?: boolean }
-const TICK = 2500, SEEN = 'studio.salon.seen', MORE = 8;
+const TICK = 2500, SEEN = 'studio.salon.seen', MORE = 8, TEAM_OFF = 'studio.salon.teamOff';
 const ms = (iso?: string): number => Date.parse(iso || '') || 0;
 const seen: Record<string, number> = (() => { try { return JSON.parse(localStorage.getItem(SEEN) || '{}') as Record<string, number>; } catch { return {}; } })();
 let firstUse = !Object.keys(seen).length;
@@ -61,10 +64,12 @@ const drafts = new Map<string, string>();
 let root: HTMLElement | null = null, p: Project | null = null, timer: ReturnType<typeof setInterval> | undefined;
 let tick = 0, listing = false, busy = false, refreshing = false, moreOpen = false, shown = '', quotaHooked = false;
 let openTech: (session: string) => void = () => undefined;
+/** Fiche ouverte : 'main' (l'agent principal) ou l'id d'un sous-agent ; '' = aucune. */
+let prof = '', profAt: { box: DOMRect; side: DOMRect | null } | null = null;
 
 function reset(pid: string): void {
   S.pid = pid; S.sessions = []; S.runs = []; S.queued = []; S.trees = []; S.treesRead = false; S.loaded = false; S.detail.clear(); S.board.clear();
-  moreOpen = false; shown = ''; tick = 0;
+  moreOpen = false; shown = ''; tick = 0; prof = '';
 }
 
 // ---------- Lecture ----------
@@ -140,7 +145,7 @@ const start = (): void => { stop(); tick = 0; void refresh(); timer = setInterva
 const family = (m: string | undefined): string => m ? (/(opus|sonnet|haiku)/i.exec(m)?.[1]?.toLowerCase() ?? modelName(m)) : '';
 interface Crew { main: Who; me: Who; subs: Map<string, Who>; byBase: Map<string, string[]> }
 function crewOf(subs: SubAgent[], models: string[]): Crew {
-  const main: Who = { ...persona('principal'), id: '', base: 'Maya', model: family(models[models.length - 1]) };
+  const main: Who = { ...persona('principal'), id: 'main', base: 'Maya', model: family(models[models.length - 1]) };
   const me: Who = { name: 'Toi', role: '', hue: 'gray', id: '', base: 'Toi', me: true };
   const by = new Map<string, Who>(), count = new Map<string, number>(), byBase = new Map<string, string[]>();
   // Plusieurs agents du même rôle : « Léo », « Léo 2 », dans l'ordre où ils sont partis.
@@ -152,7 +157,14 @@ function crewOf(subs: SubAgent[], models: string[]): Crew {
   return { main, me, subs: by, byBase };
 }
 const initials = (w: Who): string => w.me ? 'T' : w.name.replace(/\s+/g, '').slice(0, 2).replace(/^./, c => c.toUpperCase());
-const avatar = (w: Who, big = false): string => `<i class="sl-av${big ? ' big' : ''}" style="--c:var(--c-${w.hue})" aria-hidden="true">${esc(initials(w))}</i>`;
+/** Pastille d'un agent ; celle d'un agent du fil ouvre sa fiche (`data-sl="who"`). */
+const avatar = (w: Who, big = false): string => w.id && !w.me
+  ? `<button type="button" class="sl-av${big ? ' big' : ''}" style="--c:var(--c-${w.hue})" data-sl="who" data-who="${esc(w.id)}" title="Voir la fiche de ${esc(w.name)}" aria-label="Fiche de ${esc(w.name)}">${esc(initials(w))}</button>`
+  : `<i class="sl-av${big ? ' big' : ''}" style="--c:var(--c-${w.hue})" aria-hidden="true">${esc(initials(w))}</i>`;
+/** Prénom cliquable (ouvre la fiche), sinon en gras. */
+const nameBtn = (w: Who, cls = ''): string => w.id && !w.me
+  ? `<button type="button" class="sl-who${cls ? ` ${cls}` : ''}" style="--c:var(--c-${w.hue})" data-sl="who" data-who="${esc(w.id)}">${esc(w.name)}</button>`
+  : `<b${cls ? ` class="${cls}"` : ''}>${esc(w.name)}</b>`;
 const hm = (at: number): string => {
   const d = new Date(at), today = d.toDateString() === new Date().toDateString();
   return d.toLocaleString('fr-FR', today ? { hour: '2-digit', minute: '2-digit' } : { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -169,13 +181,15 @@ function doing(kind: string, text: string): string {
 }
 
 // ---------- Le fil de discussion ----------
-const mention = (w: Who): string => `<span class="sl-to" style="--c:var(--c-${w.hue})">@${esc(w.name)}</span>`;
+const mention = (w: Who): string => w.id && !w.me
+  ? `<button type="button" class="sl-to" style="--c:var(--c-${w.hue})" data-sl="who" data-who="${esc(w.id)}">@${esc(w.name)}</button>`
+  : `<span class="sl-to" style="--c:var(--c-${w.hue})">@${esc(w.name)}</span>`;
 /** Insère la mention au début du premier paragraphe d'un message rendu. */
 const withTo = (html: string, to: Who | null): string => !to ? html : /<p[\s>]/.test(html) ? html.replace(/<p(\s[^>]*)?>/, m => `${m}${mention(to)} `) : `<p>${mention(to)}</p>${html}`;
 /** Texte brut comparable : casse et espaces normalisés. */
 const norm = (t: string): string => t.replace(/\s+/g, ' ').trim().toLowerCase();
 function msgHTML(w: Who, at: number, body: string, o: { cls?: string; tag?: string } = {}): string {
-  return `<article class="sl-msg${w.me ? ' me' : ''}${o.cls ? ` ${o.cls}` : ''}">${avatar(w)}<div class="sl-bd"><header><b>${esc(w.name)}</b>${w.role ? `<span class="sl-role">${esc(w.role)}</span>` : ''}${w.model ? `<em class="sl-model" title="Modèle">${esc(w.model)}</em>` : ''}${o.tag ? `<em class="sl-tag">${o.tag}</em>` : ''}<time>${esc(at ? hm(at) : '')}</time></header>${body}</div></article>`;
+  return `<article class="sl-msg${w.me ? ' me' : ''}${o.cls ? ` ${o.cls}` : ''}">${avatar(w)}<div class="sl-bd"><header>${nameBtn(w)}${w.role ? `<span class="sl-role">${esc(w.role)}</span>` : ''}${w.model ? `<em class="sl-model" title="Modèle">${esc(w.model)}</em>` : ''}${o.tag ? `<em class="sl-tag">${o.tag}</em>` : ''}<time>${esc(at ? hm(at) : '')}</time></header>${body}</div></article>`;
 }
 const noteHTML = (html: string, at: number, brief = ''): string => brief
   ? `<details class="sl-note"><summary><span>${html}</span><time>${esc(hm(at))}</time>${icon('chevron')}</summary><div class="sl-brief">${esc(brief)}</div></details>`
@@ -207,7 +221,7 @@ function itemsOf(d: Detail, crew: Crew, board: BoardMsg[]): { items: Item[]; ask
       const ps = persona(a.to || ''), k = nth.get(ps.name) ?? 0; nth.set(ps.name, k + 1);
       const w = crew.subs.get(crew.byBase.get(ps.name)?.[k] ?? '') ?? { ...ps, id: '', base: ps.name };
       const what = a.text ? ` « ${esc(oneLine(a.text, 70))} »` : ' une tâche';
-      add(at, 'delegate', noteHTML(`<b>${esc(crew.main.name)}</b> a confié${what} à <b class="sl-nm" style="--c:var(--c-${w.hue})">${esc(w.name)}</b>`, at, a.body ?? ''));
+      add(at, 'delegate', noteHTML(`${nameBtn(crew.main)} a confié${what} à ${nameBtn(w, 'sl-nm')}`, at, a.body ?? ''));
       return;
     }
     if (a.kind.startsWith('tool:')) {
@@ -252,6 +266,8 @@ function resultHTML(t: Thread, d: Detail): string {
   return '';
 }
 
+/** Réponses d'un clic quand l'agent pose une question. */
+const QUICK = ['Oui, vas-y', 'Non, attends', 'Explique-moi'];
 function blocksOf(t: Thread, d: Detail | undefined, crew: Crew): { blocks: Block[]; ask: boolean } {
   const id = t.id, blocks: Block[] = [], work = t.group === 'work';
   if (!d) {
@@ -267,7 +283,7 @@ function blocksOf(t: Thread, d: Detail | undefined, crew: Crew): { blocks: Block
   if (ask && !work) {
     let i = blocks.length - 1; while (i >= 0 && !blocks[i]?.key.startsWith('ai|')) i--;
     const b = blocks[i];
-    if (b) blocks[i] = { key: b.key, html: b.html.replace('class="sl-msg', 'class="sl-msg ask').replace('</div></article>', `<div class="sl-ask"><span>${icon('sparkle')}${esc(crew.main.name)} attend ta réponse</span><button class="btn" data-sl="reply">Répondre</button></div></div></article>`) };
+    if (b) blocks[i] = { key: b.key, html: b.html.replace('class="sl-msg', 'class="sl-msg ask').replace('</div></article>', `<div class="sl-ask"><span>${icon('sparkle')}${esc(crew.main.name)} attend ta réponse</span><span class="sl-quick">${QUICK.map(q => `<button type="button" class="btn btn-ghost" data-sl="quick" data-text="${esc(q)}">${esc(q)}</button>`).join('')}</span><button class="btn" data-sl="reply">Répondre…</button></div></div></article>`) };
   }
   for (const q of S.queued.filter(x => x.session === id))
     blocks.push({ key: `q|${q.id}`, html: msgHTML(crew.me, ms(q.at), plain(q.text), { cls: 'queued', tag: `${icon('history')}en attente` }) });
@@ -298,13 +314,13 @@ function moodOf(t: Thread, ask: boolean): Mood {
 function headHTML(t: Thread, crew: Crew, ask: boolean, n: number): string {
   const [label, c] = MOOD[moodOf(t, ask)], min = Math.max(0, Math.round(((t.group === 'work' ? Date.now() : ms(t.s.updated)) - ms(t.s.started)) / 6e4));
   const run = S.runs.find(r => live(r) && (r.session === t.id || `run:${r.run}` === t.id));
-  const faces = [crew.main, ...crew.subs.values()].slice(0, 5).map(w => `<span title="${esc(w.name)}">${avatar(w)}</span>`).join('');
-  return `<h2>${esc(nameOf(t.s))}</h2><span class="sl-pill" style="--c:var(--c-${c})">${label}</span><span class="sl-meta">${n} agent${n > 1 ? 's' : ''}${min ? ` · ${min} min` : ''}</span><span class="sl-stack">${faces}</span>${run ? `<button type="button" class="btn btn-ghost" data-sl="stop" data-run="${esc(run.run)}" title="Arrêter l’équipe">${icon('stop')}<span>Arrêter</span></button>` : ''}<button type="button" class="btn btn-ghost sl-nowbtn" data-sl="now" aria-pressed="false">Équipe</button>${t.id.startsWith('run:') ? '' : `<button type="button" class="btn" data-sl="tech" data-id="${esc(t.id)}" title="Voir les étapes dans l’onglet Claude Code">${icon('terminal')}<span>Vue technique</span></button>`}`;
+  const faces = [crew.main, ...crew.subs.values()].slice(0, 5).map(w => `<i class="sl-av" style="--c:var(--c-${w.hue})" aria-hidden="true">${esc(initials(w))}</i>`).join('');
+  return `<h2>${esc(nameOf(t.s))}</h2><span class="sl-pill" style="--c:var(--c-${c})">${label}</span><span class="sl-meta">${n} agent${n > 1 ? 's' : ''}${min ? ` · ${min} min` : ''}</span>${run ? `<button type="button" class="btn btn-ghost" data-sl="stop" data-run="${esc(run.run)}" title="Arrêter l’équipe">${icon('stop')}<span>Arrêter</span></button>` : ''}<button type="button" class="btn btn-ghost sl-nowbtn" data-sl="now" aria-pressed="false" title="Afficher ou masquer l’équipe"><span class="sl-stack">${faces}</span><span>Équipe</span></button>${t.id.startsWith('run:') ? '' : `<button type="button" class="btn" data-sl="tech" data-id="${esc(t.id)}" title="Voir les étapes dans l’onglet Claude Code">${icon('terminal')}<span>Vue technique</span></button>`}`;
 }
 function nowHTML(t: Thread, d: Detail | undefined, crew: Crew, ask: boolean): string {
   const work = t.group === 'work', lastTool = [...(d?.actions ?? [])].reverse().find(a => a.kind.startsWith('tool:') && doing(a.kind, a.text));
   const line = work && lastTool ? doing(lastTool.kind, lastTool.text) : !work && d?.lines ? `+${d.lines.add} −${d.lines.del}` : '';
-  const mem = (w: Who, state: string, cls: string, last: string): string => `<div class="sl-mem ${cls}">${avatar(w)}<div><b>${esc(w.name)}${w.model ? `<em class="sl-model">${esc(w.model)}</em>` : ''}</b><small class="sl-st">${esc(state)}</small>${last ? `<small class="sl-last">${esc(last)}</small>` : ''}</div></div>`;
+  const mem = (w: Who, state: string, cls: string, last: string): string => `<button type="button" class="sl-mem ${cls}${prof === w.id ? ' cur' : ''}" data-sl="who" data-who="${esc(w.id)}" title="Voir la fiche de ${esc(w.name)}"><i class="sl-av" style="--c:var(--c-${w.hue})" aria-hidden="true">${esc(initials(w))}</i><div><b>${esc(w.name)}${w.model ? `<em class="sl-model">${esc(w.model)}</em>` : ''}</b><small class="sl-st">${esc(state)}</small>${last ? `<small class="sl-last">${esc(last)}</small>` : ''}</div></button>`;
   const subs = [...(d?.subagents ?? [])].sort((a, b) => Number(b.live) - Number(a.live) || ms(b.updated) - ms(a.updated));
   const rows = [mem(crew.main, work ? 'travaille' : ask ? 'attend ta réponse' : 'a fini', work ? 'on' : ask ? 'ask' : '', line), ...subs.map(s => {
     const w = crew.subs.get(s.id); if (!w) return '';
@@ -313,9 +329,59 @@ function nowHTML(t: Thread, d: Detail | undefined, crew: Crew, ask: boolean): st
   })].join('');
   const q = quota.fiveHour(), pct = Math.max(0, Math.min(100, Math.round(q.pct)));
   const gauge = q.known ? `<div class="sl-quota" title="Fenêtre d’usage de 5 h"><span>5 h</span><i class="sl-bar"><i style="width:${pct}%"></i></i><b>${pct} %</b></div>` : '';
-  return `<h4>En ce moment</h4>${rows}${gauge}`;
+  return `<h4>En ce moment</h4>${rows}<button type="button" class="btn btn-ghost sl-set" data-sl="team" title="${esc(subagents.HINT)}">${icon('gear')}<span>${esc(subagents.label(S.pid))}</span></button>${gauge}`;
 }
-const emptyHTML = (name: string, first: boolean): string => `<div class="sl-empty">${avatar({ ...persona('principal'), id: '', base: 'Maya' }, true)}<h3>${first ? `Un salon pour ${esc(name)}` : 'Nouveau fil'}</h3><p>Dis ce que tu veux faire : ${esc(persona('principal').name)} prend la consigne, répartit le travail et te prévient quand c’est prêt.</p><p class="sl-faint">Les fils de ${esc(name)} restent ici : rien ne se mélange avec les autres projets.</p></div>`;
+/** Modèle prévu pour un sous-agent : celui que lui donne l'équipe du projet, sinon celui de l'équipe, sinon celui de l'agent. */
+function subModel(s: SubAgent): string {
+  const t = saved.team(S.pid), m = t.members.find(x => x.name === s.type)?.model || t.model;
+  return m ? family(m) : '';
+}
+const plural = (n: number, w: string): string => `${n} ${w}${n > 1 ? 's' : ''}`;
+/** Fiche d'un agent du fil : qui il est, sur quel modèle, ce qu'on lui a confié, ce qu'il fait et ce qu'il a rendu. */
+function profHTML(t: Thread, d: Detail | undefined, crew: Crew, ask: boolean): string {
+  const main = prof === 'main', s = main ? undefined : d?.subagents?.find(x => x.id === prof), w = main ? crew.main : crew.subs.get(prof);
+  if (!w || (!main && !s)) return '';
+  const work = t.group === 'work', on = main ? work : !!s?.live;
+  const state = main ? (work ? 'travaille' : ask ? 'attend ta réponse' : 'a fini') : on ? 'travaille' : 'a fini';
+  const last = main ? [...(d?.actions ?? [])].reverse().find(a => a.kind.startsWith('tool:') && doing(a.kind, a.text)) : s?.last;
+  const now = on && last ? doing(last.kind, last.text) || 'réfléchit' : '';
+  const tune = main ? saved.ofSession(t.id) : null;
+  const model = main ? w.model || (tune?.model && tune.model !== AUTO ? family(tune.model) : '') : s ? subModel(s) || `comme ${crew.main.name}` : '';
+  const files = main ? (d?.files ?? t.s.files) : (s?.files ?? []).map(f => f.path);
+  const lines = main ? d?.lines ?? t.s.lines : s?.lines;
+  const started = ms(main ? t.s.started : s?.started), steps = main ? 0 : s?.steps ?? 0;
+  const mission = (main ? t.s.firstPrompt : s?.prompt) ?? '';
+  const facts = [model ? `<span><small>Modèle</small><b>${esc(model)}</b></span>` : '', started ? `<span><small>${main ? 'Fil ouvert' : 'Parti'}</small><b>${esc(hm(started))}</b></span>` : '',
+    steps ? `<span><small>Étapes</small><b>${steps}</b></span>` : '', files.length ? `<span><small>Fichiers</small><b>${files.length}${lines && (lines.add || lines.del) ? ` <i class="sl-add">+${lines.add}</i> <i class="sl-del">−${lines.del}</i>` : ''}</b></span>` : '',
+    main && crew.subs.size ? `<span><small>Équipe</small><b>${plural(crew.subs.size, 'agent')}</b></span>` : ''].join('');
+  const fl = files.slice(0, 6).map(f => `<code title="${esc(f)}">${esc(f.split('/').pop() ?? f)}</code>`).join('') + (files.length > 6 ? `<small>+${files.length - 6}</small>` : '');
+  const helpers = main ? [...crew.subs.values()].map(x => `<button type="button" class="sl-chip" style="--c:var(--c-${x.hue})" data-sl="who" data-who="${esc(x.id)}">${esc(x.name)}</button>`).join('') : '';
+  return `<header>${avatar({ ...w, id: '' }, true)}<div><b>${esc(w.name)}</b><small>${esc(w.role || 'agent')}</small></div><button type="button" class="sl-x" data-sl="unprof" aria-label="Fermer">${icon('x')}</button></header>
+    <p class="sl-pf-st${on ? ' on' : main && ask ? ' ask' : ''}"><i class="sl-dot${on ? ' work' : main && ask ? ' mine' : ''}"></i>${esc(state)}${now ? ` · ${esc(now)}` : ''}</p>
+    ${facts ? `<div class="sl-pf-facts">${facts}</div>` : ''}
+    ${mission ? `<details class="sl-pf-mis"><summary><small>${main ? 'Ta consigne' : `Confié par ${esc(crew.main.name)}`}</small><span>${esc(oneLine(mission, 140))}</span></summary><div class="sl-brief">${esc(mission)}</div></details>` : ''}
+    ${fl ? `<div class="sl-pf-files">${fl}</div>` : ''}
+    ${helpers ? `<div class="sl-pf-team"><small>Travaille avec</small>${helpers}</div>` : ''}
+    ${s?.report && !s.live ? `<p class="sl-pf-rep"><small>Compte rendu</small>${esc(oneLine(s.report, 160))}</p>` : ''}
+    <div class="sl-pf-a"><button type="button" class="btn" data-sl="mention" data-name="${esc(w.name)}">@ Écrire à ${esc(w.name)}</button>${s?.report && !s.live ? `<button type="button" class="btn btn-ghost" data-sl="toreport" data-who="${esc(prof)}">Lire</button>` : ''}${main && !t.id.startsWith('run:') ? `<button type="button" class="btn btn-ghost" data-sl="tech" data-id="${esc(t.id)}">${icon('terminal')}Étapes</button>` : `<button type="button" class="btn btn-ghost" data-sl="team">${icon('gear')}Équipe</button>`}</div>`;
+}
+/** Place la fiche sous (ou au-dessus de) l'élément cliqué, dans le cadre du Salon (positions lues au clic). */
+function placeProf(box: HTMLElement): void {
+  if (!root || !profAt) return;
+  const r = root.getBoundingClientRect(), a = profAt.box, side = profAt.side, w = box.offsetWidth, h = box.offsetHeight;
+  // Depuis le panneau Équipe : la fiche s'ouvre à sa gauche, à hauteur de la ligne cliquée.
+  if (side) { box.style.left = `${Math.max(8, side.left - r.left - w - 8)}px`; box.style.top = `${Math.max(8, Math.min(a.top - r.top, r.height - h - 8))}px`; return; }
+  const left = Math.max(8, Math.min(a.left - r.left, r.width - w - 8));
+  let top = a.bottom - r.top + 6; if (top + h > r.height - 8) top = Math.max(8, a.top - r.top - h - 6);
+  box.style.left = `${left}px`; box.style.top = `${top}px`;
+}
+function closeProf(): void {
+  prof = ''; profAt = null;
+  const box = root?.querySelector<HTMLElement>('[data-sl-prof]'); if (box) { box.hidden = true; box.replaceChildren(); }
+  root?.querySelectorAll('.sl-mem.cur').forEach(x => x.classList.remove('cur'));
+}
+const SUGGEST: [string, string, 'edit' | 'read'][] = [['Corriger un bug', 'Corrige ce bug : ', 'edit'], ['Ajouter une fonction', 'Ajoute ', 'edit'], ['Relire le travail récent', 'Relis les derniers changements et signale ce qui cloche.', 'read'], ['M’expliquer le code', 'Explique-moi comment fonctionne ', 'read']];
+const emptyHTML = (name: string, first: boolean): string => `<div class="sl-empty">${avatar({ ...persona('principal'), id: '', base: 'Maya' }, true)}<h3>${first ? `Un salon pour ${esc(name)}` : 'Nouveau fil'}</h3><p>Dis ce que tu veux faire : ${esc(persona('principal').name)} prend la consigne, répartit le travail et te prévient quand c’est prêt.</p><div class="sl-sugg">${SUGGEST.map(([l, t, m]) => `<button type="button" class="sl-chip" data-sl="suggest" data-text="${esc(t)}" data-mode="${m}">${esc(l)}</button>`).join('')}</div><p class="sl-faint">Les fils de ${esc(name)} restent ici : rien ne se mélange avec les autres projets.</p></div>`;
 
 // ---------- Rendu ----------
 const grow = (ta: HTMLTextAreaElement): void => { ta.style.height = 'auto'; ta.style.height = `${Math.min(ta.scrollHeight + 2, 200)}px`; };
@@ -327,44 +393,76 @@ function paint(): void {
   if (cur && cur.group !== 'work' && (seen[cur.id] ?? 0) < cur.act) { seen[cur.id] = cur.act; keepSeen(); }
   // Autre fil : le brouillon du précédent est gardé, celui-ci est repris, le fil repart du bas.
   const switched = key !== shown;
-  if (switched) { if (shown) drafts.set(shown, ta.value); ta.value = drafts.get(key) ?? ''; grow(ta); shown = key; feed.replaceChildren(); }
+  if (switched) { if (shown) drafts.set(shown, ta.value); ta.value = drafts.get(key) ?? ''; grow(ta); shown = key; feed.replaceChildren(); closeProf(); setTune(id); }
   paintIfChanged(need('[data-sl-list]', root), listHTML(th, id));
   let ask = false, crew: Crew | null = null, blocks: Block[];
   if (cur) { crew = crewOf(d?.subagents ?? [], d?.models ?? cur.s.models); const r = blocksOf(cur, d, crew); blocks = r.blocks; ask = r.ask; }
   else blocks = [{ key: 'empty', html: emptyHTML(p.name, !th.length) }];
   const end = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 60, changed = syncFeed(feed, blocks);
   if (switched || (changed && end)) feed.scrollTop = feed.scrollHeight;
-  const head = need('[data-sl-head]', root), pressed = root.classList.contains('sl-now-open');
+  const head = need('[data-sl-head]', root);
   paintIfChanged(head, cur && crew ? headHTML(cur, crew, ask, 1 + (d?.subagents?.length ?? 0)) : '');
-  head.querySelector('[data-sl="now"]')?.setAttribute('aria-pressed', String(pressed));
+  head.querySelector('[data-sl="now"]')?.setAttribute('aria-pressed', String(teamShown(root)));
   paintIfChanged(need('[data-sl-now]', root), cur && crew ? nowHTML(cur, d, crew, ask) : '');
+  // La fiche ouverte suit l'état de l'agent ; elle se ferme si l'agent n'est plus dans le fil.
+  const pb = need<HTMLElement>('[data-sl-prof]', root), ph2 = prof && cur && crew ? profHTML(cur, d, crew, ask) : '';
+  if (!ph2) { if (prof) closeProf(); } else { const first = pb.hidden; if (paintIfChanged(pb, ph2) || first) { pb.hidden = false; placeProf(pb); } }
   root.classList.toggle('sl-solo', !cur);
   // Le champ : seul son habillage change, jamais le texte.
   const isNew = !cur, ph = isNew ? 'Dis à l’équipe ce que tu veux faire…' : `Écris à ${crew?.main.name ?? 'Maya'}…`;
   if (ta.placeholder !== ph) ta.placeholder = ph;
   need('[data-sl-mode]', root).hidden = !isNew;
+  showAuto();
   const hint = need('[data-sl-hint]', root), ht = !isNew && cur?.group === 'work' ? 'Ton message part en attente : l’agent le lit à la fin de son tour.' : '';
   if (hint.textContent !== ht) hint.textContent = ht;
 }
 
-async function send(): Promise<void> {
+// ---------- Modèle et effort ----------
+/** Réglage du fil : celui de la conversation s'il a été choisi sur cet appareil, sinon le dernier choisi. */
+const tuneFor = (id: string): saved.Choice => (id && !id.startsWith('run:') ? saved.ofSession(id) : null) ?? saved.defaults();
+const sel = (n: string): HTMLSelectElement | null => root?.querySelector<HTMLSelectElement>(`.sl-comp select[name=${n}]`) ?? null;
+function setTune(id: string): void {
+  const c = tuneFor(id), m = sel('model'), e = sel('effort');
+  if (m) m.innerHTML = models(c.model);
+  if (e) e.value = EFFORTS.some(x => x[0] === c.effort) ? c.effort : '';
+}
+/** Liste des modèles du champ, « Auto » en un mot (la place est comptée). */
+const models = (cur: string): string => modelOptions(cur, false).replace('>Auto (selon la consigne)<', '>Auto<');
+const picked = (): saved.Choice => ({ model: sel('model')?.value ?? '', effort: sel('effort')?.value ?? '' });
+/** « Auto » n'est jamais envoyé : remplacé par le modèle (et l'effort) qui suffit à ce message. */
+function resolved(text: string, isReply: boolean): saved.Choice {
+  const c = picked(); if (c.model !== AUTO) return c;
+  const a = pickFor(text, { read: sel('mode')?.value === 'read', reply: isReply });
+  return { model: a.model, effort: c.effort || a.effort };
+}
+function showAuto(): void {
+  const box = root?.querySelector<HTMLElement>('[data-sl-auto]'), text = root?.querySelector('textarea')?.value.trim() ?? ''; if (!box) return;
+  const on = picked().model === AUTO && !!text, id = curId();
+  let t = ''; if (on) { const a = pickFor(text, { read: sel('mode')?.value === 'read', reply: !!id }), l = autoLabel(a); t = `${l.model}${picked().effort ? '' : ` · ${l.effort}`}`; box.title = `Auto : ${a.why}`; }
+  if (box.textContent !== t) box.textContent = t;
+  box.hidden = !on;
+}
+
+async function send(quick = ''): Promise<void> {
   if (!root || !p || busy) return;
-  const ta = need<HTMLTextAreaElement>('textarea', root), text = ta.value.trim(); if (!text) return;
+  const ta = need<HTMLTextAreaElement>('textarea', root), text = quick || ta.value.trim(); if (!text) return;
   const id = curId(), btn = need<HTMLButtonElement>('[data-sl-send]', root), pid = p.id, key = `${pid}/${id}`;
   if (id.startsWith('run:')) { toast('L’équipe démarre : réessaie dans un instant.'); return; }
   busy = true; btn.disabled = true;
   // Le champ est vidé tout de suite : pendant l'attente, l'utilisateur peut changer de fil sans que rien ne soit écrasé.
-  ta.value = ''; drafts.delete(key); grow(ta);
+  if (!quick) { ta.value = ''; drafts.delete(key); grow(ta); showAuto(); }
+  // Réponse d'un clic : trop courte pour juger, « Auto » n'est pas résolu et la conversation garde son modèle.
+  const c = picked(), tune = quick && c.model === AUTO ? { model: '', effort: c.effort } : resolved(text, !!id);
   let ok = false;
   try {
     if (!id) {
-      const r = await startAgent(p, text, need<HTMLSelectElement>('[name=mode]', root).value === 'read' ? 'read' : 'edit');
+      const r = await startAgent(p, text, need<HTMLSelectElement>('[name=mode]', root).value === 'read' ? 'read' : 'edit', undefined, [], tune);
       if (!r.ok) toast(r.message);
-      else { ok = true; chosen.set(pid, r.session || (r.run ? `run:${r.run}` : '')); }
-    } else ok = await reply({ project: pid, session: id }, text);
+      else { ok = true; chosen.set(pid, r.session || (r.run ? `run:${r.run}` : '')); if (r.session) saved.setSession(r.session, c); }
+    } else ok = await reply({ project: pid, session: id }, text, false, [], tune);
   } finally {
     busy = false; btn.disabled = false;
-    if (!ok) {
+    if (!ok && !quick) {
       // Échec : le texte revient, mais seulement si le champ est encore celui de ce fil et qu'il est vide.
       const cur = root?.isConnected ? root.querySelector('textarea') : null;
       if (cur && shown === key && !cur.value) { cur.value = text; drafts.set(key, text); grow(cur); }
@@ -380,22 +478,70 @@ async function gesture(act: string, wt: string, b: HTMLButtonElement): Promise<v
   await loadTrees(pid); if (root?.isConnected) paint();
 }
 
+// ---------- Panneau Équipe ----------
+/** Écran large : la colonne de droite se masque (réglage retenu). Écran étroit : elle s'ouvre par-dessus la discussion. */
+const narrow = (): boolean => matchMedia('(max-width: 1099px)').matches;
+const teamShown = (r: HTMLElement): boolean => narrow() ? r.classList.contains('sl-now-open') : !r.classList.contains('sl-now-off');
+function toggleTeam(r: HTMLElement): void {
+  if (narrow()) r.classList.toggle('sl-now-open');
+  else { const off = r.classList.toggle('sl-now-off'); try { localStorage.setItem(TEAM_OFF, off ? '1' : ''); } catch { /* plein */ } }
+  paint();
+}
+
 function bind(r: HTMLElement): void {
   r.addEventListener('click', e => {
-    const t = target(e).closest<HTMLElement>('[data-sl]'); if (!t || !p) return;
+    const el = target(e), t = el.closest<HTMLElement>('[data-sl]');
+    // Un clic ailleurs ferme la fiche ouverte, et le panneau Équipe posé par-dessus la discussion (écran étroit).
+    if (prof && !el.closest('[data-sl-prof], [data-sl="who"]')) closeProf();
+    if (r.classList.contains('sl-now-open') && !el.closest('[data-sl-now], [data-sl="now"], [data-sl-prof]')) { r.classList.remove('sl-now-open'); paint(); }
+    if (!t || !p) return;
     const act = t.dataset.sl, pid = p.id;
+    if (act === 'who') {
+      e.preventDefault(); // dans un <summary>, n'ouvre pas la passation
+      const w = t.dataset.who ?? '';
+      // La place de l'élément cliqué est prise tout de suite : le rendu qui suit peut le remplacer.
+      if (prof === w) closeProf(); else { prof = w; profAt = { box: t.getBoundingClientRect(), side: t.closest('[data-sl-now]')?.getBoundingClientRect() ?? null }; const pb = need<HTMLElement>('[data-sl-prof]', r); pb.hidden = true; paint(); }
+      return;
+    }
+    if (act === 'unprof') { closeProf(); return; }
+    if (act === 'mention') {
+      const ta = need<HTMLTextAreaElement>('textarea', r), at = `@${t.dataset.name ?? ''} `;
+      if (!ta.value.startsWith(at)) ta.value = at + ta.value;
+      closeProf(); grow(ta); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); drafts.set(shown, ta.value); showAuto(); return;
+    }
+    if (act === 'toreport') {
+      const id = t.dataset.who ?? ''; closeProf();
+      const msg = [...r.querySelectorAll<HTMLElement>('[data-sl-feed] > [data-k^="report|"]')].find(x => x.querySelector(`[data-who="${CSS.escape(id)}"]`));
+      msg?.querySelector('details')?.setAttribute('open', '');
+      msg?.scrollIntoView({ block: 'center', behavior: 'smooth' }); msg?.classList.add('sl-flash'); setTimeout(() => msg?.classList.remove('sl-flash'), 1200);
+      return;
+    }
+    if (act === 'team') { closeProf(); void subagents.edit(pid).then(ok => { if (ok && root?.isConnected) paint(); }); return; }
+    if (act === 'quick') { void send(t.dataset.text ?? ''); return; }
+    if (act === 'suggest') {
+      // Jamais par-dessus ce qui est déjà tapé : la suggestion ne remplit qu'un champ vide.
+      const ta = need<HTMLTextAreaElement>('textarea', r), m = sel('mode'); if (ta.value.trim()) { ta.focus(); return; }
+      ta.value = t.dataset.text ?? ''; if (m) m.value = t.dataset.mode ?? 'edit';
+      grow(ta); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); drafts.set(shown, ta.value); showAuto(); return;
+    }
     if (act === 'pick') { chosen.set(pid, t.dataset.id ?? ''); paint(); void refresh(); }
     else if (act === 'new') { chosen.set(pid, ''); paint(); need('textarea', r).focus(); }
     else if (act === 'more') { moreOpen = !moreOpen; paint(); }
     else if (act === 'tech') openTech(t.dataset.id ?? '');
     else if (act === 'reply') need('textarea', r).focus();
-    else if (act === 'now') { t.setAttribute('aria-pressed', String(r.classList.toggle('sl-now-open'))); }
+    else if (act === 'now') toggleTeam(r);
     else if (act === 'stop') void bridge.call('agent', 'stop', { run: t.dataset.run ?? '' }, 10000).then(x => { toast(x.ok ? 'Équipe arrêtée' : x.message ?? 'Arrêt impossible.'); void refresh(); });
     else if (act === 'publish' || act === 'review' || act === 'pr') void gesture(act, t.dataset.wt ?? '', t as HTMLButtonElement);
   });
   r.addEventListener('submit', e => { e.preventDefault(); void send(); });
-  r.addEventListener('input', e => { const t = target(e); if (t instanceof HTMLTextAreaElement) { grow(t); if (p) drafts.set(shown || `${p.id}/${curId()}`, t.value); } });
+  r.addEventListener('input', e => { const t = target(e); if (t instanceof HTMLTextAreaElement) { grow(t); showAuto(); if (p) drafts.set(shown || `${p.id}/${curId()}`, t.value); } });
+  r.addEventListener('change', e => {
+    const t = target(e); if (!(t instanceof HTMLSelectElement) || !t.closest('.sl-comp')) return;
+    if (t.name === 'model' || t.name === 'effort') { const id = curId(); if (id && !id.startsWith('run:')) saved.setSession(id, picked()); else saved.setDefaults(picked()); }
+    showAuto();
+  });
   r.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && (prof || r.classList.contains('sl-now-open'))) { e.preventDefault(); closeProf(); r.classList.remove('sl-now-open'); paint(); return; }
     if (target(e) instanceof HTMLTextAreaElement && e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); void send(); }
   });
 }
@@ -408,9 +554,11 @@ export function mount(box: HTMLElement, proj: Project, o: { openTech: (session: 
   box.innerHTML = `<aside class="sl-side" aria-label="Fils du projet"><div class="sl-side-h"><b>Fils</b><button type="button" class="btn" data-sl="new">${icon('plus')}<span>Nouveau fil</span></button></div><div class="sl-list" data-sl-list></div></aside>
     <section class="sl-center"><header class="sl-head" data-sl-head></header><div class="sl-feed" data-sl-feed role="log" aria-live="polite" aria-label="Discussion"></div>
       <form class="sl-comp" autocomplete="off"><textarea rows="1" aria-label="Ton message" placeholder="Dis à l’équipe ce que tu veux faire…"></textarea>
-        <div class="sl-comp-row"><label class="sl-mode" data-sl-mode hidden><select name="mode" aria-label="Mode"><option value="edit">Modifier</option><option value="read">Analyser</option></select></label><span class="sl-hint" data-sl-hint></span><button type="submit" class="btn btn-primary" data-sl-send>Envoyer</button></div></form></section>
-    <aside class="sl-now" data-sl-now aria-label="En ce moment"></aside>`;
+        <div class="sl-comp-row"><label class="sl-mode" data-sl-mode hidden><select name="mode" aria-label="Mode"><option value="edit">Modifier</option><option value="read">Analyser</option></select></label><select name="model" aria-label="Modèle" title="Modèle de l’agent principal. Auto : le plus économe qui suffit au message">${models(tuneFor('').model)}</select><select name="effort" aria-label="Niveau d’effort" title="Plus l’effort est élevé, plus l’agent réfléchit, et plus il consomme">${EFFORTS.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('')}</select><span class="sl-auto" data-sl-auto hidden></span><span class="sl-hint" data-sl-hint></span><button type="submit" class="btn btn-primary" data-sl-send>Envoyer</button></div></form></section>
+    <aside class="sl-now" data-sl-now aria-label="En ce moment"></aside><div class="sl-prof" data-sl-prof role="dialog" aria-label="Fiche de l’agent" hidden></div>`;
   box.classList.add('sl-box', 'sl-solo');
+  let off = false; try { off = localStorage.getItem(TEAM_OFF) === '1'; } catch { /* défaut */ }
+  box.classList.toggle('sl-now-off', off); box.classList.remove('sl-now-open'); prof = ''; profAt = null;
   if (!box.dataset.slBound) { box.dataset.slBound = '1'; bind(box); }
   // La jauge se met à jour seule ; l'abonnement n'est pris qu'une fois (il repeint le Salon monté à ce moment-là).
   if (!quotaHooked) { quotaHooked = true; quota.onChange(() => { if (root?.isConnected) paint(); }); }

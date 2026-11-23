@@ -574,8 +574,10 @@ async function launch(f: HTMLFormElement, i: number): Promise<void> {
   toast(n > 1 ? `${ok} agent${ok > 1 ? 's' : ''} sur ${n} au travail${fail ? ` · ${fail}` : ''}` : 'Agent lancé'); announceMade(); void refresh();
   void loadSessions(p).then(paintList);
 }
-export async function startAgent(p: Project, prompt: string, mode = 'edit', group?: { group: string; slot: number; of: number }, images: attach.Payload[] = []): Promise<{ ok: true; session: string; run: string; images: boolean } | { ok: false; message: string }> {
-  const body: Record<string, unknown> = { project: p.id, prompt, mode, repos: p.stack, ...group };
+/** Modèle et effort choisis (Salon) : seuls les champs remplis partent, sinon le Mac garde ceux de la conversation ou le défaut. */
+const tuneOf = (t?: { model: string; effort: string }): Record<string, string> => ({ ...(t?.model ? { model: t.model } : {}), ...(t?.effort ? { effort: t.effort } : {}) });
+export async function startAgent(p: Project, prompt: string, mode = 'edit', group?: { group: string; slot: number; of: number }, images: attach.Payload[] = [], tune?: { model: string; effort: string }): Promise<{ ok: true; session: string; run: string; images: boolean } | { ok: false; message: string }> {
+  const body: Record<string, unknown> = { project: p.id, prompt, mode, repos: p.stack, ...group, ...tuneOf(tune) };
   // L'équipe du projet part avec la consigne ; avec « auto », les spécialistes utiles y sont d'abord ajoutés.
   const sub = subagents.body(p.id, prompt, mode); if (sub) body.subagents = sub;
   subagents.lastCreated().forEach(n => made.add(n));
@@ -583,9 +585,9 @@ export async function startAgent(p: Project, prompt: string, mode = 'edit', grou
   const r = await bridge.call('agent', 'start', body, images.length ? 120000 : 60000);
   return r.ok ? { ok: true, session: typeof r.session === 'string' ? r.session : '', run: typeof r.run === 'string' ? r.run : '', images: attach.confirmed(r, images.length) } : { ok: false, message: r.message ?? 'Lancement impossible.' };
 }
-export async function reply(x: Pane, prompt: string, interrupt = false, images: attach.Payload[] = []): Promise<boolean> {
+export async function reply(x: Pane, prompt: string, interrupt = false, images: attach.Payload[] = [], tune?: { model: string; effort: string }): Promise<boolean> {
   const p = proj(x.project); if (!p || !x.session || x.sub) return false; // un sous-agent ne reçoit pas de réponse : il répond à l'agent principal
-  const body: Record<string, unknown> = { project: p.id, session: x.session, prompt, repos: p.stack, ...(interrupt ? { interrupt: true } : {}) };
+  const body: Record<string, unknown> = { project: p.id, session: x.session, prompt, repos: p.stack, ...(interrupt ? { interrupt: true } : {}), ...tuneOf(tune) };
   const sub = subagents.body(p.id, prompt, 'edit'); if (sub) body.subagents = sub;
   subagents.lastCreated().forEach(n => made.add(n));
   if (images.length) body.images = images;
