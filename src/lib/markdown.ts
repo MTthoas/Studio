@@ -1,6 +1,7 @@
 // Rendu Markdown maison (aucune dépendance) avec les blocs intelligents :
 // cases à cocher, calculs `= 12 * 4`, minuteurs [timer 25m], tableaux triables, [[liens]] et #tags.
 import { evaluate, format } from './calc.ts';
+import * as diagram from './diagram.ts';
 import type { NoteMeta, TaskLine, TaskStatus } from '../types.ts';
 
 /** Lit le marqueur d'une case : ' ' à faire, '/' en cours, 'x' terminée. */
@@ -125,7 +126,8 @@ function blocks(lines: string[], base: number, st: RenderState): string {
       i++;
       // Blocs spéciaux (```sql, ```schema, ```agent, ```linear…) : rendus par l'application.
       const custom = st.ctx.fence?.(m[2].toLowerCase(), buf.join('\n'), st.fence++);
-      out.push(custom ?? `<pre><code>${esc(buf.join('\n'))}</code></pre>`); continue;
+      // Sans rendu de l'appelant : schémas Mermaid (SVG maison), sinon bloc de code ordinaire.
+      out.push(custom ?? diagram.fence(m[2].toLowerCase(), buf.join('\n')) ?? `<pre><code>${esc(buf.join('\n'))}</code></pre>`); continue;
     }
     if ((m = line.match(HEAD_RE))) { out.push(`<h${m[1].length}>${inline(m[2], st)}</h${m[1].length}>`); i++; continue; }
     if (HR_RE.test(line)) { out.push('<hr>'); i++; continue; }

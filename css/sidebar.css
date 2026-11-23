@@ -1,0 +1,52 @@
+/* Barre latérale : finitions et mouvement. Chargé avant motion.css, mais APRÈS les @import : les règles de css/app.css qui suivent
+   l'emportent à spécificité égale, d'où le `:root #sidebar` partout. Les durées passent par les jetons de motion.css (--mo-d*, --mo-k = 0
+   quand `data-motion="off"`) ; `prefers-reduced-motion` coupe déjà tout, globalement, dans css/app.css.
+   L'indicateur de sélection n'est pas défini ici : c'est le ::before de la ligne `.sel` (motion.css), que motion.ts fait glisser. */
+
+/* ---------- Finitions ---------- */
+:root #sidebar .side-scroll { scrollbar-width: thin; scrollbar-color: transparent transparent; padding-bottom: 14px; }
+:root #sidebar .side-scroll:hover { scrollbar-color: var(--border-2) transparent; }
+:root #sidebar .side-item { border-radius: 7px; }
+:root #sidebar .side-group { gap: 1px; }
+/* Catégories titrées : même ordre, même voix, un peu plus posées. */
+:root #sidebar .side-label { padding: 18px 8px 5px; font-weight: 600; letter-spacing: .01em; border-radius: 7px; }
+:root #sidebar button.side-label { padding-right: 8px; transition: color var(--mo-d2) var(--mo-out), background-color var(--mo-d2) var(--mo-out); }
+:root #sidebar button.side-label:hover { background: var(--hover); }
+:root #sidebar button.side-label .ic { flex: none; }
+:root #sidebar .side-cat { padding: 10px 8px 3px; letter-spacing: .01em; font-weight: 500; }
+
+/* ---------- Clavier : anneau net, à l'intérieur de la ligne (rien n'est rogné par le défilement) ---------- */
+:root #sidebar :is(.side-item, .side-label, .side-foot, .ws, .icon-btn):focus-visible { outline: 2px solid color-mix(in srgb, var(--text) 55%, transparent); outline-offset: -2px; }
+:root #sidebar .side-more:focus-visible { outline: 2px solid color-mix(in srgb, var(--text) 55%, transparent); outline-offset: 0; }
+
+/* ---------- Sections repliables : la hauteur s'anime, le contenu reste rendu mais masqué et inerte ---------- */
+:root #sidebar .side-fold { transition: grid-template-rows var(--mo-d4) var(--mo-out), opacity var(--mo-d3) var(--mo-out), visibility 0s linear var(--mo-d4); }
+:root #sidebar .side-fold:not(.open) { visibility: hidden; }
+:root #sidebar .side-fold.open { visibility: visible; transition-delay: 0s; }
+/* La coupe se fait à l'intérieur de la section : un peu d'air pour l'anneau de focus et le rayon des lignes. */
+:root #sidebar .side-fold > div { margin: 0 -2px; padding: 0 2px; }
+:root #sidebar button.side-label[aria-expanded="true"] .ic { transform: none; }
+
+/* ---------- Survol et appui ---------- */
+:root #sidebar .side-item { transition: background-color var(--mo-d2) var(--mo-out), color var(--mo-d2) var(--mo-out), opacity var(--mo-d2) var(--mo-out), scale var(--mo-d4) var(--mo-spring); }
+:root #sidebar .side-item:active { scale: .98; transition-duration: var(--mo-d1); }
+:root #sidebar .side-item > .ic, :root #sidebar .side-item > .tag-dot { transition: scale var(--mo-d4) var(--mo-spring), translate var(--mo-d4) var(--mo-spring), color var(--mo-d2) var(--mo-out); }
+@media (hover: hover) {
+  /* L'icône se décale et gonfle à peine ; la pastille de tag, elle, rebondit. */
+  :root #sidebar .side-item:hover > .ic { scale: 1.1; translate: 1px 0; }
+  :root #sidebar .side-item:hover > .tag-dot { scale: 1.3; }
+  :root #sidebar .side-item:active > .ic { scale: .96; translate: 0 0; }
+  :root #sidebar .side-foot .ic { transition: scale var(--mo-d4) var(--mo-spring); }
+  :root #sidebar .side-foot:hover .ic { scale: 1.1; }
+}
+
+/* ---------- Compteurs : le chiffre roule (motion.ts) quand sa valeur change ; aucun saut de largeur ---------- */
+:root #sidebar .side-count { min-width: 1ch; justify-content: flex-end; }
+
+/* ---------- Agents au travail : un halo qui respire (à la place du clignotement), coupé en mode « aucun » ---------- */
+:root #sidebar .ss-live { position: relative; }
+:root #sidebar .ss-live.on { animation: none; }
+:root #sidebar .ss-live.on::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: var(--c-green); pointer-events: none; animation: sb-halo 2.4s var(--mo-out) infinite; }
+:root[data-motion="subtle"] #sidebar .ss-live.on::after { animation-duration: 3.2s; opacity: .7; }
+:root[data-motion="off"] #sidebar .ss-live.on::after { animation: none; display: none; }
+@keyframes sb-halo { 0% { opacity: .55; scale: 1; } 65%, 100% { opacity: 0; scale: 2.8; } }

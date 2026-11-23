@@ -571,7 +571,7 @@ function paint(): void {
   // La fiche ouverte suit l'état de l'agent ; elle se ferme si l'agent n'est plus dans le fil.
   const pb = need<HTMLElement>('[data-sl-prof]', root), ph2 = prof && cur && crew ? profHTML(cur, d, crew, ask) : '';
   if (!ph2) { if (prof) closeProf(); } else { const first = pb.hidden; if (paintIfChanged(pb, ph2) || first) { pb.hidden = false; placeProf(pb); } }
-  root.classList.toggle('sl-solo', !cur);
+  root.classList.toggle('sl-solo', !cur && opening?.pid !== p.id);
   // Le champ : seul son habillage change, jamais le texte.
   const isNew = !cur, ph = isNew ? 'Dis à l’équipe ce que tu veux faire…' : `Écris à ${crew?.main.name ?? 'Maya'}…`;
   if (ta.placeholder !== ph) ta.placeholder = ph;

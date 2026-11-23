@@ -1,0 +1,47 @@
+/* Fils de conversation (onglet Claude Code, Espace agents, Salon) : entrées jouées par `syncFeed` (sessions.ts) sur les seuls
+   blocs nouveaux, et messages affichés dès l'envoi (`.echo`, echo.ts). Durées multipliées par --mo-k (motion.css) : rien ne bouge
+   sous data-motion="off" ni avec « réduire les animations » (règle globale d'app.css). */
+
+/* Mon message : monte du champ de saisie et se pose avec un léger ressort. */
+.fx-send { animation: fx-send calc(440ms * var(--mo-k)) var(--mo-spring) both; transform-origin: 100% 100%; }
+.sl-msg.fx-send { transform-origin: 0 100%; }
+@keyframes fx-send {
+  from { opacity: 0; transform: translateY(calc(var(--mo-dy) * 3)) scale(var(--mo-s)); }
+  35% { opacity: 1; }
+}
+
+/* Réponse d'un agent : la bulle apparaît (flou → net), puis ses blocs se dévoilent l'un après l'autre. */
+.fx-reply { animation: fx-reply calc(340ms * var(--mo-k)) var(--mo-out) both; }
+@keyframes fx-reply { from { opacity: 0; transform: translateY(var(--mo-dy)); filter: blur(3px); } }
+.fx-reply .md > * { animation: fx-line calc(380ms * var(--mo-k)) var(--mo-out) both; animation-delay: calc((80ms + var(--fx-i, 0) * 70ms) * var(--mo-k)); }
+@keyframes fx-line { from { opacity: 0; transform: translateY(calc(var(--mo-dy) * .75)); } }
+
+/* Le reste (outils, notes, cartes, indicateurs) : simple montée, en cascade s'ils arrivent ensemble. */
+.fx-in { animation: fx-in calc(260ms * var(--mo-k)) var(--mo-out) both; animation-delay: calc(var(--fx-n, 0) * 40ms * var(--mo-k)); }
+@keyframes fx-in { from { opacity: 0; transform: translateY(var(--mo-dy)); } }
+
+/* Message parti, pas encore dans le journal : même bulle, état discret. */
+.echo.sending { opacity: .85; }
+.fx-state { display: inline-flex; align-items: center; gap: 5px; font-style: normal; font-weight: 400; color: var(--text-3); font-size: var(--t-1); }
+.fx-state .ic, .sl-tag .ic { color: var(--c-green); }
+.fx-state .ic { width: 12px; height: 12px; }
+.echo.sent .fx-state .ic, .echo.sent .sl-tag .ic { animation: fx-pop calc(420ms * var(--mo-k)) var(--mo-spring) both; }
+@keyframes fx-pop { from { opacity: 0; transform: scale(.3) rotate(-25deg); } }
+.fx-pics { display: inline-flex; align-items: center; gap: 4px; margin-top: 6px; font-size: var(--t-1); color: var(--text-3); }
+.fx-pics .ic { width: 12px; height: 12px; }
+
+/* Le vrai message remplace l'écho : pas de nouvelle entrée, un bref halo pour dire « reçu ». */
+.ss-msg.user.fx-landed, .sl-msg.me.fx-landed .sl-bd { animation: fx-landed calc(800ms * var(--mo-k)) var(--mo-out); }
+@keyframes fx-landed { from { box-shadow: 0 0 0 4px color-mix(in srgb, var(--c-blue) 22%, transparent); } }
+
+/* L'agent écrit : trois points qui respirent (remplacent le disque qui tourne dans les fils). */
+.fx-dots { display: inline-flex; align-items: center; gap: 3px; height: 1em; flex: none; }
+.fx-dots i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: .3; animation: fx-dot 1.2s ease-in-out infinite; }
+.fx-dots i:nth-child(2) { animation-delay: .15s; }
+.fx-dots i:nth-child(3) { animation-delay: .3s; }
+.fx-state .fx-dots i { width: 4px; height: 4px; }
+@keyframes fx-dot { 0%, 60%, 100% { opacity: .3; transform: translateY(0); } 30% { opacity: .95; transform: translateY(-3px); } }
+:root[data-motion="subtle"] .fx-dots i { animation-name: fx-dot-calm; }
+@keyframes fx-dot-calm { 0%, 60%, 100% { opacity: .3; } 30% { opacity: .9; } }
+:root[data-motion="off"] .fx-dots i { animation: none; opacity: .6; }
+.ss-working .fx-dots, .sl-wait .fx-dots { color: var(--text-3); }

@@ -17,12 +17,14 @@ import * as bridge from '../integrations/remote.ts';
 import * as projects from './projects/model.ts';
 import * as subagents from './projects/subagents.ts';
 import * as attach from './projects/attach.ts';
-import { feedBlocks, syncFeed, nameOf, live, STATUS, modelName, agentCount, COUNT_HINT, newGroup, copyStrip, copyAct, COPY_ACTS, groupOfCopy, copyStage } from './projects/sessions.ts';
+import * as echo from './projects/echo.ts';
+import { feedBlocks, syncFeed, toEnd, nameOf, live, STATUS, modelName, agentCount, COUNT_HINT, newGroup, copyStrip, copyAct, COPY_ACTS, groupOfCopy, copyStage } from './projects/sessions.ts';
 import { exchanges, exchangeBlocks, teamHTML, settled } from './projects/team.ts';
 import type { BoardMsg } from './projects/team.ts';
 import type { AgentRun, Session, Action, Queued, Worktree, SubAgent } from './projects/sessions.ts';
 import type { Project } from './projects/model.ts';
 import { esc, renderMarkdown } from '../lib/markdown.ts';
+import { plainText } from '../lib/diagram.ts';
 import { fold } from '../lib/fuzzy.ts';
 import { $, $$, icon, kbd, rel, modal, need, toast, target, paintIfChanged, menu } from '../ui/kit.ts';
 import type { MenuItem } from '../ui/kit.ts';
@@ -200,6 +202,8 @@ async function refresh(): Promise<void> {
   paint();
 }
 // Chaque ouverture relit tout de suite la liste des conversations (tick à 0), puis toutes les 30 s.
+// Un message part ou arrive dans le journal : les vues sont redessinées sur place, sans relecture.
+echo.onChange(() => { if (root?.isConnected) paint(); });
 function start(): void { stop(); tick = 0; void refresh(); timer = setInterval(() => void refresh(), TICK); }
 export function stop(): void { clearInterval(timer); timer = undefined; }
 
@@ -340,9 +344,9 @@ function paint(): void {
     if (ts) paintIfChanged(ts, teamHTML(d?.subagents ?? [], { fold: !teamOpen.has(pkey(x)), shown: new Set(st.panes.filter(y => y?.sub && mkey(y) === mkey(x)).map(y => y?.sub ?? '')), shorten: shortPath }));
     if (d?.message) { syncFeed(feed, [{ key: 'msg', html: `<p class="ss-cut">${esc(d.message)}</p>` }]); return; }
     const end = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 40;
-    const drew = syncFeed(feed, feedBlocks(d?.actions ?? [], null, working || !d, (queuedBy.get(x.project) ?? []).filter(q => q.session === x.session)));
+    const drew = syncFeed(feed, feedBlocks(d?.actions ?? [], null, working || !d, (queuedBy.get(x.project) ?? []).filter(q => q.session === x.session), false, false, x.session ?? ''));
     attach.hydrate(feed, x.project);
-    if (drew && end) feed.scrollTop = feed.scrollHeight;
+    if (drew && end) toEnd(feed, true);
     if (d && x.session) { const a = ms(d.updated); if (a > (seen[x.session] ?? 0)) { seen[x.session] = a; write(SEEN, Object.fromEntries(Object.entries(seen).slice(-500))); } }
   });
   paintList();
@@ -593,8 +597,11 @@ export async function reply(x: Pane, prompt: string, interrupt = false, images: 
   const sub = subagents.body(p.id, prompt, 'edit'); if (sub) body.subagents = sub;
   subagents.lastCreated().forEach(n => made.add(n));
   if (images.length) body.images = images;
+  // Le message s'affiche dans le fil dès maintenant (Espace agents et Salon), sans attendre le journal de Claude.
+  const eid = echo.add(x.session, prompt, images.length);
   const r = await bridge.call('agent', 'start', body, images.length ? 120000 : 60000);
-  if (!r.ok) { toast(r.message ?? 'Envoi impossible.'); return false; }
+  if (!r.ok) { echo.drop(eid); toast(r.message ?? 'Envoi impossible.'); return false; }
+  echo.sent(eid);
   if (!attach.confirmed(r, images.length)) toast(attach.OLD_APP);
   if (typeof r.queued === 'number') toast('Message en attente : l’agent le lira à la fin de son tour');
   announceMade();
@@ -606,7 +613,10 @@ async function send(f: HTMLFormElement, i: number, interrupt: boolean): Promise<
   if (!x || !text) return;
   if (pics) { const why = attach.blocked(f); if (why) { toast(why); return; } }
   const btn = need<HTMLButtonElement>('button.btn-primary', f); btn.disabled = true;
-  if (await reply(x, text, interrupt, attach.payload(f))) { ta.value = ''; grow(ta); attach.clear(f); }
+  // Le champ se vide tout de suite (le message est déjà dans le fil) ; le texte revient si l'envoi échoue.
+  const typed = ta.value, pay = attach.payload(f); ta.value = ''; grow(ta);
+  if (await reply(x, text, interrupt, pay)) attach.clear(f);
+  else if (!ta.value) { ta.value = typed; grow(ta); }
   btn.disabled = false;
 }
 async function stopPane(i: number): Promise<void> {
@@ -731,7 +741,7 @@ export function mount(main: HTMLElement, toolbarLeft: string): void {
     }
     const cp = t.closest<HTMLElement>('[data-aw-copy]');
     if (cp) { void copyGesture(cp.dataset.awCopy ?? '', cp.dataset.wt ?? '', i, cp as HTMLButtonElement); return; }
-    if (t.closest('[data-ag="copy"]')) { const md = t.closest('.ss-msg')?.querySelector('.md') as HTMLElement | null; if (md) void navigator.clipboard.writeText(md.innerText).then(() => toast('Réponse copiée')); return; }
+    if (t.closest('[data-ag="copy"]')) { const md = t.closest('.ss-msg')?.querySelector('.md') as HTMLElement | null; if (md) void navigator.clipboard.writeText(plainText(md)).then(() => toast('Réponse copiée')); return; }
     if (pane && i !== st.focus) { st.focus = i; save(); grid.querySelectorAll('.aw-pane').forEach(p => p.classList.toggle('focus', p === pane)); }
   });
   attach.bind(page);
