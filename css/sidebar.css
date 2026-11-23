@@ -50,3 +50,26 @@
 :root[data-motion="subtle"] #sidebar .ss-live.on::after { animation-duration: 3.2s; opacity: .7; }
 :root[data-motion="off"] #sidebar .ss-live.on::after { animation: none; display: none; }
 @keyframes sb-halo { 0% { opacity: .55; scale: 1; } 65%, 100% { opacity: 0; scale: 2.8; } }
+
+/* ---------- Hiérarchie : un peu plus d'air, icône teintée atténuée au repos, pleine couleur au survol et sur la ligne choisie ---------- */
+:root #sidebar .side-item { height: 30px; gap: 10px; }
+:root #sidebar .side-item > .ic { color: color-mix(in srgb, var(--ic, var(--text-3)) 72%, var(--text-3)); }
+:root #sidebar .side-item:hover > .ic, :root #sidebar .side-item.sel > .ic { color: var(--ic, var(--text)); }
+:root #sidebar .side-count { font-size: 11.5px; transition: color var(--mo-d2) var(--mo-out); }
+:root #sidebar .side-item.sel .side-count { color: var(--text-2); }
+/* Niveaux : la hiérarchie se lit à la taille et au gris plus qu'à l'indentation. */
+:root #sidebar .side-sub { height: 28px; }
+:root #sidebar .side-sub.open { color: var(--text); }
+:root #sidebar :is(.side-sub2, .side-sub3, .side-sub4, .side-tree) { height: 26px; }
+:root #sidebar .side-sub2 { padding-left: 36px; }
+:root #sidebar .side-sub3 { padding-left: 52px; }
+:root #sidebar .side-sub4 { padding-left: 68px; }
+:root #sidebar :is(.side-sub2, .side-sub3) > .ic { color: var(--text-3); }
+:root #sidebar .side-tree .tree-tog .ic { transition: transform var(--mo-d4) var(--mo-spring); }
+
+/* ---------- Ouverture et fermeture de la barre : le contenu garde sa largeur et glisse, au lieu de se tasser avec la colonne ---------- */
+@media (min-width: 901px) {
+  :root #sidebar > * { min-width: var(--side-w); }
+  :root #sidebar > :not(.side-foot) { transition: translate var(--mo-d4) var(--mo-out); }
+  :root body.no-side #sidebar > :not(.side-foot), :root body.focus #sidebar > :not(.side-foot) { translate: -14px 0; transition: translate var(--mo-d3) var(--mo-in-out); }
+}

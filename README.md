@@ -246,7 +246,7 @@ La disposition et ce que montre chaque vue sont gardés sur l'appareil.
 
 Le **Salon** est le premier onglet d'un projet (app Mac) : les conversations Claude Code du projet, présentées comme une discussion de groupe plutôt que comme un fil technique.
 
-- **Des prénoms** : l'agent principal s'appelle Maya, l'explorateur Léo, le relecteur Iris, le testeur Noé… Chaque message porte son auteur, son rôle, l'heure, et « @Prénom » quand il s'adresse à quelqu'un.
+- **Des prénoms** : l'agent principal s'appelle Moka, l'explorateur Filou, le relecteur Réglisse, le testeur Griffe… Chaque message porte son auteur, son rôle, l'heure, et « @Prénom » quand il s'adresse à quelqu'un.
 - **Ce qu'un humain dirait** : qui confie quoi à qui, les comptes rendus (repliés), la question qui t'attend, et à la fin la carte du résultat avec **Publier la PR**. Les outils, fichiers lus et commandes restent derrière **Vue technique**.
 - **Un salon par projet**, et les agents ne se parlent qu'au sein d'une même consigne : rien ne passe d'un projet à l'autre.
 - **Vue d'ensemble** reste disponible dans « Plus ▾ ».

@@ -166,7 +166,8 @@ function viewNotes(v = ui.view) {
 }
 
 async function setView(v: ViewState, { keepNote = false } = {}) {
-  await flushAll();
+  if (v.type !== 'projets') { const row = $(`#sidebar .side-item[data-view="${v.type}"]`); if (row) preSelect(row); } // palette, raccourci : la barre répond avant le rendu
+  if (pending.size) await flushAll();
   ui.view = v;
   if (v.type === 'today') ui.id = (await store.dailyNote()).id;
   else if (!WIDE.has(v.type) && !keepNote) {
@@ -206,15 +207,46 @@ async function openByTitle(title: string) {
 }
 
 // ---------- Rendu : barre latérale ----------
+/** Retour immédiat : la ligne touchée se marque choisie tout de suite, sans attendre le rendu de la vue (parfois long). Le repeint
+ *  de la barre la remplace ; si rien ne vient (clic abandonné), elle est remise comme avant. Vrai si elle vient d'être marquée. */
+let preTimer = 0;
+function preSelect(row: HTMLElement): boolean {
+  if (row.classList.contains('sel') || row.classList.contains('pre')) return false;
+  const was = $$('#sidebar .side-item.sel');
+  was.forEach(r => r.classList.remove('sel')); row.classList.add('sel', 'pre');
+  clearTimeout(preTimer);
+  preTimer = window.setTimeout(() => { if (row.isConnected && row.classList.contains('pre')) { row.classList.remove('sel', 'pre'); was.forEach(r => r.classList.add('sel')); } }, 900);
+  return true;
+}
+const PRE_ROW = '#sidebar .side-item:is([data-view], [data-tag], [data-open-note], [data-pj-open]):not([data-act])';
+document.addEventListener('pointerdown', e => { // dès l'appui : le clic ne suit que ~100 ms plus tard
+  const t = target(e), row = t.closest<HTMLElement>(PRE_ROW);
+  if (row && e.button === 0 && !e.ctrlKey && e.pointerType !== 'touch' && !t.closest('[data-side-more], [data-tree-toggle]')) preSelect(row);
+}, true);
+
 function renderSidebar() {
   const idx = store.index(), v = ui.view;
   const count: Record<string, number> = { planner: planner.pending(), tasks: todo.openCount(), linear: notifs.unreadCount(), github: github.unseenCount(), ephemeral: idx.live.filter(n => n.expiresAt).length };
-  const item = (type: string) => `<button class="side-item${v.type === type ? ' sel' : ''}" data-view="${type}" style="--ic:var(--c-${SIDE_HUE[type] ?? 'gray'})">${icon(VIEWS[type]?.icon ?? 'notes')}<span>${VIEWS[type]?.label ?? type}</span>${count[type] ? sideCount(type, count[type]) : ''}</button>`;
+  const item = (type: string, sel = v.type === type) => `<button class="side-item${sel ? ' sel' : ''}" data-view="${type}" style="--ic:var(--c-${SIDE_HUE[type] ?? 'gray'})">${icon(VIEWS[type]?.icon ?? 'notes')}<span>${VIEWS[type]?.label ?? type}</span>${count[type] ? sideCount(type, count[type]) : ''}</button>`;
   const tags = [...idx.tags].filter(([t]) => !t.startsWith('projet/')).sort((a, b) => a[0].localeCompare(b[0], 'fr'));
   const devs = vault.isOpen() ? link.devices().length : 0;
   // Le quotidien reste à l'écran ; le reste se range sous « Plus » (déplié d'office quand la vue ouverte s'y trouve).
   const more = [...(count.ephemeral || v.type === 'ephemeral' ? ['ephemeral'] : []), ...(models.available() ? ['models'] : []), 'linear', 'github', 'graph', 'trash', 'help'];
   const moreOpen = ui.moreOpen || more.includes(v.type), moreCount = (count.linear ?? 0) + (count.github ?? 0);
+  const projRows = projectsModel.projects().slice(0, 8).map(p => {
+      const open = v.type === 'projets' && v.project === p.id, tab = v.tab ?? projectsPage.defaultTab();
+      // Sous « Claude Code » : les conversations récentes du projet, celle qui est ouverte en surbrillance.
+      const talks = open ? projectsPage.sideSessions(p.id) : [], talking = tab === 'sessions' && talks.some(s => s.sel);
+      // Sous « Serveur » : les serveurs du projet, celui qui est affiché en surbrillance.
+      const servers = open ? projectsPage.sideServers(p.id) : [], serving = tab === 'server' && servers.some(s => s.sel);
+      return `<button class="side-item side-sub${open && tab === projectsPage.defaultTab() ? ' sel' : ''}${open ? ' open' : ''}" data-pj-open="${esc(p.id)}"><i class="tag-dot" style="--c:var(--c-${p.hue})"></i><span>${esc(p.name)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`
+        // La barre d'onglets de la page porte les seize onglets ; ici, seulement ce qui a des enfants (conversations, serveurs) et l'onglet ouvert.
+        + (open ? projectsPage.tabsOf(p, tab ?? '').slice(1).filter(([k]) => k === 'sessions' || k === tab || (k === 'server' && servers.length > 0)).map(([k, l, ic]) => `<button class="side-item side-sub2${tab === k && !(k === 'sessions' && talking) && !(k === 'server' && serving) ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="${k}"${k === 'sessions' ? ' data-pj-session=""' : ''}>${icon(ic)}<span>${esc(l)}</span></button>`
+          + (k === 'server' ? servers.map(s => `<button class="side-item side-sub3${tab === 'server' && s.sel ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="server" data-pj-server="${esc(s.id)}" title="${esc(s.dest)}">${icon('server')}<span>${esc(s.name)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('') : '')
+          + (k === 'sessions' ? talks.map(s => `<button class="side-item side-sub3${tab === 'sessions' && s.sel && !s.subs.some(a => a.sel) ? ' sel' : ''}${!s.live && s.stage ? ` ${s.stage.cls}` : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="sessions" data-pj-session="${esc(s.id)}" title="${esc(s.title)}${s.live ? ' · en cours' : s.stage ? ` · ${esc(s.stage.label)}` : ''}"><i class="ss-live${s.live ? ' on' : s.stage ? ` ${s.stage.cls}` : ''}"></i><span>${esc(s.title)}</span>${!s.live && s.stage?.cls === 'st-review' ? `<em class="side-stage">${esc(s.stage.label)}</em>` : ''}<i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`
+            // Sous la conversation : ses sous-agents épinglés, et celui dont on lit le fil.
+            + s.subs.map(a => `<button class="side-item side-sub4${tab === 'sessions' && a.sel ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="sessions" data-pj-session="${esc(s.id)}" data-pj-sub="${esc(a.id)}" title="Sous-agent : ${esc(a.title)}"><i class="ss-live${a.live ? ' on' : ''}"></i><span>${esc(a.title)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('')).join('') : '')).join('') : '');
+  });
   const html = `
     <div class="side-head">
       <button class="ws" data-act="workspace" aria-label="Menu Studio">${logo()}<span class="ws-name">Studio</span>${icon('chevron')}</button>
@@ -225,25 +257,12 @@ function renderSidebar() {
     <div class="side-scroll">
       <div class="side-group">${item('home')}</div>
       <div class="side-label">Piloter</div>
-      <div class="side-group">${projectsPage.claudeAvailable() ? item('workspace') + item('planner') : ''}${item('projets')}${projectsModel.projects().slice(0, 8).map(p => {
-        const open = v.type === 'projets' && v.project === p.id, tab = v.tab ?? projectsPage.defaultTab();
-        // Sous « Claude Code » : les conversations récentes du projet, celle qui est ouverte en surbrillance.
-        const talks = open ? projectsPage.sideSessions(p.id) : [], talking = tab === 'sessions' && talks.some(s => s.sel);
-        // Sous « Serveur » : les serveurs du projet, celui qui est affiché en surbrillance.
-        const servers = open ? projectsPage.sideServers(p.id) : [], serving = tab === 'server' && servers.some(s => s.sel);
-        return `<button class="side-item side-sub${open && tab === projectsPage.defaultTab() ? ' sel' : ''}${open ? ' open' : ''}" data-pj-open="${esc(p.id)}"><i class="tag-dot" style="--c:var(--c-${p.hue})"></i><span>${esc(p.name)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`
-          // La barre d'onglets de la page porte les seize onglets ; ici, seulement ce qui a des enfants (conversations, serveurs) et l'onglet ouvert.
-          + (open ? projectsPage.tabsOf(p, tab ?? '').slice(1).filter(([k]) => k === 'sessions' || k === tab || (k === 'server' && servers.length > 0)).map(([k, l, ic]) => `<button class="side-item side-sub2${tab === k && !(k === 'sessions' && talking) && !(k === 'server' && serving) ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="${k}"${k === 'sessions' ? ' data-pj-session=""' : ''}>${icon(ic)}<span>${esc(l)}</span></button>`
-            + (k === 'server' ? servers.map(s => `<button class="side-item side-sub3${tab === 'server' && s.sel ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="server" data-pj-server="${esc(s.id)}" title="${esc(s.dest)}">${icon('server')}<span>${esc(s.name)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('') : '')
-            + (k === 'sessions' ? talks.map(s => `<button class="side-item side-sub3${tab === 'sessions' && s.sel && !s.subs.some(a => a.sel) ? ' sel' : ''}${!s.live && s.stage ? ` ${s.stage.cls}` : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="sessions" data-pj-session="${esc(s.id)}" title="${esc(s.title)}${s.live ? ' · en cours' : s.stage ? ` · ${esc(s.stage.label)}` : ''}"><i class="ss-live${s.live ? ' on' : s.stage ? ` ${s.stage.cls}` : ''}"></i><span>${esc(s.title)}</span>${!s.live && s.stage?.cls === 'st-review' ? `<em class="side-stage">${esc(s.stage.label)}</em>` : ''}<i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`
-              // Sous la conversation : ses sous-agents épinglés, et celui dont on lit le fil.
-              + s.subs.map(a => `<button class="side-item side-sub4${tab === 'sessions' && a.sel ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="sessions" data-pj-session="${esc(s.id)}" data-pj-sub="${esc(a.id)}" title="Sous-agent : ${esc(a.title)}"><i class="ss-live${a.live ? ' on' : ''}"></i><span>${esc(a.title)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('')).join('') : '')).join('') : '');
-      }).join('')}</div>
+      <div class="side-group">${projectsPage.claudeAvailable() ? item('workspace') + item('planner') : ''}${item('projets', v.type === 'projets' && !projRows.some(r => /class="side-item[^"]* sel\b/.test(r)))}${projRows.join('')}</div>
       <div class="side-label">Écrire</div>
       <div class="side-group">${item('all')}${treeHTML(idx.live)}${item('journal')}</div>
       ${tags.length ? sideFold('tags', 'tags', ui.tagsOpen, 'Tags', '', `<div class="side-group">${tags.map(([t, c]) => `<button class="side-item${v.type === 'tag' && v.tag === t ? ' sel' : ''}" data-tag="${esc(t)}"><i class="tag-dot" style="--c:var(--c-${hue(t)})"></i><span>${esc(t)}</span>${sideCount('tag:' + t, c)}</button>`).join('')}</div>`) : ''}
       ${commerce.available() ? `<div class="side-label">Extensions</div><div class="side-group">${item('commerce')}</div>` : ''}
-      ${sideFold('more', 'more-views', moreOpen, 'Plus', !moreOpen && moreCount ? sideCount('more', moreCount) : '', MORE_CATS.map(([label, types]) => { const here = types.filter(t => more.includes(t)); return here.length ? `<div class="side-cat">${label}</div><div class="side-group">${here.map(item).join('')}</div>` : ''; }).join(''))}
+      ${sideFold('more', 'more-views', moreOpen, 'Plus', !moreOpen && moreCount ? sideCount('more', moreCount) : '', MORE_CATS.map(([label, types]) => { const here = types.filter(t => more.includes(t)); return here.length ? `<div class="side-cat">${label}</div><div class="side-group">${here.map(t => item(t)).join('')}</div>` : ''; }).join(''))}
     </div>
     <div id="plug-side"></div>
     ${usagebar.html()}
@@ -1216,6 +1235,8 @@ async function onClick(e: MouseEvent): Promise<void> {
     ui.treeOpen = ui.treeOpen.filter(x => x !== id && store.notes.has(x)).concat(on ? [] : [id]);
     saveUI(); renderSidebar(); return;
   }
+  const pre = t.closest<HTMLElement>(PRE_ROW);
+  if (pre && !t.closest('[data-side-more]') && preSelect(pre)) await new Promise<void>(r => requestAnimationFrame(() => setTimeout(r))); // tactile, clavier : laisse peindre la sélection
   const cmd = t.closest('[data-cmd-copy]');
   if (cmd) { await savedCommands.copy(cmd.dataset.cmdCopy ?? ''); return; }
   const anchor = t.closest('[data-act]'), act = anchor?.dataset.act, n = store.get(ui.id);

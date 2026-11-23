@@ -2,7 +2,7 @@
 // Ce n'est PAS un nouveau protocole : ce sont les mêmes données que l'onglet Claude Code, l'Espace agents et le fil
 // « Échanges » (conversations du Mac, sous-agents, tableau d'équipe, copie du travail), présentées autrement.
 //   - un Salon PAR PROJET : rien ne vient d'un autre projet (tous les caches sont rattachés à l'id du projet monté) ;
-//   - les agents ne se parlent qu'au sein d'UNE consigne : l'agent principal (Maya) et ses sous-agents ; les messages
+//   - les agents ne se parlent qu'au sein d'UNE consigne : l'agent principal (Moka) et ses sous-agents ; les messages
 //     du tableau venus d'autres agents d'un groupe (« Agent 2 ») sont ignorés ici ;
 //   - les agents portent des prénoms (`persona`), déterministes : le même sous-agent a toujours le même prénom ;
 //   - pas de détail technique (outils, fichiers lus, commandes) : « Vue technique » ouvre l'onglet Claude Code.
@@ -17,6 +17,7 @@ import * as saved from './drafts.ts';
 import * as subagents from './subagents.ts';
 import { AUTO, pickFor, label as autoLabel } from './autopick.ts';
 import { exchanges } from './team.ts';
+import * as catface from '../../ui/catface.ts';
 import { startAgent, reply } from '../workspace.ts';
 import { esc } from '../../lib/markdown.ts';
 import { icon, need, rel, toast, target, paintIfChanged } from '../../ui/kit.ts';
@@ -27,14 +28,15 @@ import type { Project } from './model.ts';
 // ---------- Les prénoms ----------
 export interface Persona { name: string; role: string; hue: string }
 const FIXED: [RegExp, Persona][] = [
-  [/^(|principal|agent principal|main|claude|maya)$/, { name: 'Maya', role: 'cheffe d’équipe', hue: 'orange' }],
-  [/explor/, { name: 'Léo', role: 'explorateur', hue: 'teal' }],
-  [/relec|review/, { name: 'Iris', role: 'relecteur', hue: 'violet' }],
-  [/test|qualite|\bqa\b/, { name: 'Noé', role: 'testeur', hue: 'pink' }],
+  [/^(|principal|agent principal|main|claude|moka|maya)$/, { name: 'Moka', role: 'cheffe d’équipe', hue: 'orange' }],
+  [/explor/, { name: 'Filou', role: 'explorateur', hue: 'teal' }],
+  [/relec|review/, { name: 'Réglisse', role: 'relecteur', hue: 'violet' }],
+  [/test|qualite|\bqa\b/, { name: 'Griffe', role: 'testeur', hue: 'pink' }],
   [/integr/, { name: 'Sacha', role: 'intégrateur', hue: 'indigo' }],
   [/redact|writer|documentation/, { name: 'Zoé', role: 'rédacteur', hue: 'amber' }],
 ];
-const NAMES = ['Alex', 'Camille', 'Hugo', 'Inès', 'Jade', 'Lou', 'Mia', 'Nils', 'Théo', 'Yanis', 'Eva', 'Sam'];
+// Des noms de chats, comme leurs portraits (src/ui/catface.ts).
+const NAMES = ['Caramel', 'Noisette', 'Pixel', 'Plume', 'Gribouille', 'Chaussette', 'Praline', 'Biscotte', 'Olive', 'Pompon', 'Sushi', 'Cannelle'];
 const HUES = ['blue', 'green', 'amber', 'orange', 'violet', 'pink', 'teal', 'indigo'];
 const flat = (s: string): string => s.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().trim();
 /** Prénom, rôle et couleur d'un agent d'après son nom (agent principal : « principal » ou vide ; sous-agent : son type).
@@ -43,14 +45,22 @@ export function persona(nom: string): { name: string; role: string; hue: string 
   const n = flat(nom), known = FIXED.find(([re]) => re.test(n));
   if (known) return { ...known[1] };
   let h = 5381; for (const c of n) h = (Math.imul(h, 33) + (c.codePointAt(0) ?? 0)) >>> 0;
-  return { name: NAMES[h % NAMES.length] ?? 'Alex', role: nom.trim(), hue: HUES[(h >>> 8) % HUES.length] ?? 'blue' };
+  return { name: NAMES[h % NAMES.length] ?? 'Caramel', role: nom.trim(), hue: HUES[(h >>> 8) % HUES.length] ?? 'blue' };
 }
+/** Sous-agent sans rôle propre : type vide, « general-purpose », « claude », « fork »… `persona` y verrait l'agent principal
+ *  (d'où « Moka a confié une tâche à Moka », puis Moka qui se répondait) : ceux-là sont des renforts, jamais Moka. */
+const GENERIC = /^(|claude|general[- ]purpose|general|generaliste|fork|agent|default|principal|agent principal|main|moka|maya)$/;
+const generic = (type: string): boolean => GENERIC.test(flat(type));
+/** Clé des renforts dans `Crew.byBase` (les autres y sont rangés par prénom de rôle). */
+const HELP = '~';
+/** Le k-ième renfort du fil : un prénom et une couleur à lui, dans l'ordre des départs. */
+const helper = (k: number): Persona => ({ name: NAMES[k % NAMES.length] ?? 'Caramel', role: 'renfort', hue: HUES[(k + 1) % HUES.length] ?? 'blue' });
 
 // ---------- État (rattaché à un projet : remis à zéro quand on en monte un autre) ----------
 interface Detail { actions: Action[]; subagents?: SubAgent[]; live?: boolean; worktree?: string; models?: string[]; files?: string[]; lines?: { add: number; del: number }; message?: string }
 interface Thread { id: string; s: Session; group: 'work' | 'mine' | 'recent'; act: number }
 interface Who extends Persona { id: string; base: string; model?: string; me?: boolean }
-const TICK = 2500, SEEN = 'studio.salon.seen', MORE = 8, TEAM_OFF = 'studio.salon.teamOff';
+const TICK = 2500, TICK_WORK = 1200, SEEN = 'studio.salon.seen', MORE = 8, TEAM_OFF = 'studio.salon.teamOff';
 const ms = (iso?: string): number => Date.parse(iso || '') || 0;
 const seen: Record<string, number> = (() => { try { return JSON.parse(localStorage.getItem(SEEN) || '{}') as Record<string, number>; } catch { return {}; } })();
 let firstUse = !Object.keys(seen).length;
@@ -125,8 +135,11 @@ const drafts = {
   set: (key: string, text: string): void => { if (key) saved.saveDraft(DRAFT + key, { text, notes: [], mode: root?.querySelector<HTMLSelectElement>('.sl-comp select[name=mode]')?.value === 'read' ? 'read' : 'edit', tests: false }); },
   delete: (key: string): void => saved.dropDraft(DRAFT + key),
 };
-let root: HTMLElement | null = null, p: Project | null = null, timer: ReturnType<typeof setInterval> | undefined;
-let tick = 0, listing = false, busy = false, refreshing = false, moreOpen = false, shown = '', quotaHooked = false;
+let root: HTMLElement | null = null, p: Project | null = null, timer: ReturnType<typeof setTimeout> | undefined;
+let listing = false, busy = false, refreshing = false, moreOpen = false, shown = '', quotaHooked = false;
+/** Dernière lecture de chaque source (ms) : chacune a son rythme, aucune n'attend l'autre. */
+let last = { sessions: 0, trees: 0, detail: 0, board: 0 };
+const fetching = new Set<string>();
 let openTech: (session: string) => void = () => undefined;
 /** Fiche ouverte : 'main' (l'agent principal) ou l'id d'un sous-agent ; '' = aucune. */
 let prof = '', profAt: { box: DOMRect; side: DOMRect | null } | null = null;
@@ -135,7 +148,7 @@ let prof = '', profAt: { box: DOMRect; side: DOMRect | null } | null = null;
 function reset(pid: string): void {
   if (S.pid && S.pid !== pid) toDisk();
   S = states.get(pid) ?? fromDisk(pid) ?? blank(pid); states.set(pid, S);
-  moreOpen = false; shown = ''; tick = 0; prof = '';
+  moreOpen = false; shown = ''; last = { sessions: 0, trees: 0, detail: 0, board: 0 }; prof = '';
 }
 
 // ---------- Lecture ----------
@@ -184,51 +197,77 @@ async function refresh(): Promise<void> {
   refreshing = true;
   try { await refreshOnce(p.id); } finally { refreshing = false; }
 }
+/** Lit une source sans faire attendre les autres ni l'affichage : une seule lecture à la fois par clé, puis le Salon se repeint. */
+function inBackground(key: string, load: () => Promise<void>): void {
+  if (fetching.has(key)) return;
+  fetching.add(key);
+  void load().catch(() => undefined).finally(() => { fetching.delete(key); if (root?.isConnected) paint(); });
+}
+/** Ouvre un fil sans attendre le tour de relecture : sa conversation est lue tout de suite (ou déjà là, par le survol). */
+function fetchThread(pid: string, id: string): void {
+  if (!id || id.startsWith('run:') || pid !== S.pid) return;
+  inBackground(`d:${id}`, () => loadDetail(pid, id));
+}
 async function refreshOnce(pid: string): Promise<void> {
-  const l = await bridge.call('agent', 'list', { project: pid }, 10000);
+  const now = Date.now(), id0 = curId(), work0 = threads().find(t => t.id === id0)?.group === 'work';
+  // Rien n'attend rien : la liste des fils, les copies et le tableau sont lus à côté, chacun à son rythme ; seuls les
+  // lancements et la conversation ouverte (lus ensemble) précèdent l'affichage.
+  if (!listing && (now - last.sessions > 30e3 || !S.loaded)) { listing = true; last.sessions = now; void loadSessions(pid).finally(() => { listing = false; if (root?.isConnected) paint(); }); }
+  if (now - last.trees > 15e3 || !S.treesRead) { last.trees = now; inBackground(`t:${pid}`, () => loadTrees(pid)); }
+  const real = (id: string): boolean => !!id && !id.startsWith('run:');
+  const wantDetail = real(id0) && !fetching.has(`d:${id0}`) && (!S.detail.has(id0) || work0 || now < fastUntil || now - last.detail > 10e3);
+  if (wantDetail) last.detail = now;
+  const [l] = await Promise.all([bridge.call('agent', 'list', { project: pid }, 10000), wantDetail ? loadDetail(pid, id0) : undefined]);
   if (pid !== S.pid || !root?.isConnected) return;
   if (l.ok) { S.runs = (l.runs as AgentRun[] | undefined) ?? []; S.queued = (l.queued as Queued[] | undefined) ?? []; }
   // La consigne qui vient de partir n'avait pas encore de conversation : on la suit dès que le Mac l'a créée.
   const c = chosen.get(pid);
-  if (c?.startsWith('run:')) { const r = S.runs.find(x => `run:${x.run}` === c); if (r?.session) { choose(pid, r.session); shown = `${pid}/${r.session}`; } }
-  if (!listing && (tick % 12 === 0 || !S.loaded)) { listing = true; void loadSessions(pid).finally(() => { listing = false; if (root?.isConnected) paint(); }); }
-  if (tick % 6 === 0 || !S.treesRead) await loadTrees(pid);
-  const id = curId();
-  if (id && !id.startsWith('run:')) {
-    const work = threads().find(t => t.id === id)?.group === 'work';
-    if (!S.detail.has(id) || work || tick % 4 === 0) await loadDetail(pid, id);
-    const wt = S.detail.get(id)?.worktree;
-    if (wt && (!S.board.has(wt) || tick % 2 === 0)) await loadBoard(pid, wt);
-  }
-  tick++;
+  if (c?.startsWith('run:')) { const r = S.runs.find(x => `run:${x.run}` === c); if (r?.session) { choose(pid, r.session); shown = `${pid}/${r.session}`; fetchThread(pid, r.session); } }
+  const id = curId(), wt = real(id) ? S.detail.get(id)?.worktree : undefined;
+  if (wt && (!S.board.has(wt) || now - last.board > (work0 ? 2400 : 8e3))) { last.board = now; inBackground(`b:${wt}`, () => loadBoard(pid, wt)); }
   saveSoon();
-  if (pid === S.pid && root?.isConnected) paint();
+  paint();
 }
 /** Arrête la relecture périodique (appelé quand on quitte l'onglet ; elle s'arrête aussi seule si le Salon n'est plus à l'écran). */
-export function stop(): void { clearInterval(timer); timer = undefined; clearTimeout(fastTimer); fastTimer = undefined; if (saveTimer) toDisk(); }
-const start = (): void => { stop(); tick = 0; void refresh(); timer = setInterval(() => void refresh(), TICK); };
+export function stop(): void { clearTimeout(timer); timer = undefined; clearTimeout(fastTimer); fastTimer = undefined; if (saveTimer) toDisk(); }
+/** Relecture en boucle : plus serrée quand le fil ouvert travaille (ses messages arrivent en une seconde). */
+function start(): void {
+  stop(); last = { sessions: 0, trees: 0, detail: 0, board: 0 };
+  const loop = (): void => {
+    if (!root?.isConnected || !p) { stop(); return; }
+    void refresh();
+    const id = curId(), work = !!id && threads().some(t => t.id === id && t.group === 'work');
+    timer = setTimeout(loop, work ? TICK_WORK : TICK);
+  };
+  loop();
+}
 
 // ---------- Les gens du fil ----------
 /** Famille du modèle en un mot : « opus », « sonnet », « haiku » ; sinon le nom court. */
 const family = (m: string | undefined): string => m ? (/(opus|sonnet|haiku)/i.exec(m)?.[1]?.toLowerCase() ?? modelName(m)) : '';
-interface Crew { main: Who; me: Who; subs: Map<string, Who>; byBase: Map<string, string[]> }
+interface Crew { main: Who; me: Who; subs: Map<string, Who>; byBase: Map<string, string[]>; raw: SubAgent[] }
 function crewOf(subs: SubAgent[], models: string[]): Crew {
-  const main: Who = { ...persona('principal'), id: 'main', base: 'Maya', model: family(models[models.length - 1]) };
+  const main: Who = { ...persona('principal'), id: 'main', base: 'Moka', model: family(models[models.length - 1]) };
   const me: Who = { name: 'Toi', role: '', hue: 'gray', id: '', base: 'Toi', me: true };
   const by = new Map<string, Who>(), count = new Map<string, number>(), byBase = new Map<string, string[]>();
-  // Plusieurs agents du même rôle : « Léo », « Léo 2 », dans l'ordre où ils sont partis.
+  // Plusieurs agents du même rôle : « Filou », « Filou 2 », dans l'ordre où ils sont partis.
+  count.set(main.name, 1); // personne d'autre ne s'appelle comme l'agent principal
   for (const s of [...subs].sort((a, b) => ms(a.started) - ms(b.started))) {
-    const ps = persona(s.type || s.title), n = (count.get(ps.name) ?? 0) + 1;
-    count.set(ps.name, n); byBase.set(ps.name, [...(byBase.get(ps.name) ?? []), s.id]);
+    const g = generic(s.type), key = g ? HELP : persona(s.type).name, ps = g ? helper(byBase.get(HELP)?.length ?? 0) : persona(s.type), n = (count.get(ps.name) ?? 0) + 1;
+    count.set(ps.name, n); byBase.set(key, [...(byBase.get(key) ?? []), s.id]);
     by.set(s.id, { ...ps, name: n > 1 ? `${ps.name} ${n}` : ps.name, id: s.id, base: ps.name });
   }
-  return { main, me, subs: by, byBase };
+  return { main, me, subs: by, byBase, raw: subs };
 }
 const initials = (w: Who): string => w.me ? 'T' : w.name.replace(/\s+/g, '').slice(0, 2).replace(/^./, c => c.toUpperCase());
 /** Pastille d'un agent ; celle d'un agent du fil ouvre sa fiche (`data-sl="who"`). */
-const avatar = (w: Who, big = false): string => w.id && !w.me
-  ? `<button type="button" class="sl-av${big ? ' big' : ''}" style="--c:var(--c-${w.hue})" data-sl="who" data-who="${esc(w.id)}" title="Voir la fiche de ${esc(w.name)}" aria-label="Fiche de ${esc(w.name)}">${esc(initials(w))}</button>`
-  : `<i class="sl-av${big ? ' big' : ''}" style="--c:var(--c-${w.hue})" aria-hidden="true">${esc(initials(w))}</i>`;
+/** Le chat d'un agent (même prénom = même chat), dans l'humeur donnée ; moi, je garde mon initiale. */
+const cat = (w: Who, mood: catface.Mood = 'idle', look = false): string => w.me ? esc(initials(w)) : catface.face(w.name, mood, { look });
+/** Rond d'un agent sans geste (pile de l'en-tête, panneau, passations). `cls` : `mini`, `big`, `cf-live` (le chat bouge en boucle). */
+const face = (w: Who, mood: catface.Mood = 'idle', cls = ''): string => `<i class="sl-av${cls ? ` ${cls}` : ''}" style="--c:var(--c-${w.hue})" aria-hidden="true">${cat(w, mood, cls.includes('big'))}</i>`;
+const avatar = (w: Who, big = false, mood: catface.Mood = 'idle', live = false): string => w.id && !w.me
+  ? `<button type="button" class="sl-av${big ? ' big' : ''}${live ? ' cf-live' : ''}" style="--c:var(--c-${w.hue})" data-sl="who" data-who="${esc(w.id)}" title="Voir la fiche de ${esc(w.name)}" aria-label="Fiche de ${esc(w.name)}">${cat(w, mood, big)}</button>`
+  : face(w, mood, `${big ? 'big' : ''}${live ? ' cf-live' : ''}`.trim());
 /** Prénom cliquable (ouvre la fiche), sinon en gras. */
 const nameBtn = (w: Who, cls = ''): string => w.id && !w.me
   ? `<button type="button" class="sl-who${cls ? ` ${cls}` : ''}" style="--c:var(--c-${w.hue})" data-sl="who" data-who="${esc(w.id)}">${esc(w.name)}</button>`
@@ -256,14 +295,22 @@ const mention = (w: Who): string => w.id && !w.me
 const withTo = (html: string, to: Who | null): string => !to ? html : /<p[\s>]/.test(html) ? html.replace(/<p(\s[^>]*)?>/, m => `${m}${mention(to)} `) : `<p>${mention(to)}</p>${html}`;
 /** Texte brut comparable : casse et espaces normalisés. */
 const norm = (t: string): string => t.replace(/\s+/g, ' ').trim().toLowerCase();
-function msgHTML(w: Who, at: number, body: string, o: { cls?: string; tag?: string } = {}): string {
-  return `<article class="sl-msg${w.me ? ' me' : ''}${o.cls ? ` ${o.cls}` : ''}">${avatar(w)}<div class="sl-bd"><header>${nameBtn(w)}${w.role ? `<span class="sl-role">${esc(w.role)}</span>` : ''}${w.model ? `<em class="sl-model" title="Modèle">${esc(w.model)}</em>` : ''}${o.tag ? `<em class="sl-tag">${o.tag}</em>` : ''}<time>${esc(at ? hm(at) : '')}</time></header>${body}</div></article>`;
+function msgHTML(w: Who, at: number, body: string, o: { cls?: string; tag?: string; mood?: catface.Mood } = {}): string {
+  return `<article class="sl-msg${w.me ? ' me' : ''}${o.cls ? ` ${o.cls}` : ''}">${avatar(w, false, o.mood)}<div class="sl-bd"><header>${nameBtn(w)}${w.role ? `<span class="sl-role">${esc(w.role)}</span>` : ''}${w.model ? `<em class="sl-model" title="Modèle">${esc(w.model)}</em>` : ''}${o.tag ? `<em class="sl-tag">${o.tag}</em>` : ''}<time>${esc(at ? hm(at) : '')}</time></header>${body}</div></article>`;
 }
 const noteHTML = (html: string, at: number, brief = ''): string => brief
   ? `<details class="sl-note"><summary><span>${html}</span><time>${esc(hm(at))}</time>${icon('chevron')}</summary><div class="sl-brief">${esc(brief)}</div></details>`
   : `<p class="sl-note"><span>${html}</span><time>${esc(hm(at))}</time></p>`;
 const plain = (t: string): string => `<p class="sl-plain">${esc(t)}</p>`;
-const md = (t: string): string => `<div class="md">${answerHTML(t)}</div>`;
+/** Markdown d'un paragraphe, gardé en mémoire : le fil est recalculé à chaque relecture (toutes les secondes quand
+ *  l'équipe travaille), le texte déjà rendu ne l'est pas une seconde fois. */
+const rendered = new Map<string, string>();
+function rich(t: string): string {
+  let h = rendered.get(t);
+  if (h === undefined) { h = answerHTML(t); if (rendered.size > 1500) rendered.clear(); rendered.set(t, h); }
+  return h;
+}
+const md = (t: string): string => `<div class="md">${rich(t)}</div>`;
 
 // ---------- Parler comme dans une discussion ----------
 /** Paragraphes d'un message (un bloc de code reste entier ; un titre et une liste restent avec ce qui les suit). */
@@ -284,7 +331,7 @@ function chunks(t: string): string[] {
   return merged;
 }
 const SHORT = 480, LEAD = 320;
-const bubble = (x: string, i: number): string => `<div class="sl-bub md" style="--i:${i}">${answerHTML(x)}</div>`;
+const bubble = (x: string, i: number): string => `<div class="sl-bub md" style="--i:${i}">${rich(x)}</div>`;
 /** Un message d'agent en bulles courtes, une par paragraphe. Un pavé ne montre que son début (et sa question finale,
  *  s'il en pose une) : le reste se déplie sous « Lire la suite ». */
 function talk(t: string): string {
@@ -301,7 +348,7 @@ function talk(t: string): string {
 }
 /** Messages envoyés d'ici, montrés tout de suite, jusqu'à ce que le Mac les ait dans la conversation (ou 3 min). */
 const pend = new Map<string, { text: string; at: number; sent?: boolean }[]>();
-/** Nouveau fil en cours de création : la consigne et « Maya écrit… » s'affichent avant que le Mac ait répondu. */
+/** Nouveau fil en cours de création : la consigne et « Moka écrit… » s'affichent avant que le Mac ait répondu. */
 let opening: { pid: string; text: string; at: number } | null = null;
 /** Envoi récent par fil : l'agent paraît au travail dès l'envoi, sans attendre que le Mac le dise (45 s au plus). */
 const woke = new Map<string, number>();
@@ -322,9 +369,11 @@ const PEND_TTL = 3 * 6e4;
 
 /** Membre du fil d'après un nom du tableau (« Agent 2 · explorateur », « explorateur ») : jamais un agent d'un autre groupe. */
 function crewMember(crew: Crew, name: string): Who | null {
-  const n = name.replace(/^Agent \d+ · /, '');
-  if (/^Agent \d+$/.test(n)) return null;
-  const id = crew.byBase.get(persona(n).name)?.[0];
+  const n = name.replace(/^Agent \d+ · /, '').trim();
+  if (/^Agent \d+$/.test(n) || !n) return null;
+  // Par son rôle, sinon par son fichier du tableau (« schemas.md »), que la consigne reçue de l'agent principal nomme.
+  const id = (generic(n) ? undefined : crew.byBase.get(persona(n).name)?.[0])
+    ?? crew.raw.find(s => flat(s.prompt ?? '').includes(`${flat(n)}.md`))?.id;
   return id ? crew.subs.get(id) ?? null : null;
 }
 
@@ -339,12 +388,13 @@ function itemsOf(d: Detail, crew: Crew, board: BoardMsg[]): { items: Item[]; ask
     const at = ms(a.at);
     if (a.kind === 'prompt') { add(at, 'me', msgHTML(crew.me, at, plain(a.text)), 'me'); return; }
     if (a.kind === 'tool:Agent' || a.kind === 'tool:Task') {
-      // Passation : « Maya a confié … à Léo » ; la consigne complète se déplie. Le n-ième envoi d'un rôle est le n-ième agent de ce rôle.
+      // Passation : « Moka a confié … à Filou » ; la consigne complète se déplie. Le n-ième envoi d'un rôle est le n-ième agent de ce rôle.
       if (!a.body && !a.to) return;
-      const ps = persona(a.to || ''), k = nth.get(ps.name) ?? 0; nth.set(ps.name, k + 1);
-      const w = crew.subs.get(crew.byBase.get(ps.name)?.[k] ?? '') ?? { ...ps, id: '', base: ps.name };
+      const g = generic(a.to || ''), key = g ? HELP : persona(a.to || '').name, k = nth.get(key) ?? 0; nth.set(key, k + 1);
+      const ps = g ? helper(k) : persona(a.to || '');
+      const w = crew.subs.get(crew.byBase.get(key)?.[k] ?? '') ?? { ...ps, id: '', base: ps.name };
       const what = a.text ? ` « ${esc(oneLine(a.text, 70))} »` : ' une tâche';
-      add(at, 'delegate', noteHTML(`${nameBtn(crew.main)} a confié${what} à ${nameBtn(w, 'sl-nm')}`, at, a.body ?? ''));
+      add(at, 'delegate', noteHTML(`${face(crew.main, 'idle', 'mini')}${nameBtn(crew.main)} a confié${what} à ${face(w, 'idle', 'mini')}${nameBtn(w, 'sl-nm')}`, at, a.body ?? ''));
       return;
     }
     if (a.kind.startsWith('tool:')) {
@@ -362,13 +412,13 @@ function itemsOf(d: Detail, crew: Crew, board: BoardMsg[]): { items: Item[]; ask
     const at = ms(s.updated), long = s.report.length > 280 || s.report.split('\n').length > 6;
     add(at, 'report', msgHTML(w, at, long
       ? `<div class="sl-bub"><p class="sl-gist">${mention(crew.main)} ${esc(oneLine(s.report, 120))}</p></div><details class="sl-fold"><summary>Lire le compte rendu${icon('chevron')}</summary>${md(s.report)}</details>`
-      : withTo(talk(s.report), crew.main)), s.id);
+      : withTo(talk(s.report), crew.main), { mood: 'done' }), s.id);
   }
   // Tableau d'équipe : seulement l'utilisateur, l'agent principal et les sous-agents de CE fil.
   for (const e of exchanges([], [], board)) {
     const w = e.from === 'Toi' ? crew.me : e.from === 'principal' ? crew.main : crewMember(crew, e.from);
     if (!w || !e.text.trim() || (norm(e.text).length > 0 && spoken.some(x => x.includes(norm(e.text).slice(0, 60))))) continue; // déjà dit (compte rendu, message)
-    const to = e.to === 'principal' ? crew.main : e.to && e.to !== 'Toi' ? crewMember(crew, e.to) : null;
+    const dest = e.to === 'principal' ? crew.main : e.to && e.to !== 'Toi' ? crewMember(crew, e.to) : null, to = dest && dest.id !== w.id ? dest : null;
     add(e.at, 'board', msgHTML(w, e.at, w.me ? plain(e.text) : withTo(talk(e.text), to)), w.me ? 'me' : w.id);
   }
   out.sort((a, b) => a.at - b.at);
@@ -391,15 +441,23 @@ function resultHTML(t: Thread, d: Detail): string {
   return '';
 }
 
-/** « Maya écrit… » avec trois points qui sautillent ; les sous-agents au travail sont nommés. */
+/** « Moka écrit… » avec trois points qui sautillent ; les sous-agents au travail sont nommés. */
 function typing(crew: Crew, d: Detail | undefined): string {
   const on = (d?.subagents ?? []).filter(s => s.live).map(s => crew.subs.get(s.id)?.name).filter((x): x is string => !!x);
   const who = on.length ? `${on.length > 1 ? `${on.slice(0, -1).join(', ')} et ${on[on.length - 1]}` : on[0]} ${on.length > 1 ? 'travaillent' : 'travaille'}` : `${crew.main.name} écrit`;
-  return `<div class="sl-typing">${avatar(on.length ? crew.subs.get((d?.subagents ?? []).find(s => s.live)?.id ?? '') ?? crew.main : crew.main)}<span class="sl-dots" aria-hidden="true"><i></i><i></i><i></i></span><small>${esc(who)}…</small></div>`;
+  const cats = (d?.subagents ?? []).filter(s => s.live).map(s => crew.subs.get(s.id)).filter((x): x is Who => !!x).slice(0, 3);
+  return `<div class="sl-typing cf-live"><span class="sl-stack">${(cats.length ? cats : [crew.main]).map(w => avatar(w, false, 'work')).join('')}</span><span class="sl-dots" aria-hidden="true"><i></i><i></i><i></i></span><small>${esc(who)}…</small></div>`;
 }
 /** Messages partis d'ici que le Mac n'a pas encore rendus (`known` : textes déjà présents dans la conversation). */
-function pending(id: string, known: string[], crew: Crew): Block[] {
-  const k = new Set(known.map(norm)), list = (pend.get(id) ?? []).filter(x => !k.has(norm(x.text)) && Date.now() - x.at < PEND_TTL);
+function pending(id: string, known: { text: string; at?: string }[], crew: Crew): Block[] {
+  // Un message rendu par le Mac n'en solde qu'un, et jamais un envoi plus récent que lui (« Oui, vas-y » deux fois de suite).
+  const ks = known.map(x => ({ n: norm(x.text), at: ms(x.at), used: false }));
+  const list = (pend.get(id) ?? []).filter(x => {
+    if (Date.now() - x.at >= PEND_TTL) return false;
+    const t = norm(x.text), k = ks.find(y => !y.used && y.n === t && (!y.at || y.at >= x.at - 15e3));
+    if (k) k.used = true;
+    return !k;
+  });
   if (list.length) pend.set(id, list); else pend.delete(id);
   return list.map(x => ({ key: `me|p|${x.at}`, html: msgHTML(crew.me, x.at, plain(x.text), x.sent ? { cls: 'sent', tag: `${icon('check')}envoyé` } : { cls: 'sending', tag: 'envoi…' }) }));
 }
@@ -412,7 +470,7 @@ function blocksOf(t: Thread, d: Detail | undefined, crew: Crew): { blocks: Block
     // Même clé que le message affiché à l'envoi : il reste en place au lieu de rejouer son entrée.
     const p0 = run && pend.get(id)?.find(x => norm(x.text) === norm(run.prompt));
     if (run) blocks.push({ key: p0 ? `me|p|${p0.at}` : 'first', html: msgHTML(crew.me, ms(run.started), plain(run.prompt)) });
-    blocks.push(...pending(id, run ? [run.prompt] : [], crew));
+    blocks.push(...pending(id, run ? [{ text: run.prompt }] : [], crew));
     blocks.push(work || !run ? { key: 'working', html: typing(crew, d) } : { key: 'wait', html: '<p class="sl-wait"><span class="spin"></span>Lecture de la conversation…</p>' });
     return { blocks, ask: false };
   }
@@ -423,12 +481,12 @@ function blocksOf(t: Thread, d: Detail | undefined, crew: Crew): { blocks: Block
   if (ask && !work) {
     let i = blocks.length - 1; while (i >= 0 && !blocks[i]?.key.startsWith('ai|')) i--;
     const b = blocks[i];
-    if (b) blocks[i] = { key: b.key, html: b.html.replace('class="sl-msg', 'class="sl-msg ask').replace('</div></article>', `<div class="sl-ask"><span>${icon('sparkle')}${esc(crew.main.name)} attend ta réponse</span><span class="sl-quick">${QUICK.map(q => `<button type="button" class="btn btn-ghost" data-sl="quick" data-text="${esc(q)}">${esc(q)}</button>`).join('')}</span><button class="btn" data-sl="reply">Répondre…</button></div></div></article>`) };
+    if (b) blocks[i] = { key: b.key, html: b.html.replace('class="sl-msg', 'class="sl-msg ask cf-live').replace('cf cf-idle', 'cf cf-ask').replace('</div></article>', `<div class="sl-ask"><span>${icon('sparkle')}${esc(crew.main.name)} attend ta réponse</span><span class="sl-quick">${QUICK.map(q => `<button type="button" class="btn btn-ghost" data-sl="quick" data-text="${esc(q)}">${esc(q)}</button>`).join('')}</span><button class="btn" data-sl="reply">Répondre…</button></div></div></article>`) };
   }
   const queued = S.queued.filter(x => x.session === id);
   for (const q of queued)
     blocks.push({ key: `q|${q.id}`, html: msgHTML(crew.me, ms(q.at), plain(q.text), { cls: 'queued', tag: `${icon('history')}en attente` }) });
-  blocks.push(...pending(id, [...d.actions.filter(a => a.kind === 'prompt').slice(-5).map(a => a.text), ...queued.map(q => q.text)], crew));
+  blocks.push(...pending(id, [...d.actions.filter(a => a.kind === 'prompt').slice(-5), ...queued], crew));
   if (work) blocks.push({ key: 'working', html: typing(crew, d) });
   const res = resultHTML(t, d);
   if (res) blocks.push({ key: 'result', html: res });
@@ -456,18 +514,18 @@ function moodOf(t: Thread, ask: boolean): Mood {
 function headHTML(t: Thread, crew: Crew, ask: boolean, n: number): string {
   const [label, c] = MOOD[moodOf(t, ask)], min = Math.max(0, Math.round(((t.group === 'work' ? Date.now() : ms(t.s.updated)) - ms(t.s.started)) / 6e4));
   const run = S.runs.find(r => live(r) && (r.session === t.id || `run:${r.run}` === t.id));
-  const faces = [crew.main, ...crew.subs.values()].slice(0, 5).map(w => `<i class="sl-av" style="--c:var(--c-${w.hue})" aria-hidden="true">${esc(initials(w))}</i>`).join('');
+  const faces = [crew.main, ...crew.subs.values()].slice(0, 5).map(w => face(w)).join('');
   return `<h2>${esc(nameOf(t.s))}</h2><span class="sl-pill" style="--c:var(--c-${c})">${label}</span><span class="sl-meta">${n} agent${n > 1 ? 's' : ''}${min ? ` · ${min} min` : ''}</span>${run ? `<button type="button" class="btn btn-ghost" data-sl="stop" data-run="${esc(run.run)}" title="Arrêter l’équipe">${icon('stop')}<span>Arrêter</span></button>` : ''}<button type="button" class="btn btn-ghost sl-nowbtn" data-sl="now" aria-pressed="false" title="Afficher ou masquer l’équipe"><span class="sl-stack">${faces}</span><span>Équipe</span></button>${t.id.startsWith('run:') ? '' : `<button type="button" class="btn" data-sl="tech" data-id="${esc(t.id)}" title="Voir les étapes dans l’onglet Claude Code">${icon('terminal')}<span>Vue technique</span></button>`}`;
 }
 function nowHTML(t: Thread, d: Detail | undefined, crew: Crew, ask: boolean): string {
   const work = t.group === 'work', lastTool = [...(d?.actions ?? [])].reverse().find(a => a.kind.startsWith('tool:') && doing(a.kind, a.text));
   const line = work && lastTool ? doing(lastTool.kind, lastTool.text) : !work && d?.lines ? `+${d.lines.add} −${d.lines.del}` : '';
-  const mem = (w: Who, state: string, cls: string, last: string): string => `<button type="button" class="sl-mem ${cls}${prof === w.id ? ' cur' : ''}" data-sl="who" data-who="${esc(w.id)}" title="Voir la fiche de ${esc(w.name)}"><i class="sl-av" style="--c:var(--c-${w.hue})" aria-hidden="true">${esc(initials(w))}</i><div><b>${esc(w.name)}${w.model ? `<em class="sl-model">${esc(w.model)}</em>` : ''}</b><small class="sl-st">${esc(state)}</small>${last ? `<small class="sl-last">${esc(last)}</small>` : ''}</div></button>`;
+  const mem = (w: Who, state: string, cls: string, last: string, mood: catface.Mood): string => `<button type="button" class="sl-mem ${cls}${prof === w.id ? ' cur' : ''}" data-sl="who" data-who="${esc(w.id)}" title="Voir la fiche de ${esc(w.name)}">${face(w, mood, cls ? 'cf-live' : '')}<div><b>${esc(w.name)}${w.model ? `<em class="sl-model">${esc(w.model)}</em>` : ''}</b><small class="sl-st">${esc(state)}</small>${last ? `<small class="sl-last">${esc(last)}</small>` : ''}</div></button>`;
   const subs = [...(d?.subagents ?? [])].sort((a, b) => Number(b.live) - Number(a.live) || ms(b.updated) - ms(a.updated));
-  const rows = [mem(crew.main, work ? 'travaille' : ask ? 'attend ta réponse' : 'a fini', work ? 'on' : ask ? 'ask' : '', line), ...subs.map(s => {
+  const rows = [mem(crew.main, work ? 'travaille' : ask ? 'attend ta réponse' : 'a fini', work ? 'on' : ask ? 'ask' : '', line, work ? 'work' : ask ? 'ask' : 'done'), ...subs.map(s => {
     const w = crew.subs.get(s.id); if (!w) return '';
     const l = s.live ? (s.last?.kind.startsWith('tool:') ? doing(s.last.kind, s.last.text) || 'réfléchit' : 'réfléchit') : s.files?.length ? `${s.files.length} fichier${s.files.length > 1 ? 's' : ''} touché${s.files.length > 1 ? 's' : ''}` : '';
-    return mem(w, s.live ? 'travaille' : 'a fini', s.live ? 'on' : '', l);
+    return mem(w, s.live ? 'travaille' : 'a fini', s.live ? 'on' : '', l, s.live ? 'work' : 'sleep');
   })].join('');
   const q = quota.fiveHour(), pct = Math.max(0, Math.min(100, Math.round(q.pct)));
   const gauge = q.known ? `<div class="sl-quota" title="Fenêtre d’usage de 5 h"><span>5 h</span><i class="sl-bar"><i style="width:${pct}%"></i></i><b>${pct} %</b></div>` : '';
@@ -498,7 +556,7 @@ function profHTML(t: Thread, d: Detail | undefined, crew: Crew, ask: boolean): s
     main && crew.subs.size ? `<span><small>Équipe</small><b>${plural(crew.subs.size, 'agent')}</b></span>` : ''].join('');
   const fl = files.slice(0, 6).map(f => `<code title="${esc(f)}">${esc(f.split('/').pop() ?? f)}</code>`).join('') + (files.length > 6 ? `<small>+${files.length - 6}</small>` : '');
   const helpers = main ? [...crew.subs.values()].map(x => `<button type="button" class="sl-chip" style="--c:var(--c-${x.hue})" data-sl="who" data-who="${esc(x.id)}">${esc(x.name)}</button>`).join('') : '';
-  return `<header>${avatar({ ...w, id: '' }, true)}<div><b>${esc(w.name)}</b><small>${esc(w.role || 'agent')}</small></div><button type="button" class="sl-x" data-sl="unprof" aria-label="Fermer">${icon('x')}</button></header>
+  return `<header>${avatar({ ...w, id: '' }, true, on ? 'work' : main && ask ? 'ask' : main ? 'done' : 'sleep', true)}<div><b>${esc(w.name)}</b><small>${esc(w.role || 'agent')}</small></div><button type="button" class="sl-x" data-sl="unprof" aria-label="Fermer">${icon('x')}</button></header>
     <p class="sl-pf-st${on ? ' on' : main && ask ? ' ask' : ''}"><i class="sl-dot${on ? ' work' : main && ask ? ' mine' : ''}"></i>${esc(state)}${now ? ` · ${esc(now)}` : ''}</p>
     ${facts ? `<div class="sl-pf-facts">${facts}</div>` : ''}
     ${mission ? `<details class="sl-pf-mis"><summary><small>${main ? 'Ta consigne' : `Confié par ${esc(crew.main.name)}`}</small><span>${esc(oneLine(mission, 140))}</span></summary><div class="sl-brief">${esc(mission)}</div></details>` : ''}
@@ -523,12 +581,26 @@ function closeProf(): void {
   root?.querySelectorAll('.sl-mem.cur').forEach(x => x.classList.remove('cur'));
 }
 const SUGGEST: [string, string, 'edit' | 'read'][] = [['Corriger un bug', 'Corrige ce bug : ', 'edit'], ['Ajouter une fonction', 'Ajoute ', 'edit'], ['Relire le travail récent', 'Relis les derniers changements et signale ce qui cloche.', 'read'], ['M’expliquer le code', 'Explique-moi comment fonctionne ', 'read']];
-const emptyHTML = (name: string, first: boolean): string => `<div class="sl-empty">${avatar({ ...persona('principal'), id: '', base: 'Maya' }, true)}<h3>${first ? `Un salon pour ${esc(name)}` : 'Nouveau fil'}</h3><p>Dis ce que tu veux faire : ${esc(persona('principal').name)} prend la consigne, répartit le travail et te prévient quand c’est prêt.</p><div class="sl-sugg">${SUGGEST.map(([l, t, m]) => `<button type="button" class="sl-chip" data-sl="suggest" data-text="${esc(t)}" data-mode="${m}">${esc(l)}</button>`).join('')}</div><p class="sl-faint">Les fils de ${esc(name)} restent ici : rien ne se mélange avec les autres projets.</p></div>`;
+const emptyHTML = (name: string, first: boolean): string => `<div class="sl-empty">${avatar({ ...persona('principal'), id: '', base: 'Moka' }, true, 'idle', true)}<h3>${first ? `Un salon pour ${esc(name)}` : 'Nouveau fil'}</h3><p>Dis ce que tu veux faire : ${esc(persona('principal').name)} prend la consigne, répartit le travail et te prévient quand c’est prêt.</p><div class="sl-sugg">${SUGGEST.map(([l, t, m]) => `<button type="button" class="sl-chip" data-sl="suggest" data-text="${esc(t)}" data-mode="${m}">${esc(l)}</button>`).join('')}</div><p class="sl-faint">Les fils de ${esc(name)} restent ici : rien ne se mélange avec les autres projets.</p></div>`;
 
 // ---------- Rendu ----------
 /** Mouvement coupé (réglage de l'app ou du système) : défilement direct. */
 const calm = (): boolean => document.documentElement.dataset.motion === 'off' || matchMedia('(prefers-reduced-motion: reduce)').matches;
 const grow = (ta: HTMLTextAreaElement): void => { ta.style.height = 'auto'; ta.style.height = `${Math.min(ta.scrollHeight + 2, 200)}px`; };
+/** Le bouton d'envoi s'allume dès qu'il y a quelque chose à envoyer. */
+const ready = (): void => { root?.querySelector('.sl-comp')?.classList.toggle('sl-ready', !!root.querySelector('textarea')?.value.trim()); };
+/** Place de chaque fil dans la liste, avant qu'elle soit redessinée. */
+const rowTops = (list: HTMLElement): Map<string, number> => new Map(Array.from(list.querySelectorAll<HTMLElement>('.sl-row'), x => [x.dataset.id ?? '', x.getBoundingClientRect().top]));
+/** Liste redessinée : un fil qui change de place y glisse (il remonte quand il se remet au travail), un nouveau apparaît. */
+function glide(list: HTMLElement, tops: Map<string, number>): void {
+  if (calm() || !tops.size) return;
+  const k = document.documentElement.dataset.motion === 'subtle' ? .7 : 1;
+  for (const x of list.querySelectorAll<HTMLElement>('.sl-row')) {
+    const was = tops.get(x.dataset.id ?? ''), dy = was === undefined ? 0 : was - x.getBoundingClientRect().top;
+    if (was === undefined) x.animate([{ opacity: 0, translate: '-8px 0' }, { opacity: 1, translate: '0 0' }], { duration: 240 * k, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    else if (Math.abs(dy) > 1) x.animate([{ translate: `0 ${dy}px` }, { translate: '0 0' }], { duration: 320 * k, easing: 'cubic-bezier(.2,.8,.2,1)' });
+  }
+}
 function paint(): void {
   if (!root || !p) return;
   const th = threads(), id = curId(th), cur = th.find(t => t.id === id), d = id ? S.detail.get(id) : undefined;
@@ -544,7 +616,8 @@ function paint(): void {
     // Le fil entier entre d'un bloc (pas message par message : ce n'est pas du neuf).
     feed.classList.remove('sl-enter'); void feed.offsetWidth; feed.classList.add('sl-enter');
   }
-  paintIfChanged(need('[data-sl-list]', root), listHTML(th, id));
+  const list = need('[data-sl-list]', root), tops = rowTops(list);
+  if (paintIfChanged(list, listHTML(th, id))) glide(list, tops);
   let ask = false, crew: Crew | null = null, blocks: Block[];
   if (cur) { crew = crewOf(d?.subagents ?? [], d?.models ?? cur.s.models); const r = blocksOf(cur, d, crew); blocks = r.blocks; ask = r.ask; }
   else if (opening?.pid === p.id) { const c0 = crewOf([], []); blocks = [{ key: `me|p|${opening.at}`, html: msgHTML(c0.me, opening.at, plain(opening.text), { cls: 'sending', tag: 'envoi…' }) }, { key: 'working', html: typing(c0, undefined) }]; }
@@ -558,7 +631,7 @@ function paint(): void {
   let fresh = 0, confirmed = before ? [...before].filter(k => k?.startsWith('me|p|') && !now.has(k)).length : 0;
   if (before) for (const x of Array.from(feed.children) as HTMLElement[]) if (!before.has(x.dataset.k)) {
     if (confirmed && x.classList.contains('me')) { confirmed--; continue; }
-    x.classList.add('sl-new'); fresh++;
+    x.classList.add('sl-new', 'cf-hop'); fresh++;
   }
   if (switched) feed.scrollTop = feed.scrollHeight;
   else if (changed && end) feed.scrollTo({ top: feed.scrollHeight, behavior: calm() ? 'auto' : 'smooth' });
@@ -573,10 +646,10 @@ function paint(): void {
   if (!ph2) { if (prof) closeProf(); } else { const first = pb.hidden; if (paintIfChanged(pb, ph2) || first) { pb.hidden = false; placeProf(pb); } }
   root.classList.toggle('sl-solo', !cur && opening?.pid !== p.id);
   // Le champ : seul son habillage change, jamais le texte.
-  const isNew = !cur, ph = isNew ? 'Dis à l’équipe ce que tu veux faire…' : `Écris à ${crew?.main.name ?? 'Maya'}…`;
+  const isNew = !cur, ph = isNew ? 'Dis à l’équipe ce que tu veux faire…' : `Écris à ${crew?.main.name ?? 'Moka'}…`;
   if (ta.placeholder !== ph) ta.placeholder = ph;
   need('[data-sl-mode]', root).hidden = !isNew;
-  showAuto();
+  showAuto(); ready();
   const hint = need('[data-sl-hint]', root), ht = !isNew && cur?.group === 'work' ? 'Ton message part en attente : l’agent le lit à la fin de son tour.' : '';
   if (hint.textContent !== ht) hint.textContent = ht;
 }
@@ -615,7 +688,8 @@ async function send(quick = ''): Promise<void> {
   // Seule la création d'un fil bloque l'envoi suivant ; dans un fil existant, on peut enchaîner les messages.
   if (!id) { busy = true; btn.disabled = true; }
   // Le champ est vidé tout de suite : pendant l'attente, l'utilisateur peut changer de fil sans que rien ne soit écrasé.
-  if (!quick) { ta.value = ''; drafts.delete(key); grow(ta); showAuto(); }
+  if (!quick) { ta.value = ''; drafts.delete(key); grow(ta); showAuto(); ready(); }
+  if (!calm()) btn.animate([{ scale: '1' }, { scale: '.9', offset: .3 }, { scale: '1' }], { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)' });
   // Réponse d'un clic : trop courte pour juger, « Auto » n'est pas résolu et la conversation garde son modèle.
   const c = picked(), tune = { ...(quick && c.model === AUTO ? { model: '', effort: c.effort } : resolved(text, !!id)), voice: 'chat' as const };
   // Le message s'affiche aussitôt dans le fil (« envoi… »), sans attendre que le Mac l'ait écrit dans la conversation.
@@ -642,7 +716,7 @@ async function send(quick = ''): Promise<void> {
     if (!ok && !quick) {
       // Échec : le texte revient, mais seulement si le champ est encore celui de ce fil et qu'il est vide.
       const cur = root?.isConnected ? root.querySelector('textarea') : null;
-      if (cur && shown === key && !cur.value) { cur.value = text; drafts.set(key, text); grow(cur); }
+      if (cur && shown === key && !cur.value) { cur.value = text; drafts.set(key, text); grow(cur); ready(); }
       else if (!drafts.get(key)) drafts.set(key, text);
     }
   }
@@ -685,7 +759,7 @@ function bind(r: HTMLElement): void {
     if (act === 'mention') {
       const ta = need<HTMLTextAreaElement>('textarea', r), at = `@${t.dataset.name ?? ''} `;
       if (!ta.value.startsWith(at)) ta.value = at + ta.value;
-      closeProf(); grow(ta); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); drafts.set(shown, ta.value); showAuto(); return;
+      closeProf(); grow(ta); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); drafts.set(shown, ta.value); ready(); showAuto(); return;
     }
     if (act === 'toreport') {
       const id = t.dataset.who ?? ''; closeProf();
@@ -700,9 +774,9 @@ function bind(r: HTMLElement): void {
       // Jamais par-dessus ce qui est déjà tapé : la suggestion ne remplit qu'un champ vide.
       const ta = need<HTMLTextAreaElement>('textarea', r), m = sel('mode'); if (ta.value.trim()) { ta.focus(); return; }
       ta.value = t.dataset.text ?? ''; if (m) m.value = t.dataset.mode ?? 'edit';
-      grow(ta); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); drafts.set(shown, ta.value); showAuto(); return;
+      grow(ta); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); drafts.set(shown, ta.value); ready(); showAuto(); return;
     }
-    if (act === 'pick') { choose(pid, t.dataset.id ?? ''); paint(); void refresh(); }
+    if (act === 'pick') { const id = t.dataset.id ?? ''; choose(pid, id); paint(); fetchThread(pid, id); void refresh(); }
     else if (act === 'new') { choose(pid, ''); paint(); need('textarea', r).focus(); }
     else if (act === 'more') { moreOpen = !moreOpen; paint(); }
     else if (act === 'tech') openTech(t.dataset.id ?? '');
@@ -712,7 +786,12 @@ function bind(r: HTMLElement): void {
     else if (act === 'publish' || act === 'review' || act === 'pr') void gesture(act, t.dataset.wt ?? '', t as HTMLButtonElement);
   });
   r.addEventListener('submit', e => { e.preventDefault(); void send(); });
-  r.addEventListener('input', e => { const t = target(e); if (t instanceof HTMLTextAreaElement) { grow(t); showAuto(); if (p) drafts.set(shown || `${p.id}/${curId()}`, t.value); } });
+  // Survol d'un fil pas encore lu : sa conversation est lue d'avance, le clic l'affiche sans attente.
+  r.addEventListener('pointerover', e => {
+    const row = target(e).closest<HTMLElement>('.sl-row[data-id]'), id = row?.dataset.id ?? '';
+    if (p && id && !S.detail.has(id)) fetchThread(p.id, id);
+  });
+  r.addEventListener('input', e => { const t = target(e); if (t instanceof HTMLTextAreaElement) { grow(t); showAuto(); ready(); if (p) drafts.set(shown || `${p.id}/${curId()}`, t.value); } });
   // Revenu en bas du fil à la main : l'invitation « Nouveaux messages » n'a plus lieu d'être.
   r.addEventListener('scroll', e => {
     const f = target(e); if (!f.matches('[data-sl-feed]') || f.scrollHeight - f.scrollTop - f.clientHeight >= 60) return;
@@ -745,5 +824,6 @@ export function mount(box: HTMLElement, proj: Project, o: { openTech: (session: 
   if (!box.dataset.slBound) { box.dataset.slBound = '1'; bind(box); }
   // La jauge se met à jour seule ; l'abonnement n'est pris qu'une fois (il repeint le Salon monté à ce moment-là).
   if (!quotaHooked) { quotaHooked = true; quota.onChange(() => { if (root?.isConnected) paint(); }); }
+  catface.init();
   paint(); start();
 }

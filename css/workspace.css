@@ -189,3 +189,26 @@
 @media (hover: none) {
   .aw-ph-acts { opacity: 1; }
 }
+
+/* ---------- Fil des conversations d'agents : écho des messages envoyés et entrées animées ----------
+   Les styles du fil (.ss-msg…) vivent dans app.css : les règles ci-dessous, importées par app.css, valent pour toute l'app
+   (onglet Claude Code d'un projet comme Espace agents). Logique : src/features/projects/echo.ts.
+   `.ss-new` est posé par echo.mark() sur les seuls blocs dont la clé est nouvelle depuis le dernier rendu. */
+.ss-msg.user.sending, .ss-msg.user.sent { opacity: 1; }
+.ss-msg.user.sending { border-style: dashed; }
+.ss-msg.user.sending p { opacity: .82; }
+.ss-msg.sending .ss-wait, .ss-msg.sent .ss-wait { display: inline-flex; align-items: center; gap: 4px; font-style: normal; color: var(--text-3); }
+.ss-msg.sending .ss-wait .spin { width: 10px; height: 10px; border-width: 1.5px; }
+.ss-msg.sent .ss-wait svg { width: 13px; height: 13px; color: var(--c-green); }
+.ss-msg .ss-pics { margin: 4px 0 0; font-size: var(--t-1); color: var(--text-3); }
+@keyframes ss-in-me { from { opacity: 0; translate: calc(var(--mo-dx) * .7) calc(var(--mo-dy) * 1.6); scale: .97; } }
+@keyframes ss-in-ai { from { opacity: 0; translate: calc(var(--mo-dx) * -.7) var(--mo-dy); } }
+@keyframes ss-in-fade { from { opacity: 0; } }
+@keyframes ss-fire { 40% { scale: calc(var(--mo-press) - .04); } }
+.ss-new.ss-msg.user { animation: ss-in-me var(--mo-d3) var(--mo-spring) both; transform-origin: right bottom; }
+.ss-new.ss-msg.ai { animation: ss-in-ai var(--mo-d4) var(--mo-out) both; animation-delay: calc(var(--i, 0) * 60ms * var(--mo-k, 1)); transform-origin: left top; }
+.ss-new.ss-tools, .ss-new.ss-working, .ss-new.ss-diff, .ss-new.ss-cut { animation: ss-in-fade var(--mo-d3) var(--mo-out) both; }
+/* Bouton d'envoi : rebond bref à l'appui sur Envoyer (en plus de la pression générale de motion.css). */
+.ag-send.ss-fire, .aw-reply .btn.ss-fire, .aw-new .btn-primary.ss-fire { animation: ss-fire var(--mo-d4) var(--mo-spring); }
+:root[data-motion="off"] .ss-new, :root[data-motion="off"] .ss-fire { animation: none; }
+@media (prefers-reduced-motion: reduce) { .ss-new, .ss-fire { animation: none !important; } }
