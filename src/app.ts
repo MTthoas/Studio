@@ -103,6 +103,8 @@ const VIEWS: Record<string, { label: string; icon: string }> = {
 /** Teinte de l'icône de chaque section dans la barre latérale. */
 /** Teinte de l'icône de chaque vue dans la barre latérale (redemandée le 23 nov. 2026 : « remets des couleurs »). */
 const SIDE_HUE: Record<string, string> = { home: 'blue', all: 'amber', workspace: 'violet', projets: 'orange', models: 'teal', commerce: 'green', claude: 'orange', inbox: 'blue', today: 'amber', journal: 'pink', ephemeral: 'orange', tasks: 'green', agents: 'violet', help: 'blue', linear: 'indigo', github: 'gray', graph: 'teal', trash: 'gray' };
+/** Catégories de « Plus » dans la barre latérale (les vues absentes, ex. Boutiques hors Mac, sont sautées). */
+const MORE_CATS: [string, string[]][] = [['Écriture', ['journal', 'ephemeral']], ['Outils', ['models', 'commerce', 'graph']], ['Connexions', ['linear', 'github']], ['Divers', ['trash', 'help']]];
 const titleOf = (n: Note) => n.title.trim() || 'Sans titre';
 const WIDE = new Set(['workspace', 'models', 'commerce', 'graph', 'home', 'claude', 'settings', 'tasks', 'linear', 'github', 'agents', 'help', 'projets', 'journal']); // vues sans colonne de liste
 
@@ -219,8 +221,11 @@ function renderSidebar() {
       <button class="icon-btn" data-act="new" title="Nouvelle note (${keys(SC.newNote)})" aria-label="Nouvelle note">${icon('compose')}</button>
     </div>
     <div class="side-scroll">
-      <div class="side-group">${item('home')}${item('all')}${treeHTML(idx.live)}</div>
-      <div class="side-group side-gap">${projectsPage.claudeAvailable() ? item('workspace') : ''}${item('projets')}${projectsModel.projects().slice(0, 8).map(p => {
+      <div class="side-group">${item('home')}</div>
+      <div class="side-label">Écrire</div>
+      <div class="side-group">${item('all')}${treeHTML(idx.live)}</div>
+      <div class="side-label">Piloter</div>
+      <div class="side-group">${projectsPage.claudeAvailable() ? item('workspace') : ''}${item('projets')}${projectsModel.projects().slice(0, 8).map(p => {
         const open = v.type === 'projets' && v.project === p.id, tab = v.tab ?? 'overview';
         // Sous « Claude Code » : les conversations récentes du projet, celle qui est ouverte en surbrillance.
         const talks = open ? projectsPage.sideSessions(p.id) : [], talking = tab === 'sessions' && talks.some(s => s.sel);
@@ -235,7 +240,7 @@ function renderSidebar() {
               + s.subs.map(a => `<button class="side-item side-sub4${tab === 'sessions' && a.sel ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="sessions" data-pj-session="${esc(s.id)}" data-pj-sub="${esc(a.id)}" title="Sous-agent : ${esc(a.title)}"><i class="ss-live${a.live ? ' on' : ''}"></i><span>${esc(a.title)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('')).join('') : '')).join('') : '');
       }).join('')}</div>
       ${tags.length ? `<button class="side-label" data-act="tags" aria-expanded="${ui.tagsOpen}">${icon('chevron')}Tags</button>${ui.tagsOpen ? `<div class="side-group">${tags.map(([t, c]) => `<button class="side-item${v.type === 'tag' && v.tag === t ? ' sel' : ''}" data-tag="${esc(t)}"><i class="tag-dot" style="--c:var(--c-${hue(t)})"></i><span>${esc(t)}</span><span class="side-count">${c}</span></button>`).join('')}</div>` : ''}` : ''}
-      <button class="side-label" data-act="more-views" aria-expanded="${moreOpen}">${icon('chevron')}Plus${!moreOpen && moreCount ? `<span class="side-count">${moreCount}</span>` : ''}</button>${moreOpen ? `<div class="side-group">${more.map(item).join('')}</div>` : ''}
+      <button class="side-label" data-act="more-views" aria-expanded="${moreOpen}">${icon('chevron')}Plus${!moreOpen && moreCount ? `<span class="side-count">${moreCount}</span>` : ''}</button>${moreOpen ? MORE_CATS.map(([label, types]) => { const here = types.filter(t => more.includes(t)); return here.length ? `<div class="side-cat">${label}</div><div class="side-group">${here.map(item).join('')}</div>` : ''; }).join('') : ''}
     </div>
     <div id="plug-side"></div>
     ${update.ready() ? `<button class="side-foot side-update" data-open-conn="maj" title="La nouvelle version est téléchargée : elle s’installe à la relance, ou quand tu quittes Studio">${icon('refresh')}<span>Relancer pour mettre à jour</span></button>`

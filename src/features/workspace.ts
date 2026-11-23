@@ -112,6 +112,18 @@ async function loadTrees(pid: string): Promise<void> {
   const r = await bridge.call('agent', 'worktrees', { project: pid }, 30000);
   if (r.ok) treesBy.set(pid, { list: (r.worktrees as Worktree[] | undefined) ?? [], at: Date.now() });
 }
+/** Copies des projets dont une conversation a une copie : celles qui manquent, ou toutes si `all`. */
+async function loadMiniTrees(all = false): Promise<void> {
+  const pids = [...new Set(rows().filter(r => r.status !== 'running' && r.s.worktree).map(r => r.p.id))];
+  await Promise.all(pids.filter(pid => all || !treesBy.has(pid)).map(loadTrees));
+}
+/** Conversation au repos dont la copie attend sa PR : à publier, ou poussée sans être fusionnée. */
+const waitsPR = (r: Row): boolean => {
+  const w = r.s.worktree ? treesBy.get(r.p.id)?.list.find(t => t.name === r.s.worktree) : undefined;
+  if (!w) return false;
+  const s = copyStage(w);
+  return s === 'review' || s === 'pr';
+};
 const boardOf = (r: object) => ({ files: ((r as { files?: BoardFile[] }).files) ?? [], messages: Array.isArray((r as { messages?: unknown }).messages) ? (r as { messages: BoardMsg[] }).messages : undefined, at: Date.now() });
 async function loadBoard(pid: string, wt: string): Promise<void> {
   const r = await bridge.call('agent', 'board', { project: pid, worktree: wt }, 10000);
@@ -181,6 +193,8 @@ async function refresh(): Promise<void> {
     listing = true;
     void (async () => { for (const p of all) { if (!root?.isConnected) break; await loadSessions(p); paintList(); } listing = false; firstUse = false; })();
   }
+  // Liste réduite : elle montre les copies en attente de PR, il faut donc les copies de chaque projet (toutes les 30 s).
+  if (st.mini) await loadMiniTrees(tick % 12 === 0);
   tick++;
   autoShow();
   paint();
@@ -210,17 +224,23 @@ function paintList(): void {
   const scroll = box.scrollTop;
   cursor = Math.min(cursor, Math.max(0, list.length - 1));
   let i = 0;
-  const groups = GROUPS.map(([k, label]) => {
-    const g = list.filter(r => r.status === k).slice(0, k === 'idle' ? 40 : 99);
+  // Liste réduite : seulement ce qui demande de l'attention, les agents au travail et les copies en attente de PR.
+  // Sous 900 px la liste n'est jamais réduite (CSS) : elle garde alors tous ses groupes.
+  const defs: [string, string, (r: Row) => boolean][] = st.mini && innerWidth > 900
+    ? [['running', 'En cours', r => r.status === 'running'], ['wait', 'En attente de PR', r => r.status !== 'running' && waitsPR(r)]]
+    : GROUPS.map(([k, label]) => [k, label, (r: Row) => r.status === k]);
+  const groups = defs.map(([k, label, has]) => {
+    const g = list.filter(has).slice(0, k === 'idle' ? 40 : 99);
     if (!g.length) return '';
-    return `<div class="aw-group"><h4>${label}<span>${g.length}</span></h4>${g.map(r => {
+    return `<div class="aw-group aw-g-${k}"><h4>${label}<span>${g.length}</span></h4>${g.map(r => {
       const n = open.get(`${r.s.id}/`), idx = i++;
       // Les sous-agents au travail, indentés sous leur conversation : ils s'ouvrent comme elle (clic, J/K, Entrée, glisser).
-      const subs = r.subs.filter(a => a.live).slice(0, 6).map(a => {
+      // Pas dans la liste réduite : une colonne d'initiales n'a pas la place de les distinguer.
+      const subs = st.mini ? '' : r.subs.filter(a => a.live).slice(0, 6).map(a => {
         const m = open.get(`${r.s.id}/${a.id}`), at = i++, name = a.type || a.title || 'Sous-agent';
         return `<button class="aw-row aw-subrow${at === cursor ? ' cur' : ''}${m ? ' shown' : ''}" draggable="true" data-row="${at}" data-p="${esc(r.p.id)}" data-s="${esc(r.s.id)}" data-sa="${esc(a.id)}" title="${esc(`${name} : ${a.title}`)}"><span class="aw-ring"></span><span class="aw-rt">${esc(name)}</span>${m ? `<b class="aw-in">${m}</b>` : ''}</button>`;
       }).join('');
-      return `<button class="aw-row${idx === cursor ? ' cur' : ''}${n ? ' shown' : ''}" draggable="true" data-row="${idx}" data-p="${esc(r.p.id)}" data-s="${esc(r.s.id)}" title="${esc(`${nameOf(r.s)} · ${r.p.name}`)}" aria-label="${esc(nameOf(r.s))}">${ICON[r.status]}<i class="aw-ini" style="--c:var(--c-${r.p.hue})" aria-hidden="true">${esc(initial(nameOf(r.s)))}</i><span class="aw-rt">${esc(nameOf(r.s))}</span><i class="tag-dot aw-pd" style="--c:var(--c-${r.p.hue})" aria-hidden="true"></i><time>${esc(shortRel(ms(r.s.active || r.s.updated)))}</time>${n ? `<b class="aw-in">${n}</b>` : ''}</button>${subs}`;
+      return `<button class="aw-row${idx === cursor ? ' cur' : ''}${n ? ' shown' : ''}" draggable="true" data-row="${idx}" data-p="${esc(r.p.id)}" data-s="${esc(r.s.id)}" title="${esc(`${nameOf(r.s)} · ${r.p.name}`)}" aria-label="${esc(nameOf(r.s))}">${k === 'wait' ? `<span class="aw-st pr">${icon('pr')}</span>` : ICON[r.status]}<i class="aw-ini" style="--c:var(--c-${r.p.hue})" aria-hidden="true">${esc(initial(nameOf(r.s)))}</i><span class="aw-rt">${esc(nameOf(r.s))}</span><i class="tag-dot aw-pd" style="--c:var(--c-${r.p.hue})" aria-hidden="true"></i><time>${esc(shortRel(ms(r.s.active || r.s.updated)))}</time>${n ? `<b class="aw-in">${n}</b>` : ''}</button>${subs}`;
     }).join('')}</div>`;
   }).join('');
   const loading = projects.projects().some(p => !sessionsBy.has(p.id));
@@ -268,16 +288,13 @@ function headHTML(x: Pane | null): string {
 }
 
 const layoutLabel = (n: number) => `${n} vue${n > 1 ? 's' : ''}`;
-/** Le bouton de disposition montre la disposition courante (icône) ; le menu liste les six. */
+/** Les six dispositions, une icône chacune, toujours visibles (le menu déroulant a été refusé : « remets les boutons »). */
+const layoutsHTML = () => `<div class="aw-lays" role="group" aria-label="Disposition (L)">${LAYOUTS.map(n => `<button type="button" class="aw-lay" data-w="lay" data-n="${n}" title="${layoutLabel(n)}" aria-label="${layoutLabel(n)}" aria-pressed="${n === st.layout}">${layoutIcon(n)}</button>`).join('')}</div>`;
 function paintLayout(page: HTMLElement): void {
-  const b = $('.aw-lay', page); if (!b) return;
-  const h = `${layoutIcon(st.layout)}${icon('chevron')}`;
-  if (b.innerHTML !== h) b.innerHTML = h;
-  b.title = `Disposition : ${layoutLabel(st.layout)} (L)`; b.setAttribute('aria-label', b.title);
+  for (const b of $$<HTMLButtonElement>('.aw-lay', page)) b.setAttribute('aria-pressed', String(Number(b.dataset.n) === st.layout));
 }
-function layoutMenu(b: HTMLElement): void {
-  menu(b, LAYOUTS.map(n => ({ label: layoutLabel(n), checked: n === st.layout, run: () => setLayout(n) })));
-}
+/** Disposition choisie à la main : Auto la garde (il réutilise les vues au repos au lieu de l'agrandir). */
+function pickLayout(n: number): void { st.cap = n; setLayout(n); }
 const KEYS: [string, string][] = [['Choisir une vue', '1 – 8'], ['Parcourir la liste', 'J / K'], ['Ouvrir dans la vue', '↵'], ['Nouvel agent', 'C'], ['Agrandir la vue', 'F'], ['Vider la vue', 'X'], ['Disposition', 'L'], ['Diffuser', 'D'], ['Répondre', 'R'], ['Chercher', '/'], ['Réduire la liste', 'S'], ['Tableau d’équipe', 'T'], ['Publier', 'P']];
 const keysMenu = (b: HTMLElement) => menu(b, [{ label: 'Raccourcis clavier' }, ...KEYS.map(([label, hint]): MenuItem => ({ label, hint, run: () => undefined }))]);
 
@@ -473,26 +490,33 @@ function autoShow(): void {
   const shownRuns = new Set(shown.map(x => x?.run).filter(Boolean));
   const missing = working.filter(r => !on.has(r.s.id) && !st.dismissed.includes(r.s.id)
     && !(runsBy.get(r.p.id) ?? []).some(x => x.session === r.s.id && shownRuns.has(x.run)));
-  const typed = (i: number) => !!$$<HTMLTextAreaElement>(`.aw-pane[data-i="${i}"] textarea`, root ?? document).some(t => t.value.trim());
+  // Une vue est intouchable si on y écrit, ou si son champ a le focus (vue « Nouvel agent » qu'on vient d'ouvrir).
+  const typed = (i: number) => $$<HTMLTextAreaElement>(`.aw-pane[data-i="${i}"] textarea`, root ?? document).some(t => t.value.trim() || t === document.activeElement);
   const free = () => panes().map((x, i) => (!x && !typed(i) ? i : -1)).filter(i => i >= 0);
+  const idle = () => panes().map((x, i) => {
+    if (!x || i === st.focus || typed(i)) return -1;
+    const busyHere = x.sub ? busy.has(`${x.session}/${x.sub}`) : busy.has(x.session) || (runsBy.get(x.project) ?? []).some(y => live(y) && (y.session === x.session || (!!x.run && y.run === x.run)));
+    return busyHere ? -1 : i;
+  }).filter(i => i >= 0);
   if (missing.length) {
-    // Pas assez de vues vides : la plus petite disposition qui les loge tous.
-    const need = missing.length - free().length;
-    if (need > 0) {
-      const want = LAYOUTS.find(n => n >= st.layout + need) ?? 8;
-      if (want > st.layout) setLayout(want);
-    }
+    // D'abord les vues vides, puis celles d'agents au repos ; la disposition ne grandit qu'en dernier, et jamais
+    // au-delà de celle choisie à la main (sinon elle se rouvrait d'elle-même juste après qu'on l'avait réduite).
     let slots = free();
-    if (slots.length < missing.length) {
-      const idle = panes().map((x, i) => {
-        if (!x || i === st.focus || typed(i)) return -1;
-        const busyHere = x.sub ? busy.has(`${x.session}/${x.sub}`) : busy.has(x.session) || (runsBy.get(x.project) ?? []).some(y => live(y) && (y.session === x.session || (!!x.run && y.run === x.run)));
-        return busyHere ? -1 : i;
-      }).filter(i => i >= 0);
-      slots = [...slots, ...idle];
+    if (slots.length < missing.length) slots = [...slots, ...idle()];
+    const need = missing.length - slots.length, cap = st.cap || 8;
+    if (need > 0 && st.layout < cap) {
+      const want = Math.min(LAYOUTS.find(n => n >= st.layout + need) ?? 8, LAYOUTS.filter(n => n <= cap).pop() ?? st.layout);
+      if (want > st.layout) {
+        const before = st.layout; st.layout = want; changed = true;
+        // Les cases révélées : vides, elles servent ; occupées (vues gardées d'une disposition plus grande), elles réapparaissent.
+        for (let i = before; i < want; i++) if (!st.panes[i]) slots.push(i);
+      }
     }
-    for (const r of missing) {
+    const back = new Set(panes().map(x => x && !x.sub ? x.session : '').filter(Boolean));
+    for (const r of missing.filter(m => !back.has(m.s.id))) {
       const i = slots.shift(); if (i === undefined) break;
+      // Une même conversation ne vit que dans une vue : une copie cachée au-delà de la disposition est retirée.
+      st.panes = st.panes.map((y, j) => j !== i && y?.session === r.s.id && !y.sub ? null : y);
       st.panes[i] = { project: r.p.id, session: r.s.id }; changed = true;
       if (!details.has(`${r.p.id}/${r.s.id}`)) void loadDetail({ project: r.p.id, session: r.s.id }).then(paint);
     }
@@ -644,6 +668,9 @@ function toggleSide(page: HTMLElement): void {
   st.mini = !st.mini; save();
   $('.aw', page)?.classList.toggle('mini', st.mini);
   const b = $('.aw-fold', page); if (b) b.outerHTML = sideToggle();
+  // La liste réduite n'a pas les mêmes groupes : on la redessine, et on lit les copies pour trouver celles en attente de PR.
+  paintList();
+  if (st.mini) void loadMiniTrees().then(paintList);
 }
 
 export function mount(main: HTMLElement, toolbarLeft: string): void {
@@ -654,7 +681,7 @@ export function mount(main: HTMLElement, toolbarLeft: string): void {
   }
   // Tout est dans `.aw-root` : les écouteurs disparaissent avec la page (#main, lui, sert à toutes les vues).
   main.innerHTML = `<div class="aw-root" tabindex="-1"><header class="toolbar">${toolbarLeft}<div class="crumb"><span>Espace agents</span></div><span class="aw-counts"></span>
-      <div class="tb-side tb-right"><button type="button" class="btn btn-ghost aw-lay" data-w="layout" aria-haspopup="menu"></button>
+      <div class="tb-side tb-right">${layoutsHTML()}
       <button type="button" class="icon-btn aw-auto" data-w="auto" aria-pressed="${st.auto}" title="Auto : ouvre d’office chaque agent qui travaille dans une vue" aria-label="Auto">${icon('bolt')}</button>
       <button type="button" class="icon-btn" data-w="cast" title="Diffuser : la même consigne à plusieurs vues (D)" aria-label="Diffuser">${icon('share')}</button>
       <button class="btn btn-primary" data-w="new" title="Nouvel agent dans la vue choisie (C)">${icon('plus')}<span>Nouvel agent</span></button></div></header>
@@ -672,13 +699,13 @@ export function mount(main: HTMLElement, toolbarLeft: string): void {
     if (row) { cursor = Number(row.dataset.row); openRow(row, (e as MouseEvent).metaKey || (e as MouseEvent).ctrlKey ? firstEmpty() : st.focus); return; }
     const w = t.closest<HTMLElement>('[data-w]')?.dataset.w, pane = t.closest<HTMLElement>('.aw-pane'), i = pane ? Number(pane.dataset.i) : st.focus;
     if (w === 'side') { toggleSide(page); return; }
-    if (w === 'layout') { layoutMenu(t.closest<HTMLElement>('[data-w]')!); return; }
+    if (w === 'lay') { pickLayout(Number(t.closest<HTMLElement>('[data-n]')?.dataset.n) || st.layout); return; }
     if (w === 'keys') { keysMenu(t.closest<HTMLElement>('[data-w]')!); return; }
     if (w === 'cast') { broadcast(); return; }
     if (w === 'new') { const k = firstEmpty(); if (panes()[k]) setPane(k, null); focusPane(k, true); return; }
     if (w === 'max') { st.max = st.max === i ? -1 : i; save(); paint(); return; }
     if (w === 'close') { closePane(i); return; }
-    if (w === 'auto') { st.auto = !st.auto; save(); paintAuto(page); if (st.auto) { autoShow(); paint(); } toast(st.auto ? 'Les agents qui travaillent s’ouvrent d’office dans une vue' : 'Les vues ne changent plus d’elles-mêmes'); return; }
+    if (w === 'auto') { st.auto = !st.auto; if (st.auto) st.cap = 0; save(); paintAuto(page); if (st.auto) { autoShow(); paint(); } toast(st.auto ? 'Les agents qui travaillent s’ouvrent d’office dans une vue' : 'Les vues ne changent plus d’elles-mêmes'); return; }
     if (w === 'stop') { void stopPane(i); return; }
     if (w === 'team') { toggleBoard(i); return; }
     if (w === 'open') { const x = panes()[i]; if (x) openInProject(x); return; }
@@ -739,7 +766,7 @@ export function mount(main: HTMLElement, toolbarLeft: string): void {
     else if (k === 'c') { e.preventDefault(); if (panes()[st.focus]) setPane(st.focus, null); focusPane(st.focus, true); }
     else if (k === 'f') { e.preventDefault(); st.max = st.max === st.focus ? -1 : st.focus; save(); paint(); }
     else if (k === 'x') { e.preventDefault(); closePane(st.focus); }
-    else if (k === 'l') { e.preventDefault(); setLayout(LAYOUTS[(LAYOUTS.indexOf(st.layout) + 1) % LAYOUTS.length] ?? 1); }
+    else if (k === 'l') { e.preventDefault(); pickLayout(LAYOUTS[(LAYOUTS.indexOf(st.layout) + 1) % LAYOUTS.length] ?? 1); }
     else if (k === 'r') { e.preventDefault(); focusPane(st.focus, true); }
     else if (k === 'd') { e.preventDefault(); broadcast(); }
     else if (k === 's') { e.preventDefault(); toggleSide(page); }
