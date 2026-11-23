@@ -521,7 +521,9 @@ final class Agents {
         let items = AgentPermissions.projectItems && body["internal"] as? Bool != true
         // App mobile dans le dossier : conseils et moyen de voir l'écran du simulateur (jamais sur serveur : pas de simulateur).
         let mobileNote = onServer || body["internal"] as? Bool == true ? "" : Mobile.shared.agentNote(dir: cwd, shell: shell)
-        let added = [AgentTuning.prompt(mode: mode, tests: tests, items: items, shell: shell), team?.prompt(edit: mode == "edit") ?? "", repoNote, mobileNote, groupNote, board?.prompt ?? "", browse?.prompt ?? ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        // Salon (`voice: "chat"`) : l'utilisateur lit une discussion, pas un rapport ; demandé à chaque message, pas retenu.
+        let voice = body["voice"] as? String == "chat" && body["internal"] as? Bool != true ? AgentTuning.chat : ""
+        let added = [AgentTuning.prompt(mode: mode, tests: tests, items: items, shell: shell), voice, team?.prompt(edit: mode == "edit") ?? "", repoNote, mobileNote, groupNote, board?.prompt ?? "", browse?.prompt ?? ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
         if !added.isEmpty { args += ["--append-system-prompt", added] }
         args += ["--allowedTools"] + AgentPermissions.allowed(tools: tools, commands: tests, shell: shell) + (browse == nil ? [] : ["mcp__\(AgentPermissions.browserServer)"])
 
@@ -1104,6 +1106,14 @@ enum AgentBoard {
 /// y compris ceux de l'orchestrateur, des messages en attente et des appareils liés.
 enum AgentTuning {
     private static let store = "studio.agents.tuning"
+    /// Ton du Salon (src/features/projects/salon.ts) : des messages de discussion, pas des pavés.
+    static let chat = """
+        Ici, l'utilisateur te lit comme dans une messagerie. Écris comme à l'oral, en messages courts : une à trois phrases \
+        par paragraphe, une ligne vide entre deux idées, pas de titres, pas de tableaux, une liste seulement si on te la demande. \
+        Va droit au but : ce que tu as fait ou trouvé, puis ce que tu attends de lui s'il y a lieu, en une question claire à la fin. \
+        Ton compte rendu final tient en quelques lignes ; les détails restent dans le code et les fichiers. \
+        Garde le reste des consignes, y compris la dernière ligne « Commit: » quand tu as modifié des fichiers.
+        """
     private static let textKeys = ["intro", "edit", "read", "context", "contextEdit", "economy", "tests", "behavior", "extra"]
 
     static let defaults: [String: Any] = [
