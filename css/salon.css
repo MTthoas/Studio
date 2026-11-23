@@ -72,10 +72,50 @@ button.sl-av:focus-visible, .sl-who:focus-visible, .sl-to:focus-visible, .sl-mem
 .sl-bd .md > :first-child { margin-top: 0; }
 .sl-bd .md > :last-child { margin-bottom: 0; }
 .sl-bd .md { overflow-wrap: anywhere; font-size: var(--t-2); }
-.sl-msg.me .sl-bd { padding: 7px 11px; border-radius: 10px; background: var(--hover); }
+/* Conversation : un message d'agent = quelques bulles courtes ; les miens à droite, teintés de l'accent. */
+.sl-bub { width: fit-content; max-width: 100%; padding: 7px 11px; border-radius: 12px; background: var(--hover); }
+.sl-bub + .sl-bub, .sl-bub + .sl-fold, .sl-fold > .sl-bub + .sl-bub { margin-top: 4px; }
+.sl-bd > header + .sl-bub { border-top-left-radius: 4px; }
+.sl-rest > summary { margin-top: 4px; padding-left: 11px; }
+.sl-rest[open] > summary { margin-bottom: 4px; }
+.sl-msg.me { flex-direction: row-reverse; }
+.sl-msg.me > .sl-av { display: none; }
+.sl-msg.me header { justify-content: flex-end; }
+.sl-msg.me header .sl-who, .sl-msg.me header .sl-role { display: none; }
+.sl-msg.me .sl-bd > :not(header) { margin-left: auto; padding: 7px 11px; border-radius: 12px 4px 12px 12px; width: fit-content; background: color-mix(in srgb, var(--accent) 14%, var(--bg)); }
+/* Suite d'un même auteur à moins de 5 min : ni avatar ni en-tête, bulles resserrées. */
+.sl-msg.cont { margin-top: -10px; }
+.sl-msg.cont header { display: none; }
+.sl-msg.cont > .sl-av { visibility: hidden; height: 0; }
+.sl-msg.cont .sl-bd > .sl-bub:first-of-type { border-top-left-radius: 12px; }
 .sl-msg.queued { opacity: .7; }
-.sl-feed > .sl-msg, .sl-feed > .sl-note, .sl-feed > .sl-card { animation: sl-in var(--mo-d3) var(--mo-out) both; }
+.sl-msg.sending { opacity: .75; }
+.sl-msg.sent .sl-tag { color: var(--c-green, var(--text-3)); }
+.sl-msg.sent .sl-tag .ic { animation: sl-pop var(--mo-d3) var(--mo-spring); }
+/* « Maya écrit… » : trois points qui rebondissent. */
+.sl-typing { display: flex; align-items: center; gap: 10px; color: var(--text-3); font-size: var(--t-1); }
+.sl-dots { display: inline-flex; gap: 4px; padding: 10px 12px; border-radius: 4px 12px 12px 12px; background: var(--hover); }
+.sl-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); animation: sl-dot 1.2s ease-in-out infinite; }
+.sl-dots i:nth-child(2) { animation-delay: .15s; }
+.sl-dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes sl-dot { 0%, 60%, 100% { translate: 0 0; opacity: .45; } 30% { translate: 0 -4px; opacity: 1; } }
+/* Entrées : seuls les blocs nouveaux (classe posée par paint) ; l'agent arrive de la gauche, moi de la droite,
+   les bulles d'un même message s'égrènent. Changer de fil fait seulement apparaître le fil en fondu. */
+.sl-feed.sl-enter { animation: sl-fade var(--mo-d3) var(--mo-out); }
+@keyframes sl-fade { from { opacity: 0; } }
+.sl-new.sl-msg:not(.me) > .sl-av, .sl-new.sl-msg:not(.me) header { animation: sl-in var(--mo-d3) var(--mo-out) both; }
+.sl-new.sl-msg:not(.me) .sl-bub { animation: sl-left var(--mo-d4) var(--mo-spring) both; animation-delay: calc(var(--i, 0) * 90ms * var(--mo-k, 1)); }
+.sl-new.sl-msg.me { animation: sl-right var(--mo-d3) var(--mo-spring) both; transform-origin: right bottom; }
+.sl-new.sl-note, .sl-new.sl-card, .sl-new.sl-typing { animation: sl-in var(--mo-d3) var(--mo-out) both; }
 @keyframes sl-in { from { opacity: 0; translate: 0 var(--mo-dy); } }
+@keyframes sl-left { from { opacity: 0; translate: -10px 4px; scale: .97; } }
+@keyframes sl-right { from { opacity: 0; translate: 10px 4px; scale: .96; } }
+/* Nouveaux messages arrivés pendant que tu lis plus haut. */
+.sl-center { position: relative; }
+.sl-down { position: absolute; left: 50%; bottom: 96px; translate: -50% 0; z-index: 2; display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid var(--border-2); border-radius: 14px; background: var(--bg); color: var(--text-2); font: inherit; font-size: var(--t-1); box-shadow: 0 2px 8px rgb(0 0 0 / .12); cursor: pointer; animation: sl-in var(--mo-d2) var(--mo-out); }
+.sl-down[hidden] { display: none; }
+.sl-down:hover { color: var(--text); }
+.sl-down .ic { width: 12px; height: 12px; }
 .sl-msg.sl-flash .sl-bd { animation: sl-flash 1.2s var(--mo-out); border-radius: 8px; }
 @keyframes sl-flash { 0%, 40% { background: color-mix(in srgb, var(--accent) 14%, transparent); } }
 .sl-to { font-weight: 600; color: color-mix(in srgb, var(--c, var(--accent)) 70%, var(--text)); }
@@ -90,7 +130,7 @@ button.sl-av:focus-visible, .sl-who:focus-visible, .sl-to:focus-visible, .sl-mem
 .sl-fold > summary .ic, .sl-note > summary .ic { width: 12px; height: 12px; transition: transform .12s; }
 .sl-fold[open] > summary .ic, .sl-note[open] > summary .ic { transform: rotate(180deg); }
 .sl-fold[open] > summary { margin-bottom: 6px; }
-.sl-fold .md { padding: 8px 12px; border-left: 2px solid var(--border-2); }
+.sl-fold > .md:not(.sl-bub) { padding: 8px 12px; border-left: 2px solid var(--border-2); }
 
 /* Notes système : passations et événements, centrées et discrètes. */
 .sl-note { align-self: center; max-width: 90%; margin: 0; display: block; text-align: center; font-size: var(--t-1); color: var(--text-3); }

@@ -33,9 +33,9 @@
 }
 /* Aucun : tout est coupé, sauf les indicateurs d'attente (tourniquet, point « en direct »). */
 :root[data-motion="off"] { --mo-k: 0; --mo-dx: 0px; --mo-dy: 0px; --mo-s: 1; --mo-press: 1; --mo-press-row: 1; }
-:root[data-motion="off"] *:not(.spin, .st.live, .ss-live.on, .mo-work > *, .sa-wait i, .caret),
-:root[data-motion="off"] *:not(.spin, .st.live, .ss-live.on, .mo-work > *, .sa-wait i, .caret)::before,
-:root[data-motion="off"] *:not(.spin, .st.live, .ss-live.on, .mo-work > *, .sa-wait i, .caret)::after { animation: none; transition: none; }
+:root[data-motion="off"] *:not(.spin, .st.live, .ss-live.on, .mo-work > *, .sa-wait i, .sl-dots i, .caret),
+:root[data-motion="off"] *:not(.spin, .st.live, .ss-live.on, .mo-work > *, .sa-wait i, .sl-dots i, .caret)::before,
+:root[data-motion="off"] *:not(.spin, .st.live, .ss-live.on, .mo-work > *, .sa-wait i, .sl-dots i, .caret)::after { animation: none; transition: none; }
 
 /* ---------- 2. Calques : menus, fenêtres, palette, toasts ---------- */
 /* Menu : sort de son point d'origine (--mo-ox / --mo-oy posés par motion.ts d'après le déclencheur), ses lignes suivent en cascade. */
