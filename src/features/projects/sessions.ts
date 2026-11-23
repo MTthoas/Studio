@@ -729,6 +729,8 @@ function stageOf(w: Worktree, working = runs.some(r => r.worktree === w.name && 
   const last = w.history?.[0];
   return last ? (last.merged ? 'merged' : 'pr') : 'idle';
 }
+/** Étape d'une copie au repos, sans l'état module (pour l'Espace agents, qui lit les copies de tous les projets). */
+export const copyStage = (w: Worktree): Stage => stageOf(w, false);
 function sessionStage(s: Pick<Session, 'id' | 'worktree'>): Stage | '' {
   if (runs.some(r => r.session === s.id && live(r))) return 'work';
   const w = s.worktree ? trees.find(t => t.name === s.worktree) : undefined;
