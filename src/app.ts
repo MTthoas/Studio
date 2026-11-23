@@ -209,7 +209,7 @@ async function openByTitle(title: string) {
 function renderSidebar() {
   const idx = store.index(), v = ui.view;
   const count: Record<string, number> = { planner: planner.pending(), tasks: todo.openCount(), linear: notifs.unreadCount(), github: github.unseenCount(), ephemeral: idx.live.filter(n => n.expiresAt).length };
-  const item = (type: string) => `<button class="side-item${v.type === type ? ' sel' : ''}" data-view="${type}" style="--ic:var(--c-${SIDE_HUE[type] ?? 'gray'})">${icon(VIEWS[type]?.icon ?? 'notes')}<span>${VIEWS[type]?.label ?? type}</span>${count[type] ? `<span class="side-count">${count[type]}</span>` : ''}</button>`;
+  const item = (type: string) => `<button class="side-item${v.type === type ? ' sel' : ''}" data-view="${type}" style="--ic:var(--c-${SIDE_HUE[type] ?? 'gray'})">${icon(VIEWS[type]?.icon ?? 'notes')}<span>${VIEWS[type]?.label ?? type}</span>${count[type] ? sideCount(type, count[type]) : ''}</button>`;
   const tags = [...idx.tags].filter(([t]) => !t.startsWith('projet/')).sort((a, b) => a[0].localeCompare(b[0], 'fr'));
   const devs = vault.isOpen() ? link.devices().length : 0;
   // Le quotidien reste à l'écran ; le reste se range sous « Plus » (déplié d'office quand la vue ouverte s'y trouve).
@@ -241,9 +241,9 @@ function renderSidebar() {
       }).join('')}</div>
       <div class="side-label">Écrire</div>
       <div class="side-group">${item('all')}${treeHTML(idx.live)}${item('journal')}</div>
-      ${tags.length ? `<button class="side-label" data-act="tags" aria-expanded="${ui.tagsOpen}">${icon('chevron')}Tags</button>${ui.tagsOpen ? `<div class="side-group">${tags.map(([t, c]) => `<button class="side-item${v.type === 'tag' && v.tag === t ? ' sel' : ''}" data-tag="${esc(t)}"><i class="tag-dot" style="--c:var(--c-${hue(t)})"></i><span>${esc(t)}</span><span class="side-count">${c}</span></button>`).join('')}</div>` : ''}` : ''}
+      ${tags.length ? sideFold('tags', 'tags', ui.tagsOpen, 'Tags', '', `<div class="side-group">${tags.map(([t, c]) => `<button class="side-item${v.type === 'tag' && v.tag === t ? ' sel' : ''}" data-tag="${esc(t)}"><i class="tag-dot" style="--c:var(--c-${hue(t)})"></i><span>${esc(t)}</span>${sideCount('tag:' + t, c)}</button>`).join('')}</div>`) : ''}
       ${commerce.available() ? `<div class="side-label">Extensions</div><div class="side-group">${item('commerce')}</div>` : ''}
-      <button class="side-label" data-act="more-views" aria-expanded="${moreOpen}">${icon('chevron')}Plus${!moreOpen && moreCount ? `<span class="side-count">${moreCount}</span>` : ''}</button>${moreOpen ? MORE_CATS.map(([label, types]) => { const here = types.filter(t => more.includes(t)); return here.length ? `<div class="side-cat">${label}</div><div class="side-group">${here.map(item).join('')}</div>` : ''; }).join('') : ''}
+      ${sideFold('more', 'more-views', moreOpen, 'Plus', !moreOpen && moreCount ? sideCount('more', moreCount) : '', MORE_CATS.map(([label, types]) => { const here = types.filter(t => more.includes(t)); return here.length ? `<div class="side-cat">${label}</div><div class="side-group">${here.map(item).join('')}</div>` : ''; }).join(''))}
     </div>
     <div id="plug-side"></div>
     ${usagebar.html()}
@@ -253,9 +253,41 @@ function renderSidebar() {
   // Redessinée à chaque enregistrement (donc à chaque pause de frappe) : rien n'est réécrit si rien n'a changé,
   // et le défilement est gardé quand elle l'est.
   const box = need('#sidebar'), top = $('.side-scroll', box)?.scrollTop ?? 0;
-  if (paintIfChanged(box, html)) { const sc = $('.side-scroll', box); if (sc) sc.scrollTop = top; }
+  const folds = new Map<string, boolean>(), rows = new Set<string>(), focus = box.contains(document.activeElement) ? focusKey(document.activeElement as HTMLElement) : '';
+  box.querySelectorAll<HTMLElement>('[data-fold]').forEach(f => folds.set(f.dataset.fold ?? '', f.classList.contains('open')));
+  box.querySelectorAll<HTMLElement>(SIDE_ROWS).forEach(r => rows.add(rowKey(r)));
+  if (paintIfChanged(box, html)) {
+    // Mouvement : les sections qui changent d'état repartent de l'ancien état (sans transition) puis glissent vers le nouveau ;
+    // les lignes de projet jamais vues entrent en cascade. Un simple repeint identique ne passe jamais ici.
+    const moved: [HTMLElement, boolean][] = [];
+    box.querySelectorAll<HTMLElement>('[data-fold]').forEach(f => {
+      const was = folds.get(f.dataset.fold ?? ''), now = f.classList.contains('open');
+      if (was === undefined || was === now) return;
+      setFold(f, was); moved.push([f, now]);
+    });
+    if (moved.length) { void box.offsetHeight; moved.forEach(([f, now]) => setFold(f, now)); }
+    const sc = $('.side-scroll', box); if (sc) sc.scrollTop = top;
+    if (rows.size) { let i = 0; box.querySelectorAll<HTMLElement>(SIDE_ROWS).forEach(r => { if (!rows.has(rowKey(r)) && !r.classList.contains('sel') && i < 10) motion.enter(r, { dy: 6, delay: i++ * 28, duration: 240 }); }); }
+    if (focus) { const f = [...box.querySelectorAll<HTMLElement>('button')].find(b => focusKey(b) === focus); if (f && !f.closest('[inert]')) f.focus({ preventScroll: true }); }
+  }
   plugins.refresh(); // #plug-side, redessiné aussi seul par les plugins
 }
+
+/** Compteur de la barre : le chiffre roule quand sa valeur change (clé stable d'un repeint à l'autre, voir motion.ts). */
+const sideCount = (key: string, n: number) => `<span class="side-count" data-mo="count" data-mo-key="sc:${esc(key)}">${n}</span>`;
+/** Section repliable : le contenu reste rendu (masqué et inerte quand elle est fermée) pour que la hauteur s'anime. */
+const sideFold = (id: string, act: string, open: boolean, label: string, badge: string, body: string) =>
+  `<button class="side-label" data-act="${act}" aria-expanded="${open}" aria-controls="side-f-${id}">${icon('chevron')}${label}${badge}</button>`
+  + `<div class="mo-fold side-fold${open ? ' open' : ''}" id="side-f-${id}" data-fold="${id}"${open ? '' : ' inert'}><div>${body}</div></div>`;
+function setFold(f: HTMLElement, open: boolean) {
+  f.classList.toggle('open', open); f.toggleAttribute('inert', !open);
+  (f.previousElementSibling as HTMLElement | null)?.setAttribute('aria-expanded', String(open));
+}
+/** Lignes de projet (projet, onglets, conversations, serveurs, sous-agents) : clé stable pour repérer les nouvelles. */
+const SIDE_ROWS = '.side-sub, .side-sub2, .side-sub3, .side-sub4';
+const rowKey = (el: HTMLElement) => ['pjOpen', 'pjTab', 'pjSession', 'pjServer', 'pjSub'].map(k => el.dataset[k] ?? '').join('/');
+/** Identité d'un bouton de la barre, pour rendre le focus clavier après un repeint. */
+const focusKey = (el: HTMLElement) => { const k = [el.dataset.act, el.dataset.view, el.dataset.tag, el.dataset.openNote, el.dataset.openConn, rowKey(el).replace(/\//g, '')].filter(Boolean); return el.matches('#sidebar button') && k.length ? [...k, rowKey(el)].join('|') : ''; };
 
 // Arborescence des sous-notes, rangée sous « Notes » : chaque note qui en a, à partir des racines, dépliable (ui.treeOpen).
 const byTitle = (a: Note, b: Note) => titleOf(a).localeCompare(titleOf(b), 'fr', { numeric: true }) || a.created - b.created;
@@ -269,7 +301,7 @@ function treeHTML(live: Note[]): string {
     const ch = (kids.get(n.id) ?? []).sort(byTitle), open = ch.length > 0 && ui.treeOpen.includes(n.id);
     return `<button class="side-item side-tree${n.id === noteOpen ? ' sel' : ''}" data-open-note="${n.id}" style="--d:${d}" title="${esc(titleOf(n))}">`
       + (ch.length ? `<i class="tree-tog${open ? ' open' : ''}" data-tree-toggle="${n.id}" role="button" aria-label="${open ? 'Replier' : 'Déplier'}">${icon('chevron')}</i>` : '<i class="tree-tog"></i>')
-      + `${icon(n.enc ? 'lock' : 'notes')}<span>${esc(titleOf(n))}</span>${ch.length ? `<span class="side-count">${ch.length}</span>` : ''}</button>`
+      + `${icon(n.enc ? 'lock' : 'notes')}<span>${esc(titleOf(n))}</span>${ch.length ? sideCount('tree:' + n.id, ch.length) : ''}</button>`
       + (open ? ch.map(c => branch(c, d + 1)).join('') : '');
   };
   return roots.map(r => branch(r, 1)).join('');

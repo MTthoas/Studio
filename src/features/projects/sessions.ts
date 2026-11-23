@@ -8,6 +8,7 @@ import * as ai from '../../integrations/ai.ts';
 import * as tuning from '../../integrations/tuning.ts';
 import * as github from '../../integrations/github/api.ts';
 import { esc, renderMarkdown } from '../../lib/markdown.ts';
+import { plainText } from '../../lib/diagram.ts';
 import { fold } from '../../lib/fuzzy.ts';
 import { icon, rel, modal, menu, need, toast, confirmBox, errMsg, $, paintIfChanged } from '../../ui/kit.ts';
 import * as review from './review.ts';
@@ -16,6 +17,7 @@ import * as model from './model.ts';
 import { AUTO, pickFor as autoPick, label as autoLabel } from './autopick.ts';
 import * as saved from './drafts.ts';
 import * as attach from './attach.ts';
+import * as echo from './echo.ts';
 import { paintPulse } from './pulse.ts';
 import * as permissions from '../permissions.ts';
 import * as voice from '../voice.ts';
@@ -647,6 +649,9 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     if (f.dataset.session) { body.session = f.dataset.session; if (f.dataset.machine) body.machine = f.dataset.machine; if (cut) body.interrupt = true; }
     else { body.mode = f.querySelector<HTMLInputElement>('[name=mode]:checked')?.value ?? 'edit'; body.tests = !!val('tests')?.checked && !f.classList.contains('on-server'); const mc = val('machine'); if (mc && !mc.hidden) { const [m, s] = mc.value.split(':'); body.machine = m; if (s) body.server = s; } }
     btn.disabled = true;
+    // Réponse : le message s'affiche dans le fil et le champ se vide tout de suite ; tout revient si l'envoi échoue.
+    const typed = ta.value, eid = f.dataset.session && !many ? echo.add(f.dataset.session, text, pics) : '';
+    if (eid) { ta.value = ''; grow(ta); }
     // Un lancement après l'autre : chaque appel revient dès que la session est créée, l'agent continue seul.
     const images = attach.payload(f);
     let last: Awaited<ReturnType<typeof bridge.call>> | null = null, started = 0, fail = '', unsealed = false, oldApp = false;
@@ -674,6 +679,7 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     if (oldApp) toast(attach.OLD_APP);
     // En cas d'échec, le texte reste dans le formulaire et dans son brouillon.
     const r = last;
+    if (eid) { if (r) echo.sent(eid); else { echo.drop(eid); if (!ta.value) { ta.value = typed; grow(ta); } } }
     if (!r) { toast(fail); return; }
     if (started < built.length) {
       // Lancement groupé interrompu (limite d'agents, le plus souvent) : ce qui n'est pas parti reste dans le formulaire.
@@ -693,7 +699,8 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     }
     // Plusieurs agents : on reste sur la liste, où chacun a sa carte.
     if (many) { toast(`${built.length} agents au travail, chacun dans sa copie`); onStarted({ ...(r as unknown as AgentRun), session: '' }); return; }
-    toast(cut ? 'Tour interrompu : Claude lit ton message' : f.dataset.session ? 'Session reprise' : 'Claude Code est au travail');
+    // Une réponse se voit déjà dans le fil (écho) : pas de toast en plus.
+    if (cut || !f.dataset.session) toast(cut ? 'Tour interrompu : Claude lit ton message' : 'Claude Code est au travail');
     onStarted(r as unknown as AgentRun);
   });
 }
@@ -846,8 +853,11 @@ export const answerHTML = (text: string): string => renderMarkdown(text)
   .replace(/<a class="(?:tag|wikilink)[^>]*>(.*?)<\/a>/g, '$1')
   .replace(/<input type="checkbox"/g, '<input type="checkbox" disabled');
 
+/** Message affiché dès l'envoi : même bulle que les demandes, avec son état (envoi, transmis). */
+const echoHTML = (e: echo.Echo): string => `<div class="ss-msg user echo ${e.state}"><header><strong>Toi</strong><em class="fx-state">${e.state === 'sent' ? icon('check') : '<span class="fx-dots"><i></i><i></i><i></i></span>'}${echo.stateLabel(e)}</em><time>${esc(clock(new Date(e.at).toISOString()))}</time></header><p>${esc(e.text)}</p>${e.pics ? `<small class="fx-pics">${icon('upload')}${e.pics} image${e.pics > 1 ? 's' : ''}</small>` : ''}</div>`;
+
 /** Découpe les étapes en blocs de conversation : demandes, réponses, et outils consécutifs regroupés. */
-export function feedBlocks(actions: Action[], root: string | null, working: boolean, waiting: Queued[] = [], stalled = false, sidechain = false): Block[] {
+export function feedBlocks(actions: Action[], root: string | null, working: boolean, waiting: Queued[] = [], stalled = false, sidechain = false, session = ''): Block[] {
   // Dans le fil d'un sous-agent, c'est Claude qui donne la consigne et le sous-agent qui répond.
   const asker = sidechain ? 'Claude' : 'Toi', answerer = sidechain ? 'Sous-agent' : 'Claude';
   const out: Block[] = [], seen = new Map<string, number>();
@@ -877,8 +887,11 @@ export function feedBlocks(actions: Action[], root: string | null, working: bool
     else out.push({ key: key(a, 'ai'), html: `<div class="ss-msg ai"><header><strong>${answerer}</strong><time>${esc(clock(a.at))}</time><button class="icon-btn ss-copy" data-ag="copy" title="Copier la réponse" aria-label="Copier la réponse">${icon('copy')}</button></header><div class="md">${answerHTML(a.text)}</div></div>` });
   }
   flush(true);
-  if (!actions.length) out.push({ key: 'empty', html: `<p class="ss-cut">${working ? 'La session démarre…' : 'Aucune étape dans cette session.'}</p>` });
-  if (working) out.push({ key: 'working', html: `<div class="ss-working"><span class="spin"></span>${sidechain ? 'Le sous-agent' : 'Claude'} travaille…</div>` });
+  // Messages qui viennent de partir : affichés tout de suite, en attendant que le journal de Claude les contienne.
+  const echoes = sidechain ? [] : echo.pending(session, actions, waiting);
+  if (!actions.length && !echoes.length) out.push({ key: 'empty', html: `<p class="ss-cut">${working ? 'La session démarre…' : 'Aucune étape dans cette session.'}</p>` });
+  for (const e of echoes) out.push({ key: `echo|${e.id}`, html: echoHTML(e) });
+  if (working || echoes.length) out.push({ key: 'working', html: `<div class="ss-working"><span class="fx-dots"><i></i><i></i><i></i></span>${sidechain ? 'Le sous-agent' : 'Claude'} ${echoes.some(e => e.state === 'sending') ? 'reçoit ton message…' : 'travaille…'}</div>` });
   // Messages secondaires, pas encore lus par Claude : remis ensemble à la fin de son tour.
   for (const q of waiting) out.push({ key: `queued|${q.id}`, html: `<div class="ss-msg user queued"><header><strong>Toi</strong><em class="ss-wait">${icon('history')}en attente</em><time>${esc(clock(q.at))}</time><button class="icon-btn" data-ag="unqueue" data-q="${esc(q.id)}" title="Retirer ce message" aria-label="Retirer ce message">${icon('trash')}</button></header><p>${esc(q.text)}</p>${attach.galleryHTML(q.images)}</div>` });
   // Le tour s'est fini sans eux (agent arrêté ou en erreur) : ils partent quand l'utilisateur le décide.
@@ -888,9 +901,17 @@ export function feedBlocks(actions: Action[], root: string | null, working: bool
 
 /** Met le fil à jour bloc par bloc : ce qui n'a pas changé n'est pas redessiné (sélection, blocs dépliés et défilement conservés). */
 const drawn = new WeakMap<Element, string>();
+/** Au-delà, c'est un chargement (changement de fil, relecture complète) : rien n'entre en animation. */
+const FX_MAX = 6;
 export function syncFeed(feed: HTMLElement, blocks: Block[]): boolean {
+  // Les entrées de ce fil sont jouées ici (css/feed.css), pas par l'observateur générique de motion.ts.
+  if (!feed.hasAttribute('data-fx-feed')) feed.setAttribute('data-fx-feed', '');
   const old = new Map<string, HTMLElement>();
   for (const el of Array.from(feed.children) as HTMLElement[]) old.set(el.dataset.k ?? '', el);
+  const filling = !old.size, wanted = new Set(blocks.map(b => b.key));
+  // Un écho (message affiché dès l'envoi) remplacé par le vrai message : celui-ci se pose sans rejouer d'entrée.
+  let landing = [...old.keys()].some(k => k.startsWith('echo|') && !wanted.has(k));
+  const fresh: HTMLElement[] = [];
   let changed = false;
   blocks.forEach((b, i) => {
     const prev = old.get(b.key);
@@ -900,11 +921,32 @@ export function syncFeed(feed: HTMLElement, blocks: Block[]): boolean {
       el = t.content.firstElementChild as HTMLElement;
       el.dataset.k = b.key; drawn.set(el, b.html);
       if (prev?.tagName === 'DETAILS' && el.tagName === 'DETAILS') (el as HTMLDetailsElement).open = (prev as HTMLDetailsElement).open;
+      if (!prev && !filling) fresh.push(el);
+      // Remplacé en pleine entrée (écho « Envoi… » → « Transmis ») : le nouveau reprend l'animation, sans quoi il sauterait.
+      else if (prev && /\bfx-(send|reply|in)\b/.test(prev.className)) { const live = prev.getAnimations?.()[0]?.currentTime; el.className += ` ${prev.className.split(' ').filter(c => c.startsWith('fx-')).join(' ')}`; el.style.cssText = prev.style.cssText; if (typeof live === 'number') el.style.animationDelay = `${-live}ms`; setTimeout(() => el?.classList.remove('fx-send', 'fx-reply', 'fx-in'), 1600); }
     }
     if (el && feed.children[i] !== el) { feed.insertBefore(el, feed.children[i] ?? null); changed = true; }
   });
   while (feed.children.length > blocks.length) { feed.lastElementChild?.remove(); changed = true; }
+  // Le Salon joue ses propres entrées (`sl-new`, salon.ts) : rien à ajouter.
+  if (fresh.length <= FX_MAX && !feed.classList.contains('sl-feed')) fresh.forEach((el, n) => {
+    const mine = el.matches('.ss-msg.user, .sl-msg.me');
+    if (mine && landing && !el.classList.contains('echo')) { landing = false; el.classList.add('fx-landed'); setTimeout(() => el.classList.remove('fx-landed'), 1600); return; }
+    const reply = el.matches('.ss-msg.ai, .sl-msg:not(.me)');
+    // Une réponse se dévoile bloc par bloc (paragraphes, listes, schémas), comme si elle s'écrivait.
+    if (reply) el.querySelectorAll<HTMLElement>(':scope .md > *').forEach((c, k) => { if (k < 10) c.style.setProperty('--fx-i', String(k)); });
+    el.style.setProperty('--fx-n', String(n));
+    el.classList.add(mine ? 'fx-send' : reply ? 'fx-reply' : 'fx-in');
+    // Classe retirée une fois tout joué (cascade comprise) : un déplacement du bloc plus tard ne rejoue rien.
+    setTimeout(() => el.classList.remove('fx-send', 'fx-reply', 'fx-in', 'fx-landed'), 1600);
+  });
   return changed;
+}
+/** Descend au bas du fil ; en douceur quand un message vient d'arriver (sauf mouvement coupé). */
+export function toEnd(feed: HTMLElement, smooth = false): void {
+  const calm = document.documentElement.dataset.motion === 'off' || matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (smooth && !calm && typeof feed.scrollTo === 'function') feed.scrollTo({ top: feed.scrollHeight, behavior: 'smooth' });
+  else feed.scrollTop = feed.scrollHeight;
 }
 
 /** Sous-agents de la conversation : chacun ouvre son fil ; celui qui est affiché est en surbrillance. */
@@ -936,6 +978,9 @@ function topHTML(s: Detail, root: string | null, open: boolean): string {
 }
 
 const atEnd = (feed: HTMLElement) => feed.scrollHeight - feed.scrollTop - feed.clientHeight < 40;
+/** Dernier fil affiché : redessiné sur place, sans relecture, quand un message part (echo.ts). */
+let lastShown: { zone: HTMLElement; raw: Partial<Session> & { actions?: Action[] }; root: string | null; agent?: SubAgent } | null = null;
+echo.onChange(() => { const l = lastShown; if (l?.zone.isConnected && !l.agent && l.raw.id && l.raw.id === selected && !sub && $('.ss-feed', l.zone)?.dataset.id === l.raw.id) showDetail(l.zone, l.raw, l.root); });
 
 /** Affiche une session dans `zone` ; les appels suivants ne touchent que ce qui a changé. */
 function showDetail(zone: HTMLElement, raw: Partial<Session> & { actions?: Action[] }, root: string | null, agent?: SubAgent): void {
@@ -970,10 +1015,11 @@ function showDetail(zone: HTMLElement, raw: Partial<Session> & { actions?: Actio
   // Messages en attente restés en plan : le dernier tour s'est terminé autrement que normalement (arrêt, erreur).
   const latest = own.reduce<AgentRun | undefined>((a, r) => !a || ms(r.started) > ms(a.started) ? r : a, undefined);
   const stalled = !working && !!latest && !live(latest) && latest.status !== 'done';
-  const drew = syncFeed(feed, feedBlocks(s.actions, root, working, agent ? [] : queued.filter(q => q.session === s.id), stalled, !!agent));
+  const drew = syncFeed(feed, feedBlocks(s.actions, root, working, agent ? [] : queued.filter(q => q.session === s.id), stalled, !!agent, agent ? '' : s.id));
+  lastShown = { zone, raw, root, agent };
   if (cur) attach.hydrate(feed, cur.p.id);
   if (!drew) return;
-  if (first || end) feed.scrollTop = feed.scrollHeight;
+  if (first || end) toEnd(feed, !first);
   else need('.ss-jump', zone).hidden = false;
 }
 
@@ -1726,7 +1772,7 @@ export function mount(box: HTMLElement, p: Project, folder: string | null): void
     if (b.dataset.ag === 'pin-sub') { if (selected && sub) { togglePin(p.id, selected, sub); again = painting; void paint(box, p); } return; }
     if (b.dataset.ag === 'end') { const f = $('.ss-feed', box); f?.scrollTo({ top: f.scrollHeight, behavior: 'smooth' }); b.hidden = true; return; }
     if (b.dataset.ag === 'copy') {
-      const text = b.closest('.ss-msg')?.querySelector<HTMLElement>('.md')?.innerText ?? '';
+      const md = b.closest('.ss-msg')?.querySelector<HTMLElement>('.md'), text = md ? plainText(md) : ''; // schémas : leur source, pas leurs libellés
       try { await navigator.clipboard.writeText(text); toast('Réponse copiée'); } catch { toast('Copie impossible.'); }
       return;
     }

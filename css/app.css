@@ -20,6 +20,9 @@
 @import "./planner.css";
 @import "./usage.css";
 @import "./salon.css";
+@import "./sidebar.css";
+@import "./diagram.css";
+@import "./feed.css";
 @import "./motion.css";
 @font-face { font-family: "Inter"; font-style: normal; font-weight: 400 700; font-display: swap; src: url(../fonts/inter.woff2) format("woff2"); }
 

@@ -121,7 +121,9 @@ export function flip(els: Iterable<Element | null | undefined>, mutate: () => vo
 
 // ---------- Clés déjà vues (entrées des seuls nouveaux venus) ----------
 
-const FEED = '[data-k], [data-mo-key], .side-item[data-pj-session], .side-tree[data-open-note], .kb-card[data-id]';
+// Les lignes de projet de la barre latérale (.side-sub…) ne passent pas ici : renderSidebar (app.ts) les fait entrer lui-même, à chaque
+// ouverture de projet, pas seulement la première fois. Les compteurs `data-mo-key="sc:…"` (barre) ne sont pas des entrées de liste.
+const FEED = '[data-k], [data-mo-key]:not([data-mo="count"]), .side-tree[data-open-note], .kb-card[data-id]';
 const SCOPE = '#sidebar, #list, #main, [data-mo-scope]';
 const seen = new WeakMap<Element, Set<string>>();
 
@@ -195,6 +197,8 @@ function feeds(nodes: Element[], moved: Set<Node>, go: boolean): void {
     n.querySelectorAll<HTMLElement>(FEED).forEach(e => { if (found.length < 400) found.push(e); });
     for (const el of found) {
       if (seenNow.has(el)) continue; seenNow.add(el);
+      // Fils de conversation : syncFeed (sessions.ts) joue lui-même leurs entrées (css/feed.css).
+      if (el.parentElement?.hasAttribute('data-fx-feed')) continue;
       if (go && moved.has(el) && el.matches('.kb-card')) { pulse(el); continue; }
       const key = keyOf(el); if (!key) continue;
       const scope = scopeOf(el);
@@ -238,7 +242,7 @@ function rolls(nodes: Element[], cs: Set<HTMLElement>, go: boolean): void {
 
 // ---------- Indicateurs glissants (ligne ou onglet actif) ----------
 
-interface Mem { key: string; x: number; y: number; w: number; h: number; i: number }
+interface Mem { key: string; x: number; y: number; w: number; h: number; i: number; cy: number }
 interface Group { name: string; sel: string; box: string; pseudo: '::before' | '::after'; line?: boolean; single?: boolean; main?: boolean; panel?: string }
 const GROUPS: Group[] = [
   { name: 'side', sel: '#sidebar .side-item.sel', box: '#sidebar', pseudo: '::before', single: true },
@@ -252,8 +256,10 @@ const GROUPS: Group[] = [
 const mems = new WeakMap<Element, Mem>();
 const lastOf = new Map<string, Mem>();
 
+/** Identité d'une entrée : ses data-*, et son texte hors compteur (un compteur qui change ne fait pas glisser l'indicateur). */
 function keyEl(el: HTMLElement): string {
-  return Object.values(el.dataset).join('|') + '#' + (el.textContent ?? '').trim().slice(0, 40);
+  const txt = Array.from(el.childNodes).filter(n => !(n instanceof Element && n.classList.contains('side-count'))).map(n => n.textContent ?? '').join('').trim().slice(0, 40);
+  return Object.values(el.dataset).join('|') + '#' + txt;
 }
 
 function trackers(go: boolean): void {
@@ -264,11 +270,15 @@ function trackers(go: boolean): void {
       done.add(box);
       const r = el.getBoundingClientRect(); if (r.width === 0) return;
       const sibs = el.parentElement ? Array.from(el.parentElement.children) : [];
-      const now: Mem = { key: keyEl(el), x: r.left, y: r.top, w: r.width, h: r.height, i: sibs.indexOf(el) };
+      // cy : position dans le contenu défilant (insensible au défilement), pour repérer une ligne déplacée par un repli ou une insertion.
+      const now: Mem = { key: keyEl(el), x: r.left, y: r.top, w: r.width, h: r.height, i: sibs.indexOf(el), cy: r.top + (el.closest('.side-scroll')?.scrollTop ?? 0) };
       const old = mems.get(box) ?? (g.single ? lastOf.get(g.name) : undefined);
       mems.set(box, now); if (g.single) lastOf.set(g.name, now);
-      if (!old || old.key === now.key || !go) return;
-      const x = old.x - now.x, y = old.y - now.y, sx = old.w / now.w, sy = g.line ? 1 : old.h / now.h;
+      if (!old || !go) return;
+      // Même entrée : l'indicateur ne glisse que si elle a été déplacée dans la barre (groupe replié, ligne insérée au-dessus).
+      const same = old.key === now.key;
+      if (same && (g.name !== 'side' || Math.abs(old.cy - now.cy) < 2)) return;
+      const x = old.x - now.x, y = same ? old.cy - now.cy : old.y - now.y, sx = old.w / now.w, sy = g.line ? 1 : old.h / now.h;
       if (Math.abs(x) < 1 && Math.abs(y) < 1 && Math.abs(sx - 1) < .01 && Math.abs(sy - 1) < .01) return;
       const dist = Math.hypot(x, y);
       play(el, [{ transformOrigin: '0 0', transform: `translate(${x}px, ${y}px) scale(${sx}, ${sy})` }, { transformOrigin: '0 0', transform: 'none' }],
