@@ -199,7 +199,7 @@ final class ClaudeUsage {
             return fail("Anthropic n'a pas donné les limites (réponse \(box.code)).")
         }
         var windows: [[String: Any]] = []
-        for key in ["five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet"] {
+        for key in ["five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet", "seven_day_fable"] {
             guard let w = j[key] as? [String: Any], let pct = (w["utilization"] as? NSNumber)?.doubleValue else { continue }
             let reset = (w["resets_at"] as? String).flatMap(Self.date)
             // Les limites par modèle ne sont affichées que si elles sont entamées.

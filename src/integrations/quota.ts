@@ -65,7 +65,7 @@ export async function limits(op: 'enable' | 'disable'): Promise<void> {
 }
 
 // ---------- Lecteurs ----------
-const LABELS: Record<string, string> = { five_hour: 'Fenêtre de 5 h', seven_day: 'Semaine', seven_day_opus: 'Semaine · Opus', seven_day_sonnet: 'Semaine · Sonnet', extra: 'Crédit supplémentaire' };
+const LABELS: Record<string, string> = { five_hour: 'Fenêtre de 5 h', seven_day: 'Semaine', seven_day_opus: 'Semaine · Opus', seven_day_sonnet: 'Semaine · Sonnet', seven_day_fable: 'Semaine · Fable', extra: 'Crédit supplémentaire' };
 const clamp = (n: number): number => Math.max(0, Math.min(100, Math.round(n)));
 
 /** Tokens locaux de Claude Code : le scan des journaux est coûteux, on le garde 5 minutes (relu avant sur `force`). */
@@ -117,7 +117,7 @@ const apiReader = (id: 'anthropic' | 'openai', name: string): Reader => ({
   },
 });
 
-/** Modèle local : pas de plafond ; on montre le modèle chargé si Studio pilote Ollama. */
+/** Modèle local : pas de plafond ; on montre le modèle chargé si Studio pilote Ollama, rien s'il n'y en a pas. */
 const local: Reader = {
   id: 'local',
   async read() {
@@ -129,9 +129,12 @@ const local: Reader = {
         const r = await native.call('models', 'status', c.localVia === 'server' ? { project: c.localProject, server: c.localServer } : { project: '', server: '' }, 20000);
         const loaded = (r.loaded as { name: string; size: number }[] | undefined) ?? [];
         const bytes = loaded.reduce((n, l) => n + l.size, 0);
-        if (r.ok) value = loaded.length ? `${loaded.map(l => l.name).join(', ')} · ${(bytes / 2 ** 30).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} Go` : 'aucun modèle chargé';
+        if (r.ok) {
+          if (!loaded.length) return null; // aucun modèle chargé : rien à montrer
+          value = `${loaded.map(l => l.name).join(', ')} · ${(bytes / 2 ** 30).toLocaleString('fr-FR', { maximumFractionDigits: 1 })} Go`;
+        }
       } catch { /* garde le nom configuré */ }
-    }
+    } else if (!c.localModel) return null; // aucun modèle choisi
     return { id: 'local', name: 'Modèle local', kind: 'local', active: c.provider === 'local', meters: [{ key: 'loaded', label: 'En mémoire', pct: null, value }] };
   },
 };

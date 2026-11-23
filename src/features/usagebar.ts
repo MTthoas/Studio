@@ -29,7 +29,12 @@ const ago = (t: number): string => {
 const bar = (p: number | null): string => p === null ? '' : `<span class="ub-bar${level(p)}"><i style="width:${p}%"></i></span>`;
 /** Compteur le plus parlant d'une source : la fenêtre de 5 h, sinon le premier. */
 const best = (s: Source): Meter | undefined => s.meters.find(m => m.key === 'five_hour') ?? s.meters.find(m => m.pct !== null) ?? s.meters[0];
-const short = (s: Source, m: Meter): string => m.key === 'five_hour' ? '5 h' : s.kind === 'subscription' ? 'Claude Code' : s.kind === 'local' ? 'Local' : s.id === 'openai' ? 'OpenAI' : 'Claude API';
+/** Modèle d'une limite par modèle (`seven_day_opus` → « Opus »), sinon null. */
+const model = (key: string): string | null => {
+  const k = /^seven_day_(opus|sonnet|fable|haiku)$/.exec(key)?.[1];
+  return k ? k[0].toUpperCase() + k.slice(1) : null;
+};
+const short = (s: Source, m: Meter): string => m.key === 'five_hour' ? '5 h' : m.key === 'seven_day' ? 'Semaine' : model(m.key) ?? (m.key === 'extra' ? 'Crédit' : s.kind === 'subscription' ? 'Claude Code' : s.kind === 'local' ? 'Local' : s.id === 'openai' ? 'OpenAI' : 'Claude API');
 const right = (m: Meter): string => {
   if (m.pct === null) return esc(m.value ?? '');
   const w = m.pct >= 100 ? (m.resetsAt && m.resetsAt > Date.now() ? `épuisée · ${new Date(m.resetsAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : 'épuisée') : `${m.pct} %${when(m.resetsAt) ? ` · ${when(m.resetsAt)}` : ''}`;
@@ -39,11 +44,17 @@ const right = (m: Meter): string => {
 /** Sources à montrer : celle du fournisseur actif d'abord, puis les autres, deux au plus. */
 const ordered = (): Source[] => [...quota.sources()].sort((a, b) => Number(b.active) - Number(a.active));
 
+/** Lignes de la barre : pour l'abonnement, la fenêtre de 5 h et chaque modèle entamé (Opus, Sonnet, Fable) avec son pourcentage ; sinon le compteur principal. Quatre au plus. */
 function lines(): string {
-  return ordered().slice(0, 2).map(s => {
-    const m = best(s); if (!m) return '';
+  const rows: [Source, Meter][] = [];
+  for (const s of ordered().slice(0, 2)) {
+    const per = s.kind === 'subscription' ? s.meters.filter(m => m.pct !== null && (m.key === 'five_hour' || model(m.key))) : [];
+    const ms = per.length ? per : [best(s)].filter((m): m is Meter => !!m);
+    for (const m of ms) rows.push([s, m]);
+  }
+  return rows.slice(0, 4).map(([s, m], i) => {
     const p = m.pct;
-    const hint = s.note === 'limits-off' ? `<button class="ub-link" data-ub="limits">Afficher mes limites</button>` : '';
+    const hint = s.note === 'limits-off' && rows.findIndex(r => r[0] === s) === i ? `<button class="ub-link" data-ub="limits">Afficher mes limites</button>` : '';
     return `<div class="ub-row"><div class="ub-l"><b>${esc(short(s, m))}</b><span class="${level(p).trim()}">${right(m)}</span></div>${bar(p)}${hint}</div>`;
   }).join('');
 }
