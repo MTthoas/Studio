@@ -10,6 +10,7 @@ import * as github from '../integrations/github/api.ts';
 import * as bridge from '../integrations/remote.ts';
 import * as link from '../integrations/link.ts';
 import * as schema from '../lib/schema.ts';
+import * as diagram from '../lib/diagram.ts';
 import * as qr from '../lib/qr.ts';
 import * as events from '../core/events.ts';
 import * as usage from '../integrations/usage.ts';
@@ -204,7 +205,7 @@ export function fenceFor(note: Note): (lang: string, code: string, idx: number) 
     if (lang === 'linear') return linBlock(code);
     if (savedCommands.LANGS.has(lang)) return savedCommands.blockHTML(code);
     if (shopFence.LANGS.has(lang)) return registry.active('shopify') ? shopFence.block(note, code, idx) : null; // extension éteinte : bloc de code ordinaire
-    return registry.fence(lang, code);
+    return diagram.fence(lang, code) ?? registry.fence(lang, code);
   };
 }
 

@@ -639,6 +639,28 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     // Une consigne vide dont aucune note n'a pu être jointe ne dit plus rien à l'agent : on ne la lance pas.
     if (built.some((b, k) => !b.sealed && !(units[k]?.text ?? '').trim())) return;
     const btn = need<HTMLButtonElement>('button.btn-primary', f), label = btn.innerHTML;
+    // Réponse, ou lancement d'un seul agent depuis cet onglet : le message est dans le fil et le champ vide dès maintenant,
+    // sans attendre le Mac ; en cas d'échec, tout revient en place (voir `giveBack`).
+    const sid = f.dataset.session ?? '', early = !many && (!!sid || (!!cur && cur.box.contains(f) && !f.classList.contains('compact')));
+    // `stick` avant l'écho : son ajout redessine le fil aussitôt (echo.onChange), qui doit descendre jusqu'au bas.
+    if (early) stick = true;
+    const eid = sid || NEWID, mine = early ? echo.add(eid, text, pics) : '';
+    if (early) {
+      ta.value = ''; grow(ta); showAuto(f); f.dataset.notes = ''; f.querySelectorAll('.ag-note').forEach(x => x.remove()); showFan(f);
+      if (f.dataset.draft) saved.dropDraft(f.dataset.draft);
+      btn.classList.remove('ss-fire'); void btn.offsetWidth; btn.classList.add('ss-fire');
+      stick = true;
+      if (sid) { redraw(sid); hurry(); } else { launching = true; showLaunch(); }
+    }
+    const giveBack = (): void => {
+      if (!early) return;
+      echo.drop(mine); stick = false;
+      if (sid) redraw(sid); else { launching = false; if (cur?.box.isConnected) { again = painting; void paint(cur.box, cur.p); } }
+      // Le texte revient dans le champ seulement s'il est encore celui de cette conversation et vide ; sinon il reste dans son brouillon.
+      if (f.isConnected && !ta.value) { ta.value = text; grow(ta); if (noteIds.length) setNotes(f, noteIds); else keepDraft(f); showAuto(f); showFan(f); }
+      else if (f.dataset.draft && !saved.draft(f.dataset.draft)?.text) saved.saveDraft(f.dataset.draft, { text, notes: noteIds, mode: body0.mode === 'read' ? 'read' : 'edit', tests: !!body0.tests, fan });
+    };
+    const body0: Record<string, unknown> = {};
     const val = (n: string) => (f.elements.namedItem(n) as HTMLInputElement | null);
     // Modèle et effort : envoyés aussi quand on répond, pour que la conversation garde (ou change) les siens.
     const picked: saved.Choice = { model: val('model')?.value ?? '', effort: val('effort')?.value ?? '' };
@@ -648,10 +670,9 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     const body: Record<string, unknown> = { project: p.id, ...resolveChoice(f, picked), repos: p.stack };
     if (f.dataset.session) { body.session = f.dataset.session; if (f.dataset.machine) body.machine = f.dataset.machine; if (cut) body.interrupt = true; }
     else { body.mode = f.querySelector<HTMLInputElement>('[name=mode]:checked')?.value ?? 'edit'; body.tests = !!val('tests')?.checked && !f.classList.contains('on-server'); const mc = val('machine'); if (mc && !mc.hidden) { const [m, s] = mc.value.split(':'); body.machine = m; if (s) body.server = s; } }
-    btn.disabled = true;
-    // Réponse : le message s'affiche dans le fil et le champ se vide tout de suite ; tout revient si l'envoi échoue.
-    const typed = ta.value, eid = f.dataset.session && !many ? echo.add(f.dataset.session, text, pics) : '';
-    if (eid) { ta.value = ''; grow(ta); }
+    Object.assign(body0, body);
+    // Sans image, le bouton reste libre (le message suivant peut partir tout de suite) ; avec, il attend : elles ne partent qu'une fois.
+    if (!early || pics) btn.disabled = true;
     // Un lancement après l'autre : chaque appel revient dès que la session est créée, l'agent continue seul.
     const images = attach.payload(f);
     let last: Awaited<ReturnType<typeof bridge.call>> | null = null, started = 0, fail = '', unsealed = false, oldApp = false;
@@ -659,7 +680,7 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     // Plusieurs agents qui modifient : une branche mère commune, une sous-branche par agent (rapatriées ensuite dans la mère).
     const group = many && body.mode === 'edit' && body.machine !== 'server' ? newGroup(counted.text || text) : '';
     for (const b of built) {
-      btn.innerHTML = many ? `<span class="spin"></span>Agent ${started + 1}/${built.length}…` : '<span class="spin"></span>Envoi…';
+      if (!early || pics) btn.innerHTML = many ? `<span class="spin"></span>Agent ${started + 1}/${built.length}…` : '<span class="spin"></span>Envoi…';
       // Sous-agents : l'équipe du projet part avec chaque consigne, reprise comprise (l'outil se donne à chaque tour) ;
       // avec « auto », les spécialistes utiles à cette consigne y sont d'abord ajoutés.
       const team = subagents.body(p.id, units[started]?.text ?? b.text, String(body.mode ?? 'edit'));
@@ -679,8 +700,7 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
     if (oldApp) toast(attach.OLD_APP);
     // En cas d'échec, le texte reste dans le formulaire et dans son brouillon.
     const r = last;
-    if (eid) { if (r) echo.sent(eid); else { echo.drop(eid); if (!ta.value) { ta.value = typed; grow(ta); } } }
-    if (!r) { toast(fail); return; }
+    if (!r) { giveBack(); toast(fail); return; }
     if (started < built.length) {
       // Lancement groupé interrompu (limite d'agents, le plus souvent) : ce qui n'est pas parti reste dans le formulaire.
       if (fan === 'notes') setNotes(f, noteIds.slice(started)); else { ta.value = lines.slice(started).join('\n'); grow(ta); keepDraft(f); }
@@ -689,12 +709,20 @@ export function bindComposer(root: HTMLElement, p: Project, onStarted: (r: Agent
       onStarted({ ...(r as unknown as AgentRun), session: '' });
       return;
     }
-    ta.value = ''; grow(ta); showAuto(f); f.dataset.notes = ''; f.querySelectorAll('.ag-note').forEach(x => x.remove()); attach.clear(f); showFan(f);
-    if (f.dataset.draft) saved.dropDraft(f.dataset.draft);
+    if (early) { attach.clear(f); if (mine) echo.sent(mine); if (sid) redraw(sid); }
+    else { ta.value = ''; grow(ta); showAuto(f); f.dataset.notes = ''; f.querySelectorAll('.ag-note').forEach(x => x.remove()); attach.clear(f); showFan(f); if (f.dataset.draft) saved.dropDraft(f.dataset.draft); }
+    // Nouvel agent : l'écho passe à sa conversation, que l'onglet ouvre juste après (rendu aussitôt, sans écran « Chargement… »).
+    if (early && !sid) {
+      launching = false;
+      const nid = typeof r.session === 'string' ? r.session : '';
+      if (nid) { echo.move(NEWID, nid); shown.set(nid, { raw: { id: nid, title: text, live: true, actions: [] } }); }
+      else echo.drop(mine);
+    }
     // L'agent travaille encore : le message attend la fin de son tour (il apparaît dans le fil, « en attente »).
     if (typeof r.queued === 'number') {
       toast(r.queued > 1 ? `${r.queued} messages en attente : Claude les lira ensemble à la fin de son tour` : 'Message en attente : Claude le lira à la fin de son tour');
-      if (cur) void paint(cur.box, cur.p);
+      if (sid) redraw(sid);
+      if (cur) { calm = ''; void paint(cur.box, cur.p); }
       return;
     }
     // Plusieurs agents : on reste sur la liste, où chacun a sa carte.
@@ -981,6 +1009,25 @@ const atEnd = (feed: HTMLElement) => feed.scrollHeight - feed.scrollTop - feed.c
 /** Dernier fil affiché : redessiné sur place, sans relecture, quand un message part (echo.ts). */
 let lastShown: { zone: HTMLElement; raw: Partial<Session> & { actions?: Action[] }; root: string | null; agent?: SubAgent } | null = null;
 echo.onChange(() => { const l = lastShown; if (l?.zone.isConnected && !l.agent && l.raw.id && l.raw.id === selected && !sub && $('.ss-feed', l.zone)?.dataset.id === l.raw.id) showDetail(l.zone, l.raw, l.root); });
+/** Clé d'écho du nouvel agent en cours de lancement (avant que le Mac ait donné l'identifiant de sa conversation). */
+const NEWID = 'launch';
+/** Dernier rendu de chaque fil (les 8 derniers) : une conversation déjà vue s'affiche aussitôt à l'ouverture, avant la relecture. */
+const shown = new Map<string, { raw: Partial<Session> & { actions?: Action[] }; agent?: SubAgent }>();
+/** Après un envoi, le fil descend jusqu'au bas même si on avait remonté. */
+let stick = false;
+/** Un nouvel agent est en cours de lancement depuis cet onglet : l'écho et « travaille… » tiennent la place de la liste. */
+let launching = false;
+function showLaunch(): void {
+  const zone = cur ? $('.ag-zone', cur.box) : null;
+  if (zone) showDetail(zone, { id: '', actions: [] }, folderPath);
+}
+function redraw(id: string): void {
+  const l = lastShown;
+  if (l?.zone.isConnected && (l.raw.id ?? '') === id) showDetail(l.zone, l.raw, l.root, l.agent);
+}
+/** Relecture accélérée de l'onglet pendant 20 s après un envoi. */
+const fast = (): boolean => { if (!cur?.box.isConnected) return false; calm = ''; void paint(cur.box, cur.p); return true; };
+function hurry(): void { echo.hurry(fast); }
 
 /** Affiche une session dans `zone` ; les appels suivants ne touchent que ce qui a changé. */
 function showDetail(zone: HTMLElement, raw: Partial<Session> & { actions?: Action[] }, root: string | null, agent?: SubAgent): void {
@@ -988,6 +1035,8 @@ function showDetail(zone: HTMLElement, raw: Partial<Session> & { actions?: Actio
   const s: Detail = { id: '', title: 'Session qui démarre…', branch: '', worktree: '', started: '', updated: '', live: true, models: [], prompts: 0, lastPrompt: '', files: [], tools: {}, ...raw, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, ...raw.tokens }, actions: raw.actions ?? [] };
   let feed = $('.ss-feed', zone);
   const feedId = agent ? `${s.id}/${agent.id}` : s.id;
+  lastShown = { zone, raw, root, agent };
+  if (s.id) { shown.delete(feedId); shown.set(feedId, { raw, agent }); if (shown.size > 8) shown.delete(shown.keys().next().value as string); }
   if (!feed || feed.dataset.id !== feedId) {
     zone.innerHTML = `<div class="ss-top"></div><div class="ss-pulse"></div><div class="ss-thread"><div class="ss-feed" role="log" aria-label="Fil de la session" tabindex="0"></div><button class="ss-jump" data-ag="end" hidden>${icon('chevron')}Nouvelles étapes</button></div>`;
     const f = need('.ss-feed', zone), jump = need('.ss-jump', zone);
@@ -995,12 +1044,14 @@ function showDetail(zone: HTMLElement, raw: Partial<Session> & { actions?: Actio
     f.addEventListener('scroll', () => { if (atEnd(f)) jump.hidden = true; }, { passive: true });
     feed = f;
   }
-  const top = need('.ss-top', zone), html = agent ? subTopHTML(s, agent) : topHTML(s, root, !!$<HTMLDetailsElement>('.ss-more', top)?.open);
+  const top = need('.ss-top', zone), html = agent ? subTopHTML(s, agent) : !s.id ? `<div class="ss-dhead"><i class="ss-live on"></i><h2>Nouvelle conversation</h2></div>` : topHTML(s, root, !!$<HTMLDetailsElement>('.ss-more', top)?.open);
   if (drawn.get(top) !== html) { top.innerHTML = html; drawn.set(top, html); }
   // « En cours » : l'agent lancé depuis Studio tourne encore, ou une session du terminal vient d'agir sans avoir répondu.
   // Un sous-agent, lui, travaille tant que son journal bouge et qu'il n'a pas rendu sa réponse.
   const own = agent ? [] : runs.filter(r => r.session === s.id), last = s.actions[s.actions.length - 1];
-  const working = agent ? agent.live && !!last && last.kind !== 'text' : own.length ? own.some(live) : s.live && !!last && last.kind !== 'text';
+  const eid = s.id || NEWID;
+  // Un message vient d'être envoyé : l'agent paraît au travail tout de suite, sans attendre que le Mac le confirme.
+  const working = agent ? agent.live && !!last && last.kind !== 'text' : echo.awake(eid, s.actions) || (own.length ? own.some(live) : s.live && !!last && last.kind !== 'text');
   if (agent) { subTitle = agent.title; notify(); }
   else if (s.id === selected) {
     // Une session suivie par le flux de son agent (serveur) n'a pas de compteur de demandes : on les compte dans le fil.
@@ -1015,12 +1066,14 @@ function showDetail(zone: HTMLElement, raw: Partial<Session> & { actions?: Actio
   // Messages en attente restés en plan : le dernier tour s'est terminé autrement que normalement (arrêt, erreur).
   const latest = own.reduce<AgentRun | undefined>((a, r) => !a || ms(r.started) > ms(a.started) ? r : a, undefined);
   const stalled = !working && !!latest && !live(latest) && latest.status !== 'done';
-  const drew = syncFeed(feed, feedBlocks(s.actions, root, working, agent ? [] : queued.filter(q => q.session === s.id), stalled, !!agent, agent ? '' : s.id));
-  lastShown = { zone, raw, root, agent };
+  // `eid` : la conversation, ou le lancement en cours d'un nouvel agent (son écho tient la place en attendant l'identifiant).
+  const drew = syncFeed(feed, feedBlocks(s.actions, root, working, agent ? [] : queued.filter(q => q.session === s.id), stalled, !!agent, agent ? '' : eid));
   if (cur) attach.hydrate(feed, cur.p.id);
   if (!drew) return;
-  if (first || end) toEnd(feed, !first);
+  // Après un envoi (`stick`), le fil descend jusqu'au bas même si on avait remonté.
+  if (first || end || stick) { toEnd(feed, !first); need('.ss-jump', zone).hidden = true; }
   else need('.ss-jump', zone).hidden = false;
+  stick = false;
 }
 
 // ---------- Actions sur les copies ----------
@@ -1470,6 +1523,7 @@ async function paint(box: HTMLElement, p: Project): Promise<void> {
 }
 async function paintOnce(box: HTMLElement, p: Project): Promise<void> {
   const zone = $('.ag-zone', box); if (!zone || !box.isConnected) { clearInterval(timer); return; }
+  if (launching && !selected) return; // le fil du nouvel agent est déjà là (écho) : la liste ne doit pas le recouvrir
   void loadLimits(); paintLimits(); // le bandeau de l'abonnement suit son propre rythme (une lecture par minute)
   // Liste : la lecture des journaux (la plus lente) part en même temps que celle des agents, et la liste gardée de la
   // dernière fois s'affiche tout de suite.
@@ -1477,6 +1531,9 @@ async function paintOnce(box: HTMLElement, p: Project): Promise<void> {
   const cached = known.get(p.id);
   if (!selected && cached?.list.length && $('.ag-zone > .hm-empty', box)) paintIfChanged(zone, listHTML(cached.list));
   const wasLive = new Set(runs.filter(live).map(r => r.run));
+  // Le fil ouvert est lu en même temps que la liste des agents (au lieu d'après elle) : un aller-retour de moins avant l'affichage.
+  const feed0 = selected ? (sub ? `${selected}/${sub}` : selected) : '';
+  const ahead = selected && calm !== feed0 ? (sub ? bridge.call('project', 'subagent', { project: p.id, session: selected, agent: sub }, 20000) : bridge.call('project', 'session', { project: p.id, session: selected }, 20000)) : null;
   const l = await bridge.call('agent', 'list', { project: p.id }, 10000); runs = l.ok ? (l.runs as AgentRun[]) : runs;
   if (l.ok) queued = (l.queued as Queued[] | undefined) ?? [];
   // Fin d'une discussion avec un agent : l'état de sa copie (poussée, fusionnée…) est relu tout de suite.
@@ -1486,6 +1543,7 @@ async function paintOnce(box: HTMLElement, p: Project): Promise<void> {
   if (tick > 0 && tick % 10 === 0) void loadPulls(p); // les PR, toutes les 30 s (304 de GitHub si rien n'a bougé)
   tick++;
   const sel = selected, sb = sub;
+  const got = ahead && feed0 === (sel ? (sb ? `${sel}/${sb}` : sel) : '') ? ahead : null; // la conversation n'a pas changé pendant la lecture
   if (sel) {
     syncStop(box);
     // La liste sert encore à la barre latérale : on la relit de temps en temps, sans attendre.
@@ -1495,7 +1553,7 @@ async function paintOnce(box: HTMLElement, p: Project): Promise<void> {
     if (calm === feedId && tick % 4 !== 0 && !runs.some(r => r.session === sel && live(r)) && $('.ss-feed', zone)?.dataset.id === feedId) return;
     if (sb) {
       // Fil d'un sous-agent de la conversation.
-      const a = await bridge.call('project', 'subagent', { project: p.id, session: sel, agent: sb }, 20000);
+      const a = await (got ?? bridge.call('project', 'subagent', { project: p.id, session: sel, agent: sb }, 20000));
       if (!box.isConnected || sel !== selected || sb !== sub) return;
       if (!a.ok || !a.agent) { zone.innerHTML = `<p class="hm-empty">${esc(a.message === 'Action inconnue.' || a.message === 'Action non autorisée à distance.' ? 'Mets à jour l’app Studio pour Mac pour lire les fils des sous-agents.' : a.message ?? 'Sous-agent introuvable.')}</p>`; return; }
       noteSubs(sel, a.subagents);
@@ -1503,7 +1561,7 @@ async function paintOnce(box: HTMLElement, p: Project): Promise<void> {
       calm = (a.agent as SubAgent).live ? '' : feedId;
       return;
     }
-    const d = await bridge.call('project', 'session', { project: p.id, session: sel }, 20000);
+    const d = await (got ?? bridge.call('project', 'session', { project: p.id, session: sel }, 20000));
     if (!box.isConnected || sel !== selected || sb !== sub) return; // on a changé de conversation entre-temps
     if (!d.ok) {
       // Agent sur un serveur : on suit les étapes reçues de son flux.
@@ -1544,14 +1602,19 @@ function shell(box: HTMLElement, p: Project): void {
 export function open(id: string | null): void {
   selected = id; selTitle = ''; sub = null; subTitle = ''; calm = '';
   closeSubs(id);
-  if (cur?.box.isConnected) { selFor = cur.p.id; shell(cur.box, cur.p); again = painting; void paint(cur.box, cur.p); }
+  if (cur?.box.isConnected) { selFor = cur.p.id; shell(cur.box, cur.p); fromCache(cur.box); again = painting; void paint(cur.box, cur.p); }
   notify();
+}
+/** Conversation déjà vue (ou qui vient d'être lancée d'ici) : son dernier état s'affiche tout de suite, la relecture le met à jour ensuite. */
+function fromCache(box: HTMLElement): void {
+  const zone = $('.ag-zone', box), id = selected ? (sub ? `${selected}/${sub}` : selected) : '', hit = id ? shown.get(id) : undefined;
+  if (zone && hit) showDetail(zone, hit.raw, folderPath, hit.agent);
 }
 /** Ouvre le fil d'un sous-agent de la conversation affichée (`null` : retour à la conversation). */
 export function openSub(agent: string | null): void {
   if (!selected) return;
   sub = agent; subTitle = ''; calm = '';
-  if (cur?.box.isConnected) { shell(cur.box, cur.p); again = painting; void paint(cur.box, cur.p); }
+  if (cur?.box.isConnected) { shell(cur.box, cur.p); fromCache(cur.box); again = painting; void paint(cur.box, cur.p); }
   notify();
 }
 
@@ -1758,8 +1821,14 @@ export function mount(box: HTMLElement, p: Project, folder: string | null): void
   // État des copies : le dernier connu s'affiche aussitôt ; GitHub dit tout de suite quelles PR sont fusionnées.
   restoreTrees(p.id); treesSoon = false;
   shell(box, p);
+  fromCache(box);
   void loadPulls(p);
-  bindComposer(box, p, r => { open(r.session || selected); });
+  bindComposer(box, p, r => {
+    const id = r.session || selected;
+    // Réponse dans la conversation déjà ouverte : le fil et le champ restent en place (pas de « Chargement… », focus gardé).
+    if (id && id === selected && !sub && box.isConnected) { calm = ''; hurry(); void paint(box, p); return; }
+    open(id); hurry();
+  });
   box.onclick = async e => {
     const t = e.target as HTMLElement;
     const sa = t.closest<HTMLElement>('[data-sa]');

@@ -242,7 +242,7 @@ function rolls(nodes: Element[], cs: Set<HTMLElement>, go: boolean): void {
 
 // ---------- Indicateurs glissants (ligne ou onglet actif) ----------
 
-interface Mem { key: string; x: number; y: number; w: number; h: number; i: number; cy: number }
+interface Mem { key: string; x: number; y: number; w: number; h: number; i: number; cy: number; el?: Element; a?: Animation; fr?: Keyframe[]; o?: KeyframeAnimationOptions }
 interface Group { name: string; sel: string; box: string; pseudo: '::before' | '::after'; line?: boolean; single?: boolean; main?: boolean; panel?: string }
 const GROUPS: Group[] = [
   { name: 'side', sel: '#sidebar .side-item.sel', box: '#sidebar', pseudo: '::before', single: true },
@@ -271,18 +271,28 @@ function trackers(go: boolean): void {
       const r = el.getBoundingClientRect(); if (r.width === 0) return;
       const sibs = el.parentElement ? Array.from(el.parentElement.children) : [];
       // cy : position dans le contenu défilant (insensible au défilement), pour repérer une ligne déplacée par un repli ou une insertion.
-      const now: Mem = { key: keyEl(el), x: r.left, y: r.top, w: r.width, h: r.height, i: sibs.indexOf(el), cy: r.top + (el.closest('.side-scroll')?.scrollTop ?? 0) };
+      const now: Mem = { key: keyEl(el), x: r.left, y: r.top, w: r.width, h: r.height, i: sibs.indexOf(el), cy: r.top + (el.closest('.side-scroll')?.scrollTop ?? 0), el };
       const old = mems.get(box) ?? (g.single ? lastOf.get(g.name) : undefined);
       mems.set(box, now); if (g.single) lastOf.set(g.name, now);
-      if (!old || !go) return;
       // Même entrée : l'indicateur ne glisse que si elle a été déplacée dans la barre (groupe replié, ligne insérée au-dessus).
-      const same = old.key === now.key;
-      if (same && (g.name !== 'side' || Math.abs(old.cy - now.cy) < 2)) return;
+      const same = !!old && old.key === now.key;
+      if (old && same && (g.name !== 'side' || Math.abs(old.cy - now.cy) < 2)) {
+        // Restée en place : si un repeint a remplacé l'élément en plein glissement, le nouveau reprend où l'ancien en était.
+        if (old.el === el) { now.a = old.a; now.fr = old.fr; now.o = old.o; return; }
+        if (go && old.a && old.fr && old.o && old.a.playState === 'running') {
+          const t = Number(old.a.currentTime ?? 0), a = play(el, old.fr, { ...old.o, pseudoElement: g.pseudo });
+          if (a) { a.currentTime = t; now.a = a; now.fr = old.fr; now.o = old.o; }
+        }
+        return;
+      }
+      if (!old || !go) return;
       const x = old.x - now.x, y = same ? old.cy - now.cy : old.y - now.y, sx = old.w / now.w, sy = g.line ? 1 : old.h / now.h;
       if (Math.abs(x) < 1 && Math.abs(y) < 1 && Math.abs(sx - 1) < .01 && Math.abs(sy - 1) < .01) return;
       const dist = Math.hypot(x, y);
-      play(el, [{ transformOrigin: '0 0', transform: `translate(${x}px, ${y}px) scale(${sx}, ${sy})` }, { transformOrigin: '0 0', transform: 'none' }],
-        { duration: Math.min(340, 170 + dist * .35) * k(), easing: OUT, pseudoElement: g.pseudo });
+      const fr: Keyframe[] = [{ transformOrigin: '0 0', transform: `translate(${x}px, ${y}px) scale(${sx}, ${sy})` }, { transformOrigin: '0 0', transform: 'none' }];
+      const o: KeyframeAnimationOptions = { duration: Math.min(340, 170 + dist * .35) * k(), easing: OUT };
+      const a = play(el, fr, { ...o, pseudoElement: g.pseudo });
+      if (a) { now.a = a; now.fr = fr; now.o = o; }
       if (g.panel && old.i !== now.i) { // le contenu glisse dans le sens de l'onglet choisi
         const panel = box.closest('#main')?.querySelector(g.panel);
         if (panel) slide(panel, now.i > old.i ? 1 : -1);

@@ -32,7 +32,7 @@ import type { MenuItem } from '../ui/kit.ts';
 /** Une vue : la conversation qu'elle suit (`session`), ou un agent qui démarre (`run`), ou rien (nouvel agent).
  *  `sub` : un sous-agent de cette conversation (fil en lecture seule) ; `auto` : ouverte d'office par le mode Auto, donc rendue
  *  quand le sous-agent a fini depuis plus d'une minute. */
-export interface Pane { project: string; session: string; run?: string; sub?: string; auto?: boolean }
+export interface Pane { project: string; session: string; run?: string; sub?: string; auto?: boolean; /** Nouvel agent lancé depuis cette vue : identifiant de l'écho (le message est montré avant la réponse du Mac), jamais enregistré. */ wait?: string }
 interface State { layout: number; panes: (Pane | null)[]; focus: number; max: number; filter: string; draftProject: string; /** Montrer d'office les agents qui travaillent. */ auto: boolean; /** Disposition choisie à la main : Auto ne l'agrandit plus au-delà (0 = libre). */ cap: number; /** Barre de la liste réduite à une colonne d'icônes (réduction visuelle seulement). */ mini: boolean; /** Conversations au travail que l'utilisateur a retirées de leur vue : pas remises d'office tant qu'elles travaillent. */ dismissed: string[] }
 interface Detail extends Partial<Session> { actions: Action[]; message?: string; at: number; /** Sous-agents de la conversation (absent avec une app Mac ancienne). */ subagents?: SubAgent[]; /** Fil d'un sous-agent : lui-même. */ agent?: SubAgent }
 interface Row { p: Project; s: Session; status: 'running' | 'error' | 'review' | 'idle'; subs: SubAgent[] }
@@ -48,7 +48,7 @@ if (!LAYOUTS.includes(st.layout)) st.layout = 4;
 const seen: Record<string, number> = read(SEEN, {});
 /** Première ouverture : tout ce qui existe déjà compte comme vu, sinon « À relire » serait rempli d'anciennes conversations. */
 let firstUse = !Object.keys(seen).length;
-const save = () => write(KEY, { layout: st.layout, panes: st.panes.slice(0, 8), focus: st.focus, max: st.max, filter: st.filter, draftProject: st.draftProject, auto: st.auto, cap: st.cap, mini: st.mini, dismissed: st.dismissed.slice(-100) });
+const save = () => write(KEY, { layout: st.layout, panes: st.panes.slice(0, 8).map(x => x?.wait ? (x.session ? { ...x, wait: undefined } : null) : x), focus: st.focus, max: st.max, filter: st.filter, draftProject: st.draftProject, auto: st.auto, cap: st.cap, mini: st.mini, dismissed: st.dismissed.slice(-100) });
 
 const sessionsBy = new Map<string, { list: Session[]; at: number }>();
 const runsBy = new Map<string, AgentRun[]>();
@@ -73,6 +73,10 @@ const ms = (iso?: string) => Date.parse(iso || '') || 0;
 /** Clé d'une vue ; celle d'un sous-agent prolonge celle de sa conversation (`mkey`). */
 const pkey = (p: Pane) => `${p.project}/${p.session}${p.sub ? `/${p.sub}` : ''}`;
 const mkey = (p: Pane) => `${p.project}/${p.session}`;
+/** Clé de l'écho d'une vue (messages envoyés d'ici, voir echo.ts) : sa conversation, ou son lancement en cours. */
+const eid = (p: Pane) => p.session || (p.wait ? `wait:${p.wait}` : '');
+/** Vues dont le fil doit descendre jusqu'au bas au prochain rendu (on vient d'y envoyer un message). */
+const sticky = new Set<string>();
 const proj = (id: string) => projects.projects().find(p => p.id === id);
 const panes = (): (Pane | null)[] => Array.from({ length: st.layout }, (_, i) => st.panes[i] ?? null);
 
@@ -169,7 +173,7 @@ async function refresh(): Promise<void> {
     if (missing.length && sessionsBy.has(p.id)) { missing.forEach(r => asked.add(r.session)); void loadSessions(p).then(paintList); }
   }
   // Une vue qui attend son agent : la conversation apparaît dès que le Mac l'a créée.
-  for (const x of shown) if (!x.session && x.run) { const r = runsBy.get(x.project)?.find(y => y.run === x.run); if (r?.session) { x.session = r.session; save(); } }
+  for (const x of shown) if (!x.session && x.run) { const r = runsBy.get(x.project)?.find(y => y.run === x.run); if (r?.session) { x.session = r.session; if (x.wait) echo.move(`wait:${x.wait}`, x.session); save(); } }
   // Les fils : à chaque tour tant que l'agent travaille, une fois sur quatre au repos.
   await Promise.all(shown.filter(x => x.session).map(x => {
     const d = details.get(pkey(x)), working = x.sub ? !!d?.agent?.live : d?.live || (runsBy.get(x.project) ?? []).some(r => r.session === x.session && live(r));
@@ -285,7 +289,7 @@ function headHTML(x: Pane | null): string {
   }
   const p = proj(x.project), d = details.get(pkey(x)), runs = (runsBy.get(x.project) ?? []).filter(r => r.session === x.session || (x.run && r.run === x.run));
   const run = runs.find(live) ?? runs.reduce<AgentRun | undefined>((a, r) => !a || ms(r.started) > ms(a.started) ? r : a, undefined);
-  const working = !!runs.find(live) || !!d?.live;
+  const working = !!runs.find(live) || !!d?.live || echo.awake(eid(x), d?.actions);
   const title = d && d.id ? nameOf({ id: x.session, title: d.title ?? '', aiTitle: d.aiTitle, firstPrompt: d.firstPrompt, prompts: d.prompts ?? 0 }) : x.session ? 'Conversation' : 'L’agent démarre…';
   const [c, l] = working ? ['amber', 'En cours'] : run ? STATUS[run.status] ?? ['gray', run.status] : ['gray', 'Au repos'];
   return `${stateHTML(working, c, l)}<span class="aw-pt" title="${esc(title)}">${esc(title)}</span>${p ? `<span class="aw-rp" title="${esc(p.name)}"><i class="tag-dot" style="--c:var(--c-${p.hue})"></i>${esc(p.name)}</span>` : ''}${d?.models?.length ? `<span class="aw-meta">${esc(modelName(d.models[d.models.length - 1] ?? ''))}</span>` : ''}`;
@@ -312,7 +316,7 @@ function paint(): void {
   while (grid.children.length > want.length) grid.lastElementChild?.remove();
   want.forEach((x, i) => {
     let el = grid.children[i] as HTMLElement | undefined;
-    const k = x ? (x.session ? pkey(x) : `run:${x.run ?? ''}`) : 'new';
+    const k = x ? (x.wait ? `w:${x.wait}` : x.session ? pkey(x) : `run:${x.run ?? ''}`) : 'new';
     if (!el || el.dataset.k !== k) {
       const fresh = document.createElement('section');
       fresh.className = 'aw-pane'; fresh.dataset.i = String(i); fresh.dataset.k = k;
@@ -333,7 +337,7 @@ function paint(): void {
       return;
     }
     const runs = (runsBy.get(x.project) ?? []).filter(r => r.session === x.session || (x.run && r.run === x.run));
-    const working = runs.some(live) || !!d?.live;
+    const working = runs.some(live) || !!d?.live || echo.awake(eid(x), d?.actions);
     $<HTMLButtonElement>('[data-w="stop"]', el)!.hidden = !runs.some(live);
     // Un agent lancé sur un serveur ne reçoit pas d'images (elles restent sur le Mac).
     const rf = $<HTMLFormElement>('.aw-reply', el), far = runs.some(r => r.machine === 'server') ? 'server' : '';
@@ -343,10 +347,13 @@ function paint(): void {
     const ts = $('.aw-team-slot', el);
     if (ts) paintIfChanged(ts, teamHTML(d?.subagents ?? [], { fold: !teamOpen.has(pkey(x)), shown: new Set(st.panes.filter(y => y?.sub && mkey(y) === mkey(x)).map(y => y?.sub ?? '')), shorten: shortPath }));
     if (d?.message) { syncFeed(feed, [{ key: 'msg', html: `<p class="ss-cut">${esc(d.message)}</p>` }]); return; }
-    const end = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 40;
-    const drew = syncFeed(feed, feedBlocks(d?.actions ?? [], null, working || !d, (queuedBy.get(x.project) ?? []).filter(q => q.session === x.session), false, false, x.session ?? ''));
+    // `id` : la conversation, ou le lancement en cours (l'écho de la consigne tient la place en attendant l'identifiant).
+    const end = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 40, id = eid(x);
+    const drew = syncFeed(feed, feedBlocks(d?.actions ?? [], null, working || !d, (queuedBy.get(x.project) ?? []).filter(q => q.session === x.session), false, false, id));
     attach.hydrate(feed, x.project);
-    if (drew && end) toEnd(feed, true);
+    // Après un envoi (`sticky`), le fil descend jusqu'au bas même si on avait remonté.
+    if (drew && (end || sticky.has(id))) toEnd(feed, true);
+    sticky.delete(id);
     if (d && x.session) { const a = ms(d.updated); if (a > (seen[x.session] ?? 0)) { seen[x.session] = a; write(SEEN, Object.fromEntries(Object.entries(seen).slice(-500))); } }
   });
   paintList();
@@ -557,6 +564,9 @@ async function launch(f: HTMLFormElement, i: number): Promise<void> {
   const mode = f.querySelector<HTMLInputElement>('[name=mode]:checked')?.value ?? 'edit';
   const btn = need<HTMLButtonElement>('button.btn-primary', f); btn.disabled = true;
   st.draftProject = pid; save();
+  // Un seul agent : sa vue (consigne « envoi… » et « travaille… ») remplace le formulaire tout de suite ; l'échec le rétablit.
+  const solo = n === 1, wid = String(Date.now()), waitId = `wait:${wid}`, mine = solo ? echo.add(waitId, shown, pics) : '';
+  if (solo) { fire(btn); st.panes[i] = { project: pid, session: '', wait: wid }; st.focus = i; sticky.add(waitId); paint(); }
   // « 3× … » : chaque agent dans sa vue, celle-ci d'abord puis les vues vides suivantes (les autres restent dans la liste).
   const free = [i, ...panes().map((x, k) => (!x && k !== i ? k : -1)).filter(k => k >= 0)];
   let ok = 0, fail = '', oldApp = false;
@@ -568,13 +578,25 @@ async function launch(f: HTMLFormElement, i: number): Promise<void> {
     if (r.ok && !r.images) oldApp = true;
     if (!r.ok) { fail = r.message; break; }
     ok++;
-    const at = free[k]; if (at !== undefined) st.panes[at] = { project: pid, session: r.session, run: r.run };
+    const at = free[k]; if (at !== undefined) st.panes[at] = { project: pid, session: r.session, run: r.run, ...(solo ? { wait: wid } : {}) };
+    if (mine) { if (solo && r.session) echo.move(waitId, r.session); echo.sent(mine); }
   }
   btn.disabled = false;
-  if (!ok) { btn.innerHTML = `${icon('play')}Lancer ${kbd('mod+enter')}`; toast(fail); return; }
+  if (!ok) {
+    btn.innerHTML = `${icon('play')}Lancer ${kbd('mod+enter')}`;
+    if (solo && mine) {
+      echo.drop(mine); sticky.delete(waitId);
+      if (st.panes[i]?.wait === wid) st.panes[i] = null;
+      paint();
+      // Le formulaire revient avec le texte, le projet et les images (elles sont restées jointes : `attach.clear` n'a pas été appelé).
+      const nf = $<HTMLFormElement>(`.aw-pane[data-i="${i}"] form.aw-new`, root ?? document), nt = nf?.querySelector('textarea');
+      if (nf && nt && !nt.value) { nt.value = ta.value; const sel = nf.elements.namedItem('project') as HTMLSelectElement | null; if (sel) sel.value = pid; attach.sync(nf); }
+    }
+    toast(fail); return;
+  }
   attach.clear(f);
   if (oldApp) toast(attach.OLD_APP);
-  save(); st.focus = i; paint();
+  save(); st.focus = i; paint(); if (solo) hurry();
   toast(n > 1 ? `${ok} agent${ok > 1 ? 's' : ''} sur ${n} au travail${fail ? ` · ${fail}` : ''}` : 'Agent lancé'); announceMade(); void refresh();
   void loadSessions(p).then(paintList);
 }
@@ -608,15 +630,35 @@ export async function reply(x: Pane, prompt: string, interrupt = false, images: 
   void loadRuns(x.project).then(() => loadDetail(x)).then(paint);
   return true;
 }
+/** Relecture accélérée après un envoi (0,9 s pendant 20 s) : seulement les vues qui attendent une réponse, et sans le tour complet de `refresh`. */
+let fastBusy = false;
+const fast = (): boolean => {
+    if (!root?.isConnected) return false;
+    const want = panes().filter((x): x is Pane => !!x && !!x.session && !x.sub && echo.active(eid(x)));
+    if (!want.length || fastBusy) return true;
+    fastBusy = true;
+    void Promise.all([...new Set(want.map(x => x.project))].map(loadRuns).concat(want.map(loadDetail))).then(paint).finally(() => { fastBusy = false; });
+    return true;
+};
+function hurry(): void { echo.hurry(fast); }
+/** Petit rebond du bouton d'envoi au moment où le message part (retour immédiat au geste). */
+function fire(btn: HTMLElement): void { btn.classList.remove('ss-fire'); void btn.offsetWidth; btn.classList.add('ss-fire'); }
 async function send(f: HTMLFormElement, i: number, interrupt: boolean): Promise<void> {
   const x = panes()[i], ta = need<HTMLTextAreaElement>('textarea', f), pics = attach.count(f), text = ta.value.trim() || (pics ? attach.DEFAULT_PROMPT : '');
-  if (!x || !text) return;
+  if (!x || !text || !x.session || x.sub) return; // un sous-agent ne reçoit pas de réponse ; une vue qui attend son agent non plus
   if (pics) { const why = attach.blocked(f); if (why) { toast(why); return; } }
-  const btn = need<HTMLButtonElement>('button.btn-primary', f); btn.disabled = true;
-  // Le champ se vide tout de suite (le message est déjà dans le fil) ; le texte revient si l'envoi échoue.
-  const typed = ta.value, pay = attach.payload(f); ta.value = ''; grow(ta);
+  const btn = need<HTMLButtonElement>('button.btn-primary', f);
+  if (btn.disabled) return; // des images sont encore en route
+  // Le champ se vide tout de suite (`reply` met le message dans le fil dès l'appel) ; le texte revient si l'envoi échoue.
+  const typed = ta.value, pay = attach.payload(f), id = eid(x); ta.value = ''; grow(ta); fire(btn);
+  if (pics) btn.disabled = true; // les images ne partent qu'une fois : elles restent jointes jusqu'à la réponse du Mac
+  sticky.add(id); hurry();
   if (await reply(x, text, interrupt, pay)) attach.clear(f);
-  else if (!ta.value) { ta.value = typed; grow(ta); }
+  else {
+    sticky.delete(id);
+    // Le texte revient dans le champ, seulement s'il est encore celui de cette conversation et vide.
+    const here = panes()[i]; if (f.isConnected && !ta.value && here && eid(here) === id) { ta.value = typed; grow(ta); }
+  }
   btn.disabled = false;
 }
 async function stopPane(i: number): Promise<void> {

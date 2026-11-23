@@ -3,8 +3,8 @@
    (bouton « Équipe » : au large il masque la colonne, `sl-now-off`), une seule colonne sous 720 px. Mouvement : seulement
    à l'arrivée d'un message, d'une fiche ou du panneau, sur les jetons --mo-* de motion.css (donc coupé avec data-motion). */
 .pj-in:has(.sl-box) { max-width: none; }
-.sl-box { position: relative; display: grid; grid-template-columns: 248px minmax(0, 1fr) 272px; height: max(480px, calc(100dvh - 290px)); min-height: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); overflow: hidden; }
-.sl-box.sl-solo { grid-template-columns: 248px minmax(0, 1fr); }
+.sl-box { position: relative; display: grid; grid-template-columns: 248px minmax(0, 1fr) 272px; transition: grid-template-columns var(--mo-d4) var(--mo-out); height: max(480px, calc(100dvh - 290px)); min-height: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); overflow: hidden; }
+.sl-box.sl-solo { grid-template-columns: 248px minmax(0, 1fr) 0px; }
 .sl-box.sl-solo .sl-now, .sl-now:empty { display: none; }
 
 /* ---- Fils (gauche) ---- */
@@ -15,14 +15,16 @@
 .sl-list { flex: 1; min-height: 0; overflow: auto; padding: 0 6px 12px; }
 .sl-grp h4 { display: flex; align-items: center; gap: 6px; margin: 12px 8px 3px; font-size: var(--t-1); font-weight: 500; color: var(--text-3); }
 .sl-grp h4 span { margin-left: auto; font-variant-numeric: tabular-nums; opacity: .7; }
-.sl-row { width: 100%; display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 8px; border: 0; border-radius: 7px; background: none; color: var(--text); text-align: left; font: var(--t-2) var(--font); cursor: default; }
+.sl-row { width: 100%; display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 8px; border: 0; border-radius: 7px; background: none; color: var(--text); text-align: left; font: var(--t-2) var(--font); cursor: default; transition: background var(--mo-d1), scale var(--mo-d2) var(--mo-out); }
+.sl-row:active { scale: var(--mo-press-row); }
 .sl-row:hover { background: var(--hover); }
 .sl-row.cur { background: var(--active); }
 .sl-row:focus-visible, .sl-more:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-soft); }
 .sl-row-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sl-row time { flex: none; font-size: var(--t-1); color: var(--text-3); }
 .sl-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--border-2); }
-.sl-dot.work { background: var(--c-amber); }
+.sl-dot.work { background: var(--c-amber); animation: sl-live 1.8s var(--mo-in-out) infinite; }
+@keyframes sl-live { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--c-amber) 55%, transparent); } 70%, 100% { box-shadow: 0 0 0 5px transparent; } }
 .sl-dot.mine { background: var(--c-orange); }
 .sl-more { margin: 2px 8px; padding: 2px 0; border: 0; background: none; color: var(--text-3); font: var(--t-1) var(--font); }
 .sl-more:hover { color: var(--text); }
@@ -44,14 +46,19 @@
 .sl-nowbtn { display: inline-flex; align-items: center; gap: 6px; }
 .sl-nowbtn[aria-pressed="true"] { background: var(--active); }
 @media (min-width: 1100px) {
-  .sl-box.sl-now-off { grid-template-columns: 248px minmax(0, 1fr); }
-  .sl-box.sl-now-off .sl-now { display: none; }
+  /* Colonne masquée : sa piste se referme (0px, donc animable), le panneau s'efface sans quitter la grille. */
+  .sl-box.sl-now-off { grid-template-columns: 248px minmax(0, 1fr) 0px; }
+  .sl-box.sl-now-off .sl-now { padding-inline: 0; border-left-color: transparent; opacity: 0; visibility: hidden; }
 }
 .sl-feed { flex: 1; min-height: 0; overflow: auto; padding: 14px 16px 8px; display: flex; flex-direction: column; gap: 14px; }
 
 /* Message : avatar, prénom, rôle, heure, puis le texte. */
-.sl-av { flex: none; display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; font-style: normal; font-size: var(--t-1); font-weight: 600; background: color-mix(in srgb, var(--c, var(--c-gray)) 20%, var(--bg)); color: color-mix(in srgb, var(--c, var(--c-gray)) 70%, var(--text)); }
+.sl-av { flex: none; display: inline-grid; place-items: center; width: 30px; height: 30px; overflow: hidden; border-radius: 50%; font-style: normal; font-size: var(--t-1); font-weight: 600; background: color-mix(in srgb, var(--c, var(--c-gray)) 20%, var(--bg)); color: color-mix(in srgb, var(--c, var(--c-gray)) 70%, var(--text)); }
 .sl-av.big { width: 44px; height: 44px; font-size: var(--t-3); }
+/* Le chat du profil (src/ui/catface.ts) remplit le rond ; en petit dans les passations. */
+.sl-av > .cf { grid-area: 1 / 1; width: 100%; height: 100%; }
+.sl-av.mini { width: 18px; height: 18px; margin: 0 4px 0 2px; vertical-align: -4px; }
+.sl-empty .sl-av.big { width: 76px; height: 76px; }
 button.sl-av { padding: 0; border: 0; cursor: pointer; transition: scale var(--mo-d2) var(--mo-out), box-shadow var(--mo-d2); }
 button.sl-av:hover { scale: 1.08; box-shadow: 0 0 0 2px color-mix(in srgb, var(--c, var(--c-gray)) 35%, transparent); }
 button.sl-av:focus-visible, .sl-who:focus-visible, .sl-to:focus-visible, .sl-mem:focus-visible, .sl-chip:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-soft); }
@@ -89,11 +96,14 @@ button.sl-av:focus-visible, .sl-who:focus-visible, .sl-to:focus-visible, .sl-mem
 .sl-msg.cont > .sl-av { visibility: hidden; height: 0; }
 .sl-msg.cont .sl-bd > .sl-bub:first-of-type { border-top-left-radius: 12px; }
 .sl-msg.queued { opacity: .7; }
-.sl-msg.sending { opacity: .75; }
+.sl-msg.sending .sl-bd > :not(header) { opacity: .75; }
+.sl-msg.me .sl-bd > :not(header) { transition: opacity var(--mo-d3); }
 .sl-msg.sent .sl-tag { color: var(--c-green, var(--text-3)); }
 .sl-msg.sent .sl-tag .ic { animation: sl-pop var(--mo-d3) var(--mo-spring); }
-/* « Maya écrit… » : trois points qui rebondissent. */
+/* « Moka écrit… » : trois points qui rebondissent. */
 .sl-typing { display: flex; align-items: center; gap: 10px; color: var(--text-3); font-size: var(--t-1); }
+.sl-typing .sl-stack > .sl-av { width: 30px; height: 30px; margin-left: -9px; }
+.sl-typing .sl-stack > .sl-av:first-child { margin-left: 0; }
 .sl-dots { display: inline-flex; gap: 4px; padding: 10px 12px; border-radius: 4px 12px 12px 12px; background: var(--hover); }
 .sl-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); animation: sl-dot 1.2s ease-in-out infinite; }
 .sl-dots i:nth-child(2) { animation-delay: .15s; }
@@ -101,15 +111,26 @@ button.sl-av:focus-visible, .sl-who:focus-visible, .sl-to:focus-visible, .sl-mem
 @keyframes sl-dot { 0%, 60%, 100% { translate: 0 0; opacity: .45; } 30% { translate: 0 -4px; opacity: 1; } }
 /* Entrées : seuls les blocs nouveaux (classe posée par paint) ; l'agent arrive de la gauche, moi de la droite,
    les bulles d'un même message s'égrènent. Changer de fil fait seulement apparaître le fil en fondu. */
-.sl-feed.sl-enter { animation: sl-fade var(--mo-d3) var(--mo-out); }
-@keyframes sl-fade { from { opacity: 0; } }
+.sl-feed.sl-enter { animation: sl-fade var(--mo-d4) var(--mo-out); }
+@keyframes sl-fade { from { opacity: 0; translate: 0 var(--mo-dy); } }
 .sl-new.sl-msg:not(.me) > .sl-av, .sl-new.sl-msg:not(.me) header { animation: sl-in var(--mo-d3) var(--mo-out) both; }
 .sl-new.sl-msg:not(.me) .sl-bub { animation: sl-left var(--mo-d4) var(--mo-spring) both; animation-delay: calc(var(--i, 0) * 90ms * var(--mo-k, 1)); }
-.sl-new.sl-msg.me { animation: sl-right var(--mo-d3) var(--mo-spring) both; transform-origin: right bottom; }
+/* Mon message part du champ : il monte et se déplie depuis son coin bas droit. */
+.sl-new.sl-msg.me { animation: sl-right var(--mo-d4) var(--mo-spring) both; transform-origin: right bottom; }
+.sl-new.sl-msg:not(.me) > .sl-av { animation: sl-face var(--mo-d4) var(--mo-spring) both; }
+.sl-ask { animation: sl-in var(--mo-d3) var(--mo-out) both; }
+.sl-quick .btn { animation: sl-in var(--mo-d3) var(--mo-out) both; animation-delay: calc(var(--mo-d2) + var(--mo-d1)); }
+.sl-quick .btn:nth-child(2) { animation-delay: calc(var(--mo-d2) + var(--mo-d1) * 2); }
+.sl-quick .btn:nth-child(3) { animation-delay: calc(var(--mo-d2) + var(--mo-d1) * 3); }
+.sl-new.sl-card { animation: sl-card var(--mo-d5) var(--mo-spring) both; }
+.sl-new.sl-note .sl-av { animation: sl-face var(--mo-d4) var(--mo-spring) both; }
+.sl-new.sl-note .sl-av + .sl-who ~ .sl-av { animation-delay: calc(var(--mo-d3)); }
+@keyframes sl-face { from { opacity: 0; scale: .5; } }
+@keyframes sl-card { from { opacity: 0; scale: var(--mo-s); translate: 0 var(--mo-dy); } }
 .sl-new.sl-note, .sl-new.sl-card, .sl-new.sl-typing { animation: sl-in var(--mo-d3) var(--mo-out) both; }
 @keyframes sl-in { from { opacity: 0; translate: 0 var(--mo-dy); } }
 @keyframes sl-left { from { opacity: 0; translate: -10px 4px; scale: .97; } }
-@keyframes sl-right { from { opacity: 0; translate: 10px 4px; scale: .96; } }
+@keyframes sl-right { from { opacity: 0; translate: 0 22px; scale: .9; } }
 /* Nouveaux messages arrivés pendant que tu lis plus haut. */
 .sl-center { position: relative; }
 .sl-down { position: absolute; left: 50%; bottom: 96px; translate: -50% 0; z-index: 2; display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid var(--border-2); border-radius: 14px; background: var(--bg); color: var(--text-2); font: inherit; font-size: var(--t-1); box-shadow: 0 2px 8px rgb(0 0 0 / .12); cursor: pointer; animation: sl-in var(--mo-d2) var(--mo-out); }
@@ -163,7 +184,11 @@ button.sl-av:focus-visible, .sl-who:focus-visible, .sl-to:focus-visible, .sl-mem
 .sl-card .btn[disabled] { opacity: .6; }
 
 /* Champ d'écriture. */
-.sl-comp { margin: 0 14px 12px; padding: 8px 10px; border: 1px solid var(--border-2); border-radius: 10px; background: var(--bg); }
+.sl-comp { margin: 0 14px 12px; padding: 8px 10px; border: 1px solid var(--border-2); border-radius: 10px; background: var(--bg); transition: border-color var(--mo-d2), box-shadow var(--mo-d2); }
+/* Rien à envoyer : le bouton reste en retrait ; il s'allume à la première lettre. */
+.sl-comp [data-sl-send] { transition: opacity var(--mo-d2), scale var(--mo-d2) var(--mo-spring), background var(--mo-d2); }
+.sl-comp:not(.sl-ready) [data-sl-send] { opacity: .45; scale: .96; }
+.sl-comp [data-sl-send]:active { scale: var(--mo-press); }
 .sl-comp:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .sl-comp textarea { display: block; width: 100%; min-height: 24px; max-height: 200px; resize: none; border: 0; outline: none; background: none; color: var(--text); font: var(--t-3)/1.45 var(--font); }
 .sl-comp-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
@@ -188,9 +213,12 @@ button.sl-av:focus-visible, .sl-who:focus-visible, .sl-to:focus-visible, .sl-mem
 .sl-chip[style] { border-color: color-mix(in srgb, var(--c) 35%, var(--border)); color: color-mix(in srgb, var(--c) 70%, var(--text)); }
 
 /* ---- En ce moment (droite) ---- */
-.sl-now { min-width: 0; min-height: 0; overflow: auto; padding: 12px 14px; border-left: 1px solid var(--border); background: var(--bg-list); }
+.sl-now { min-width: 0; min-height: 0; overflow: hidden auto; padding: 12px 14px; border-left: 1px solid var(--border); background: var(--bg-list); transition: opacity var(--mo-d3), padding var(--mo-d4) var(--mo-out), visibility 0s; }
 .sl-now h4 { margin: 0 0 8px; font-size: var(--t-1); font-weight: 500; color: var(--text-3); }
-.sl-mem { width: calc(100% + 12px); margin: 0 -6px; display: flex; align-items: flex-start; gap: 10px; padding: 6px; border: 0; border-radius: 8px; background: none; color: var(--text); text-align: left; font: inherit; cursor: pointer; transition: background var(--mo-d2); }
+.sl-mem { width: calc(100% + 12px); margin: 0 -6px; display: flex; align-items: flex-start; gap: 10px; padding: 6px; border: 0; border-radius: 8px; background: none; color: var(--text); text-align: left; font: inherit; cursor: pointer; transition: background var(--mo-d2), scale var(--mo-d2) var(--mo-out); }
+.sl-mem:active { scale: var(--mo-press-row); }
+.sl-mem .sl-av { width: 34px; height: 34px; transition: scale var(--mo-d3) var(--mo-spring); }
+.sl-mem:hover .sl-av { scale: 1.1; }
 .sl-mem:hover { background: var(--hover); }
 .sl-mem.cur { background: var(--active); }
 .sl-set { margin-top: 6px; height: 26px; gap: 6px; color: var(--text-3); font-size: var(--t-1); }
@@ -203,11 +231,12 @@ button.sl-av:focus-visible, .sl-who:focus-visible, .sl-to:focus-visible, .sl-mem
 .sl-quota { display: flex; align-items: center; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); font-size: var(--t-1); color: var(--text-3); }
 .sl-quota b { font-weight: 500; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .sl-bar { flex: 1; height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
-.sl-bar > i { display: block; height: 100%; border-radius: 2px; background: var(--accent); }
+.sl-bar > i { display: block; height: 100%; border-radius: 2px; background: var(--accent); transition: width var(--mo-d5) var(--mo-out); }
 
 /* ---- Fiche d'un agent (clic sur un prénom ou une pastille) ---- */
-.sl-prof { position: absolute; z-index: 5; width: min(300px, calc(100% - 16px)); max-height: min(440px, calc(100% - 16px)); overflow: auto; padding: 12px 14px; border: 1px solid var(--border-2); border-radius: 12px; background: var(--bg); box-shadow: var(--shadow); font-size: var(--t-2); animation: sl-pop var(--mo-d3) var(--mo-out) both; transform-origin: top left; }
+.sl-prof { position: absolute; z-index: 5; width: min(300px, calc(100% - 16px)); max-height: min(440px, calc(100% - 16px)); overflow: auto; padding: 12px 14px; border: 1px solid var(--border-2); border-radius: 12px; background: var(--bg); box-shadow: var(--shadow); font-size: var(--t-2); animation: sl-pop var(--mo-d4) var(--mo-spring) both; transform-origin: top left; }
 .sl-prof[hidden] { display: none; }
+.sl-prof header .sl-av.big { width: 56px; height: 56px; }
 @keyframes sl-pop { from { opacity: 0; scale: var(--mo-s); translate: 0 -4px; } }
 .sl-prof header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
 .sl-prof header > div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -254,3 +283,8 @@ button.sl-av:focus-visible, .sl-who:focus-visible, .sl-to:focus-visible, .sl-mem
   .sl-card { flex-wrap: wrap; }
   .sl-box.sl-now-open .sl-now { top: auto; right: 8px; bottom: 8px; }
 }
+
+/* Mouvement coupé : plus aucune boucle (les entrées, elles, suivent déjà les jetons --mo-*). */
+:root[data-motion="off"] :is(.sl-dot.work, .sl-dots i), :root[data-motion="subtle"] .sl-dot.work { animation: none; }
+:root[data-motion="off"] .sl-box, :root[data-motion="off"] .sl-now { transition: none; }
+@media (prefers-reduced-motion: reduce) { .sl-dot.work, .sl-dots i { animation: none; } .sl-box, .sl-now { transition: none; } }

@@ -2,6 +2,7 @@
 // que Claude Code l'écrive dans son journal (relu toutes les quelques secondes). Il disparaît, remplacé sans
 // saut par le vrai, dès qu'une demande au même texte apparaît dans le fil (ou dans les messages en attente).
 // Partagé par l'onglet Claude Code (sessions.ts), l'Espace agents (workspace.ts) et le Salon (salon.ts).
+// S'y ajoutent l'agent « réveillé » dès l'envoi (`awake`, `active`, `move`) et la relecture accélérée (`hurry`).
 
 export type EchoState = 'sending' | 'sent';
 /** `at` : heure d'envoi, affichée ; `seen` : dernier changement d'état, pour les délais. */
@@ -13,6 +14,8 @@ const taken = new Set<string>();
 const take = (k: string): void => { taken.add(k); if (taken.size > 300) taken.delete(taken.values().next().value as string); };
 const subs = new Set<() => void>();
 const emit = (): void => { for (const f of subs) { try { f(); } catch { /* un abonné défaillant ne bloque pas les autres */ } } };
+/** Envoi récent par conversation : l'agent paraît au travail dès l'envoi, sans attendre que le Mac le dise (45 s au plus). */
+const woke = new Map<string, number>();
 
 /** Un message reçu par le Mac mais jamais lu dans le journal (agent sur un serveur, journal illisible) : retiré au bout de ce délai. */
 const SENT_TTL = 3 * 60e3;
@@ -38,6 +41,7 @@ export function add(session: string, text: string, pics = 0): string {
   const id = `e${++seq}`, t = text.trim();
   if (!t) return ''; // rien à montrer (notes jointes seules) : pas de bulle vide
   list.push({ id, session, text: t, at: Date.now(), seen: Date.now(), state: 'sending', pics });
+  woke.set(session, Date.now());
   emit(); return id;
 }
 /** Le Mac a reçu le message : il reste affiché (« transmis ») jusqu'à ce que le journal le contienne. */
@@ -48,8 +52,27 @@ export function sent(id: string, session = ''): void {
 }
 /** Envoi refusé ou abandonné : le message disparaît (le texte revient dans le champ, côté appelant). */
 export function drop(id: string): void {
-  const n = list.length; list = list.filter(x => x.id !== id);
-  if (list.length !== n) emit();
+  const e = list.find(x => x.id === id); if (!e) return;
+  list = list.filter(x => x !== e);
+  // L'agent n'est plus montré au travail s'il ne reste aucun autre envoi pour cette conversation.
+  if (!list.some(x => x.session === e.session)) woke.delete(e.session);
+  emit();
+}
+/** La conversation a reçu son identifiant (nouvel agent) : ses échos et son réveil passent de `from` à `to`. */
+export function move(from: string, to: string): void {
+  if (!from || !to || from === to) return;
+  const w = woke.get(from); let changed = false;
+  for (const e of list) if (e.session === from) { e.session = to; changed = true; }
+  woke.delete(from); if (w) woke.set(to, w);
+  if (changed) emit();
+}
+/** Des messages attendent encore leur version du Mac, ou l'agent vient d'être réveillé. */
+export const active = (session: string): boolean => list.some(e => e.session === session) || woke.has(session);
+/** L'agent est montré au travail : envoi récent, et rien n'est encore venu de lui depuis (`actions` : le fil connu). */
+export function awake(session: string, actions: readonly { at: string; kind: string }[] = []): boolean {
+  const at = woke.get(session); if (!at) return false;
+  if (Date.now() - at > 45e3 || actions.some(a => a.kind !== 'prompt' && (Date.parse(a.at) || 0) > at + 1000)) { woke.delete(session); return false; }
+  return true;
 }
 
 /**
@@ -77,3 +100,20 @@ export function pending(session: string, actions: readonly { kind: string; text:
 
 /** Libellé d'état, commun aux trois fils. */
 export const stateLabel = (e: Echo): string => e.state === 'sending' ? 'Envoi…' : 'Transmis';
+
+// ---------- Relecture accélérée ----------
+let until = 0, timer: ReturnType<typeof setTimeout> | undefined;
+const goers = new Set<() => boolean | void>();
+/** Après un envoi : `go` est rappelée toutes les 0,9 s pendant 20 s (au lieu de 2,5 à 3 s), pour que la réponse apparaisse dès
+ *  qu'elle existe. Un seul minuteur pour toute l'app, rien pendant que la fenêtre est cachée, `go` renvoie `false` quand sa page a disparu. */
+export function hurry(go: () => boolean | void): void {
+  until = Date.now() + 20e3; goers.add(go);
+  if (timer) return;
+  const tick = (): void => {
+    timer = undefined;
+    if (Date.now() > until) { goers.clear(); return; }
+    if (!document.hidden) for (const g of [...goers]) if (g() === false) goers.delete(g);
+    if (goers.size) timer = setTimeout(tick, 900); else goers.clear();
+  };
+  timer = setTimeout(tick, 400);
+}
