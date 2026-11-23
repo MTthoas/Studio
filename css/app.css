@@ -124,12 +124,12 @@ button.side-label .ic { width: 12px; height: 12px; transition: transform .12s; }
 button.side-label[aria-expanded="false"] .ic { transform: rotate(-90deg); }
 button.side-label:hover { color: var(--text-2); }
 .side-item { display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px; border-radius: var(--r); width: 100%; color: var(--text-2); font-weight: 500; }
-.side-item .ic { width: 15px; height: 15px; color: var(--text-3); }
+.side-item .ic { width: 15px; height: 15px; color: var(--ic, var(--text-3)); }
 .side-item span:nth-of-type(1) { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-item .tag-dot + span, .side-item i + span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-item:hover { background: var(--hover); color: var(--text); }
 .side-item.sel { background: var(--active); color: var(--text); }
-.side-item.sel .ic { color: var(--text); }
+.side-item.sel .ic { color: var(--ic, var(--text)); }
 .side-count { color: var(--text-3); font-size: var(--t-1); font-variant-numeric: tabular-nums; font-weight: 400; display: inline-flex; align-items: center; gap: 3px; }
 .side-count .ic { width: 12px; height: 12px; }
 .tag-dot { width: 8px; height: 8px; margin: 0 4px 0 3px; border-radius: 50%; border: 1.5px solid var(--c, var(--text-3)); flex: none; }
@@ -1980,6 +1980,7 @@ button.lv-chip:hover, .lv-chip.sel { color: var(--text); background: var(--btn);
 /* Onglet Notes d'un projet : cases à cocher et barre de sélection (envoi à Claude ou à Claude Code). */
 .pj-pickbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 40px; margin: 0 0 8px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--text-3); font-size: var(--t-1); }
 .pj-pickbar:empty { display: none; }
+.pj-pickbar:not(.on) { min-height: 0; padding: 0 0 4px; border: 0; }
 .pj-pickbar.on { position: sticky; top: 8px; z-index: 2; background: var(--surface); border-color: color-mix(in srgb, var(--c, var(--accent)) 45%, var(--border)); color: var(--text); }
 .pj-pickbar-t { display: inline-flex; align-items: center; gap: 6px; margin-right: 4px; }
 .pj-pickbar-t .ic { width: 13px; height: 13px; }
@@ -1991,10 +1992,18 @@ button.lv-chip:hover, .lv-chip.sel { color: var(--text); background: var(--btn);
 .pj-noterow > .pj-pick .ic { width: 12px; height: 12px; }
 .pj-noterow > .pj-pick:hover { background: var(--hover); }
 .pj-noterow > .w-row { flex: 1; min-width: 0; }
-.pj-noterow .pj-main { margin-left: 8px; padding: 1px 6px; border-radius: 5px; background: var(--btn); color: var(--text-3); font-style: normal; font-size: var(--t-1); }
+/* Une ligne = case, note, bouton IA ; le filet court sous toute la ligne, pas seulement sous la note. */
+.pj-noterow { border-bottom: 1px solid var(--border); }
+.pj-noterow > .w-row { margin: 0; width: auto; border-bottom: 0; padding-left: 4px; }
+.pj-noterow .pj-ctxtag { font-weight: 500; }
+.pj-noterow .pj-ai { width: 28px; padding: 0; justify-content: center; }
+.pj-noterow .pj-ai .ic { width: 14px; height: 14px; color: var(--text-3); }
+.pj-noterow .pj-ai:hover .ic { color: var(--c, var(--accent)); }
+/* La note du projet : en tête, son dossier à la couleur du projet, séparée des autres par un filet plus net. */
+.pj-noterow.pj-home > .w-row > span { font-weight: 600; color: var(--text); }
+.pj-noterow.pj-home > .w-row > .ic { color: var(--c, var(--accent)); }
+.pj-noterow.pj-home { border-bottom-color: var(--border-2); }
 .pj-noteadd { display: flex; flex-wrap: wrap; gap: 4px 16px; }
-.pj-ctxinfo { display: flex; gap: 8px; align-items: flex-start; margin: 4px 0 8px; color: var(--text-2); font-size: var(--t-1); }
-.pj-ctxinfo svg { flex: none; margin-top: 2px; color: var(--c, var(--accent)); }
 .pj-noterow .pj-ctxtag { color: var(--c, var(--accent)); }
 .pj-linked-h { margin: 18px 0 6px; color: var(--text-2); font-size: var(--t-1); font-weight: 600; }
 .pj-linked-h span { margin-left: 8px; color: var(--text-3); font-weight: 400; }

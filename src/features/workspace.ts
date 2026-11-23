@@ -17,7 +17,7 @@ import * as bridge from '../integrations/remote.ts';
 import * as projects from './projects/model.ts';
 import * as subagents from './projects/subagents.ts';
 import * as attach from './projects/attach.ts';
-import { feedBlocks, syncFeed, nameOf, live, STATUS, modelName, agentCount, COUNT_HINT, newGroup, copyStrip, copyAct, COPY_ACTS, groupOfCopy } from './projects/sessions.ts';
+import { feedBlocks, syncFeed, nameOf, live, STATUS, modelName, agentCount, COUNT_HINT, newGroup, copyStrip, copyAct, COPY_ACTS, groupOfCopy, copyStage } from './projects/sessions.ts';
 import { exchanges, exchangeBlocks, teamHTML, settled } from './projects/team.ts';
 import type { BoardMsg } from './projects/team.ts';
 import type { AgentRun, Session, Action, Queued, Worktree, SubAgent } from './projects/sessions.ts';
@@ -31,7 +31,7 @@ import type { MenuItem } from '../ui/kit.ts';
  *  `sub` : un sous-agent de cette conversation (fil en lecture seule) ; `auto` : ouverte d'office par le mode Auto, donc rendue
  *  quand le sous-agent a fini depuis plus d'une minute. */
 interface Pane { project: string; session: string; run?: string; sub?: string; auto?: boolean }
-interface State { layout: number; panes: (Pane | null)[]; focus: number; max: number; filter: string; draftProject: string; /** Montrer d'office les agents qui travaillent. */ auto: boolean; /** Barre de la liste réduite à une colonne d'icônes (réduction visuelle seulement). */ mini: boolean; /** Conversations au travail que l'utilisateur a retirées de leur vue : pas remises d'office tant qu'elles travaillent. */ dismissed: string[] }
+interface State { layout: number; panes: (Pane | null)[]; focus: number; max: number; filter: string; draftProject: string; /** Montrer d'office les agents qui travaillent. */ auto: boolean; /** Disposition choisie à la main : Auto ne l'agrandit plus au-delà (0 = libre). */ cap: number; /** Barre de la liste réduite à une colonne d'icônes (réduction visuelle seulement). */ mini: boolean; /** Conversations au travail que l'utilisateur a retirées de leur vue : pas remises d'office tant qu'elles travaillent. */ dismissed: string[] }
 interface Detail extends Partial<Session> { actions: Action[]; message?: string; at: number; /** Sous-agents de la conversation (absent avec une app Mac ancienne). */ subagents?: SubAgent[]; /** Fil d'un sous-agent : lui-même. */ agent?: SubAgent }
 interface Row { p: Project; s: Session; status: 'running' | 'error' | 'review' | 'idle'; subs: SubAgent[] }
 
@@ -40,13 +40,13 @@ const KEY = 'studio.workspace', SEEN = 'studio.workspace.seen', TICK = 2500;
 const read = <T>(k: string, d: T): T => { try { return (JSON.parse(localStorage.getItem(k) || 'null') as T | null) ?? d; } catch { return d; } };
 const write = (k: string, v: unknown) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* plein */ } };
 
-const st: State = { layout: 4, panes: [], focus: 0, max: -1, filter: '', draftProject: '', auto: true, mini: false, dismissed: [], ...read<Partial<State>>(KEY, {}) };
+const st: State = { layout: 4, panes: [], focus: 0, max: -1, filter: '', draftProject: '', auto: true, cap: 0, mini: false, dismissed: [], ...read<Partial<State>>(KEY, {}) };
 if (!LAYOUTS.includes(st.layout)) st.layout = 4;
 /** Dernière activité vue, par conversation : ce qui a bougé depuis passe dans « À relire ». */
 const seen: Record<string, number> = read(SEEN, {});
 /** Première ouverture : tout ce qui existe déjà compte comme vu, sinon « À relire » serait rempli d'anciennes conversations. */
 let firstUse = !Object.keys(seen).length;
-const save = () => write(KEY, { layout: st.layout, panes: st.panes.slice(0, 8), focus: st.focus, max: st.max, filter: st.filter, draftProject: st.draftProject, auto: st.auto, mini: st.mini, dismissed: st.dismissed.slice(-100) });
+const save = () => write(KEY, { layout: st.layout, panes: st.panes.slice(0, 8), focus: st.focus, max: st.max, filter: st.filter, draftProject: st.draftProject, auto: st.auto, cap: st.cap, mini: st.mini, dismissed: st.dismissed.slice(-100) });
 
 const sessionsBy = new Map<string, { list: Session[]; at: number }>();
 const runsBy = new Map<string, AgentRun[]>();

@@ -146,6 +146,17 @@ function importContexts(p: Project): void {
   };
   document.body.append(i); i.click();
 }
+/** Choix des notes du projet lues d'office par l'IA (tag #contexte-ia). */
+async function pickContexts(p: Project): Promise<void> {
+  const list = model.notesOf(p).filter(n => !n.todo && shareable(n) && store.getBody(n) != null), had = list.filter(model.isContext).map(n => n.id);
+  const ids = await pickFrom(list, had, { title: `Contextes IA de ${p.name}`, ok: 'Enregistrer',
+    hint: `${icon('sparkle')}Les notes cochées reçoivent <code>#${model.CONTEXT_TAG}</code> : l’IA de Studio et chaque nouvelle consigne Claude Code de ce projet les lisent d’office pour se situer dans l’application.`,
+    empty: 'Aucune note lisible dans ce projet : importe d’abord un contexte.' });
+  if (!ids) return;
+  const want = new Set(ids);
+  try { for (const n of list) await model.setContext(n, want.has(n.id)); } catch (err) { toast(errMsg(err)); }
+  toast(`${want.size} contexte${want.size > 1 ? 's' : ''} IA dans ${p.name}`); refresh();
+}
 function noteRows(p: Project): string {
   // La note du projet d'abord, puis celles qui y sont rangées (tag #projet/… ou sous-note d'une note du projet).
   const notes = model.notesOf(p), linked = model.linkedTo(p);
@@ -153,15 +164,19 @@ function noteRows(p: Project): string {
   // Une note supprimée, sortie du projet ou devenue privée quitte la sélection.
   for (const id of [...sel]) if (!ok.has(id)) sel.delete(id);
   const pick = (n: Note) => ok.has(n.id) ? `<label class="pj-pick" title="Cocher pour l’envoyer à l’IA"><input type="checkbox" data-pj-pick="${n.id}"${sel.has(n.id) ? ' checked' : ''} aria-label="Cocher la note ${esc(titleOf(n))}"></label>` : `<span class="pj-pick" title="Chiffrée ou #privé : jamais envoyée à l’IA">${icon('lock')}</span>`;
-  const ask = (n: Note) => ok.has(n.id) ? `<button class="pj-cc" data-pj-ask-note="${n.id}" title="Discuter de cette note avec Claude (conversation du projet)">${icon('sparkle')}Claude</button>` : '';
+  // Un seul bouton IA par ligne : un menu (Claude, Claude Code) quand Claude Code est joignable, sinon Claude directement.
+  const ask = (n: Note) => !ok.has(n.id) ? '' : cc
+    ? `<button class="pj-cc pj-ai" data-pj-ai-note="${n.id}" title="Envoyer cette note à Claude ou à Claude Code" aria-label="Envoyer à l’IA">${icon('sparkle')}</button>`
+    : `<button class="pj-cc pj-ai" data-pj-ask-note="${n.id}" title="Discuter de cette note avec Claude" aria-label="Discuter avec Claude">${icon('sparkle')}</button>`;
+  const meta = (n: Note) => [n.id === p.id ? 'Note du projet' : '', model.isContext(n) ? '<b class="pj-ctxtag" title="Lue d’office par l’IA dans ce projet">Contexte IA</b>' : '', esc(rel(n.updated))].filter(Boolean).join(' · ');
+  const row = (n: Note) => `<div class="pj-row pj-noterow${n.id === p.id ? ' pj-home' : ''}${sel.has(n.id) ? ' sel' : ''}">${pick(n)}<button class="w-row" data-open-note="${n.id}">${icon(n.id === p.id ? 'folder' : 'notes')}<span>${esc(titleOf(n))}</span><em>${meta(n)}</em></button>${ask(n)}</div>`;
   const ctxs = model.contextsOf(p).filter(n => ok.has(n.id)).length;
   return `<div class="pj-pickbar${sel.size ? ' on' : ''}" data-pickbar>${pickBarHTML(p)}</div>
-    ${ctxs ? `<p class="pj-ctxinfo">${icon('sparkle')}<span><b>${ctxs} contexte${ctxs > 1 ? 's' : ''} IA</b> : lu${ctxs > 1 ? 's' : ''} d’office par l’IA de Studio et par chaque nouvelle consigne Claude Code de ce projet, pour se situer dans l’application.</span></p>` : ''}
-    ${notes.length ? notes.map(n => `<div class="pj-row pj-noterow${sel.has(n.id) ? ' sel' : ''}">${pick(n)}<button class="w-row" data-open-note="${n.id}">${icon(n.id === p.id ? 'folder' : 'notes')}<span>${esc(titleOf(n))}${n.id === p.id ? '<i class="pj-main">Note du projet</i>' : ''}${model.isContext(n) ? '<i class="pj-main pj-ctxtag" title="Lue d’office par l’IA dans ce projet">Contexte IA</i>' : ''}</span><em>${esc(rel(n.updated))}</em></button>${ask(n)}${cc && ok.has(n.id) ? `<button class="pj-cc" data-pj-cc-note="${n.id}" title="Confier cette note à Claude Code">${icon('terminal')}Claude Code</button>` : ''}</div>`).join('') : ''}
+    ${notes.map(row).join('')}
     ${notes.length < 2 ? '<p class="hm-empty">Pour ranger une note dans ce projet : crée-la d’ici, range une note existante, fais-en une sous-note de la note du projet, ou ajoute-lui <code>#' + esc(p.tag) + '</code>.</p>' : ''}
-    <div class="pj-noteadd"><button class="hm-more" data-pj="new-note">${icon('plus')}Nouvelle note du projet</button><button class="hm-more" data-pj="adopt">${icon('folder')}Ranger une note existante…</button><button class="hm-more" data-pj="ctx-import" title="Fichiers Markdown ou texte (CLAUDE.md, AGENTS.md, notes d’architecture…) : chacun devient une note du projet marquée #${model.CONTEXT_TAG}, que l’IA lit d’office">${icon('sparkle')}Importer des contextes IA…</button><button class="hm-more" data-pj="ctx-pick" title="Choisir les notes du projet que l’IA lit d’office (tag #${model.CONTEXT_TAG})">${icon('check')}Contextes IA…</button></div>
+    <div class="pj-noteadd"><button class="hm-more" data-pj="new-note">${icon('plus')}Nouvelle note</button><button class="hm-more" data-pj="adopt">${icon('folder')}Ranger une note existante…</button><button class="hm-more" data-pj="ctx" title="Notes que l’IA lit d’office dans ce projet">${icon('sparkle')}Contextes IA${ctxs ? ` · ${ctxs}` : ''}</button></div>
     ${linked.length ? `<h3 class="pj-linked-h">Liées à la note du projet <span>citées par elle ou qui la citent, sans être rangées ici</span></h3>
-      ${linked.map(n => `<div class="pj-row pj-noterow"><span class="pj-pick">${icon('link')}</span><button class="w-row" data-open-note="${n.id}">${icon('notes')}<span>${esc(titleOf(n))}${model.projectOfNote(n) ? `<i class="pj-main">${esc(model.projectOfNote(n)?.name ?? '')}</i>` : ''}</span><em>${esc(rel(n.updated))}</em></button>${store.getBody(n) != null && !model.byId(n.id) ? `<button class="pj-cc" data-pj-adopt="${n.id}" title="Ajoute #${esc(p.tag)} à cette note">${icon('folder')}Ranger ici</button>` : ''}</div>`).join('')}` : ''}`;
+      ${linked.map(n => `<div class="pj-row pj-noterow"><span class="pj-pick">${icon('link')}</span><button class="w-row" data-open-note="${n.id}">${icon('notes')}<span>${esc(titleOf(n))}</span><em>${[esc(model.projectOfNote(n)?.name ?? ''), esc(rel(n.updated))].filter(Boolean).join(' · ')}</em></button>${store.getBody(n) != null && !model.byId(n.id) ? `<button class="pj-cc" data-pj-adopt="${n.id}" title="Ajoute #${esc(p.tag)} à cette note">${icon('folder')}Ranger ici</button>` : ''}</div>`).join('')}` : ''}`;
 }
 const section = (id: string, title: string, ic: string, body: string, cls = '', meta = '') => `<section class="pj-sec ${cls}" data-sec="${esc(id)}"><h2>${icon(ic)}${esc(title)}${meta ? `<span class="pj-sec-meta">${meta}</span>` : ''}</h2><div class="pj-sec-body">${body}</div></section>`;
 
@@ -711,6 +726,13 @@ export function mount(main: HTMLElement): void {
       const bar = $('[data-pickbar]', root); if (bar) { bar.innerHTML = pickBarHTML(p); bar.classList.toggle('on', sel.size > 0); }
       return;
     }
+    const aiNote = t.closest('[data-pj-ai-note]');
+    if (aiNote && p) {
+      const id = p.id, nid = aiNote.dataset.pjAiNote ?? '';
+      menu(aiNote, [{ label: 'Discuter avec Claude', icon: 'sparkle', hint: 'Conversation du projet, avec cette note', run: () => void import('../chat.ts').then(m => m.startIn(id, [nid])) },
+        { label: 'Confier à Claude Code', icon: 'terminal', hint: 'Une consigne, avec cette note jointe', run: () => toClaude(p, { notes: [nid] }) }]);
+      return;
+    }
     const askNote = t.closest('[data-pj-ask-note]');
     if (askNote && p) { const id = p.id, nid = askNote.dataset.pjAskNote ?? ''; void import('../chat.ts').then(m => m.startIn(id, [nid])); return; }
     const adopt = t.closest<HTMLElement>('[data-pj-adopt]');
@@ -773,15 +795,10 @@ export function mount(main: HTMLElement): void {
       return;
     }
     if (act === 'ctx-import') { importContexts(p); return; }
-    if (act === 'ctx-pick') {
-      const list = model.notesOf(p).filter(n => !n.todo && shareable(n) && store.getBody(n) != null), had = list.filter(model.isContext).map(n => n.id);
-      const ids = await pickFrom(list, had, { title: `Contextes IA de ${p.name}`, ok: 'Enregistrer',
-        hint: `${icon('sparkle')}Les notes cochées reçoivent <code>#${model.CONTEXT_TAG}</code> : l’IA de Studio et chaque nouvelle consigne Claude Code de ce projet les lisent d’office pour se situer dans l’application.`,
-        empty: 'Aucune note lisible dans ce projet : importe d’abord un contexte.' });
-      if (!ids) return;
-      const want = new Set(ids);
-      try { for (const n of list) await model.setContext(n, want.has(n.id)); } catch (err) { toast(errMsg(err)); }
-      toast(`${want.size} contexte${want.size > 1 ? 's' : ''} IA dans ${p.name}`); refresh();
+    if (act === 'ctx-pick') { await pickContexts(p); return; }
+    if (act === 'ctx') {
+      menu(b, [{ label: 'Choisir les contextes IA…', icon: 'check', hint: `Notes du projet que l’IA lit d’office (#${model.CONTEXT_TAG})`, run: () => pickContexts(p) },
+        { label: 'Importer des fichiers…', icon: 'download', hint: 'CLAUDE.md, AGENTS.md, notes d’architecture : une note par fichier', run: () => importContexts(p) }]);
       return;
     }
     if (act === 'new-note') { const n = await store.createNote({ title: '', body: `\n\n#${p.tag}` }); app.openNote(n.id); }

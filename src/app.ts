@@ -101,6 +101,8 @@ const VIEWS: Record<string, { label: string; icon: string }> = {
   graph: { label: 'Graphe', icon: 'graph' }, trash: { label: 'Corbeille', icon: 'trash' },
 };
 /** Teinte de l'icône de chaque section dans la barre latérale. */
+/** Teinte de l'icône de chaque vue dans la barre latérale (redemandée le 23 nov. 2026 : « remets des couleurs »). */
+const SIDE_HUE: Record<string, string> = { home: 'blue', all: 'amber', workspace: 'violet', projets: 'orange', models: 'teal', commerce: 'green', claude: 'orange', inbox: 'blue', today: 'amber', journal: 'pink', ephemeral: 'orange', tasks: 'green', agents: 'violet', help: 'blue', linear: 'indigo', github: 'gray', graph: 'teal', trash: 'gray' };
 const titleOf = (n: Note) => n.title.trim() || 'Sans titre';
 const WIDE = new Set(['workspace', 'models', 'commerce', 'graph', 'home', 'claude', 'settings', 'tasks', 'linear', 'github', 'agents', 'help', 'projets', 'journal']); // vues sans colonne de liste
 
@@ -203,7 +205,7 @@ async function openByTitle(title: string) {
 function renderSidebar() {
   const idx = store.index(), v = ui.view;
   const count: Record<string, number> = { tasks: todo.openCount(), linear: notifs.unreadCount(), github: github.unseenCount(), ephemeral: idx.live.filter(n => n.expiresAt).length };
-  const item = (type: string) => `<button class="side-item${v.type === type ? ' sel' : ''}" data-view="${type}">${icon(VIEWS[type]?.icon ?? 'notes')}<span>${VIEWS[type]?.label ?? type}</span>${count[type] ? `<span class="side-count">${count[type]}</span>` : ''}</button>`;
+  const item = (type: string) => `<button class="side-item${v.type === type ? ' sel' : ''}" data-view="${type}" style="--ic:var(--c-${SIDE_HUE[type] ?? 'gray'})">${icon(VIEWS[type]?.icon ?? 'notes')}<span>${VIEWS[type]?.label ?? type}</span>${count[type] ? `<span class="side-count">${count[type]}</span>` : ''}</button>`;
   const tags = [...idx.tags].filter(([t]) => !t.startsWith('projet/')).sort((a, b) => a[0].localeCompare(b[0], 'fr'));
   const devs = vault.isOpen() ? link.devices().length : 0;
   // Le quotidien reste à l'écran ; le reste se range sous « Plus » (déplié d'office quand la vue ouverte s'y trouve).
