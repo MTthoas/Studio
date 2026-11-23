@@ -5,6 +5,7 @@
 import * as native from '../../core/native.ts';
 import * as bridge from '../../integrations/remote.ts';
 import * as model from './model.ts';
+import * as registry from '../../plugins/registry.ts';
 import { esc } from '../../lib/markdown.ts';
 import { $, $$, icon, modal, need, rel, toast, confirmBox } from '../../ui/kit.ts';
 import type { Project } from './model.ts';
@@ -12,6 +13,9 @@ import type { Project } from './model.ts';
 export interface SshKey { id: string; name: string; type: string; fingerprint: string; public: string; created: number; projects?: string[] }
 type Ext = 'docker' | 'kube';
 export interface ServerConf { configured?: boolean; /** Nom donné dans Studio (Production, Préproduction…), vide : l'hôte. */ name?: string; host?: string; /** Utilisateur fixé dans Studio (vide : celui de ~/.ssh/config). */ user?: string; /** utilisateur@hôte, à afficher. */ dest?: string; path?: string; port?: number; key?: SshKey; ext?: Ext[]; hostKey?: 'unknown' | 'changed'; denied?: boolean; error?: string }
+
+/** Extensions de serveur proposées : Kubernetes n'apparaît que si l'extension du même nom est allumée dans Réglages. */
+const offered = (): Ext[] => (Object.keys(EXTS) as Ext[]).filter(e => e !== 'kube' || registry.active('kube'));
 
 const EXTS: Record<Ext, { label: string; icon: string; hint: string }> = {
   docker: { label: 'Docker', icon: 'container', hint: 'Conteneurs, Compose, ressources, journaux ; démarrer, arrêter, redémarrer.' },
@@ -87,7 +91,7 @@ const userHint = (hosts: SshHost[], host: string): string => { const u = hosts.f
 function formHTML(hosts: SshHost[], cur: ServerConf | undefined, adding: boolean, sid: string): string {
   const ext = new Set(cur?.ext ?? []), key = cur?.key?.id ?? '';
   const title = cur?.configured ? `Modifier ${cur.name ? `« ${esc(cur.name)} »` : 'le serveur'}` : adding ? 'Ajouter un serveur' : 'Relie un serveur à ce projet';
-  return `<form class="sv-form"><input type="hidden" name="server" value="${cur?.configured ? esc(sid) : 'new'}"><div class="ag-empty sv-intro">${icon('server')}<h3>${title}</h3><p>Un VPS ou une VM où tourne le projet ou ses agents (production, préproduction…). Studio s’y connecte en SSH depuis ce Mac, par clé uniquement : jamais de mot de passe. L’utilisateur choisi ici passe avant celui de <code>~/.ssh/config</code>.</p></div>
+  return `<form class="sv-form"><input type="hidden" name="server" value="${cur?.configured ? esc(sid) : 'new'}">${ext.has('kube') && !registry.active('kube') ? '<input type="hidden" name="keepkube">' : ''}<div class="ag-empty sv-intro">${icon('server')}<h3>${title}</h3><p>Un VPS ou une VM où tourne le projet ou ses agents (production, préproduction…). Studio s’y connecte en SSH depuis ce Mac, par clé uniquement : jamais de mot de passe. L’utilisateur choisi ici passe avant celui de <code>~/.ssh/config</code>.</p></div>
     <label class="pj-field"><span>Nom</span><input class="field" name="name" placeholder="Production, Préproduction… (facultatif : l’hôte sinon)" value="${esc(cur?.name ?? '')}" maxlength="40" autocomplete="off"></label>
     <div class="sv-row"><label class="pj-field"><span>Hôte SSH</span><input class="field" name="host" list="sv-hosts" placeholder="vps-prod ou 203.0.113.10 (adresse IP, pas le nom de l’invite)" value="${esc(cur?.host ?? '')}" required autocomplete="off" spellcheck="false"><datalist id="sv-hosts">${hosts.map(h => `<option value="${esc(h.alias)}">${esc(h.user ? `${h.user}@${h.hostname}` : h.hostname)}</option>`).join('')}</datalist></label>
       <label class="pj-field sv-user"><span>Utilisateur</span><input class="field" name="user" placeholder="${esc(userHint(hosts, cur?.host ?? ''))}" value="${esc(cur?.user ?? '')}" autocomplete="off" spellcheck="false" autocapitalize="off"></label>
@@ -97,7 +101,7 @@ function formHTML(hosts: SshHost[], cur: ServerConf | undefined, adding: boolean
       <button type="button" class="btn" data-sx="key-new">${icon('plus')}Créer</button><button type="button" class="btn" data-sx="key-import">${icon('download')}Importer</button>${keys.length ? `<button type="button" class="icon-btn" data-sx="keys" title="Gérer les clés" aria-label="Gérer les clés SSH de Studio">${icon('gear')}</button>` : ''}</div>
       <div class="sv-keyinfo">${keyPanel(keys.find(k => k.id === key))}</div>
       <p class="modal-hint">${icon('lock')}Une clé gardée par Studio est chiffrée dans le trousseau de ce Mac, ne quitte jamais l’app et n’est montrée qu’au serveur (elle seule) ; macOS peut te demander d’en autoriser l’accès.</p></div>
-    <div class="pj-field"><span>Extensions</span><div class="sv-exts">${(Object.keys(EXTS) as Ext[]).map(e => `<label class="sv-extopt"><input type="checkbox" name="ext" value="${e}"${ext.has(e) ? ' checked' : ''}><span class="sv-ext-ic">${icon(EXTS[e].icon)}</span><span><b>${EXTS[e].label}</b><em>${EXTS[e].hint}</em></span></label>`).join('')}</div></div>
+    <div class="pj-field"><span>Extensions</span><div class="sv-exts">${offered().map(e => `<label class="sv-extopt"><input type="checkbox" name="ext" value="${e}"${ext.has(e) ? ' checked' : ''}><span class="sv-ext-ic">${icon(EXTS[e].icon)}</span><span><b>${EXTS[e].label}</b><em>${EXTS[e].hint}</em></span></label>`).join('')}</div></div>
     <p class="modal-hint">${icon('shield')}Les commandes envoyées sont fixes : état du serveur, extensions activées, et Claude Code avec les mêmes garde-fous que sur le Mac.</p>
     <div class="sv-test" aria-live="polite"></div>
     <div class="modal-actions">${cur?.configured ? `<button type="button" class="btn btn-ghost sv-forget" data-sx="forget">${icon('trash')}Retirer ce serveur</button>` : ''}${cur?.configured || adding ? '<button type="button" class="btn" data-sv="cancel">Annuler</button>' : ''}<button type="button" class="btn" data-sx="test">${icon('refresh')}Tester la connexion</button><button class="btn btn-primary">${icon('check')}Enregistrer</button></div></form>`;
@@ -152,7 +156,9 @@ export async function openForm(box: HTMLElement, p: Project, cur?: ServerConf, a
 /** Enregistre le formulaire ; vrai si le serveur est relié. */
 export async function submit(f: HTMLFormElement, p: Project): Promise<boolean> {
   const v = (n: string) => need<HTMLInputElement>(`[name=${n}]`, f).value.trim();
-  const ext = $$<HTMLInputElement>('[name=ext]:checked', f).map(i => i.value);
+  const ext: string[] = $$<HTMLInputElement>('[name=ext]:checked', f).map(i => i.value);
+  // Extension éteinte : la case n'est pas dans le formulaire, mais le choix du serveur est gardé tel quel.
+  if ($('[name=keepkube]', f)) ext.push('kube');
   const adding = v('server') === 'new';
   const r = await call('set', p, { ...fields(f), server: v('server'), name: v('name'), ext }, 10000);
   if (!r.ok) { toast(r.message ?? 'Configuration refusée.'); return false; }
@@ -238,7 +244,7 @@ async function trust(p: Project, reload: () => void, draft: Record<string, unkno
 // ---------- Extensions ----------
 
 /** Emplacements des extensions activées, remplis ensuite par `loadExts`. */
-export const extsHTML = (st: ServerConf): string => (st.ext ?? []).map(e =>
+export const extsHTML = (st: ServerConf): string => (st.ext ?? []).filter(e => offered().includes(e)).map(e =>
   `<section class="sv-ext" data-ext="${e}"><header class="sv-ext-h"><span class="sv-ext-ic">${icon(EXTS[e].icon)}</span><h3>${EXTS[e].label}</h3><span class="sv-ext-sub"></span><button class="icon-btn" data-sx="ext-refresh" title="Actualiser" aria-label="Actualiser ${EXTS[e].label}">${icon('refresh')}</button></header><div class="sv-ext-b"><div class="pj-skel"></div></div></section>`).join('');
 
 export function loadExts(box: HTMLElement, p: Project): void {

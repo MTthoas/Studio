@@ -14,6 +14,7 @@ import type { AppShell, Note } from '../../types.ts';
 import type { Project, Repo, Role } from './model.ts';
 import * as flux from './flux.ts';
 import * as sessions from './sessions.ts';
+import * as salon from './salon.ts';
 import * as review from './review.ts';
 import * as site from './site.ts';
 import * as mobile from './mobile.ts';
@@ -185,21 +186,23 @@ const fold = (id: string, title: string, body: string, cls = '', meta = '') => `
 
 /** Sous-menus d'un projet (aussi affichés dans la barre latérale). */
 export const TABS: [string, string, string][] = [
-  ['overview', 'Vue d’ensemble', 'home'], ['sessions', 'Claude Code', 'terminal'], ['tasks', 'Tâches', 'check'], ['notes', 'Notes', 'notes'],
+  ['salon', 'Salon', 'sparkle'], ['overview', 'Vue d’ensemble', 'home'], ['sessions', 'Claude Code', 'terminal'], ['tasks', 'Tâches', 'check'], ['notes', 'Notes', 'notes'],
   ['code', 'Code', 'code'], ['archi', 'Architecture', 'graph'], ['api', 'API', 'plug'], ['data', 'Données', 'database'], ['tests', 'Tests', 'shield'],
   ['site', 'Site', 'link'], ['mobile', 'Mobile', 'phone'], ['docker', 'Docker', 'container'], ['env', 'Environnements', 'gear'],
   ['flux', 'Flux', 'pr'], ['server', 'Serveur', 'server'], ['boutique', 'Boutique', 'shop'],
 ];
 /** Familles de la barre d'onglets : l'ordre de TABS suit celui-ci. */
 const FAMILIES: [string, string[]][] = [
-  ['Piloter', ['overview', 'sessions', 'tasks', 'notes']], ['Construire', ['code', 'archi', 'api', 'data', 'tests']],
+  ['Piloter', ['salon', 'overview', 'sessions', 'tasks', 'notes']], ['Construire', ['code', 'archi', 'api', 'data', 'tests']],
   ['Faire tourner', ['site', 'mobile', 'docker', 'env']], ['Livrer', ['flux', 'server', 'boutique']],
 ];
 /** Les onglets montrés pour ce projet : « Boutique » seulement s'il a une boutique ou un compte publicitaire, « Mobile »
  *  seulement s'il a un dépôt de rôle mobile ou une app mobile dans son dossier (ou si on y est). */
 export const tabsOf = (p: Project, tab = ''): [string, string, string][] => TABS.filter(t => t[0] === tab
-  || (t[0] === 'boutique' ? commerce.available() && commerce.concerns(p) : t[0] === 'mobile' ? mobile.concerns(p) : true));
-const curTab = (): string => { const t = app.viewState().tab; return t && TABS.some(x => x[0] === t) ? t : 'overview'; };
+  || (t[0] === 'salon' ? claudeAvailable() : t[0] === 'boutique' ? commerce.available() && commerce.concerns(p) : t[0] === 'mobile' ? mobile.concerns(p) : true));
+/** Onglet d'arrivée d'un projet : le Salon quand Claude Code est joignable, sinon la Vue d'ensemble (web pur : pas de Salon). */
+export const defaultTab = (): string => claudeAvailable() ? 'salon' : 'overview';
+const curTab = (): string => { const t = app.viewState().tab; return t && TABS.some(x => x[0] === t) && (t !== 'salon' || claudeAvailable()) ? t : defaultTab(); };
 const panelsHTML = (p: Project, tab: string) => registry.projectPanels(p, tab).map(x => section(x.id, x.title, x.icon, '<p class="nf-empty">Chargement…</p>', 'pj-panel')).join('');
 const card = (tab: string, title: string, body: string) => `<button class="pj-ov" data-pj-tab="${tab}"><span class="pj-ov-h">${esc(title)}${icon('chevronRight')}</span><span class="pj-ov-b" data-ov="${tab}">${body}</span></button>`;
 
@@ -216,6 +219,7 @@ function tabBody(p: Project, tab: string): string {
   if (tab === 'code') return `${folderBox}<div class="pj-review"><span>${icon('sparkle')}Revue IA</span><button class="btn" data-pj="review-working">Changements en cours</button><button class="btn" data-pj="review-branch">Branche actuelle</button></div>
     ${section('branches', 'Branches locales', 'pr', native.available() ? '<p class="nf-empty">Chargement…</p>' : '<p class="hm-empty">Visibles dans l’app Mac.</p>')}${panelsHTML(p, 'code')}`;
   if (tab === 'flux') return '<div class="pj-flux"><p class="nf-empty">Chargement du flux…</p></div>';
+  if (tab === 'salon') return '<div class="sl-box"></div>';
   if (tab === 'sessions') return '<div class="ss-box"></div>';
   if (tab === 'server') return '<div class="sv-box"><div class="pj-skel"></div></div>';
   if (tab === 'docker') return '<div class="dk-box"><p class="nf-empty">Lecture de Docker…</p></div>';
@@ -402,7 +406,7 @@ async function agentsStrip(root: HTMLElement, p: Project): Promise<void> {
 }
 
 /** Onglets d'une seule rangée : les principaux, l'onglet ouvert, puis « Plus » (menu rangé par famille, voir `moreTabs`). */
-const MAIN_TABS = ['overview', 'sessions', 'tasks', 'notes', 'code'];
+const MAIN_TABS = ['salon', 'sessions', 'tasks', 'notes', 'code'];
 const tabsHTML = (p: Project, tab: string): string => {
   const have = tabsOf(p, tab), shown = have.filter(t => MAIN_TABS.includes(t[0]) || t[0] === tab);
   const btns = shown.map(([k, l]) => `<button data-pj-tab="${k}" class="${k === tab ? 'sel' : ''}"${k === tab ? ' aria-current="page"' : ''}>${esc(l)}</button>`).join('');
@@ -438,6 +442,7 @@ async function hydrate(root: HTMLElement, p: Project, tab: string): Promise<void
     const nav = $('.pj-tabs', root); if (nav?.isConnected) nav.innerHTML = tabsHTML(p, tab);
   });
   if (tab === 'flux') { const box = $('.pj-flux', root); if (box) { void flux.mount(box, p); chart.bindTips(root); } }
+  if (tab === 'salon') { const box = $('.sl-box', root); if (box) salon.mount(box, p, { openTech: id => { sessions.select(id || null, p.id); void go(p.id, 'sessions'); } }); }
   const f = await folderOf(p);
   fill(root, '.pj-folder-box', folderHTML(p, f));
   if (tab === 'sessions') { const box = $('.ss-box', root); if (box) sessions.mount(box, p, f?.path ?? null); }
@@ -666,8 +671,8 @@ function trailHTML(): string {
   const p = model.byId(app.viewState().project), tab = curTab();
   const up: [string, string] = ['Projets', 'data-pj-open=""'];
   if (!p) return app.crumb('Projets');
-  if (tab === 'overview') return app.crumb(p.name, [up]);
-  const home: [string, string] = [p.name, 'data-pj-tab="overview"'], label = TABS.find(x => x[0] === tab)?.[1] ?? '';
+  if (tab === defaultTab()) return app.crumb(p.name, [up]);
+  const home: [string, string] = [p.name, `data-pj-tab="${defaultTab()}"`], label = TABS.find(x => x[0] === tab)?.[1] ?? '';
   const talk = tab === 'sessions' ? sessions.current(p.id) : null;
   if (!talk) return app.crumb(label, [up, home]);
   const tabUp: [string, string] = [label, 'data-pj-tab="sessions"'];
@@ -675,7 +680,7 @@ function trailHTML(): string {
 }
 
 export function mount(main: HTMLElement): void {
-  sessions.stop();
+  sessions.stop(); salon.stop();
   const p = model.byId(app.viewState().project), tab = curTab();
   if (p) sessions.preload(p);
   main.innerHTML = `<header class="toolbar">${app.tbLeft()}${trailHTML()}<div class="tb-side tb-right">${p ? '' : `<button class="btn btn-ghost" data-pj="new">${icon('plus')}<span>Nouveau projet</span></button>`}</div></header>
@@ -689,7 +694,7 @@ export function mount(main: HTMLElement): void {
     if (t.closest('[data-pj-open]')) void go(null);
     else if (p && t.closest('[data-pj-talk]')) sessions.openSub(null);
     else if (p && t.closest('[data-pj-tab="sessions"]')) sessions.open(null);
-    else if (p && t.closest('[data-pj-tab]')) void go(p.id, 'overview');
+    else if (p && t.closest('[data-pj-tab]')) void go(p.id, defaultTab());
   });
   if (p) void hydrate(root, p, tab);
   root.addEventListener('submit', async e => {
@@ -716,7 +721,7 @@ export function mount(main: HTMLElement): void {
     const t = target(e), open = t.closest('[data-pj-open]');
     if (open) { await go(open.dataset.pjOpen || null); return; }
     const tb = t.closest('[data-pj-tab]');
-    if (tb && p) { await app.setView({ type: 'projets', project: p.id, tab: tb.dataset.pjTab ?? 'overview' }); return; }
+    if (tb && p) { await app.setView({ type: 'projets', project: p.id, tab: tb.dataset.pjTab ?? defaultTab() }); return; }
     // Case d'une note : la sélection suit, la barre se met à jour sans redessiner la liste.
     const pk = t.closest('[data-pj-pick]') as HTMLInputElement | null;
     if (pk && p) {

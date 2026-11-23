@@ -17,6 +17,9 @@
 @import "./stack.css";
 @import "./cat.css";
 @import "./workspace.css";
+@import "./planner.css";
+@import "./usage.css";
+@import "./salon.css";
 @import "./motion.css";
 @font-face { font-family: "Inter"; font-style: normal; font-weight: 400 700; font-display: swap; src: url(../fonts/inter.woff2) format("woff2"); }
 
@@ -165,6 +168,10 @@ button.side-label:hover { color: var(--text-2); }
 .plug-vol input[type=range]:focus-visible { outline: none; }
 .plug-vol input[type=range]:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--hover), 0 0 0 1px var(--c-green); }
 /* Réglages → Extensions. */
+/* Page Extensions : une carte par extension, celle qui est allumée et a des réglages prend toute la largeur. */
+.px-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; align-items: stretch; }
+.px-grid > .px { margin: 0; }
+.px-wide { grid-column: 1 / -1; }
 .px-head { display: flex; align-items: flex-start; gap: 10px; }
 .px-head > .ic { width: 18px; height: 18px; margin-top: 1px; flex: none; color: var(--text-3); }
 .px-head > div { flex: 1; }

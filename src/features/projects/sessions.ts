@@ -709,7 +709,7 @@ function hideRuns(ids: string[]): void {
 
 // ---------- Où en est le travail d'un agent ----------
 /** Étapes du travail d'un agent, dans l'ordre : il écrit, il faut publier, la PR attend, c'est fusionné. */
-type Stage = 'work' | 'review' | 'pr' | 'merged' | 'idle';
+export type Stage = 'work' | 'review' | 'pr' | 'merged' | 'idle';
 const STAGE_ORDER: Stage[] = ['work', 'review', 'pr', 'merged', 'idle'];
 const STAGES: Record<Stage, { c: string; ic: string; l: string; g: string; d: string }> = {
   work: { c: 'amber', ic: 'bolt', l: 'Au travail', g: 'Au travail', d: 'l’agent modifie encore sa copie' },
@@ -842,7 +842,7 @@ function clock(iso: string): string {
 }
 
 /** Markdown d'une réponse de Claude, sans les blocs propres aux notes (tags, liens entre notes, cases cochables). */
-const answerHTML = (text: string): string => renderMarkdown(text)
+export const answerHTML = (text: string): string => renderMarkdown(text)
   .replace(/<a class="(?:tag|wikilink)[^>]*>(.*?)<\/a>/g, '$1')
   .replace(/<input type="checkbox"/g, '<input type="checkbox" disabled');
 

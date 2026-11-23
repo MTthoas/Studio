@@ -1,0 +1,28 @@
+/* Jauge d'usage de l'IA (pied de barre latérale) : voir src/features/usagebar.ts */
+#usage-side:empty { display: none; }
+#usage-side { position: relative; margin: 0 8px 6px 10px; }
+.ub-box { all: unset; box-sizing: border-box; display: block; width: 100%; padding: 7px 9px; border: 1px solid var(--border); border-radius: calc(var(--r) + 2px); background: var(--surface); cursor: pointer; }
+.ub-box:hover { background: var(--hover); }
+.ub-box:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ub-row + .ub-row { margin-top: 7px; }
+.ub-l { display: flex; justify-content: space-between; gap: 8px; font-size: var(--t-1); color: var(--text-2); margin-bottom: 4px; }
+.ub-l b { font-weight: 600; color: var(--text); white-space: nowrap; }
+.ub-l span { color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+.ub-l span.ub-amber { color: var(--c-amber); }
+.ub-l span.ub-red { color: var(--c-red); }
+.ub-bar { display: block; height: 3px; border-radius: 3px; background: var(--active); overflow: hidden; }
+.ub-bar i { display: block; height: 100%; border-radius: 3px; background: var(--c-blue); }
+.ub-bar.ub-amber i { background: var(--c-amber); }
+.ub-bar.ub-red i { background: var(--c-red); }
+.ub-link { all: unset; cursor: pointer; font-size: var(--t-1); color: var(--text-3); text-decoration: underline; text-underline-offset: 2px; }
+.ub-link:hover { color: var(--text-2); }
+.ub-row .ub-link { display: block; margin-top: 5px; }
+.ub-pop { position: fixed; z-index: 60; box-sizing: border-box; max-height: 70vh; overflow: auto; padding: 12px 14px; border-radius: calc(var(--r) + 4px); background: var(--surface); box-shadow: var(--shadow); font-size: var(--t-1); color: var(--text-2); }
+.ub-src + .ub-src { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.ub-name { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; color: var(--text); }
+.ub-name em { font-style: normal; font-size: 11px; color: var(--ok); }
+.ub-m { margin-bottom: 7px; }
+.ub-src small, .ub-foot small { display: block; color: var(--text-3); }
+.ub-src > .ub-link { display: inline-block; }
+.ub-foot { display: flex; align-items: center; gap: 10px; white-space: nowrap; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.ub-sp { flex: 1; }

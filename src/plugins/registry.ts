@@ -82,6 +82,8 @@ export interface Plugin {
   description?: string;
   /** À activer dans Réglages → Extensions. Sans ce drapeau, le plugin fait partie de Studio et tourne toujours. */
   optional?: boolean;
+  /** Id d'une autre extension qui doit être allumée pour que celle-ci serve (Meta Ads : Shopify). */
+  needs?: string;
   /** Domaines contactés, affichés tels quels dans les réglages. Ils doivent figurer dans connect-src (index.html). */
   hosts?: string[];
   /** A besoin du coffre même sans champ secret (jetons obtenus par connexion). */
@@ -124,7 +126,15 @@ export function register(p: Plugin): void {
 }
 export const list = (): Plugin[] => [...plugins.values()];
 export const get = (id: string): Plugin | undefined => plugins.get(id);
-export const active = (p: Plugin): boolean => !p.optional || state().on.includes(p.id);
+/** Une extension est-elle allumée ? Par id ou par plugin. Les plugins du cœur le sont toujours ; un id inconnu, jamais. */
+export function active(x: string | Plugin): boolean {
+  const p = typeof x === 'string' ? plugins.get(x) : x;
+  if (!p) return false;
+  return (!p.optional || state().on.includes(p.id)) && (!p.needs || active(p.needs));
+}
+export const isOn = active;
+/** L'interrupteur de l'extension lui-même, sans tenir compte de ce dont elle dépend (la case de la page Extensions). */
+export const switched = (id: string): boolean => { const p = plugins.get(id); return !!p && (!p.optional || state().on.includes(id)); };
 const live = (): Plugin[] => list().filter(active);
 
 export const projectPanels = (p: Project, tab = 'overview'): ProjectPanel[] =>

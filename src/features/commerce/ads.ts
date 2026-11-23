@@ -117,7 +117,7 @@ export function mount(box: HTMLElement, p: Project): void {
   const t = setInterval(() => { if (!alive()) clearInterval(t); else if (!document.hidden) void load(); }, 60e3);
 }
 
-const notMac = (): string => `<div class="ad-empty"><h3>${icon('bolt')}Publicité Meta</h3><p>La publicité se gère depuis l’app Studio pour Mac : les appels à Meta passent par l’app, jamais par la page.</p></div>`;
+const notMac = (): string => `<div class="ad-empty"><h3>${icon('bolt')}Publicité Meta</h3><p>${meta.whyNot()}</p></div>`;
 
 const NOTE = `<p class="ad-note">${icon('shield')}Meta ne propose aucune API pour publier une annonce Marketplace de particulier : Studio crée des <strong>publicités payantes</strong> dont Marketplace est l’un des emplacements. Le catalogue produits se synchronise par le canal « Facebook &amp; Instagram » de Shopify, à régler dans Shopify.</p>`;
 
@@ -182,7 +182,7 @@ export function compose(p: Project, d: Partial<AdDraft>): void {
   const m = modal({ title: 'Nouvelle campagne', cls: 'ad-modal', html: '<div class="ad-compose"></div>' });
   const host = need('.ad-compose', m.node);
   if (!meta.supported() || !c || !p.meta || !c.page) {
-    const why = !meta.supported() ? 'La publicité se gère depuis l’app Studio pour Mac.'
+    const why = !meta.supported() ? meta.whyNot()
       : !c ? 'Meta n’est pas connecté : colle ton jeton dans Réglages → Boutiques → Meta.'
       : !p.meta ? 'Choisis d’abord le compte publicitaire dans l’onglet Boutique → Publicité.'
       : 'Renseigne l’identifiant de ta Page Facebook dans Réglages → Boutiques → Meta : une pub est toujours publiée au nom d’une Page.';
@@ -275,7 +275,7 @@ const typed = { token: '', page: '', pixel: '', dsa: '' };
 function settingsHTML(): string {
   const c = meta.creds();
   let body: string;
-  if (!meta.supported()) body = '<p>La publicité Meta se gère depuis l’app Studio pour Mac.</p>';
+  if (!meta.supported()) body = `<p>${meta.whyNot()}</p>`;
   else if (!vault.enabled()) body = '<p>Active d’abord le coffre (Réglages → Coffre) : le jeton Meta y est gardé chiffré.</p>';
   else if (!vault.isOpen()) body = '<p>Le coffre est verrouillé : déverrouille-le pour gérer le jeton Meta.</p>';
   else {

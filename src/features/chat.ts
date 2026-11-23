@@ -11,6 +11,7 @@ import * as store from '../core/store.ts';
 import * as ai from '../integrations/ai.ts';
 import * as tuning from '../integrations/tuning.ts';
 import * as scope from '../integrations/scope.ts';
+import * as registry from '../plugins/registry.ts';
 import * as projects from './projects/model.ts';
 import { pickNotes } from './projects/notepick.ts';
 import * as hub from './hub.ts';
@@ -34,7 +35,7 @@ let loaded: Promise<void> | undefined;
 const drafts = new Map<string, string>();
 
 /** Outils demandés ; le périmètre décide ensuite ce qu'ils voient (Linear : seulement dans un projet relié). */
-const TOOLS = ['notes', 'linear', 'github', 'navigateur', 'boutique'];
+const tools = (): string[] => ['notes', 'linear', 'github', 'navigateur', ...(registry.active('shopify') ? ['boutique'] : [])]; // outil Boutique : seulement extension Shopify allumée
 const PROJECT_SUGGESTIONS = [
   'Où en est ce projet ?',
   'Quelles tâches du projet sont en retard ?',
@@ -115,7 +116,7 @@ async function send(text: string): Promise<void> {
   if (app.viewState().chat !== c.id) await app.setView({ type: 'claude', chat: c.id }); else { app.renderSidebar(); paint(); }
   const chat = c;
   try {
-    const r = await ai.run({ prompt, tools: TOOLS, provider, context, chat: true }, {
+    const r = await ai.run({ prompt, tools: tools(), provider, context, chat: true }, {
       approve: hub.approve, scope: sc, notes: (attached.get(chat.id) ?? []).filter(id => { const n = store.get(id); return !!n && ai.shareable(n); }), onWrite: app.refreshNote, signal: run.ctrl.signal,
       onStep: e => { run.steps.push(hub.stepLabel(e)); if (shown(chat.id)) paint(); },
     });

@@ -203,7 +203,7 @@ export function fenceFor(note: Note): (lang: string, code: string, idx: number) 
     if (lang === 'agent') return agentBlock(note, code, idx);
     if (lang === 'linear') return linBlock(code);
     if (savedCommands.LANGS.has(lang)) return savedCommands.blockHTML(code);
-    if (shopFence.LANGS.has(lang)) return shopFence.block(note, code, idx);
+    if (shopFence.LANGS.has(lang)) return registry.active('shopify') ? shopFence.block(note, code, idx) : null; // extension éteinte : bloc de code ordinaire
     return registry.fence(lang, code);
   };
 }
@@ -530,7 +530,7 @@ const TABS: [string, string, string, string][] = [
   ['linear', 'linear', 'Linear', 'Tickets, projets et notifications Linear, sans intermédiaire.'],
   ['github', 'github', 'GitHub', 'L’actualité de tes dépôts, en lecture seule.'],
   ['commerce', 'shop', 'Boutiques', 'Tes boutiques Shopify et ton compte publicitaire Meta. Les identifiants restent dans le coffre ; seule l’app Mac parle à Shopify et à Meta.'],
-  ['extensions', 'plug', 'Extensions', 'Des fonctions en plus, à activer une par une : Spotify, n8n… Tout tourne sur cet appareil, sans serveur.'],
+  ['extensions', 'plug', 'Extensions', 'Des fonctions en plus, éteintes par défaut : Shopify, Meta Ads, Kubernetes, Spotify, Figma, n8n. Tout tourne sur cet appareil, sans serveur.'],
   ['appareils', 'devices', 'Appareils', 'Relie ton téléphone et tes ordinateurs, sans serveur, chiffré de bout en bout.'],
   ['apparence', 'palette', 'Apparence', 'Thème de l’interface.'],
   ['donnees', 'database', 'Données', 'Sauvegardes, import et export.'],
@@ -541,10 +541,16 @@ const root = () => $('#main .settings');
 
 export function openConnections(tab = 'coffre'): void { void app.setView({ type: 'settings', tab }); }
 
+/** Onglets visibles : « Boutiques » seulement avec l'extension Shopify allumée. */
+const navHTML = (): string => tabs().map(([k, ic, l]) => `<button data-tab="${k}"${k === curTab ? ' aria-current="page"' : ''}>${icon(ic)}<span>${l}</span></button>`).join('');
+/** Après un interrupteur d'extension : la liste des réglages et la barre latérale (vue « Boutiques »…) suivent. */
+const extChanged = (): void => { refreshConnections(); app.renderSidebar?.(); };
+const tabs = () => TABS.filter(t => t[0] !== 'commerce' || registry.active('shopify'));
+
 export function mountSettings(main: HTMLElement, tab: string): void {
-  curTab = TABS.some(t => t[0] === tab) ? tab : 'coffre';
-  main.innerHTML = `<header class="toolbar">${app.tbLeft()}${app.crumb(TABS.find(t => t[0] === curTab)?.[2] ?? 'Réglages', [['Réglages', '']])}<div class="tb-side tb-right"></div></header>
-    <div class="settings"><nav class="set-nav" aria-label="Sections">${TABS.map(([k, ic, l]) => `<button data-tab="${k}"${k === curTab ? ' aria-current="page"' : ''}>${icon(ic)}<span>${l}</span></button>`).join('')}</nav>
+  curTab = tabs().some(t => t[0] === tab) ? tab : 'coffre';
+  main.innerHTML = `<header class="toolbar">${app.tbLeft()}${app.crumb(tabs().find(t => t[0] === curTab)?.[2] ?? 'Réglages', [['Réglages', '']])}<div class="tb-side tb-right"></div></header>
+    <div class="settings"><nav class="set-nav" aria-label="Sections">${navHTML()}</nav>
     <div class="set-scroll"><div class="set-body"></div></div></div>`;
   const r = root(); if (!r) return;
   r.addEventListener('click', e => void onConnClick(e));
@@ -553,21 +559,21 @@ export function mountSettings(main: HTMLElement, tab: string): void {
   refreshConnections();
 }
 
-const TAB_BODY: Record<string, () => string> = { coffre: () => tabVault(), ia: () => tabAI(), consignes: () => tuningUI.html(), autorisations: () => permissionsUI.html(), linear: () => tabLinear(), github: () => tabGithub(), commerce: () => shopUI.settings.html() + adsUI.settings.html(), extensions: () => pluginsUI.html(), appareils: () => tabDevices(), apparence: () => tabLook(), donnees: () => tabData(), maj: () => tabUpdate() };
+const TAB_BODY: Record<string, () => string> = { coffre: () => tabVault(), ia: () => tabAI(), consignes: () => tuningUI.html(), autorisations: () => permissionsUI.html(), linear: () => tabLinear(), github: () => tabGithub(), commerce: () => shopUI.settings.html() + (registry.active('meta') ? adsUI.settings.html() : ''), extensions: () => pluginsUI.html(), appareils: () => tabDevices(), apparence: () => tabLook(), donnees: () => tabData(), maj: () => tabUpdate() };
 /** Pour les plugins : redessine l'onglet Extensions s'il est à l'écran. */
 export function refreshSettings(): void { if (curTab === 'extensions') refreshConnections(); }
 function refreshConnections(): void {
   const r = root(); if (!r) return;
   const active = document.activeElement as HTMLInputElement | null;
   const body = need('.set-body', r), focus = active?.closest('.set-body') ? active.name : null;
-  const [, , label, lead] = TABS.find(t => t[0] === curTab) ?? TABS[0] ?? ['', '', '', ''];
-  $$('.set-nav [data-tab]', r).forEach(b => b.toggleAttribute('aria-current', b.dataset.tab === curTab));
+  const [, , label, lead] = tabs().find(t => t[0] === curTab) ?? TABS[0] ?? ['', '', '', ''];
+  const nav = $('.set-nav', r); if (nav) nav.innerHTML = navHTML();
   body.innerHTML = `<h1>${label}</h1><p class="set-lead">${lead}</p>` + (TAB_BODY[curTab] ?? tabVault)();
   if (focus) $(`[name="${focus}"]`, body)?.focus();
   if (curTab === 'github' && github.connected()) github.viewer().then(v => { const x = $('[data-gh-who]', body); if (x) x.textContent = `Connecté : ${v.login}`; }).catch(e => { const x = $('[data-gh-who]', body); if (x) x.textContent = 'Erreur : ' + e.message; });
   if (curTab === 'linear' && linear.connected()) linear.viewer().then(v => { const x = $('.cx-who', body); if (x) x.textContent = `Connecté : ${v.viewer.name} · ${v.organization.name}`; }).catch(e => { const x = $('.cx-who', body); if (x) x.textContent = 'Erreur : ' + e.message; });
   if (curTab === 'ia') ccRefresh();
-  if (curTab === 'commerce') { shopUI.settings.bind(body); adsUI.settings.bind(body); }
+  if (curTab === 'commerce') { shopUI.settings.bind(body); if (registry.active('meta')) adsUI.settings.bind(body); }
   if (curTab === 'consignes') tuningUI.mount();
   if (curTab === 'autorisations') permissionsUI.mount();
   if (curTab === 'maj' && update.supported() && !update.current() && !update.working() && !update.outdatedShell()) void update.check();
@@ -781,7 +787,7 @@ async function onConnClick(e: MouseEvent) {
   const tab = t.closest('[data-tab]'); if (tab) { openConnections(tab.dataset.tab); return; }
   if (curTab === 'consignes' && await tuningUI.onClick(t, refreshConnections)) return;
   if (curTab === 'autorisations' && await permissionsUI.onClick(t, refreshConnections)) return;
-  if (curTab === 'extensions' && await pluginsUI.onClick(t, refreshConnections)) return;
+  if (curTab === 'extensions' && await pluginsUI.onClick(t, extChanged)) return;
   const del = t.closest('[data-del-key]'); if (del) { if (await confirmBox({ title: 'Supprimer la clé ?', text: 'Elle sera effacée du coffre de cet appareil.', ok: 'Supprimer', danger: true })) await vault.setSecret(del.dataset.delKey ?? '', null); return; }
   const fg = t.closest('[data-dev-forget]'); if (fg) { if (await confirmBox({ title: 'Oublier cet appareil ?', text: 'La liaison sera supprimée ici. Fais de même sur l’autre appareil.', ok: 'Oublier', danger: true })) await link.forget(fg.dataset.devForget ?? ''); return; }
   const pk = t.closest('[data-dev-packet]'); if (pk) { const dev = link.devices().find(d => d.secret === pk.dataset.devPacket); if (dev) await sendPacket(dev); return; }
@@ -839,7 +845,7 @@ async function onConnSubmit(e: SubmitEvent) {
   e.preventDefault();
   const f = target(e) as HTMLFormElement;
   const field = (n: string) => (f.elements.namedItem(n) as HTMLInputElement | null)?.value ?? '';
-  if (curTab === 'extensions' && await pluginsUI.onSubmit(f, refreshConnections)) return;
+  if (curTab === 'extensions' && await pluginsUI.onSubmit(f, extChanged)) return;
   if (f.dataset.f === 'create') {
     const a = field('p1'), b = field('p2'), err = need('.lock-err', f);
     if (a.length < 10) return void (err.textContent = '10 caractères minimum.');
@@ -865,7 +871,7 @@ function onConnChange(e: Event): void {
   const t = target(e) as HTMLInputElement;
   if (curTab === 'consignes' && tuningUI.onChange(t)) return;
   if (curTab === 'autorisations' && permissionsUI.onChange(t)) return;
-  if (curTab === 'extensions' && pluginsUI.onChange(t, refreshConnections)) return;
+  if (curTab === 'extensions' && pluginsUI.onChange(t, extChanged)) return;
   if (t.name === 'provider') ai.setConfig({ provider: t.value as ai.Provider });
   else if (t.name === 'theme') app.setTheme(t.value);
   else if (t.name === 'backdrop') app.setBackdrop(t.value);

@@ -9,6 +9,7 @@ import * as linear from './linear/api.ts';
 import * as todo from '../features/tasks.ts';
 import * as notifs from './linear/notifications.ts';
 import * as github from './github/api.ts';
+import * as registry from '../plugins/registry.ts';
 import { shopTools } from './shopify/tools.ts';
 import { parseTrigger, TRIGGERS, type AppEvent, type Trigger } from '../core/events.ts';
 import { fold } from '../lib/fuzzy.ts';
@@ -302,7 +303,7 @@ function toolset(names: string[], ctx: RunContext, scope: sc.Scope): Tool[] {
     ...(set.has('linear') && sc.hasLinear(scope) ? linearTools(scope) : []),
     ...(set.has('github') && github.connected() ? githubTools(scope) : []),
     ...(set.has('agents') ? agentTools(ctx, scope) : []),
-    ...(set.has('boutique') || set.has('shopify') ? shopTools(scope) : []),
+    ...((set.has('boutique') || set.has('shopify')) && registry.active('shopify') ? shopTools(scope) : []),
   ];
 }
 
