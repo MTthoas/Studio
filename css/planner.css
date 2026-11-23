@@ -1,0 +1,85 @@
+/* Planification (src/features/planner.ts), préfixe pl-. Importé par app.css. Jetons de :root seulement : le thème sombre suit. */
+.pl-root { flex: 1; min-height: 0; display: flex; flex-direction: column; outline: none; }
+.pl-body { flex: 1; min-height: 0; overflow: auto; padding: 16px 24px 32px; max-width: 900px; width: 100%; margin: 0 auto; box-sizing: border-box; }
+.pl-dim, .pl-sub { color: var(--text-3); font-size: var(--t-1); }
+.pl-dim a, .pl-gauge a { color: var(--accent-text); text-decoration: none; }
+.pl-dim a:hover, .pl-gauge a:hover { text-decoration: underline; }
+.pl-err { color: var(--danger); font-size: var(--t-1); }
+
+/* Jauge de la fenêtre de 5 h */
+.pl-gauge { display: flex; align-items: center; gap: 16px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: var(--t-2); }
+.pl-gauge.pl-dim { gap: 8px; padding: 8px 12px; background: none; }
+.pl-gauge .ic { width: 14px; height: 14px; flex: none; }
+.pl-gauge b { font-weight: 600; }
+.pl-bar { flex: 1; min-width: 80px; max-width: 320px; height: 6px; border-radius: 3px; background: var(--hover); overflow: hidden; }
+.pl-bar i { display: block; height: 100%; border-radius: 3px; background: var(--c-green); transition: width .3s; }
+
+/* Frise de la journée */
+.pl-tl { position: relative; height: 22px; margin-top: 14px; border-radius: 6px; background: var(--hover); overflow: hidden; }
+.pl-tl > span { position: absolute; top: 0; bottom: 0; }
+.pl-res { background: color-mix(in srgb, var(--c-amber) 12%, transparent); }
+.pl-win { display: flex; align-items: center; padding: 0 8px; background: color-mix(in srgb, var(--c-gray) 35%, transparent); color: var(--text-2); font-size: var(--t-1); white-space: nowrap; overflow: hidden; }
+.pl-mk { width: 8px; margin-left: -4px; top: 5px !important; bottom: 5px !important; border-radius: 50%; background: var(--c, var(--text-3)); }
+.pl-now { width: 2px; margin-left: -1px; background: var(--accent); }
+.pl-hrs { display: flex; justify-content: space-between; margin-top: 3px; font-size: 10px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.pl-leg { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; font-size: var(--t-1); color: var(--text-2); }
+.pl-leg span { display: inline-flex; align-items: center; gap: 6px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-leg i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+
+/* Groupes et rangées */
+.pl-grp { display: flex; align-items: baseline; gap: 8px; margin: 20px 2px 4px; font-size: var(--t-1); font-weight: 500; color: var(--text-3); }
+.pl-grp span { font-weight: 400; }
+.pl-row { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 7px; }
+.pl-row:hover { background: var(--hover); }
+.pl-row.off { opacity: .55; }
+.pl-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pl-t { font-size: var(--t-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-main small { color: var(--text-3); font-size: var(--t-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pl-main .pl-err { white-space: normal; }
+.pl-act { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+.pl-more { width: 28px; padding: 0; }
+.pl-pill { flex: none; min-width: 20px; height: 20px; padding: 0 7px; box-sizing: border-box; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; font-size: var(--t-1); font-weight: 600; background: var(--btn); color: var(--text-2); white-space: nowrap; max-width: 190px; overflow: hidden; text-overflow: ellipsis; }
+.pl-pill .ic { width: 11px; height: 11px; stroke-width: 2.2; }
+.pl-amber { background: color-mix(in srgb, var(--c-amber) 18%, transparent); color: var(--c-amber); }
+.pl-violet { background: color-mix(in srgb, var(--c-violet) 16%, transparent); color: var(--c-violet); font-weight: 500; }
+.pl-green { background: color-mix(in srgb, var(--c-green) 16%, transparent); color: var(--c-green); }
+.pl-red { background: color-mix(in srgb, var(--c-red) 16%, transparent); color: var(--c-red); }
+
+/* Interrupteur */
+.pl-sw { position: relative; width: 30px; height: 18px; padding: 0; border: 0; border-radius: 9px; background: var(--border-2); transition: background .15s; flex: none; }
+.pl-sw i { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--bg); transition: transform .15s; }
+.pl-sw[aria-checked="true"] { background: var(--c-green); }
+.pl-sw[aria-checked="true"] i { transform: translateX(12px); }
+
+/* Faites (repliées) et règles */
+.pl-done, .pl-rules { margin-top: 18px; }
+.pl-done > summary, .pl-rules > summary { cursor: default; font-size: var(--t-1); font-weight: 500; color: var(--text-3); padding: 2px; }
+.pl-done > summary span { font-variant-numeric: tabular-nums; opacity: .7; margin-left: 4px; }
+.pl-done[open] > summary, .pl-rules[open] > summary { margin-bottom: 6px; }
+.pl-rules-in { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: var(--t-2); }
+.pl-chk { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pl-chk .field { width: auto; margin: 0; height: 28px; }
+.pl-n { width: 56px !important; }
+.pl-h { width: 72px !important; }
+
+/* État vide */
+.pl-empty { text-align: center; padding: 56px 16px 24px; color: var(--text-2); }
+.pl-empty h3 { margin: 0 0 6px; font-size: var(--t-3); font-weight: 600; color: var(--text); }
+.pl-empty p { margin: 0 auto; max-width: 420px; line-height: 1.6; }
+.pl-ex { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: 18px; }
+
+/* Formulaire */
+.pl-form { width: min(520px, calc(100vw - 32px)); }
+.pl-fh { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px 4px; }
+.pl-fb { display: flex; flex-direction: column; gap: 12px; padding: 10px 16px; font-size: var(--t-2); }
+.pl-fb label { display: flex; flex-direction: column; gap: 2px; color: var(--text-2); }
+.pl-fb .field { margin-top: 0; }
+.pl-fb textarea.field { height: auto; padding: 8px 10px; resize: vertical; line-height: 1.5; }
+.pl-line { display: flex; align-items: center; gap: 10px; color: var(--text-2); }
+.pl-line .field { width: auto; margin: 0; }
+.pl-when { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 8px 12px 10px; border: 1px solid var(--border); border-radius: 8px; }
+.pl-when legend { padding: 0 4px; color: var(--text-3); font-size: var(--t-1); }
+.pl-when .pl-opt { flex-direction: row; align-items: center; gap: 6px; color: var(--text); }
+.pl-when .field { margin-left: 22px; width: calc(100% - 22px); }
+.pl-when input:disabled { opacity: .45; }
+.pl-prev { margin-left: 22px; color: var(--text-3); font-size: var(--t-1); }

@@ -5,6 +5,7 @@
 // Toute écriture réussie vide le cache de la boutique. L'appelant a déjà demandé confirmation à l'utilisateur.
 import * as native from '../../core/native.ts';
 import * as vault from '../../core/vault.ts';
+import * as registry from '../../plugins/registry.ts';
 import * as model from '../../features/projects/model.ts';
 import type { Project } from '../../features/projects/model.ts';
 
@@ -18,7 +19,7 @@ export const SCOPES: string[] = [
 ];
 
 /** Seule l'app Mac parle à Shopify (le pont `commerce` n'est pas ouvert aux appareils liés). */
-export const supported = (): boolean => native.available() && document.documentElement.dataset.native === 'mac';
+export const supported = (): boolean => native.available() && document.documentElement.dataset.native === 'mac' && registry.active('shopify');
 
 // ---------- Identifiants (coffre) ----------
 const list = (): ShopCreds[] => { const v = vault.secret<ShopCreds[]>('shopify'); return Array.isArray(v) ? v.filter(s => !!s && typeof s.domain === 'string') : []; };

@@ -242,6 +242,30 @@ Ces réglages restent sur le Mac. Un appareil lié ne peut ni les lire ni les mo
 
 La disposition et ce que montre chaque vue sont gardés sur l'appareil.
 
+#### Salon
+
+Le **Salon** est le premier onglet d'un projet (app Mac) : les conversations Claude Code du projet, présentées comme une discussion de groupe plutôt que comme un fil technique.
+
+- **Des prénoms** : l'agent principal s'appelle Maya, l'explorateur Léo, le relecteur Iris, le testeur Noé… Chaque message porte son auteur, son rôle, l'heure, et « @Prénom » quand il s'adresse à quelqu'un.
+- **Ce qu'un humain dirait** : qui confie quoi à qui, les comptes rendus (repliés), la question qui t'attend, et à la fin la carte du résultat avec **Publier la PR**. Les outils, fichiers lus et commandes restent derrière **Vue technique**.
+- **Un salon par projet**, et les agents ne se parlent qu'au sein d'une même consigne : rien ne passe d'un projet à l'autre.
+- **Vue d'ensemble** reste disponible dans « Plus ▾ ».
+
+#### Planification
+
+**Planification** (barre latérale, app Mac) est une file d'attente de consignes pour les agents Claude Code :
+
+- **Quand** : maintenant, à une date et une heure, de façon récurrente (`jours ouvrés 18h`, `tous les jours 2h`, `toutes les 2h` ; pas moins de 15 minutes), ou **à la réouverture de la fenêtre de 5 h** de ton abonnement.
+- **Fenêtre épuisée** : les consignes attendent et repartent seules à la réouverture. Il faut pour cela que Studio connaisse tes limites (Réglages → IA → **Afficher mes limites**) ; sinon elles partent sans attendre.
+- **Réserve de journée** (Règles) : entre 9 h et 19 h, Studio te garde 30 % de la fenêtre ; une consigne planifiée attend plutôt que d'entamer cette part. Réglable, désactivable.
+- **Garde-fous** : deux lancements au plus par passe, jamais deux fois le même créneau, pas de réessai en boucle, un seul rattrapage pour une récurrente, et une récurrente ne se relance pas par-dessus sa propre exécution. Une consigne datée dont l'heure est passée de plus de 12 h ne part pas.
+
+Comme les automatisations, la planification tourne tant que l'application est ouverte.
+
+#### Jauge d'usage
+
+En bas de la barre latérale, une jauge montre en permanence l'usage de l'IA : fenêtre de 5 h et semaine de l'abonnement Claude Code, tokens du mois face au budget pour les clés API Claude et OpenAI, modèle local chargé. Un clic ouvre le détail de toutes les sources. Chaque fournisseur est un « lecteur » de [`src/integrations/quota.ts`](src/integrations/quota.ts) (`register`) : en ajouter un ne demande rien d'autre.
+
 ### Serveurs et pilotage à distance
 
 **Serveur** (VPS, VM) : relie un hôte SSH (alias de `~/.ssh/config` ou `utilisateur@hôte`), l'utilisateur au besoin (champ **Utilisateur**, prioritaire sur le `User` de `~/.ssh/config`) et le dossier du projet sur ce serveur. Studio affiche son état (charge, mémoire, disque, dépôt, Claude Code), ouvre un terminal SSH, et y lance des agents Claude Code avec les mêmes garde-fous. Connexion par clé uniquement (`BatchMode`), au choix :
@@ -460,6 +484,7 @@ contexte.md         mémoire du dépôt pour les agents : lue en premier, tenue 
 
 Les fonctions de Studio se branchent sur un registre d'extensions ([`src/plugins/registry.ts`](src/plugins/registry.ts)). GitHub et Linear y sont enregistrés comme plugins maison ([`src/plugins/builtin.ts`](src/plugins/builtin.ts)) ; les plugins **optionnels** s'activent dans Réglages → Extensions et ne tournent que tant que Studio est ouvert, sans aucun serveur :
 
+- **Shopify**, **Meta Ads** et **Kubernetes** : éteintes par défaut comme les autres. Éteintes, Boutiques, la publicité et les sections Kubernetes d'un serveur n'apparaissent nulle part (barre latérale, palette, onglet de projet, réglages, outils de l'IA) ; aucune donnée n'est effacée, les rallumer les fait revenir. Meta Ads demande Shopify.
 - **Spotify** ([`src/plugins/spotify.ts`](src/plugins/spotify.ts)) : titre en cours, commandes de lecture et volume (curseur, son coupé) en bas de la barre latérale, et dans la palette. Connexion OAuth PKCE avec ta propre app Spotify (Client ID seul, aucun secret) ; les commandes demandent Spotify Premium.
 - **n8n** ([`src/plugins/n8n.ts`](src/plugins/n8n.ts)) : envoie captures, tâches terminées, nouveautés Linear et GitHub, ou la note ouverte, à un webhook n8n (n8n Cloud ou n8n local).
 - **Figma** ([`src/plugins/figma.ts`](src/plugins/figma.ts)) : un bloc ` ```figma ` (une adresse par ligne) affiche les maquettes, prototypes et tableaux FigJam en grand dans Studio (consultation, pas édition) ; la page d'un projet liste les fichiers Figma cités dans ses notes. Un jeton personnel facultatif (lecture seule) ajoute leur nom, leur dernière modification et les commentaires ouverts.

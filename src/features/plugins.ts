@@ -17,18 +17,23 @@ function field(p: Plugin, f: Field): string {
   return `<label class="px-label" for="${name}">${esc(f.label)}</label><form class="cx-row" data-px-form="${ref}"><input ${f.secret ? 'type="password" ' : ''}class="field" id="${name}" name="${name}" value="${f.secret ? '' : esc(a.get(f.key))}" placeholder="${esc(f.placeholder ?? '')}" autocomplete="off" spellcheck="false"${f.secret ? ' required' : ''}><button class="btn btn-primary">Enregistrer</button></form>${hint}`;
 }
 
+/** Extensions dont les réglages vivent dans un autre onglet de Réglages. */
+const SETTINGS_TAB: Record<string, string> = { shopify: 'commerce', meta: 'commerce' };
+
 function card(p: Plugin): string {
-  const on = registry.active(p);
+  const on = registry.active(p), sw = registry.switched(p.id);
   const locked = needsVault(p) && !vault.isOpen();
-  const body = !on ? '' : locked
+  const waits = sw && !on && p.needs ? `<p class="modal-hint">Allume d’abord l’extension ${esc(registry.get(p.needs)?.name ?? p.needs)}.</p>` : '';
+  const body = !on ? waits : locked
     ? `<p class="modal-hint">${icon('shield')} Les jetons et adresses secrètes de ${esc(p.name)} sont gardés chiffrés dans le coffre. <button class="link-btn" data-tab="coffre">Active-le d’abord</button>.</p>`
-    : `${(p.settings ?? []).map(f => field(p, f)).join('')}${p.panel?.(registry.api(p)) ?? ''}`;
-  return `<section class="cx-sec px${on ? ' on' : ''}"><div class="px-head">${icon(p.icon ?? 'plug')}<div><h4>${esc(p.name)}</h4><p>${esc(p.description ?? '')}</p></div>
-    <label class="cx-check"><input type="checkbox" data-px-on="${esc(p.id)}"${on ? ' checked' : ''}> Activer</label></div>
+    : `${(p.settings ?? []).map(f => field(p, f)).join('')}${p.panel?.(registry.api(p)) ?? ''}${SETTINGS_TAB[p.id] ? `<p class="modal-hint"><button class="link-btn" data-tab="${SETTINGS_TAB[p.id]}">Réglages</button></p>` : ''}`;
+  const wide = body && !waits ? ' px-wide' : '';
+  return `<section class="cx-sec px${on ? ' on' : ''}${wide}"><div class="px-head">${icon(p.icon ?? 'plug')}<div><h4>${esc(p.name)}</h4><p>${esc(p.description ?? '')}</p></div>
+    <label class="cx-check"><input type="checkbox" data-px-on="${esc(p.id)}"${sw ? ' checked' : ''}> Activer</label></div>
     ${p.hosts?.length ? `<p class="px-hosts">Ne contacte que ${p.hosts.map(h => `<code>${esc(h)}</code>`).join(', ')}.</p>` : ''}${body}</section>`;
 }
 
-export const html = (): string => optional().map(card).join('')
+export const html = (): string => `<div class="px-grid">${optional().map(card).join('')}</div>`
   + `<p class="modal-hint">Une extension ne tourne que lorsqu’elle est activée, et seulement tant que Studio est ouvert : sans serveur, rien ne se passe quand l’app est fermée. Elle ne peut joindre que les domaines affichés, les seuls ouverts par la politique de sécurité de Studio.</p>`;
 
 const parts = (ref: string | undefined): { p: Plugin; f: Field } | null => {

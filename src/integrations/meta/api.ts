@@ -4,11 +4,14 @@
 // EMPLACEMENT de diffusion d'une pub payante. Tout ce qui est créé l'est en PAUSE : l'utilisateur active lui-même.
 import * as vault from '../../core/vault.ts';
 import * as native from '../../core/native.ts';
+import * as registry from '../../plugins/registry.ts';
 
 /** `page` = identifiant de la Page Facebook (nécessaire pour créer des pubs) ; `pixel` = pixel Meta (objectif ventes) ;
  *  `dsa` = nom déclaré comme bénéficiaire et payeur pour cibler l'UE (sinon : réglages du compte, puis nom de la Page). */
 export interface MetaCreds { token: string; name?: string; page?: string; pixel?: string; dsa?: string }
-export const supported = (): boolean => native.available();
+export const supported = (): boolean => native.available() && registry.active('meta');
+/** Pourquoi la publicité n'est pas là : extension éteinte, ou hors de l'app Mac. */
+export const whyNot = (): string => native.available() ? 'L’extension Meta Ads est éteinte : allume-la dans Réglages → Extensions.' : 'La publicité se gère depuis l’app Studio pour Mac.';
 export const creds = (): MetaCreds | null => { const c = vault.secret<MetaCreds>('meta'); return c?.token ? c : null; };
 export const connected = (): boolean => !!creds();
 

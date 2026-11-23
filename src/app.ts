@@ -20,6 +20,8 @@ import * as home from './features/home.ts';
 import * as journal from './features/journal.ts';
 import * as chat from './features/chat.ts';
 import * as workspace from './features/workspace.ts';
+import * as planner from './features/planner.ts';
+import * as usagebar from './features/usagebar.ts';
 import * as models from './features/models.ts';
 import * as commerce from './features/commerce/page.ts';
 import * as automations from './features/automations.ts';
@@ -95,18 +97,18 @@ const SC = {
   workspace: 'mod+shift+a', sidebar: isMac ? 'ctrl+mod+s' : 'mod+alt+s', task: 'mod+enter', bold: 'mod+b', italic: 'mod+i',
 };
 const VIEWS: Record<string, { label: string; icon: string }> = {
-  home: { label: 'Accueil', icon: 'home' }, workspace: { label: 'Espace agents', icon: 'board' }, models: { label: 'Modèles', icon: 'cpu' }, commerce: { label: 'Boutiques', icon: 'shop' }, claude: { label: 'Claude', icon: 'sparkle' }, agents: { label: 'Automatisations', icon: 'bot' }, help: { label: 'Aide', icon: 'help' }, projets: { label: 'Projets', icon: 'folder' }, settings: { label: 'Réglages', icon: 'gear' },
+  home: { label: 'Accueil', icon: 'home' }, workspace: { label: 'Espace agents', icon: 'board' }, planner: { label: 'Planification', icon: 'today' }, models: { label: 'Modèles', icon: 'cpu' }, commerce: { label: 'Boutiques', icon: 'shop' }, claude: { label: 'Claude', icon: 'sparkle' }, agents: { label: 'Automatisations', icon: 'bot' }, help: { label: 'Aide', icon: 'help' }, projets: { label: 'Projets', icon: 'folder' }, settings: { label: 'Réglages', icon: 'gear' },
   today: { label: 'Aujourd’hui', icon: 'today' }, journal: { label: 'Journal', icon: 'journal' }, tasks: { label: 'Tâches', icon: 'check' }, linear: { label: 'Linear', icon: 'linear' }, github: { label: 'GitHub', icon: 'github' }, all: { label: 'Notes', icon: 'notes' },
   inbox: { label: 'Boîte de réception', icon: 'inbox' }, ephemeral: { label: 'Éphémères', icon: 'hourglass' },
   graph: { label: 'Graphe', icon: 'graph' }, trash: { label: 'Corbeille', icon: 'trash' },
 };
 /** Teinte de l'icône de chaque section dans la barre latérale. */
 /** Teinte de l'icône de chaque vue dans la barre latérale (redemandée le 23 nov. 2026 : « remets des couleurs »). */
-const SIDE_HUE: Record<string, string> = { home: 'blue', all: 'amber', workspace: 'violet', projets: 'orange', models: 'teal', commerce: 'green', claude: 'orange', inbox: 'blue', today: 'amber', journal: 'pink', ephemeral: 'orange', tasks: 'green', agents: 'violet', help: 'blue', linear: 'indigo', github: 'gray', graph: 'teal', trash: 'gray' };
-/** Catégories de « Plus » dans la barre latérale (les vues absentes, ex. Boutiques hors Mac, sont sautées). */
-const MORE_CATS: [string, string[]][] = [['Écriture', ['journal', 'ephemeral']], ['Outils', ['models', 'commerce', 'graph']], ['Connexions', ['linear', 'github']], ['Divers', ['trash', 'help']]];
+const SIDE_HUE: Record<string, string> = { home: 'blue', all: 'amber', workspace: 'violet', planner: 'amber', projets: 'orange', models: 'teal', commerce: 'green', claude: 'orange', inbox: 'blue', today: 'amber', journal: 'pink', ephemeral: 'orange', tasks: 'green', agents: 'violet', help: 'blue', linear: 'indigo', github: 'gray', graph: 'teal', trash: 'gray' };
+/** Catégories de « Plus » dans la barre latérale (les vues absentes sont sautées). Le Journal est sous « Écrire », les extensions allumées sous « Extensions ». */
+const MORE_CATS: [string, string[]][] = [['Écriture', ['ephemeral']], ['Outils', ['models', 'graph']], ['Connexions', ['linear', 'github']], ['Divers', ['trash', 'help']]];
 const titleOf = (n: Note) => n.title.trim() || 'Sans titre';
-const WIDE = new Set(['workspace', 'models', 'commerce', 'graph', 'home', 'claude', 'settings', 'tasks', 'linear', 'github', 'agents', 'help', 'projets', 'journal']); // vues sans colonne de liste
+const WIDE = new Set(['workspace', 'planner', 'models', 'commerce', 'graph', 'home', 'claude', 'settings', 'tasks', 'linear', 'github', 'agents', 'help', 'projets', 'journal']); // vues sans colonne de liste
 
 function applyTheme() {
   const dark = ui.theme === 'dark' || (ui.theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
@@ -206,12 +208,12 @@ async function openByTitle(title: string) {
 // ---------- Rendu : barre latérale ----------
 function renderSidebar() {
   const idx = store.index(), v = ui.view;
-  const count: Record<string, number> = { tasks: todo.openCount(), linear: notifs.unreadCount(), github: github.unseenCount(), ephemeral: idx.live.filter(n => n.expiresAt).length };
+  const count: Record<string, number> = { planner: planner.pending(), tasks: todo.openCount(), linear: notifs.unreadCount(), github: github.unseenCount(), ephemeral: idx.live.filter(n => n.expiresAt).length };
   const item = (type: string) => `<button class="side-item${v.type === type ? ' sel' : ''}" data-view="${type}" style="--ic:var(--c-${SIDE_HUE[type] ?? 'gray'})">${icon(VIEWS[type]?.icon ?? 'notes')}<span>${VIEWS[type]?.label ?? type}</span>${count[type] ? `<span class="side-count">${count[type]}</span>` : ''}</button>`;
   const tags = [...idx.tags].filter(([t]) => !t.startsWith('projet/')).sort((a, b) => a[0].localeCompare(b[0], 'fr'));
   const devs = vault.isOpen() ? link.devices().length : 0;
   // Le quotidien reste à l'écran ; le reste se range sous « Plus » (déplié d'office quand la vue ouverte s'y trouve).
-  const more = ['journal', ...(count.ephemeral || v.type === 'ephemeral' ? ['ephemeral'] : []), ...(models.available() ? ['models'] : []), ...(commerce.available() ? ['commerce'] : []), 'linear', 'github', 'graph', 'trash', 'help'];
+  const more = [...(count.ephemeral || v.type === 'ephemeral' ? ['ephemeral'] : []), ...(models.available() ? ['models'] : []), 'linear', 'github', 'graph', 'trash', 'help'];
   const moreOpen = ui.moreOpen || more.includes(v.type), moreCount = (count.linear ?? 0) + (count.github ?? 0);
   const html = `
     <div class="side-head">
@@ -222,16 +224,14 @@ function renderSidebar() {
     </div>
     <div class="side-scroll">
       <div class="side-group">${item('home')}</div>
-      <div class="side-label">Écrire</div>
-      <div class="side-group">${item('all')}${treeHTML(idx.live)}</div>
       <div class="side-label">Piloter</div>
-      <div class="side-group">${projectsPage.claudeAvailable() ? item('workspace') : ''}${item('projets')}${projectsModel.projects().slice(0, 8).map(p => {
-        const open = v.type === 'projets' && v.project === p.id, tab = v.tab ?? 'overview';
+      <div class="side-group">${projectsPage.claudeAvailable() ? item('workspace') + item('planner') : ''}${item('projets')}${projectsModel.projects().slice(0, 8).map(p => {
+        const open = v.type === 'projets' && v.project === p.id, tab = v.tab ?? projectsPage.defaultTab();
         // Sous « Claude Code » : les conversations récentes du projet, celle qui est ouverte en surbrillance.
         const talks = open ? projectsPage.sideSessions(p.id) : [], talking = tab === 'sessions' && talks.some(s => s.sel);
         // Sous « Serveur » : les serveurs du projet, celui qui est affiché en surbrillance.
         const servers = open ? projectsPage.sideServers(p.id) : [], serving = tab === 'server' && servers.some(s => s.sel);
-        return `<button class="side-item side-sub${open && tab === 'overview' ? ' sel' : ''}${open ? ' open' : ''}" data-pj-open="${esc(p.id)}"><i class="tag-dot" style="--c:var(--c-${p.hue})"></i><span>${esc(p.name)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`
+        return `<button class="side-item side-sub${open && tab === projectsPage.defaultTab() ? ' sel' : ''}${open ? ' open' : ''}" data-pj-open="${esc(p.id)}"><i class="tag-dot" style="--c:var(--c-${p.hue})"></i><span>${esc(p.name)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`
           // La barre d'onglets de la page porte les seize onglets ; ici, seulement ce qui a des enfants (conversations, serveurs) et l'onglet ouvert.
           + (open ? projectsPage.tabsOf(p, tab ?? '').slice(1).filter(([k]) => k === 'sessions' || k === tab || (k === 'server' && servers.length > 0)).map(([k, l, ic]) => `<button class="side-item side-sub2${tab === k && !(k === 'sessions' && talking) && !(k === 'server' && serving) ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="${k}"${k === 'sessions' ? ' data-pj-session=""' : ''}>${icon(ic)}<span>${esc(l)}</span></button>`
             + (k === 'server' ? servers.map(s => `<button class="side-item side-sub3${tab === 'server' && s.sel ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="server" data-pj-server="${esc(s.id)}" title="${esc(s.dest)}">${icon('server')}<span>${esc(s.name)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('') : '')
@@ -239,10 +239,14 @@ function renderSidebar() {
               // Sous la conversation : ses sous-agents épinglés, et celui dont on lit le fil.
               + s.subs.map(a => `<button class="side-item side-sub4${tab === 'sessions' && a.sel ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="sessions" data-pj-session="${esc(s.id)}" data-pj-sub="${esc(a.id)}" title="Sous-agent : ${esc(a.title)}"><i class="ss-live${a.live ? ' on' : ''}"></i><span>${esc(a.title)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('')).join('') : '')).join('') : '');
       }).join('')}</div>
+      <div class="side-label">Écrire</div>
+      <div class="side-group">${item('all')}${treeHTML(idx.live)}${item('journal')}</div>
       ${tags.length ? `<button class="side-label" data-act="tags" aria-expanded="${ui.tagsOpen}">${icon('chevron')}Tags</button>${ui.tagsOpen ? `<div class="side-group">${tags.map(([t, c]) => `<button class="side-item${v.type === 'tag' && v.tag === t ? ' sel' : ''}" data-tag="${esc(t)}"><i class="tag-dot" style="--c:var(--c-${hue(t)})"></i><span>${esc(t)}</span><span class="side-count">${c}</span></button>`).join('')}</div>` : ''}` : ''}
+      ${commerce.available() ? `<div class="side-label">Extensions</div><div class="side-group">${item('commerce')}</div>` : ''}
       <button class="side-label" data-act="more-views" aria-expanded="${moreOpen}">${icon('chevron')}Plus${!moreOpen && moreCount ? `<span class="side-count">${moreCount}</span>` : ''}</button>${moreOpen ? MORE_CATS.map(([label, types]) => { const here = types.filter(t => more.includes(t)); return here.length ? `<div class="side-cat">${label}</div><div class="side-group">${here.map(item).join('')}</div>` : ''; }).join('') : ''}
     </div>
     <div id="plug-side"></div>
+    ${usagebar.html()}
     ${update.ready() ? `<button class="side-foot side-update" data-open-conn="maj" title="La nouvelle version est téléchargée : elle s’installe à la relance, ou quand tu quittes Studio">${icon('refresh')}<span>Relancer pour mettre à jour</span></button>`
       : update.available() ? `<button class="side-foot side-update" data-open-conn="maj" title="Une nouvelle version de Studio est disponible">${icon('download')}<span>Mise à jour disponible</span></button>` : ''}
     <button class="side-foot" data-open-conn="${vault.enabled() ? 'appareils' : 'coffre'}" title="Réglages (${keys(SC.settings)})">${icon(vault.isOpen() ? 'shield' : 'unlock')}<span>${vault.isOpen() ? 'Chiffré de bout en bout' : 'Non chiffré'}</span>${devs ? `<span class="side-count">${icon('devices')}${devs}</span>` : ''}</button>`;
@@ -370,6 +374,7 @@ function renderMain() {
   const main = need('#main');
   const keep = ed && ed.note.id === ui.id && ed.ta ? { s: ed.ta.selectionStart, e: ed.ta.selectionEnd, top: ed.ta.scrollTop, ptop: ed.read?.scrollTop ?? null, focus: document.activeElement === ed.ta } : null;
   closeAc(); graph?.destroy(); graph = null; ed = null;
+  if (ui.view.type === 'commerce' && !commerce.available()) ui.view = { type: 'home' }; // extension éteinte depuis la dernière fois
   if (ui.view.type === 'graph') return mountGraph(main);
   if (ui.view.type === 'home') return home.mount(main);
   if (ui.view.type === 'claude') return chat.mount(main);
@@ -378,6 +383,7 @@ function renderMain() {
   if (ui.view.type === 'tasks') return todo.mount(main);
   if (ui.view.type === 'agents') return automations.mount(main);
   if (ui.view.type === 'workspace') return workspace.mount(main, tbLeft());
+  if (ui.view.type === 'planner') return planner.mount(main, tbLeft());
   if (ui.view.type === 'projets') return projectsPage.mount(main);
   if (ui.view.type === 'models') return models.mount(main);
   if (ui.view.type === 'commerce') return commerce.mountAll(main);
@@ -941,6 +947,7 @@ function commands() {
     c('Journal des demandes', 'journal', () => setView({ type: 'journal' }), '', 'journal prompts demandes résumé journée claude code historique'),
     c('Projets', 'folder', () => setView({ type: 'projets', project: null }), '', 'dossier dépôt github vscode cockpit'),
     c('Espace agents', 'board', () => setView({ type: 'workspace' }), SC.workspace, 'agents claude code vues split grille parallèle diffuser'),
+    ...(projectsPage.claudeAvailable() ? [c('Planification', 'today', () => setView({ type: 'planner' }), '', 'planifier file attente cron récurrent nuit fenêtre 5 h quota abonnement agents')] : []),
     ...(commerce.available() ? [c('Boutiques', 'shop', () => setView({ type: 'commerce' }), '', 'shopify boutique e-commerce ventes commandes produits stock chiffres publicité meta facebook marketplace marketing')] : []),
     ...(models.available() ? [c('Modèles locaux', 'cpu', () => setView({ type: 'models' }), '', 'modèle local ollama llama qwen mistral gemma installer télécharger serveur déployer open source')] : []),
     c('Nouveau projet', 'plus', () => projectsPage.createDialog(), '', 'créer projet dossier dépôt'),
@@ -1170,6 +1177,7 @@ store.onChange((kind, id, remote) => {
 // Clics délégués : une seule écoute pour toute l'application.
 async function onClick(e: MouseEvent): Promise<void> {
   const t = target(e);
+  if (usagebar.click(t)) return;
   const toggle = t.closest('[data-tree-toggle]');
   if (toggle) { // replier ou déplier une branche de l'arborescence, sans ouvrir la note
     const id = toggle.dataset.treeToggle ?? '', on = ui.treeOpen.includes(id);
@@ -1392,6 +1400,7 @@ async function start() {
   const shared = { setView, openNote, capture: quickCapture, view: () => ui.view.type, viewState: () => ui.view, renderSidebar, tbLeft, crumb,
     onCount: () => { renderSidebar(); linearView.refreshCount(); if (ui.view.type === 'home' && !topLayer() && !need('#main').contains(document.activeElement)) renderMain(); } };
   registerBuiltins();
+  usagebar.init(); planner.init(); planner.onChange(renderSidebar); // jauge d'usage de la barre latérale, file d'attente des agents planifiés
   home.init(shared); journal.init(shared); chat.init({ ...shared, refreshNote }); automations.init(shared); projectsPage.init(shared); help.init({ ...shared, shortcuts: shortcutRows }); models.init(shared); commerce.init(shared); voice.init(shared); linearView.init(shared); githubPage.init(shared);
 
   noteai.init({

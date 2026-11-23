@@ -77,7 +77,7 @@ export const settled = (a: SubAgent): boolean => !a.live && ageMs(a.updated) > 6
 // ---------- Échanges ----------
 /** Message du tableau d'équipe (`agent board`, champ `messages`). */
 export interface BoardMsg { at: number; from: string; to: string; text: string }
-interface Entry { at: number; from: string; to: string; text: string; body?: string; kind: 'user' | 'delegate' | 'report' | 'board' }
+export interface Entry { at: number; from: string; to: string; text: string; body?: string; kind: 'user' | 'delegate' | 'report' | 'board' }
 
 const who = (n: string): string => {
   const b = n.replace(/\.md$/, ''), m = /^agent-(\d+)(?:-(.+))?$/.exec(b);

@@ -30,7 +30,7 @@ import type { MenuItem } from '../ui/kit.ts';
 /** Une vue : la conversation qu'elle suit (`session`), ou un agent qui démarre (`run`), ou rien (nouvel agent).
  *  `sub` : un sous-agent de cette conversation (fil en lecture seule) ; `auto` : ouverte d'office par le mode Auto, donc rendue
  *  quand le sous-agent a fini depuis plus d'une minute. */
-interface Pane { project: string; session: string; run?: string; sub?: string; auto?: boolean }
+export interface Pane { project: string; session: string; run?: string; sub?: string; auto?: boolean }
 interface State { layout: number; panes: (Pane | null)[]; focus: number; max: number; filter: string; draftProject: string; /** Montrer d'office les agents qui travaillent. */ auto: boolean; /** Disposition choisie à la main : Auto ne l'agrandit plus au-delà (0 = libre). */ cap: number; /** Barre de la liste réduite à une colonne d'icônes (réduction visuelle seulement). */ mini: boolean; /** Conversations au travail que l'utilisateur a retirées de leur vue : pas remises d'office tant qu'elles travaillent. */ dismissed: string[] }
 interface Detail extends Partial<Session> { actions: Action[]; message?: string; at: number; /** Sous-agents de la conversation (absent avec une app Mac ancienne). */ subagents?: SubAgent[]; /** Fil d'un sous-agent : lui-même. */ agent?: SubAgent }
 interface Row { p: Project; s: Session; status: 'running' | 'error' | 'review' | 'idle'; subs: SubAgent[] }
@@ -574,7 +574,7 @@ async function launch(f: HTMLFormElement, i: number): Promise<void> {
   toast(n > 1 ? `${ok} agent${ok > 1 ? 's' : ''} sur ${n} au travail${fail ? ` · ${fail}` : ''}` : 'Agent lancé'); announceMade(); void refresh();
   void loadSessions(p).then(paintList);
 }
-async function startAgent(p: Project, prompt: string, mode = 'edit', group?: { group: string; slot: number; of: number }, images: attach.Payload[] = []): Promise<{ ok: true; session: string; run: string; images: boolean } | { ok: false; message: string }> {
+export async function startAgent(p: Project, prompt: string, mode = 'edit', group?: { group: string; slot: number; of: number }, images: attach.Payload[] = []): Promise<{ ok: true; session: string; run: string; images: boolean } | { ok: false; message: string }> {
   const body: Record<string, unknown> = { project: p.id, prompt, mode, repos: p.stack, ...group };
   // L'équipe du projet part avec la consigne ; avec « auto », les spécialistes utiles y sont d'abord ajoutés.
   const sub = subagents.body(p.id, prompt, mode); if (sub) body.subagents = sub;
@@ -583,7 +583,7 @@ async function startAgent(p: Project, prompt: string, mode = 'edit', group?: { g
   const r = await bridge.call('agent', 'start', body, images.length ? 120000 : 60000);
   return r.ok ? { ok: true, session: typeof r.session === 'string' ? r.session : '', run: typeof r.run === 'string' ? r.run : '', images: attach.confirmed(r, images.length) } : { ok: false, message: r.message ?? 'Lancement impossible.' };
 }
-async function reply(x: Pane, prompt: string, interrupt = false, images: attach.Payload[] = []): Promise<boolean> {
+export async function reply(x: Pane, prompt: string, interrupt = false, images: attach.Payload[] = []): Promise<boolean> {
   const p = proj(x.project); if (!p || !x.session || x.sub) return false; // un sous-agent ne reçoit pas de réponse : il répond à l'agent principal
   const body: Record<string, unknown> = { project: p.id, session: x.session, prompt, repos: p.stack, ...(interrupt ? { interrupt: true } : {}) };
   const sub = subagents.body(p.id, prompt, 'edit'); if (sub) body.subagents = sub;

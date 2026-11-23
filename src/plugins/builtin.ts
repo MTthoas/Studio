@@ -18,6 +18,10 @@ export function registerBuiltins(): void {
   registry.register(spotify);
   registry.register(n8n);
   registry.register(figma);
+  // Extensions sans code propre : l'interrupteur suffit, le cœur interroge `registry.active(id)`.
+  registry.register({ id: 'shopify', name: 'Shopify', icon: 'shop', optional: true, description: 'Boutiques : ventes, commandes et produits, dans la barre latérale, les projets et les notes (app Mac).' });
+  registry.register({ id: 'meta', name: 'Meta Ads', icon: 'shop', optional: true, needs: 'shopify', description: 'Campagnes et budgets publicitaires. Ne sert qu’avec l’extension Shopify allumée.' });
+  registry.register({ id: 'kube', name: 'Kubernetes', icon: 'cpu', optional: true, description: 'Pods et déploiements Kubernetes d’un serveur, dans la page infrastructure d’un projet.' });
 
   registry.register({
     id: 'github', name: 'GitHub',
