@@ -4,8 +4,11 @@
 .aw-c { font-size: var(--t-1); white-space: nowrap; }
 .aw-c.on { color: var(--c-amber); }
 .aw-c.rv { color: var(--c-blue); }
-.aw-lay { gap: 4px; padding: 0 8px; color: var(--text-2); }
-.aw-lay .ic { width: 11px; height: 11px; opacity: .6; }
+/* Dispositions : six boutons côte à côte, celle en cours en fond plein. */
+.aw-lays { display: inline-flex; align-items: center; gap: 1px; padding: 2px; border-radius: 8px; background: var(--hover); }
+.aw-lay { display: inline-grid; place-items: center; width: 28px; height: 24px; border: 0; border-radius: 6px; background: none; color: var(--text-3); transition: background .12s, color .12s; }
+.aw-lay:hover { color: var(--text); }
+.aw-lay[aria-pressed="true"] { background: var(--bg); color: var(--text); box-shadow: 0 0 0 1px var(--border-2); }
 .aw-li { height: 12px; width: auto; fill: currentColor; opacity: .85; }
 .aw-auto[aria-pressed="true"] { color: var(--text); background: var(--active); }
 .aw { flex: 1; min-height: 0; display: grid; grid-template-columns: 240px minmax(0, 1fr); }
@@ -40,29 +43,31 @@
 .aw-st.done { background: color-mix(in srgb, var(--c-green) 85%, transparent); color: var(--bg); }
 .aw-st.err { background: var(--c-red); color: var(--bg); }
 .aw-st.review { border: 1.6px solid var(--c-blue); background: radial-gradient(circle, var(--c-blue) 0 2.5px, transparent 3px); }
+.aw-st.pr { background: var(--c-blue); color: var(--bg); }
+.aw-st.pr .ic { width: 8px; height: 8px; }
 /* Sous-agents au travail : indentés sous leur conversation, une ligne. */
 .aw-subrow { height: 26px; padding-left: 24px; }
 .aw-subrow .aw-rt { font-size: var(--t-1); color: var(--text-2); }
 .aw-subrow .aw-ring { width: 10px; height: 10px; }
 .aw-empty { margin: 16px 8px; color: var(--text-3); font-size: var(--t-1); display: flex; align-items: center; }
-/* Liste réduite (S) : une colonne d'initiales teintées du projet, l'état en pastille ; le nom est en infobulle. */
-.aw.mini { grid-template-columns: 52px minmax(0, 1fr); }
-.aw.mini .aw-side-head { justify-content: center; margin: 8px 0 2px; }
-.aw.mini .aw-search, .aw.mini .aw-help, .aw.mini .aw-empty { display: none; }
+/* Liste réduite (S) : seulement les agents en cours et les copies en attente de PR (`paintList`), une colonne
+   d'initiales teintées du projet, l'état en pastille ; le nom est en infobulle, pas de numéro de vue ni de sous-agents. */
+.aw.mini { grid-template-columns: 56px minmax(0, 1fr); }
+.aw.mini .aw-side-head { justify-content: center; margin: 8px 0 4px; }
+.aw.mini .aw-search, .aw.mini .aw-help, .aw.mini .aw-empty, .aw.mini .aw-in { display: none; }
 .aw.mini .aw-side:has(.aw-search input:not(:placeholder-shown)) .aw-fold { color: var(--accent-text); background: var(--accent-soft); }
-.aw.mini .aw-list { padding: 2px 8px 10px; scrollbar-width: none; }
-.aw.mini .aw-group h4 { height: 0; margin: 8px 6px; border-top: 1px solid var(--border); font-size: 0; }
-.aw.mini .aw-group h4 span { display: none; }
-.aw.mini .aw-row { position: relative; display: grid; grid-template: "st" 32px / 1fr; place-items: center; height: auto; padding: 3px 0; }
+.aw.mini .aw-list { display: flex; flex-direction: column; gap: 10px; padding: 2px 10px 10px; scrollbar-width: none; }
+.aw.mini .aw-group { display: flex; flex-direction: column; gap: 4px; }
+.aw.mini .aw-group h4 { display: none; }
+.aw.mini .aw-group + .aw-group { padding-top: 10px; border-top: 1px solid var(--border); }
+.aw.mini .aw-row { position: relative; display: grid; grid-template: "st" 36px / 1fr; place-items: center; height: auto; padding: 0; border-radius: 9px; }
+.aw.mini .aw-row.shown .aw-ini { box-shadow: 0 0 0 1.5px var(--c, var(--border-2)); }
 .aw.mini .aw-row > :first-child { grid-area: st; }
 .aw.mini .aw-row > .aw-st, .aw.mini .aw-row > .aw-ring { position: absolute; right: 2px; bottom: 2px; z-index: 1; box-shadow: 0 0 0 2px var(--bg); border-radius: 50%; }
 .aw.mini .aw-row:hover > .aw-st, .aw.mini .aw-row:hover > .aw-ring { box-shadow: 0 0 0 2px var(--hover); }
 .aw.mini .aw-row.cur > .aw-st, .aw.mini .aw-row.cur > .aw-ring { box-shadow: 0 0 0 2px var(--active); }
 .aw.mini .aw-rt, .aw.mini .aw-pd, .aw.mini .aw-row time { display: none; }
-.aw.mini .aw-subrow { padding: 3px 0; height: 26px; }
-.aw.mini .aw-subrow .aw-ring { position: static; box-shadow: none; }
-.aw.mini .aw-ini { grid-area: st; display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; font: 600 var(--t-1)/1 var(--font); font-style: normal; color: var(--c, var(--text-2)); background: color-mix(in srgb, var(--c, var(--text-3)) 14%, transparent); }
-.aw.mini .aw-in { position: absolute; top: 1px; right: 1px; min-width: 14px; height: 14px; padding: 0 3px; font-size: 9px; z-index: 1; background: var(--bg); }
+.aw.mini .aw-ini { grid-area: st; display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; font: 600 var(--t-1)/1 var(--font); font-style: normal; color: var(--c, var(--text-2)); background: color-mix(in srgb, var(--c, var(--text-3)) 14%, transparent); }
 
 .aw-grid { min-width: 0; min-height: 0; display: grid; gap: 1px; background: var(--border); }
 .aw-grid.l1 { grid-template: 1fr / 1fr; }
@@ -99,15 +104,15 @@
 .aw-feed.ss-feed { flex: 1; max-height: none; border: 0; border-radius: 0; padding: 12px 14px; gap: 10px; }
 /* Copie de l'agent : une ligne (étape, branche, une action principale) ; revue, VS Code, mise à jour… sont dans « … ». */
 .aw-copy-slot:empty { display: none; }
-.aw-copy { flex: none; display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 4px 0 10px; border-bottom: 1px solid var(--border); font-size: var(--t-1); color: var(--text-3); overflow: hidden; }
+.aw-copy { flex: none; display: flex; align-items: center; gap: 10px; height: 40px; padding: 0 8px 0 12px; border-bottom: 1px solid var(--border); font-size: var(--t-1); color: var(--text-3); overflow: hidden; }
 .aw-copy > .ag-stage, .aw-copy > code { flex: none; }
 .aw-copy > code { max-width: 26ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .aw-copy > em { font-style: normal; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.aw-copy-act { margin-left: auto; flex: none; display: flex; align-items: center; gap: 2px; }
-.aw-copy-act .btn { height: 24px; padding: 0 8px; gap: 5px; font-size: var(--t-1); }
+.aw-copy-act { margin-left: auto; flex: none; display: flex; align-items: center; gap: 4px; }
+.aw-copy-act .btn { height: 28px; padding: 0 12px; gap: 6px; font-size: var(--t-1); }
 .aw-copy-act .btn:not(.btn-primary) { display: none; }
 .aw-copy-act .btn .ic { width: 13px; height: 13px; }
-.aw-copy-act .icon-btn { width: 24px; height: 24px; }
+.aw-copy-act .icon-btn { width: 28px; height: 28px; }
 .aw-grid:is(.l6, .l8):not(.maxed) .aw-copy-act .btn span, .aw-grid:is(.l6, .l8):not(.maxed) .aw-copy > em, .aw-grid:is(.l6, .l8):not(.maxed) .aw-copy > code { display: none; }
 .aw-grid:is(.l4, .l6, .l8):not(.maxed) .aw-meta, .aw-grid:is(.l6, .l8):not(.maxed) .aw-ph-main .aw-rp, .aw-grid:is(.l6, .l8):not(.maxed) .aw-state span { display: none; }
 /* Tableau d'équipe : ce que l'agent, ses sous-agents et son groupe s'écrivent (AgentBoard, Agents.swift). */

@@ -123,6 +123,8 @@ body.no-side #sidebar, body.focus #sidebar, body.focus #list, body.no-list #list
 button.side-label .ic { width: 12px; height: 12px; transition: transform .12s; }
 button.side-label[aria-expanded="false"] .ic { transform: rotate(-90deg); }
 button.side-label:hover { color: var(--text-2); }
+/* Sous-catégories de « Plus » : plus discrètes que les catégories. */
+.side-cat { padding: 8px 8px 2px; font-size: 11px; color: var(--text-3); opacity: .8; }
 .side-item { display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 8px; border-radius: var(--r); width: 100%; color: var(--text-2); font-weight: 500; }
 .side-item .ic { width: 15px; height: 15px; color: var(--ic, var(--text-3)); }
 .side-item span:nth-of-type(1) { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
