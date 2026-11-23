@@ -1188,6 +1188,10 @@ button.lv-chip:hover, .lv-chip.sel { color: var(--text); background: var(--btn);
 .pj-title .pj-dot { width: 12px; height: 12px; border-radius: 4px; }
 .pj-note { flex: none; }
 .pj-links { display: flex; flex-wrap: wrap; gap: 6px; }
+/* Liens à gauche, « Note du projet » et « Claude » au bout de la même ligne, à droite. */
+.pj-bar { display: flex; align-items: center; gap: 8px 16px; flex-wrap: wrap; }
+.pj-bar > .pj-links { flex: 1 1 auto; min-width: 0; }
+.pj-acts { display: flex; align-items: center; gap: 4px; margin-left: auto; }
 .pj-links a { text-decoration: none; }
 .pj-folder { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 6px 4px 8px; border-bottom: 1px solid var(--border); font-size: var(--t-2); }
 .pj-folder > .ic { width: 14px; height: 14px; color: var(--text-3); flex: none; }

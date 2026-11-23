@@ -1073,7 +1073,24 @@ export function branchName(subject: string): string {
 /** Page GitHub de création de la PR, déjà remplie (marche avec n'importe quel jeton, ou sans). */
 const compareURL = (repo: string, base: string, branch: string, title: string, body: string) =>
   `https://github.com/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(branch)}?quick_pull=1&title=${encodeURIComponent(title)}&body=${encodeURIComponent(body.slice(0, 3500))}`;
-const prBody = (run: AgentRun | undefined, detail: string) => `${detail ? `${detail}\n\n` : ''}${run?.result ? `${withoutCommitLine(run.result)}\n\n` : ''}---\nPréparé par Claude Code depuis Studio.`;
+/** Corps final d'une PR : la description (en anglais), les PR sœurs, la signature. */
+const prBody = (desc: string, related = '') => `${desc.trim()}${related ? `\n\n**Related:** ${related}` : ''}\n\n---\n🤖 Generated with [Claude Code](https://claude.com/claude-code) from Studio`;
+/** Description de PR toujours en anglais, sur tout le travail de la branche (déjà commité + en cours, toutes les demandes),
+ *  pas seulement la dernière demande. Rédigée par l'IA d'après le diff ; sans IA, la liste des fichiers modifiés. */
+async function prDescription(p: Project, wt: string): Promise<string> {
+  const read = (scope: string) => native.call('project', 'diff', { project: p.id, scope, worktree: wt }, 30000);
+  const ds = (await Promise.all([read('branch'), read('working')])).filter(d => d.ok);
+  const stat = ds.map(d => String(d.stat ?? '').trim()).filter(Boolean).join('\n'), patch = ds.map(d => String(d.patch ?? '')).join('\n');
+  const files = [...new Set(statFiles(stat).filter(f => !/^\[.*\]$/.test(f)))];
+  const fallback = `## Changes\n\n${files.slice(0, 60).map(f => `- \`${f}\``).join('\n') || '- No file changes.'}${files.length > 60 ? `\n- …and ${files.length - 60} more files.` : ''}`;
+  if (!ai.ready() || !patch.trim()) return fallback;
+  const mine = runs.filter(r => r.worktree === wt);
+  const user = `Requests made on this branch (context only, possibly in another language; follow-ups like "continue" mean nothing):\n${mine.map(r => `- ${r.prompt.replace(/\s+/g, ' ').slice(0, 300)}`).join('\n') || '(none)'}\n\nReports written after each request (context only, translate what you use):\n${mine.filter(r => r.result).map(r => withoutCommitLine(r.result).slice(0, 1500)).join('\n\n---\n') || '(none)'}\n\nChanged files:\n${stat}\n\nDiff (excerpt):\n\`\`\`diff\n${patch.slice(0, tuning.num('ctx.diff'))}\n\`\`\``;
+  try {
+    const t = await Promise.race([ai.complete(tuning.text('small.pr'), user, { light: tuning.on('small.commits') }), new Promise<string>(r => setTimeout(() => r(''), 120000))]);
+    return t.replace(/^```\w*\n?|\n?```\s*$/g, '').trim() || fallback;
+  } catch { return fallback; }
+}
 
 /** Dépôt GitHub du dossier où travaillent les agents : son remote origin s'il fait partie du projet, sinon le principal. */
 async function workRepo(p: Project): Promise<string | undefined> {
@@ -1149,6 +1166,8 @@ async function publish(p: Project, wt: string, root: HTMLElement | null): Promis
   };
   resug.onclick = () => { editedMsg = false; void propose(true); };
   void propose();
+  // Rédigée dès l'ouverture (avant que la publication ne touche la copie), attendue seulement au moment d'ouvrir les PR.
+  const description = repo ? prDescription(p, wt) : Promise.resolve('');
   need('[data-x]', m.node).onclick = m.close;
 
   /** Suit la tâche de l'orchestrateur jusqu'à sa fin (elle continue côté Mac si la fenêtre est fermée). */
@@ -1166,7 +1185,7 @@ async function publish(p: Project, wt: string, root: HTMLElement | null): Promis
   go.onclick = async () => {
     const wantPR = !!repo && !!m.node.querySelector<HTMLInputElement>('[name=pr]')?.checked;
     const message = msg.value.trim(); if (!message) { msg.focus(); return; }
-    const prTitle = title?.value.trim() || subject(), detail = message.split('\n').slice(1).join('\n').trim();
+    const prTitle = title?.value.trim() || subject();
     const wanted = branchIn.value.trim();
     if (!/^[a-z0-9][a-z0-9._/-]{0,89}$/.test(wanted) || wanted.includes('..') || wanted.endsWith('/')) { st.innerHTML = '<p class="rv-status err">Nom de branche invalide : minuscules, chiffres, - _ . / (ex. feat/export-pdf).</p>'; branchIn.focus(); return; }
     go.disabled = true; st.innerHTML = '<p class="rv-status"><span class="spin"></span>Démarrage…</p>';
@@ -1188,15 +1207,16 @@ async function publish(p: Project, wt: string, root: HTMLElement | null): Promis
     if (!pushed.length) { m.close(); toast(j.step); return; }
     const names = pushed.map(x => x.repo).filter(Boolean);
     if (!wantPR || !names.length) { m.close(); toast(`Branche ${pushed[0]!.branch} poussée${names.length > 1 ? ` dans ${names.join(', ')}` : ''}`); return; }
-    st.insertAdjacentHTML('beforeend', `<p class="rv-status"><span class="spin"></span>Ouverture de ${names.length > 1 ? `${names.length} pull requests` : 'la pull request'}…</p>`);
+    st.insertAdjacentHTML('beforeend', `<p class="rv-status"><span class="spin"></span>Description de la PR (en anglais), puis ouverture de ${names.length > 1 ? `${names.length} pull requests` : 'la pull request'}…</p>`);
+    const desc = await description;
     // Les PR de plusieurs dépôts se citent entre elles : elles se relisent et se fusionnent ensemble.
-    const linked = (me: string) => names.length > 1 ? `\n\nVa avec : ${names.filter(n => n !== me).map(n => `${n}@${pushed.find(x => x.repo === n)?.branch ?? ''}`).join(', ')}` : '';
+    const linked = (me: string) => names.length > 1 ? names.filter(n => n !== me).map(n => `${n}@${pushed.find(x => x.repo === n)?.branch ?? ''}`).join(', ') : '';
     const opened: { repo: string; number: number; url: string }[] = [], failed: string[] = [];
     let perm = !canPR;
     for (const { repo: r, branch } of pushed) {
       if (!r) continue;
       let base = 'main';
-      const bodyFor = prBody(run, detail + linked(r));
+      const bodyFor = prBody(desc, linked(r));
       try {
         if (!canPR) throw new Error('GitHub n’est pas connecté dans Studio');
         base = (await github.project(r)).info.default_branch;
@@ -1204,7 +1224,10 @@ async function publish(p: Project, wt: string, root: HTMLElement | null): Promis
         opened.push({ repo: r, number: pr.number, url: pr.html_url });
       } catch (e) {
         const why = errMsg(e).replace(/\.$/, ''), status = e instanceof github.GitHubError ? e.status : 0;
-        if (/already exists/i.test(why)) continue; // branche déjà proposée : sa PR vient d'être mise à jour
+        if (/already exists/i.test(why)) { // branche déjà proposée : ses commits sont à jour, sa description aussi désormais
+          try { const n = (await github.branchPulls(r, { fresh: true })).get(branch); if (n?.state === 'open') await github.updatePull(r, n.number, { body: bodyFor }); } catch { /* la description d'avant reste */ }
+          continue;
+        }
         // Le push vient de réussir (identifiants Git du Mac) : un 404 ici veut dire que le jeton de Studio ne voit pas ce dépôt.
         if (status === 403 || status === 404 || /not accessible/i.test(why)) perm = true;
         const text = status === 404 ? `Le dépôt ${r} existe (la branche vient d’y être poussée), mais ton jeton GitHub n’y a pas accès : un jeton à accès précis ne voit que les dépôts choisis à sa création. Ajoute ${r} dans « Repository access » du jeton sur GitHub (avec « Pull requests : lecture et écriture »), ou remplace-le dans Réglages → GitHub.`
@@ -1233,7 +1256,8 @@ async function openPR(p: Project, w: Worktree): Promise<void> {
   // Titre de la PR : celui du commit publié, à défaut le message de l'agent, à défaut le nom de la branche. Jamais la consigne.
   const run = runs.find(r => r.worktree === w.name);
   const t = w.subject || runs.filter(r => r.worktree === w.name && r.result).map(r => agentMessage(r.result)).find(Boolean) || subjectFromBranch(w.branch) || draftMessage(run?.prompt ?? '', []);
-  window.open(compareURL(repo, base, w.branch, t, prBody(run, '')), '_blank', 'noopener');
+  toast('Rédaction de la description de la PR (en anglais)…');
+  window.open(compareURL(repo, base, w.branch, t, prBody(await prDescription(p, w.name))), '_blank', 'noopener');
 }
 
 // ---------- État des copies : le Mac (git) et GitHub (PR) ----------

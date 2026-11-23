@@ -105,6 +105,14 @@ export async function createPull(repo: string, pr: { head: string; base: string;
   flowCache.delete(repo); repoCache.delete(repo); forget(repo);
   return { number: j.number, html_url: j.html_url };
 }
+/** Réécrit la description d'une PR déjà ouverte (branche republiée avec du travail en plus). */
+export async function updatePull(repo: string, number: number, patch: { body: string }): Promise<void> {
+  if (!REPO_RE.test(repo)) throw new Error(`Dépôt invalide : ${repo}`);
+  const token = vault.secret('github'); if (!token) throw new Error('GitHub n’est pas connecté (Réglages → GitHub).');
+  const r = await fetch(`${API}/repos/${repo}/pulls/${number}`, { method: 'PATCH', headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2022-11-28', 'Content-Type': 'application/json' }, body: JSON.stringify(patch), credentials: 'omit', referrerPolicy: 'no-referrer' });
+  if (!r.ok) throw await refusal(r, repo, 'Pull requests : lecture et écriture');
+  flowCache.delete(repo); repoCache.delete(repo); forget(repo);
+}
 
 /** Relance une exécution GitHub Actions : seulement ses jobs en échec quand `failedOnly`, sinon toute l'exécution.
  *  Même commit qu'à l'origine : pour construire le dernier commit d'une branche, il faut un nouveau push. */
