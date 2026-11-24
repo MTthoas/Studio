@@ -1067,4 +1067,5 @@ export default {
   'Meta connecté': 'Meta connected',
   'Déconnecter Meta ?': 'Disconnect Meta?',
   'Le jeton sera effacé du coffre de cet appareil. Tes campagnes sur Meta ne changent pas.': 'The token will be erased from this device’s vault. Your campaigns on Meta do not change.',
+  'Rien de ce que tu fais sur le Mac ne lui est ouvert : ni tes dossiers personnels (Documents, Bureau, Téléchargements, historique du terminal), ni le presse-papiers, le micro, la caméra ou ta position, ni les autres apps (pas d’AppleScript), ni leurs fichiers récents et leurs caches. Claude Code est lancé sans télémétrie ni rapports d’erreur.': 'Nothing you do on the Mac is open to it: not your personal folders (Documents, Desktop, Downloads, terminal history), not the clipboard, microphone, camera or your location, not other apps (no AppleScript), nor their recent files and caches. Claude Code runs with telemetry and error reporting off.',
 } satisfies Record<string, string>;

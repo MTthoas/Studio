@@ -525,6 +525,8 @@ final class Agents {
         let voice = body["voice"] as? String == "chat" && body["internal"] as? Bool != true ? AgentTuning.chat : ""
         let added = [AgentTuning.prompt(mode: mode, tests: tests, items: items, shell: shell), voice, team?.prompt(edit: mode == "edit") ?? "", repoNote, mobileNote, groupNote, board?.prompt ?? "", browse?.prompt ?? ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
         if !added.isEmpty { args += ["--append-system-prompt", added] }
+        let closed = onServer ? [] : AgentPermissions.privateReads(project: pid, dirs: [dir, cwd] + addDirs)
+        if !closed.isEmpty { args += ["--disallowedTools"] + closed }
         args += ["--allowedTools"] + AgentPermissions.allowed(tools: tools, commands: tests, shell: shell) + (browse == nil ? [] : ["mcp__\(AgentPermissions.browserServer)"])
 
         let run = Run(id: UUID().uuidString, project: pid, mode: mode, prompt: String(prompt.prefix(500)))
@@ -1193,7 +1195,8 @@ enum AgentTuning {
 
     /// Réglages passés à Claude Code par son environnement (une variable inconnue de la version installée est ignorée).
     static func env() -> [String: String] {
-        var e: [String: String] = [:]
+        // Rien sur l'usage ne part chez Anthropic hors de la conversation elle-même : ni télémétrie, ni rapports d'erreur.
+        var e = ["DISABLE_TELEMETRY": "1", "DISABLE_ERROR_REPORTING": "1", "DISABLE_BUG_COMMAND": "1"]
         if compactWindow > 0 { e["CLAUDE_CODE_AUTO_COMPACT_WINDOW"] = String(compactWindow) }
         if lean { e["DISABLE_NON_ESSENTIAL_MODEL_CALLS"] = "1" }
         return e
@@ -1338,6 +1341,26 @@ enum AgentPermissions {
     static func allowed(tools: [String], commands: Bool, shell: Bool = false) -> [String] {
         tools.filter { $0 != "Bash" } + (shell ? ["Bash"] : commands ? bashRules : [])
     }
+    /// --disallowedTools : dossiers personnels fermés à Read, Glob et Grep (les règles Read valent pour les trois), même
+    /// en bypassPermissions et même hors bulle, où rien d'autre ne borne ces outils. Un dossier qui contient le projet
+    /// (projet rangé dans Documents ou iCloud Drive…) reste ouvert : seul ce qui est à côté est fermé.
+    static func privateReads(project pid: String, dirs: [String]) -> [String] {
+        let home = NSHomeDirectory()
+        let mine = dirs.map { ($0 as NSString).standardizingPath }
+        let personal = [".ssh", ".aws", ".gnupg", ".kube", ".docker", ".azure", ".password-store", ".config/gcloud", ".netrc",
+                        ".zsh_history", ".bash_history", ".zsh_sessions", ".zshrc", ".zprofile", ".bashrc", ".bash_profile", ".profile",
+                        ".local/share/fish", ".python_history", ".node_repl_history", ".lesshst", ".viminfo",
+                        "Desktop", "Documents", "Downloads", "Pictures", "Movies", "Music", "Public",
+                        "Library/Messages", "Library/Mail", "Library/Safari", "Library/Cookies", "Library/Application Support",
+                        "Library/Containers", "Library/Group Containers", "Library/Calendars", "Library/Preferences",
+                        "Library/Caches", "Library/Keychains", "Library/Mobile Documents", "Library/CloudStorage",
+                        "Library/Biome", "Library/Suggestions", "Library/Metadata", "Library/Accounts", "Library/Logs"].map { home + "/" + $0 }
+        let others = ProjectFolders.shared.otherProjectDirs(except: pid).map { ($0 as NSString).standardizingPath }
+        return (personal + others)
+            .filter { d in !mine.contains { $0 == d || $0.hasPrefix(d + "/") } && !d.contains(")") && !d.contains("\n") }
+            .map { "Read(/\($0)/**)" }
+    }
+
     /// Ajouté à la consigne quand l'agent a le terminal dans la bulle : ses limites, et la nuance au « pas de commit ».
     static let shellPrompt = "Tu as un terminal complet (Bash) dans une bulle macOS : tu n'écris que dans ta copie (et le .git de son dépôt), "
         + "les caches des outils et /tmp ; données de Studio, autres projets et autres sessions te sont illisibles. "
