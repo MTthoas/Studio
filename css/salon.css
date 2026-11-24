@@ -217,6 +217,22 @@ button.sl-av:focus-visible, .sl-who:focus-visible, .sl-to:focus-visible, .sl-mem
 .sl-chip:active { scale: var(--mo-press); }
 .sl-chip[style] { border-color: color-mix(in srgb, var(--c) 35%, var(--border)); color: color-mix(in srgb, var(--c) 70%, var(--text)); }
 
+/* ---- Colonne de droite : bascule Équipe / Technique, et vue Technique (styles .lv-* de pulse.css réutilisés) ---- */
+.st-seg { display: flex; gap: 14px; margin: 0 0 12px; border-bottom: 1px solid var(--border); }
+.st-seg button { margin: 0 0 -1px; padding: 0 0 6px; border: 0; border-bottom: 1px solid transparent; background: none; font: inherit; font-size: var(--t-1); color: var(--text-3); cursor: pointer; transition: color var(--mo-d2), border-color var(--mo-d2); }
+.st-seg button:hover { color: var(--text-2); }
+.st-seg button[aria-pressed="true"] { color: var(--text); border-bottom-color: var(--text); }
+.st-seg button:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--focus, var(--border-2)); border-radius: 3px; }
+.sl-now .lv { margin: 0 0 14px; padding: 0 0 12px; border-block-start: 0; }
+.sl-now .lv:last-child { border-bottom: 0; margin-bottom: 0; }
+.st-who { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0; font-size: var(--t-1); font-weight: 600; color: var(--text); }
+.st-lines { font: var(--t-1) var(--mono); font-variant-numeric: tabular-nums; font-weight: 400; }
+.st-acts { display: grid; gap: 1px; }
+.st-act { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.st-act span { flex: none; width: 4.2em; font: var(--t-1) var(--mono); color: var(--text-3); }
+.st-act code { flex: 1; min-width: 0; font: var(--t-1) var(--mono); color: var(--text-2); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.st-wait { margin: 0; color: var(--text-3); font-size: var(--t-1); }
+
 /* ---- En ce moment (droite) ---- */
 .sl-now { min-width: 0; min-height: 0; overflow: hidden auto; padding: 12px 14px; border-left: 1px solid var(--border); background: var(--bg-list); transition: opacity var(--mo-d3), padding var(--mo-d4) var(--mo-out), visibility 0s; }
 .sl-now h4 { margin: 0 0 8px; font-size: var(--t-1); font-weight: 500; color: var(--text-3); }

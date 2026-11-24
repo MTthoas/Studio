@@ -229,7 +229,7 @@ async function refreshOnce(pid: string): Promise<void> {
   paint();
 }
 /** Arrête la relecture périodique (appelé quand on quitte l'onglet ; elle s'arrête aussi seule si le Salon n'est plus à l'écran). */
-export function stop(): void { clearTimeout(timer); timer = undefined; clearTimeout(fastTimer); fastTimer = undefined; if (saveTimer) toDisk(); }
+export function stop(): void { clearTimeout(timer); timer = undefined; clearTimeout(fastTimer); fastTimer = undefined; if (techTimer !== undefined) { clearInterval(techTimer); techTimer = undefined; } if (saveTimer) toDisk(); }
 /** Relecture en boucle : plus serrée quand le fil ouvert travaille (ses messages arrivent en une seconde). */
 function start(): void {
   stop(); last = { sessions: 0, trees: 0, detail: 0, board: 0 };
@@ -531,6 +531,78 @@ function nowHTML(t: Thread, d: Detail | undefined, crew: Crew, ask: boolean): st
   const gauge = q.known ? `<div class="sl-quota" title="Fenêtre d’usage de 5 h"><span>5 h</span><i class="sl-bar"><i style="width:${pct}%"></i></i><b>${pct} %</b></div>` : '';
   return `<h4>En ce moment</h4>${rows}<button type="button" class="btn btn-ghost sl-set" data-sl="team" title="${esc(subagents.HINT)}">${icon('gear')}<span>${esc(subagents.label(S.pid))}</span></button>${gauge}`;
 }
+// ---------- Vue Technique de la colonne (même colonne que « En ce moment », autre lecture des mêmes données) ----------
+// Sobre et typographique, avec les styles `.lv-*` de css/pulse.css (suivi en direct de l'onglet Claude Code) : ce que
+// l'agent fait maintenant (verbe + cible en chasse fixe), un chrono, ses dernières actions, ses derniers fichiers +/−.
+// Rien de nouveau n'est lu : actions de la conversation ouverte et sous-agents viennent de `S.detail`.
+type Side = 'team' | 'tech';
+const SIDE = 'studio.salon.side';
+let side: Side = (() => { try { return localStorage.getItem(SIDE) === 'tech' ? 'tech' : 'team'; } catch { return 'team'; } })();
+const TOOL_VERB: Record<string, string> = { Read: 'Lit', Grep: 'Cherche', Glob: 'Cherche', LS: 'Liste', WebFetch: 'Consulte', WebSearch: 'Cherche', Edit: 'Modifie', MultiEdit: 'Modifie', NotebookEdit: 'Modifie', Write: 'Écrit', Bash: 'Lance', BashOutput: 'Lit la sortie', Task: 'Délègue', Agent: 'Délègue' };
+const FILE_TOOL = /^(Read|Edit|MultiEdit|Write|NotebookEdit)$/, EDIT_TOOL = /^(Edit|MultiEdit|Write|NotebookEdit)$/;
+const amount = (v: unknown): number => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : 0; };
+const shortPath = (f: string): string => f.trim().split('/').filter(Boolean).slice(-2).join('/') || f;
+/** Cible d'une action : chemin raccourci pour un fichier, première ligne de la commande sinon. */
+const targetOf = (kind: string, text: string): string => FILE_TOOL.test(kind.slice(5)) ? shortPath(text) : oneLine(text, 120);
+const gain = (add: number, del: number): string => `<span class="st-lines"><b class="a">+${add.toLocaleString('fr-FR')}</b> <b class="d">−${del.toLocaleString('fr-FR')}</b></span>`;
+/** Chrono : le texte est posé par `tickClocks` (après chaque rendu, puis chaque seconde) ; `t1` = 0 tant que ça travaille. */
+const clockHTML = (t0: number, t1: number): string => t0 ? `<time class="lv-clock" data-t0="${t0}" data-t1="${t1}"${t1 ? '' : ' data-live'}></time>` : '';
+const clockText = (s: number): string => { const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = String(s % 60).padStart(2, '0'); return h ? `${h}:${String(m).padStart(2, '0')}:${x}` : `${m}:${x}`; };
+/** Étape en cours : verbe + cible. */
+function stepHTML(working: boolean, last: { kind: string; text: string } | undefined, idle: string): string {
+  const tool = last?.kind.startsWith('tool:') ? last.kind.slice(5) : '';
+  const verb = working ? (tool ? TOOL_VERB[tool] ?? 'Travaille' : last?.kind === 'text' ? 'Répond' : 'Prépare') : idle;
+  const tg = working && last && tool ? targetOf(last.kind, last.text) : '';
+  return `<span class="lv-now"><i class="lv-dot"></i><b>${esc(verb)}</b>${tg ? `<code title="${esc(tg)}">${esc(tg)}</code>` : ''}</span>`;
+}
+function techHTML(t: Thread, d: Detail | undefined, crew: Crew): string {
+  if (!d) return '<p class="st-wait">Lecture de la conversation…</p>';
+  const work = t.group === 'work', acts = d.actions, lp = acts.map(a => a.kind).lastIndexOf('prompt'), last = acts[acts.length - 1];
+  const t0 = ms(acts[lp]?.at) || ms(t.s.started), t1 = work ? 0 : ms(last?.at) || t0;
+  // Dernières actions (outil + cible), les plus récentes d'abord ; celle en cours est déjà dite dans l'étape.
+  const tools = acts.filter(a => a.kind.startsWith('tool:') && a.text), recent = tools.slice(work ? -7 : -6, work ? -1 : undefined).reverse();
+  const list = recent.map(a => `<div class="st-act"><span>${esc(a.kind.slice(5))}</span><code title="${esc(a.text)}">${esc(targetOf(a.kind, a.text))}</code></div>`).join('');
+  // Fichiers touchés : les plus récents d'abord, lignes +/− cumulées.
+  const per = new Map<string, { add: number; del: number; at: number }>();
+  for (const a of acts) {
+    if (!EDIT_TOOL.test(a.kind.slice(5)) || !a.text) continue;
+    const f = per.get(a.text) ?? { add: 0, del: 0, at: 0 };
+    f.add += amount(a.add); f.del += amount(a.del); f.at = Math.max(f.at, ms(a.at)); per.set(a.text, f);
+  }
+  const rows = [...per].sort((a, b) => b[1].at - a[1].at), shownRows = rows.slice(0, 5);
+  const files = shownRows.map(([f, v]) => `<div class="lv-file"><code title="${esc(f)}">${esc(shortPath(f))}</code>${gain(v.add, v.del)}</div>`).join('')
+    + (rows.length > shownRows.length ? `<p class="lv-more">et ${rows.length - shownRows.length} autre${rows.length - shownRows.length > 1 ? 's' : ''}</p>` : '');
+  const total = d.lines && (d.lines.add || d.lines.del) ? gain(d.lines.add, d.lines.del) : '';
+  const main = `<section class="lv st-agent" data-state="${work ? 'work' : acts.length ? 'done' : 'idle'}"><h5 class="st-who">${esc(crew.main.name)}${total ? ` ${total}` : ''}</h5>
+    <div class="lv-head">${stepHTML(work, last, acts.length ? 'Terminé' : 'Prêt')}${clockHTML(t0, t1)}</div>${list || files ? `<div class="lv-rest">${list ? `<div class="st-acts">${list}</div>` : ''}${files ? `<div class="lv-files">${files}</div>` : ''}</div>` : ''}</section>`;
+  // Sous-agents : ceux qui travaillent d'abord, une ligne chacun (étape, chrono, fichiers).
+  const subs = [...(d.subagents ?? [])].sort((a, b) => Number(b.live) - Number(a.live) || ms(b.updated) - ms(a.updated));
+  const subRows = subs.slice(0, 6).map(s => {
+    const w = crew.subs.get(s.id); if (!w) return '';
+    const s0 = ms(s.started), s1 = s.live ? 0 : ms(s.updated) || s0, fl = (s.files ?? []).slice(0, 3).map(f => `<div class="lv-file"><code title="${esc(f.path)}">${esc(shortPath(f.path))}</code>${gain(amount(f.add), amount(f.del))}</div>`).join('');
+    return `<section class="lv st-agent" data-state="${s.live ? 'work' : 'done'}"><h5 class="st-who">${esc(w.name)}</h5>
+      <div class="lv-head">${stepHTML(s.live, s.last, 'Terminé')}${clockHTML(s0, s1)}</div>${fl ? `<div class="lv-rest"><div class="lv-files">${fl}</div></div>` : ''}</section>`;
+  }).join('');
+  return main + subRows + (subs.length > 6 ? `<p class="lv-more">et ${subs.length - 6} autre${subs.length > 7 ? 's' : ''}</p>` : '');
+}
+/** Bascule en tête de colonne : Équipe (les gens) / Technique (le détail du travail). */
+const sideHTML = (): string => `<div class="st-seg" role="group" aria-label="Vue de la colonne">${(['team', 'tech'] as const).map(k => `<button type="button" data-sl="side" data-side="${k}" aria-pressed="${side === k}">${k === 'team' ? 'Équipe' : 'Technique'}</button>`).join('')}</div>`;
+// Seul le chrono tourne, une fois par seconde : et seulement vue Technique visible, fenêtre au premier plan, agent au travail.
+let techTimer: ReturnType<typeof setInterval> | undefined;
+function tickClocks(): void {
+  if (!root) return;
+  const now = Date.now();
+  for (const el of Array.from(root.querySelectorAll<HTMLElement>('[data-sl-now] time[data-t0]'))) {
+    const t0 = Number(el.dataset.t0), t1 = Number(el.dataset.t1) || now, txt = clockText(Math.max(0, Math.round((t1 - t0) / 1000)));
+    if (el.textContent !== txt) el.textContent = txt;
+  }
+}
+function syncClock(): void {
+  const on = root !== null && root.isConnected && side === 'tech' && teamShown(root) && !document.hidden && !!root.querySelector('[data-sl-now] time[data-live]');
+  if (on && techTimer === undefined) techTimer = setInterval(() => { if (root?.isConnected) tickClocks(); else syncClock(); }, 1000);
+  else if (!on && techTimer !== undefined) { clearInterval(techTimer); techTimer = undefined; }
+}
+document.addEventListener('visibilitychange', () => { syncClock(); if (!document.hidden) tickClocks(); });
 /** Modèle prévu pour un sous-agent : celui que lui donne l'équipe du projet, sinon celui de l'équipe, sinon celui de l'agent. */
 function subModel(s: SubAgent): string {
   const t = saved.team(S.pid), m = t.members.find(x => x.name === s.type)?.model || t.model;
@@ -640,7 +712,11 @@ function paint(): void {
   const head = need('[data-sl-head]', root);
   paintIfChanged(head, cur && crew ? headHTML(cur, crew, ask, 1 + (d?.subagents?.length ?? 0)) : '');
   head.querySelector('[data-sl="now"]')?.setAttribute('aria-pressed', String(teamShown(root)));
-  paintIfChanged(need('[data-sl-now]', root), cur && crew ? nowHTML(cur, d, crew, ask) : '');
+  // Colonne de droite : Équipe ou Technique (celle-ci n'est calculée que si elle est à l'écran).
+  const tech = side === 'tech' && teamShown(root);
+  paintIfChanged(need('[data-sl-now]', root), cur && crew ? sideHTML() + (tech ? techHTML(cur, d, crew) : nowHTML(cur, d, crew, ask)) : '');
+  if (tech) tickClocks();
+  syncClock();
   // La fiche ouverte suit l'état de l'agent ; elle se ferme si l'agent n'est plus dans le fil.
   const pb = need<HTMLElement>('[data-sl-prof]', root), ph2 = prof && cur && crew ? profHTML(cur, d, crew, ask) : '';
   if (!ph2) { if (prof) closeProf(); } else { const first = pb.hidden; if (paintIfChanged(pb, ph2) || first) { pb.hidden = false; placeProf(pb); } }
@@ -782,6 +858,7 @@ function bind(r: HTMLElement): void {
     else if (act === 'tech') openTech(t.dataset.id ?? '');
     else if (act === 'reply') need('textarea', r).focus();
     else if (act === 'now') toggleTeam(r);
+    else if (act === 'side') { side = t.dataset.side === 'tech' ? 'tech' : 'team'; try { localStorage.setItem(SIDE, side); } catch { /* plein */ } closeProf(); paint(); }
     else if (act === 'stop') void bridge.call('agent', 'stop', { run: t.dataset.run ?? '' }, 10000).then(x => { toast(x.ok ? 'Équipe arrêtée' : x.message ?? 'Arrêt impossible.'); void refresh(); });
     else if (act === 'publish' || act === 'review' || act === 'pr') void gesture(act, t.dataset.wt ?? '', t as HTMLButtonElement);
   });
@@ -806,6 +883,19 @@ function bind(r: HTMLElement): void {
     if (e.key === 'Escape' && (prof || r.classList.contains('sl-now-open'))) { e.preventDefault(); closeProf(); r.classList.remove('sl-now-open'); paint(); return; }
     if (target(e) instanceof HTMLTextAreaElement && e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); void send(); }
   });
+}
+
+/** Navigation vers un onglet de projet, fournie par la fiche projet (`init`) : le Salon n'a pas accès à la coquille de l'app. */
+let go: (pid: string, tab: string) => Promise<void> = () => Promise.resolve();
+/** À appeler une fois au démarrage (page.ts) avec `(pid, tab) => app.setView({ type: 'projets', project: pid, tab })`. */
+export function init(open: (pid: string, tab: string) => Promise<void>): void { go = open; }
+/** Ouvre le fil `session` du projet `pid` dans le Salon : le choisit (retenu dans `studio.salon.chosen`), puis ouvre l'onglet salon. */
+/** Fil choisi dans le Salon du projet (barre latérale). */
+export const chosenThread = (pid: string): string => chosen.get(pid) ?? '';
+export function openThread(pid: string, session: string): void {
+  choose(pid, session);
+  if (root?.isConnected && p?.id === pid) { paint(); fetchThread(pid, session); void refresh(); } // Salon déjà à l'écran : il suit tout de suite
+  void go(pid, 'salon');
 }
 
 /** Monte le Salon du projet `proj` dans `box`. `o.openTech` ouvre une conversation dans l'onglet Claude Code. */

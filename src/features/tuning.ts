@@ -16,10 +16,10 @@ interface Field { key: string; kind: tuning.Item['kind']; label: string; hint: s
 interface AgentState { values: Record<string, unknown>; defaults: Record<string, unknown>; changed: string[] }
 let agent: AgentState | null = null, agentErr = '';
 const AGENT_ITEMS: Omit<Field, 'value' | 'changed'>[] = [
-  { key: 'intro', kind: 'text', label: 'Cadre', hint: 'Où l’agent se trouve et comment tu lui parles.' },
+  { key: 'intro', kind: 'text', label: 'Cadre et ton', hint: 'Où l’agent se trouve, comment tu lui parles, et le ton de ses messages (un collègue, pas un assistant).' },
   { key: 'edit', kind: 'text', label: 'Mode « Modifier »', hint: 'Règles de la copie isolée. Contient la ligne « Commit: … » que Studio relit pour proposer le message de commit : garde-la.' },
   { key: 'read', kind: 'text', label: 'Mode « Analyser »', hint: 'Remplace les règles de modification quand l’agent est en lecture seule.' },
-  { key: 'context', kind: 'text', label: 'Mémoire du dépôt · lire contexte.md', hint: 'Chaque agent lit contexte.md en premier, à la racine du dépôt, au lieu de réexplorer le code. Vide : il ne le lit plus.' },
+  { key: 'context', kind: 'text', label: 'Mémoire du dépôt · lire contexte.md', hint: 'Chaque agent lit le début de contexte.md, à la racine du dépôt, puis y cherche ce qui concerne sa tâche, au lieu de réexplorer le code ou de lire tout le fichier. Vide : il ne le lit plus.' },
   { key: 'contextEdit', kind: 'text', label: 'Mémoire du dépôt · tenir contexte.md à jour', hint: 'Mode « Modifier » seulement : l’agent y ajoute ce qu’il a appris de durable, et le crée s’il manque. Le fichier part avec ses changements, dans la même pull request. Vide : il n’y touche pas.' },
   { key: 'economy', kind: 'text', label: 'Économie de contexte', hint: 'Un agent relit tout son contexte à chaque appel d’outil : ce qu’il y fait entrer se paie à chaque tour suivant. Vide : aucune consigne d’économie.' },
   { key: 'tests', kind: 'text', label: 'Avec les commandes', hint: 'Ajouté seulement quand « Commandes » est coché, suivi de la liste des commandes permises (Réglages → Autorisations).' },

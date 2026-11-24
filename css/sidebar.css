@@ -62,6 +62,15 @@
 :root #sidebar .side-sub.open { color: var(--text); }
 :root #sidebar :is(.side-sub2, .side-sub3, .side-sub4, .side-tree) { height: 26px; }
 :root #sidebar .side-sub2 { padding-left: 36px; }
+/* « Salon » : la ligne centrale du projet, un cran plus haute, libellé et icône plus présents (sans trait d'accent). */
+:root #sidebar .side-salon { height: 30px; color: var(--text); font-weight: 500; }
+:root #sidebar .side-salon > .ic { color: var(--text-2); }
+:root #sidebar .side-salon:hover > .ic, :root #sidebar .side-salon.sel > .ic { color: var(--text); }
+:root #sidebar .side-salon .side-count { color: var(--c-green); }
+/* « Salon » en tête de « Piloter » : l'entrée mise en avant de Studio (fond léger permanent, jamais de trait à gauche). */
+:root #sidebar .side-salon-top { color: var(--text); font-weight: 600; background: color-mix(in srgb, var(--c-green) 9%, transparent); }
+:root #sidebar .side-salon-top > .ic { color: var(--c-green); }
+:root #sidebar .side-salon-top:hover { background: color-mix(in srgb, var(--c-green) 15%, transparent); }
 :root #sidebar .side-sub3 { padding-left: 52px; }
 :root #sidebar .side-sub4 { padding-left: 68px; }
 :root #sidebar :is(.side-sub2, .side-sub3) > .ic { color: var(--text-3); }

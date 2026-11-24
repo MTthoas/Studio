@@ -30,6 +30,7 @@ import { shareable, notesAllowed } from '../../integrations/ai.ts';
 let app!: AppShell;
 export const init = (shell: AppShell): void => {
   app = shell;
+  salon.init((pid, tab) => app.setView({ type: 'projets', project: pid, tab }));
   // Une conversation Claude Code a été ouverte, renommée ou supprimée : la barre latérale et le fil d'Ariane suivent.
   sessions.onChange(() => {
     app.renderSidebar();

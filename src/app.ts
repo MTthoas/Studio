@@ -30,6 +30,7 @@ import * as onboarding from './features/onboarding.ts';
 import * as news from './features/news.ts';
 import * as savedCommands from './features/commands.ts';
 import * as projectsPage from './features/projects/page.ts';
+import * as salon from './features/projects/salon.ts';
 import * as projectsModel from './features/projects/model.ts';
 import * as agentItems from './features/projects/items.ts';
 import * as agentGuard from './features/projects/guard.ts';
@@ -233,19 +234,24 @@ function renderSidebar() {
   // Le quotidien reste à l'écran ; le reste se range sous « Plus » (déplié d'office quand la vue ouverte s'y trouve).
   const more = [...(count.ephemeral || v.type === 'ephemeral' ? ['ephemeral'] : []), ...(models.available() ? ['models'] : []), 'linear', 'github', 'graph', 'trash', 'help'];
   const moreOpen = ui.moreOpen || more.includes(v.type), moreCount = (count.linear ?? 0) + (count.github ?? 0);
+  const salonOn = projectsPage.claudeAvailable();
+  // « Salon » en tête de « Piloter » : le Salon du dernier projet ouvert (sinon du premier), sans passer par la liste des projets.
+  if (v.type === 'projets' && v.project && v.project !== salonLast) { salonLast = v.project; try { localStorage.setItem(SALON_LAST, v.project); } catch { /* plein */ } }
+  const salonPid = salonOn ? (projectsModel.byId(salonLast)?.id ?? projectsModel.projects()[0]?.id ?? '') : '';
+  const salonTop = salonPid && !(v.type === 'projets' && v.project) ? `<button class="side-item side-salon-top" data-pj-open="${esc(salonPid)}" data-pj-tab="salon" style="--ic:var(--c-green)">${icon('sparkle')}<span>Salon</span></button>` : '';
   const projRows = projectsModel.projects().slice(0, 8).map(p => {
       const open = v.type === 'projets' && v.project === p.id, tab = v.tab ?? projectsPage.defaultTab();
-      // Sous « Claude Code » : les conversations récentes du projet, celle qui est ouverte en surbrillance.
-      const talks = open ? projectsPage.sideSessions(p.id) : [], talking = tab === 'sessions' && talks.some(s => s.sel);
+      // Sous « Salon » : les conversations au travail (ou en PR) ; un clic ouvre leur fil dans le Salon.
+      const talks = open && salonOn ? projectsPage.sideSessions(p.id) : [], working = talks.filter(s => s.live).length;
+      const pick = tab === 'salon' ? salon.chosenThread(p.id) : '', picked = !!pick && talks.some(s => s.id === pick);
       // Sous « Serveur » : les serveurs du projet, celui qui est affiché en surbrillance.
       const servers = open ? projectsPage.sideServers(p.id) : [], serving = tab === 'server' && servers.some(s => s.sel);
-      return `<button class="side-item side-sub${open && tab === projectsPage.defaultTab() ? ' sel' : ''}${open ? ' open' : ''}" data-pj-open="${esc(p.id)}"><i class="tag-dot" style="--c:var(--c-${p.hue})"></i><span>${esc(p.name)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`
-        // La barre d'onglets de la page porte les seize onglets ; ici, seulement ce qui a des enfants (conversations, serveurs) et l'onglet ouvert.
-        + (open ? projectsPage.tabsOf(p, tab ?? '').slice(1).filter(([k]) => k === 'sessions' || k === tab || (k === 'server' && servers.length > 0)).map(([k, l, ic]) => `<button class="side-item side-sub2${tab === k && !(k === 'sessions' && talking) && !(k === 'server' && serving) ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="${k}"${k === 'sessions' ? ' data-pj-session=""' : ''}>${icon(ic)}<span>${esc(l)}</span></button>`
-          + (k === 'server' ? servers.map(s => `<button class="side-item side-sub3${tab === 'server' && s.sel ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="server" data-pj-server="${esc(s.id)}" title="${esc(s.dest)}">${icon('server')}<span>${esc(s.name)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('') : '')
-          + (k === 'sessions' ? talks.map(s => `<button class="side-item side-sub3${tab === 'sessions' && s.sel && !s.subs.some(a => a.sel) ? ' sel' : ''}${!s.live && s.stage ? ` ${s.stage.cls}` : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="sessions" data-pj-session="${esc(s.id)}" title="${esc(s.title)}${s.live ? ' · en cours' : s.stage ? ` · ${esc(s.stage.label)}` : ''}"><i class="ss-live${s.live ? ' on' : s.stage ? ` ${s.stage.cls}` : ''}"></i><span>${esc(s.title)}</span>${!s.live && s.stage?.cls === 'st-review' ? `<em class="side-stage">${esc(s.stage.label)}</em>` : ''}<i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`
-            // Sous la conversation : ses sous-agents épinglés, et celui dont on lit le fil.
-            + s.subs.map(a => `<button class="side-item side-sub4${tab === 'sessions' && a.sel ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="sessions" data-pj-session="${esc(s.id)}" data-pj-sub="${esc(a.id)}" title="Sous-agent : ${esc(a.title)}"><i class="ss-live${a.live ? ' on' : ''}"></i><span>${esc(a.title)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('')).join('') : '')).join('') : '');
+      return `<button class="side-item side-sub${open && tab === projectsPage.defaultTab() && tab !== 'salon' ? ' sel' : ''}${open ? ' open' : ''}" data-pj-open="${esc(p.id)}"><i class="tag-dot" style="--c:var(--c-${p.hue})"></i><span>${esc(p.name)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`
+        // Le Salon vient en tête, mis en avant ; les autres onglets (Claude Code compris) restent dans la barre d'onglets de la fiche : ici, seulement l'onglet ouvert et les serveurs.
+        + (open && salonOn ? `<button class="side-item side-sub2 side-salon${tab === 'salon' && !picked ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="salon">${icon('sparkle')}<span>Salon</span>${working ? sideCount('salon:' + p.id, working) : ''}</button>`
+          + talks.map(s => `<button class="side-item side-sub3${s.id === pick ? ' sel' : ''}${!s.live && s.stage ? ` ${s.stage.cls}` : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="salon" data-pj-session="${esc(s.id)}" data-pj-salon="1" title="${esc(s.title)}${s.live ? ' · en cours' : s.stage ? ` · ${esc(s.stage.label)}` : ''}"><i class="ss-live${s.live ? ' on' : s.stage ? ` ${s.stage.cls}` : ''}"></i><span>${esc(s.title)}</span>${!s.live && s.stage?.cls === 'st-review' ? `<em class="side-stage">${esc(s.stage.label)}</em>` : ''}<i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('') : '')
+        + (open ? projectsPage.tabsOf(p, tab ?? '').slice(1).filter(([k]) => k === tab || (k === 'server' && servers.length > 0)).map(([k, l, ic]) => `<button class="side-item side-sub2${tab === k && !(k === 'server' && serving) ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="${k}">${icon(ic)}<span>${esc(l)}</span></button>`
+          + (k === 'server' ? servers.map(s => `<button class="side-item side-sub3${tab === 'server' && s.sel ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="server" data-pj-server="${esc(s.id)}" title="${esc(s.dest)}">${icon('server')}<span>${esc(s.name)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('') : '')).join('') : '');
   });
   const html = `
     <div class="side-head">
@@ -257,7 +263,7 @@ function renderSidebar() {
     <div class="side-scroll">
       <div class="side-group">${item('home')}</div>
       <div class="side-label">Piloter</div>
-      <div class="side-group">${projectsPage.claudeAvailable() ? item('workspace') + item('planner') : ''}${item('projets', v.type === 'projets' && !projRows.some(r => /class="side-item[^"]* sel\b/.test(r)))}${projRows.join('')}</div>
+      <div class="side-group">${salonTop}${projectsPage.claudeAvailable() ? item('workspace') + item('planner') : ''}${item('projets', v.type === 'projets' && !projRows.some(r => /class="side-item[^"]* sel\b/.test(r)))}${projRows.join('')}</div>
       <div class="side-label">Écrire</div>
       <div class="side-group">${item('all')}${treeHTML(idx.live)}${item('journal')}</div>
       ${tags.length ? sideFold('tags', 'tags', ui.tagsOpen, 'Tags', '', `<div class="side-group">${tags.map(([t, c]) => `<button class="side-item${v.type === 'tag' && v.tag === t ? ' sel' : ''}" data-tag="${esc(t)}"><i class="tag-dot" style="--c:var(--c-${hue(t)})"></i><span>${esc(t)}</span>${sideCount('tag:' + t, c)}</button>`).join('')}</div>`) : ''}
@@ -293,6 +299,8 @@ function renderSidebar() {
 }
 
 /** Compteur de la barre : le chiffre roule quand sa valeur change (clé stable d'un repeint à l'autre, voir motion.ts). */
+const SALON_LAST = 'studio.salon.last';
+let salonLast: string = (() => { try { return localStorage.getItem(SALON_LAST) ?? ''; } catch { return ''; } })();
 const sideCount = (key: string, n: number) => `<span class="side-count" data-mo="count" data-mo-key="sc:${esc(key)}">${n}</span>`;
 /** Section repliable : le contenu reste rendu (masqué et inerte quand elle est fermée) pour que la hauteur s'anime. */
 const sideFold = (id: string, act: string, open: boolean, label: string, badge: string, body: string) =>
@@ -304,7 +312,7 @@ function setFold(f: HTMLElement, open: boolean) {
 }
 /** Lignes de projet (projet, onglets, conversations, serveurs, sous-agents) : clé stable pour repérer les nouvelles. */
 const SIDE_ROWS = '.side-sub, .side-sub2, .side-sub3, .side-sub4';
-const rowKey = (el: HTMLElement) => ['pjOpen', 'pjTab', 'pjSession', 'pjServer', 'pjSub'].map(k => el.dataset[k] ?? '').join('/');
+const rowKey = (el: HTMLElement) => ['pjOpen', 'pjTab', 'pjSession', 'pjServer', 'pjSub', 'pjSalon'].map(k => el.dataset[k] ?? '').join('/');
 /** Identité d'un bouton de la barre, pour rendre le focus clavier après un repeint. */
 const focusKey = (el: HTMLElement) => { const k = [el.dataset.act, el.dataset.view, el.dataset.tag, el.dataset.openNote, el.dataset.openConn, rowKey(el).replace(/\//g, '')].filter(Boolean); return el.matches('#sidebar button') && k.length ? [...k, rowKey(el)].join('|') : ''; };
 
@@ -328,6 +336,7 @@ function treeHTML(live: Note[]): string {
 
 /** Clic sur une ligne de projet de la barre latérale (projet, onglet, conversation, sous-agent, serveur). */
 async function openSideRow(d: Record<string, string | undefined>): Promise<void> {
+  if (d.pjOpen && d.pjSalon && d.pjSession) { salon.openThread(d.pjOpen, d.pjSession); return; } // le fil s'ouvre dans le Salon (qui ouvre l'onglet)
   if (d.pjOpen && d.pjSession !== undefined) projectsPage.openSession(d.pjOpen, d.pjSession || null, d.pjSub || null);
   if (d.pjOpen && d.pjServer !== undefined) projectsPage.openServer(d.pjOpen, d.pjServer);
   await setView({ type: 'projets', project: d.pjOpen || d.projectOpen || null, ...(d.pjTab ? { tab: d.pjTab } : {}) });
