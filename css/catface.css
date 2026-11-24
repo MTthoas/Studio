@@ -1,104 +1,86 @@
 /* Chats des profils du Salon (src/ui/catface.ts), préfixe cf-.
-   Le svg (viewBox 0 0 40 40) remplit son parent, un rond : la tête, oreilles comprises, tient dans le rond.
-   Couleurs : --c hérité du parent, nuancé avec --bg / --text (thèmes clair et sombre). `transform` porte les animations,
+   Dessinés comme le chat du fil d'Ariane (css/cat.css) : une silhouette assise d'un seul aplat, cadrée en icône, sans rond derrière ;
+   yeux, nez et paupières closes couleur du fond. Le svg (viewBox 0 0 40 40) remplit son parent.
+   Couleur : --c hérité du parent, nuancé par la teinte (cf-t0…2) avec --bg / --text. `transform` porte les animations,
    `translate` / `rotate` le regard (jamais les deux sur la même propriété). Boucles : sous .cf-live ou au survol du parent seulement ;
    .cf-hop joue un saut, une fois. --cf-x / --cf-y (de -1 à 1) : direction du pointeur, posés par init(). */
-.cf { width: 100%; height: 100%; display: block; overflow: visible; --cf-c: var(--c, var(--c-gray)); }
-.cf { --cf-fur: var(--cf-c); }
-.cf.cf-t1 { --cf-fur: color-mix(in srgb, var(--cf-c) 82%, var(--text)); }
-.cf.cf-t2 { --cf-fur: color-mix(in srgb, var(--cf-c) 72%, var(--bg)); }
-.cf { --cf-ink: color-mix(in srgb, var(--text) 88%, var(--cf-c)); --cf-paper: var(--bg); }
-:root[data-theme="dark"] .cf { --cf-ink: var(--bg); --cf-paper: color-mix(in srgb, var(--text) 92%, var(--cf-c)); }
-.cf { --cf-mk: color-mix(in srgb, var(--cf-fur) 55%, var(--cf-ink)); --cf-lt: color-mix(in srgb, var(--cf-fur) 42%, var(--cf-paper)); --cf-in: var(--cf-lt); --cf-eye: var(--cf-paper); --cf-pup: var(--cf-ink); }
+.cf { width: 100%; height: 100%; display: block; overflow: visible; --cf-c: var(--c, var(--c-gray)); --cf-fur: color-mix(in srgb, var(--cf-c) 88%, var(--text)); fill: var(--cf-fur); }
+.cf.cf-t1 { --cf-fur: color-mix(in srgb, var(--cf-c) 70%, var(--text)); }
+.cf.cf-t2 { --cf-fur: color-mix(in srgb, var(--cf-c) 78%, var(--bg)); }
 
-.cf-fur { fill: var(--cf-fur); }
-.cf-in { fill: var(--cf-in); }
-.cf-e-fold .cf-in { fill: var(--cf-mk); opacity: .7; }
-.cf-fill { fill: var(--cf-mk); }
-.cf-p-patch .cf-fill { fill: color-mix(in srgb, var(--cf-fur) 70%, var(--cf-ink)); }
-.cf-lt { fill: var(--cf-lt); }
-.cf-tab { fill: none; stroke: var(--cf-mk); stroke-width: 1.7; stroke-linecap: round; }
-.cf-sc { fill: var(--cf-eye); }
-.cf-pu { fill: var(--cf-pup); }
-.cf-nose { fill: var(--cf-mk); }
-.cf-p-mask .cf-nose { fill: var(--cf-paper); opacity: .85; }
-.cf-p-mask .cf-mo { stroke: var(--cf-paper); }
-.cf-mo, .cf-ec { fill: none; stroke: var(--cf-mk); stroke-width: .9; stroke-linecap: round; stroke-linejoin: round; }
-.cf-mo { stroke: var(--cf-ink); }
-.cf-ec { stroke: var(--cf-ink); stroke-width: 1.2; }
-.cf-wh { fill: none; stroke: color-mix(in srgb, var(--cf-fur) 45%, var(--text)); stroke-width: .6; stroke-linecap: round; opacity: .75; }
-.cf-zz { fill: none; stroke: color-mix(in srgb, var(--cf-c) 70%, var(--text)); stroke-width: 1.1; stroke-linecap: round; stroke-linejoin: round; opacity: 0; }
+.cf-tail { fill: none; stroke: var(--cf-fur); stroke-width: 2.8; stroke-linecap: round; }
+.cf-eo, .cf-nose { fill: var(--bg); }
+.cf-nose { opacity: .55; }
+.cf-ec { fill: none; stroke: var(--bg); stroke-width: .9; stroke-linecap: round; }
+.cf-wh { fill: none; stroke: var(--cf-fur); stroke-width: .6; stroke-linecap: round; opacity: .8; }
+.cf-zz { fill: none; stroke: var(--cf-fur); stroke-width: .8; stroke-linecap: round; stroke-linejoin: round; opacity: 0; }
 
 /* Poses fixes : chaque humeur se lit sans animation. */
-.cf-ec, .cf-mo-b { display: none; }
-.cf-ear { transform-origin: 12px 18px; }
-.cf-ear-r { transform-origin: 28px 18px; }
-.cf-head { transform-origin: 20px 34px; }
-.cf-all { transform-origin: 20px 36px; }
-.cf-eye, .cf-lid, .cf-eo { transform-origin: 0 0; }
-.cf-pu { transform-origin: 0 0; }
-.cf-ear-l .cf-eh { transform-origin: 12px 18px; } .cf-ear-r .cf-eh { transform-origin: 28px 18px; }
+.cf-ec { display: none; }
+.cf-all, .cf-body { transform-origin: 20px 40px; }
+.cf-tail { transform-origin: 28.6px 38.6px; }
+.cf-tip { transform-origin: 35.4px 32.8px; }
+.cf-look, .cf-head { transform-origin: 20px 23px; }
+.cf-ear-l, .cf-ear-l .cf-eh { transform-origin: 14.6px 10px; }
+.cf-ear-r, .cf-ear-r .cf-eh { transform-origin: 25.4px 10px; }
+.cf-lid, .cf-eo { transform-origin: 0 0; }
 
-.cf-work .cf-lid { transform: scaleY(.8); }
-.cf-work .cf-pu { translate: 1.1px .2px; }
+.cf-work .cf-lid { transform: scaleY(.6); }
 .cf-ask .cf-head { transform: rotate(-9deg); }
 .cf-ask .cf-ear-r { transform: rotate(9deg); }
-.cf-ask .cf-lid { transform: scale(1.1); }
-.cf-ask .cf-pu { translate: 0 -.4px; }
+.cf-ask .cf-lid { transform: scale(1.12); }
 .cf-done .cf-eo { display: none; }
 .cf-done .cf-ec-up { display: block; }
-.cf-done .cf-mo-a { display: none; } .cf-done .cf-mo-b { display: block; }
 .cf-sleep .cf-eo { display: none; }
 .cf-sleep .cf-ec-dn { display: block; }
-.cf-sleep .cf-head { transform: translateY(1.8px) rotate(6deg); }
-.cf-sleep .cf-ear-l { transform: rotate(-13deg); } .cf-sleep .cf-ear-r { transform: rotate(13deg); }
+.cf-sleep .cf-head { transform: translateY(1.8px) rotate(5deg); }
 .cf-sleep .cf-zz { opacity: .85; }
 
-/* Regard : la tête tourne vers le pointeur, le visage glisse un peu plus loin qu'elle (parallaxe : la tête paraît en volume). */
-.cf-look { transform-origin: 20px 34px; translate: calc(var(--cf-x, 0) * 1.2px) calc(var(--cf-y, 0) * .8px); rotate: calc(var(--cf-x, 0) * 5deg); transition: translate var(--mo-d5) var(--mo-spring), rotate var(--mo-d5) var(--mo-spring); }
-.cf-face { translate: calc(var(--cf-x, 0) * 1.6px) calc(var(--cf-y, 0) * 1px); transition: translate var(--mo-d5) var(--mo-spring); }
-.cf-pu { translate: calc(var(--cf-x, 0) * .7px) calc(var(--cf-y, 0) * .5px); }
-.cf-work .cf-pu { translate: calc(1.1px + var(--cf-x, 0) * .4px) .2px; }
+/* Regard : la tête tourne vers le pointeur, le visage glisse un peu plus loin qu'elle (parallaxe, comme le chat du fil d'Ariane). */
+.cf-look { translate: calc(var(--cf-x, 0) * 1.1px) calc(var(--cf-y, 0) * .8px); rotate: calc(var(--cf-x, 0) * 6deg); transition: translate var(--mo-d5) var(--mo-spring), rotate var(--mo-d5) var(--mo-spring); }
+.cf-face { translate: calc(var(--cf-x, 0) * 1.4px) calc(var(--cf-y, 0) * 1px); transition: translate var(--mo-d5) var(--mo-spring); }
 
-/* Boucles : seulement en vie (.cf-live) ou au survol du parent. */
+/* Boucles : seulement en vie (.cf-live) ou au survol du parent. Il respire, la queue bat en deux segments, il cligne. */
 :is(.cf-live .cf, :hover > .cf) .cf-eo { animation: cf-blink 5.2s infinite; }
-:is(.cf-live .cf-idle, :hover > .cf-idle) .cf-ear-r { animation: cf-twitch 7s ease-in-out infinite 1.2s; }
-:is(.cf-live .cf-idle, :hover > .cf-idle) .cf-head { animation: cf-breath 4s var(--mo-in-out) infinite; }
-:is(.cf-live .cf-work, :hover > .cf-work) .cf-pu { animation: cf-scan 2.8s var(--mo-in-out) infinite; }
+:is(.cf-live .cf, :hover > .cf) .cf-body { animation: cf-breath 3.6s var(--mo-in-out) infinite; }
+:is(.cf-live .cf:not(.cf-sleep), :hover > .cf:not(.cf-sleep)) .cf-tail { animation: cf-tail 3.2s var(--mo-in-out) infinite alternate; }
+:is(.cf-live .cf:not(.cf-sleep), :hover > .cf:not(.cf-sleep)) .cf-tip { animation: cf-tip 3.2s var(--mo-in-out) infinite alternate -.5s; }
+:is(.cf-live .cf-idle, :hover > .cf-idle) .cf-ear-r { animation: cf-twitch 9s ease-in-out infinite 1.5s; }
 :is(.cf-live .cf-work, :hover > .cf-work) .cf-head { animation: cf-sway 2.4s var(--mo-in-out) infinite alternate; }
-:is(.cf-live .cf-work, :hover > .cf-work) .cf-ear { animation: cf-prick 2.4s var(--mo-in-out) infinite alternate; }
+:is(.cf-live .cf-work, :hover > .cf-work) .cf-tail { animation-duration: 1.4s; }
 :is(.cf-live .cf-ask, :hover > .cf-ask) .cf-head { animation: cf-rock 2.6s var(--mo-in-out) infinite alternate; }
 :is(.cf-live .cf-ask, :hover > .cf-ask) .cf-ear-r { animation: cf-swivel 3.4s var(--mo-in-out) infinite; }
-:is(.cf-live .cf-sleep, :hover > .cf-sleep) .cf-head { animation: cf-sleepy 4.2s var(--mo-in-out) infinite; }
-:is(.cf-live .cf-sleep, :hover > .cf-sleep) .cf-zz path { animation: cf-zz 3.6s var(--mo-out) infinite; }
-:is(.cf-live .cf-sleep, :hover > .cf-sleep) .cf-zz path + path { animation-delay: 1.2s; }
+:is(.cf-live .cf-sleep, :hover > .cf-sleep) .cf-body { animation-duration: 5.6s; }
+:is(.cf-live .cf-sleep, :hover > .cf-sleep) .cf-zz path { animation: cf-zz 3.4s var(--mo-out) infinite; }
+:is(.cf-live .cf-sleep, :hover > .cf-sleep) .cf-zz path + path { animation-delay: 1.1s; }
 
-/* Entrée d'un message (.cf-hop) : il se tasse, s'étire, retombe ; les oreilles se dressent. Une seule fois. */
-.cf-hop .cf-all { animation: cf-hop 560ms var(--mo-in-out) backwards; }
-.cf-hop .cf-eh { animation: cf-flap 560ms var(--mo-out) backwards; }
+/* Entrée d'un message (.cf-hop) : il se tasse, s'étire en l'air, s'écrase à la réception ; oreilles et queue suivent. Une seule fois. */
+.cf-hop .cf-all { animation: cf-hop 600ms var(--mo-in-out) backwards; }
+.cf-hop .cf-eh { animation: cf-flap 600ms var(--mo-out) backwards; }
 .cf-hop .cf-ear-r .cf-eh { animation-direction: reverse; }
+.cf-hop .cf-tail { animation: cf-whip 600ms var(--mo-out) backwards; }
 
-@keyframes cf-blink { 0%, 91%, 96%, 100% { transform: scaleY(1); } 93.5% { transform: scaleY(.08); } }
-@keyframes cf-twitch { 0%, 86%, 100% { transform: rotate(0); } 89% { transform: rotate(14deg); } 91.5% { transform: rotate(-3deg); } 94% { transform: rotate(8deg); } 96.5% { transform: rotate(0); } }
-@keyframes cf-breath { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(.25px) scale(1.01, .985); } }
-@keyframes cf-scan { 0%, 8% { translate: -1.2px .3px; } 46% { translate: 1.4px .3px; } 54% { translate: 1.4px .3px; } 92%, 100% { translate: -1.2px .3px; } }
-@keyframes cf-sway { from { transform: rotate(-2.4deg) translateY(.1px); } to { transform: rotate(2.4deg) translateY(-.2px); } }
-@keyframes cf-prick { from { transform: rotate(0) scaleY(1); } to { transform: rotate(0) scaleY(1.07); } }
+@keyframes cf-blink { 0%, 90%, 96%, 100% { transform: scaleY(1); } 93% { transform: scaleY(.1); } }
+@keyframes cf-breath { 0%, 100% { transform: scale(1, 1); } 50% { transform: scale(1.015, 1.035); } }
+@keyframes cf-tail { from { transform: rotate(-8deg); } to { transform: rotate(12deg); } }
+@keyframes cf-tip { from { transform: rotate(-22deg); } to { transform: rotate(26deg); } }
+@keyframes cf-twitch { 0%, 88%, 100% { transform: rotate(0); } 90% { transform: rotate(-16deg); } 92% { transform: rotate(4deg); } 94% { transform: rotate(-10deg); } 96% { transform: rotate(0); } }
+@keyframes cf-sway { from { transform: rotate(-3deg); } to { transform: rotate(3deg); } }
 @keyframes cf-rock { from { transform: rotate(-10deg); } to { transform: rotate(-3.5deg); } }
-@keyframes cf-swivel { 0%, 100% { transform: rotate(9deg); } 30% { transform: rotate(26deg); } 40% { transform: rotate(22deg); } 70% { transform: rotate(9deg); } }
-@keyframes cf-sleepy { 0%, 100% { transform: translateY(1.8px) rotate(6deg); } 50% { transform: translateY(2.5px) rotate(6.5deg) scale(1.012); } }
-@keyframes cf-zz { 0% { opacity: 0; transform: translate(-2px, 3px); } 25% { opacity: .9; } 100% { opacity: 0; transform: translate(2px, -4px); } }
+@keyframes cf-swivel { 0%, 100% { transform: rotate(9deg); } 30% { transform: rotate(24deg); } 40% { transform: rotate(20deg); } 70% { transform: rotate(9deg); } }
+@keyframes cf-zz { 0% { opacity: 0; transform: translate(-2px, 3px); } 25% { opacity: .85; } 100% { opacity: 0; transform: translate(2.5px, -4px); } }
 @keyframes cf-hop {
   0% { transform: none; }
-  20% { transform: scale(1.08, .88); }
-  48% { transform: translateY(-3px) scale(.95, 1.07); }
-  70% { transform: scale(1.06, .92); }
-  86% { transform: scale(.99, 1.02); }
+  18% { transform: scale(1.12, .84); }
+  46% { transform: translateY(-5px) scale(.93, 1.1); }
+  68% { transform: translateY(0) scale(1.1, .87); }
+  84% { transform: scale(.98, 1.03); }
   100% { transform: none; }
 }
-@keyframes cf-flap { 0%, 100% { transform: rotate(0); } 35% { transform: rotate(-16deg); } 70% { transform: rotate(6deg); } }
+@keyframes cf-flap { 0%, 100% { transform: rotate(0); } 40% { transform: rotate(-22deg); } 72% { transform: rotate(8deg); } }
+@keyframes cf-whip { 0%, 100% { transform: rotate(0); } 40% { transform: rotate(-26deg); } 74% { transform: rotate(14deg); } }
 
-/* Mouvement « Discret » : il cligne, rien d'autre. « Aucun » et préférence système : pose fixe. */
-:root[data-motion="subtle"] .cf :is(.cf-head, .cf-ear, .cf-pu, .cf-zz path, .cf-all, .cf-eh) { animation: none; }
+/* Mouvement « Discret » : il respire et cligne, rien d'autre. « Aucun » et préférence système : pose fixe. */
+:root[data-motion="subtle"] .cf :is(.cf-head, .cf-ear, .cf-tail, .cf-tip, .cf-zz path, .cf-all, .cf-eh) { animation: none; }
 :root[data-motion="off"] .cf *, :root[data-motion="off"] .cf { animation: none !important; transition: none !important; }
 @media (prefers-reduced-motion: reduce) { .cf *, .cf { animation: none !important; transition: none !important; } }
