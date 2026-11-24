@@ -91,7 +91,7 @@ function paint(): void {
   if (d !== lastPop) { lastPop = d; pop.outerHTML = d; pop = document.body.querySelector<HTMLElement>('.ub-pop'); } // le défilement ne bouge que si le contenu change
   if (!pop) return;
   const r = box.getBoundingClientRect(); // ancré au-dessus du bloc
-  pop.style.left = `${Math.round(r.left)}px`; pop.style.bottom = `${Math.round(innerHeight - r.top + 6)}px`; pop.style.width = `${Math.max(260, Math.round(r.width))}px`;
+  pop.style.left = `${Math.round(r.left)}px`; pop.style.bottom = `${Math.round(innerHeight - r.top + 6)}px`; pop.style.width = `${Math.round(r.width)}px`; // pas plus large que la jauge : au-delà, il débordait de la barre latérale sur la vue
 }
 const close = (): void => { if (open) { open = false; paint(); } };
 

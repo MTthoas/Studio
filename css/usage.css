@@ -24,5 +24,9 @@
 .ub-m { margin-bottom: 7px; }
 .ub-src small, .ub-foot small { display: block; color: var(--text-3); }
 .ub-src > .ub-link { display: inline-block; }
-.ub-foot { display: flex; align-items: center; gap: 10px; white-space: nowrap; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.ub-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.ub-foot small { flex-basis: 100%; }
 .ub-sp { flex: 1; }
+/* Pendant une View Transition, #main (mo-main) est peint au-dessus du reste : le popover prend son propre calque pour rester devant. */
+:root[data-mo-vt] .ub-pop { view-transition-name: ub-pop; }
+:root[data-mo-vt]::view-transition-group(ub-pop), :root[data-mo-vt]::view-transition-old(ub-pop), :root[data-mo-vt]::view-transition-new(ub-pop) { animation: none; }
