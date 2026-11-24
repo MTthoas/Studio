@@ -16,6 +16,8 @@
 //   /usr/local, /Library… sont fermés (pas d'installation globale depuis la bulle).
 // - Supprimer ou installer : confirmé par Touch ID ou mot de passe avant chaque commande (AgentGuard.swift).
 // - Réseau : ouvert (git push, npm install, gh). Ce qu'il peut envoyer se limite à ce qu'il peut lire.
+// - Vie privée (`privacy`) : ni Apple Events, ni caméra, micro, localisation, presse-papiers, ni préférences et caches
+//   des apps qui gardent ton activité (lus par cfprefsd, hors des règles de fichiers). Chaque règle est vérifiée seule.
 // Le profil est vérifié par macOS avant chaque lancement ; refusé, l'agent part sans bulle et sans terminal.
 import Foundation
 #if os(macOS)
@@ -32,10 +34,46 @@ enum AgentSandbox {
     static func profile(project pid: String, workDirs: [String], readDirs: [String]) -> String? {
         guard available else { return nil }
         // La règle sur la socket SSH de Studio est la seule dont la syntaxe dépend de la version de macOS : sans elle si besoin.
+        // Règles de vie privée : chacune vérifiée seule par macOS (une règle refusée est laissée de côté, pas la bulle).
+        let kept = privacy().filter { valid("(version 1)\n(allow default)\n" + $0) }
         for strict in [true, false] {
-            if let p = build(project: pid, workDirs: workDirs, readDirs: readDirs, strict: strict), valid(p) { return p }
+            guard let base = build(project: pid, workDirs: workDirs, readDirs: readDirs, strict: strict) else { continue }
+            for p in kept.isEmpty ? [base] : [([base] + kept).joined(separator: "\n"), base] where valid(p) { return p }
         }
         return nil
+    }
+
+    /// Ce qui ferait de l'agent un mouchard de ce que tu fais sur le Mac, hors de tes fichiers : fermé dans la bulle.
+    /// - Apple Events (osascript) : pas de pilotage des autres apps (onglets de Safari, Mail, Messages, frappes).
+    /// - Caméra, micro, localisation, presse-papiers (pbpaste : un mot de passe copié y traîne souvent). Les droits
+    ///   accordés à Studio (micro pour la dictée…) passeraient sinon à l'agent, dont macOS le tient pour responsable.
+    /// - Préférences des apps qui gardent ton activité (dossiers récents du Finder, Dock, Safari, Mail, Messages…) et
+    ///   celles de Studio, lues par cfprefsd (`defaults read`) sans passer par les règles de fichiers ; leurs .plist
+    ///   aussi, ~/Library/Preferences restant lisible pour les outils.
+    /// - Caches des navigateurs et des apps personnelles dans ~/Library/Caches (pages visitées), lui aussi ouvert aux outils.
+    static func privacy() -> [String] {
+        let home = real(NSHomeDirectory())
+        let studio = Bundle.main.bundleIdentifier ?? "app.carnet.notes"
+        let domains = [studio, "com.apple.finder", "com.apple.dock", "com.apple.recentitems", "com.apple.sidebarlists",
+                       "com.apple.Safari", "com.apple.mail", "com.apple.MobileSMS", "com.apple.iChat", "com.apple.Spotlight",
+                       "com.apple.spotlight", "com.apple.Photos", "com.apple.Notes", "com.apple.iCal", "com.apple.AddressBook",
+                       "com.apple.Terminal", "com.apple.Preview", "com.apple.TextEdit", "com.apple.QuickTimePlayerX",
+                       "com.apple.Music", "com.apple.podcasts", "com.apple.TV", "com.apple.loginwindow", "com.apple.Siri",
+                       "com.apple.assistant.support", "com.apple.FaceTime", "com.apple.Maps"]
+        var rules = ["(deny appleevent-send)", "(deny device-camera)", "(deny device-microphone)",
+                     "(deny mach-lookup (global-name \"com.apple.pasteboard.1\"))",
+                     "(deny mach-lookup (global-name \"com.apple.locationd.registration\") (global-name \"com.apple.locationd.synchronous\")"
+                        + " (global-name \"com.apple.locationd.desktop.registration\") (global-name \"com.apple.locationd.desktop.synchronous\"))",
+                     "(deny user-preference-read " + domains.map { "(preference-domain \"\($0)\")" }.joined(separator: " ") + ")"]
+        let caches = ["com.apple.Safari", "com.apple.mail", "com.apple.Messages", "com.apple.Notes", "com.apple.Photos", "com.apple.Maps",
+                      "Google", "BraveSoftware", "Firefox", "Mozilla", "com.google.Chrome", "com.brave.Browser", "com.microsoft.edgemac",
+                      "company.thebrowser.Browser", "com.operasoftware.Opera", "com.vivaldi.Vivaldi"]
+        if let h = rx(home) {
+            let d = domains.compactMap(rx).joined(separator: "|"), c = caches.compactMap(rx).joined(separator: "|")
+            rules.append("(deny file-read* (regex #\"^\(h)/Library/Preferences/(ByHost/)?(\(d))\\.\")"
+                + " (regex #\"^\(h)/Library/Caches/(\(c))(/|$)\"))")
+        }
+        return rules
     }
 
     private static func build(project pid: String, workDirs: [String], readDirs: [String], strict: Bool) -> String? {
