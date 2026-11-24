@@ -48,7 +48,7 @@ let nextProject = '';
 /** Notes jointes à la conversation (clé : la conversation, '' pour celle qui n'est pas encore créée). Seules celles-ci sont lisibles par Claude. */
 const attached = new Map<string, string[]>();
 const titleOfNote = (id: string): string => store.get(id)?.title.trim() || 'Sans titre';
-const chipHTML = (id: string): string => `<span class="ag-note" data-note-id="${esc(id)}">${icon('notes')}${esc(titleOfNote(id))}<button type="button" data-cl="unnote" data-id="${esc(id)}" aria-label="Retirer la note">×</button></span>`;
+const chipHTML = (id: string): string => `<span class="ag-note" data-note-id="${esc(id)}"${store.get(id)?.enc ? ' title="Note chiffrée : lue tant qu’elle est jointe et déverrouillée"' : ''}>${icon(store.get(id)?.enc ? 'lock' : 'notes')}${esc(titleOfNote(id))}<button type="button" data-cl="unnote" data-id="${esc(id)}" aria-label="Retirer la note">×</button></span>`;
 /** Ouvre Claude dans un projet, avec éventuellement des notes déjà jointes (depuis une note ou la fiche du projet). */
 export function startIn(projectId: string, notes: string[] = []): void {
   nextProject = projectId;
@@ -117,7 +117,7 @@ async function send(text: string): Promise<void> {
   const chat = c;
   try {
     const r = await ai.run({ prompt, tools: tools(), provider, context, chat: true }, {
-      approve: hub.approve, scope: sc, notes: (attached.get(chat.id) ?? []).filter(id => { const n = store.get(id); return !!n && ai.shareable(n); }), onWrite: app.refreshNote, signal: run.ctrl.signal,
+      approve: hub.approve, scope: sc, notes: (attached.get(chat.id) ?? []).filter(id => { const n = store.get(id); return !!n && ai.linkable(n); }), onWrite: app.refreshNote, signal: run.ctrl.signal,
       onStep: e => { run.steps.push(hub.stepLabel(e)); if (shown(chat.id)) paint(); },
     });
     chat.messages.push({ role: 'ai', text: r.text || '*(réponse vide)*', at: Date.now(), provider: ai.PROVIDERS[r.provider], ...(run.steps.length ? { steps: run.steps } : {}) });

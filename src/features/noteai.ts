@@ -2,7 +2,8 @@
 // fenêtre « Demander à l'IA » et le bouton « Améliorer » quand une note est ouverte.
 // - « Ce que l'IA lit » est affiché en tête et se règle d'un clic : la note ouverte, les notes de son projet (l'IA
 //   les cherche et les lit avec les outils de notes, bornées au périmètre du projet), la sélection en cours.
-//   Le projet de la note se choisit ici aussi. Une note chiffrée ou #privé n'est jamais envoyée.
+//   Le projet de la note se choisit ici aussi. Une note #privé n'est jamais envoyée ; une note chiffrée seulement
+//   jointe à la main (`encLinked`), déverrouillée : ni la préférence « Cette note », ni une action rapide, ni une sélection ne suffisent.
 // - Une conversation par note (gardée en mémoire le temps de la session), des actions rapides, et sous chaque réponse
 //   de quoi l'utiliser : remplacer la sélection ou la note, insérer au curseur, ajouter à la fin, créer une note.
 //   Les insertions passent par l'éditeur : Cmd+Z les défait.
@@ -41,6 +42,17 @@ let sel: Sel | null = null, focusComposer = false;
 // Rien n'est lié à l'IA tant que l'utilisateur ne l'a pas coché : ni la note, ni celles du projet.
 const prefs = (): { note: boolean; project: boolean } => { try { return { note: false, project: false, ...JSON.parse(localStorage.getItem(CTX) || '{}') }; } catch { return { note: false, project: false }; } };
 const setPref = (k: 'note' | 'project', v: boolean) => localStorage.setItem(CTX, JSON.stringify({ ...prefs(), [k]: v }));
+// Note chiffrée : « Cette note » ne suit jamais la préférence générale. Elle se joint à la main, note par note, pour la
+// session, et le verrouillage la détache (il faudra la rejoindre après l'avoir rouverte).
+const encLinked = new Set<string>();
+// Verrouiller, rouvrir ou supprimer la note la détache : chaque ouverture demande un nouveau geste.
+store.onChange((kind, id) => {
+  if (!id || !['lock', 'unlock', 'destroy'].includes(kind) || !encLinked.delete(id)) return;
+  if (isOpen && api?.editor()?.note.id === id) paintCtx();
+});
+const noteLinked = (n: Note): boolean => { if (!n.enc) { encLinked.delete(n.id); return prefs().note; } return encLinked.has(n.id) && !store.isLocked(n); };
+/** Note chiffrée jointe à la main (toujours vrai pour une note non chiffrée) : seule condition pour que la bulle de sélection s'y montre. */
+export const linked = (n: Note): boolean => !n.enc || noteLinked(n);
 const thread = (id: string): Thread => { let t = threads.get(id); if (!t) threads.set(id, t = { msgs: [], draft: '', busy: null }); return t; };
 const titleOf = (n: Note) => n.title.trim() || 'Sans titre';
 const clip = (s: string, k: number) => (s.length > k ? s.slice(0, k) + '…' : s);
@@ -64,10 +76,10 @@ const SEL_QUICK: Quick[] = [
 ];
 
 // ---------- Ce que l'IA lit ----------
-/** Une note peut-elle partir vers l'IA ? (chiffrée, #privé, liste des tâches, corbeille : jamais) */
+/** Une note peut-elle partir vers l'IA ? (#privé, liste des tâches, corbeille, chiffrée verrouillée : jamais ; chiffrée ouverte : jointe à la main) */
 export const canSend = (n: Note): boolean => eligible(n) && ai.notesAllowed();
 /** Même chose, interrupteur général mis à part : la note pourrait partir une fois les notes autorisées. */
-export const eligible = (n: Note): boolean => !n.deletedAt && !n.todo && !store.isLocked(n) && ai.sendable(n);
+export const eligible = (n: Note): boolean => !n.deletedAt && !n.todo && ai.linkSendable(n);
 /** Ouvre les notes à l'IA depuis la note même (clic explicite = consentement), avec de quoi revenir en arrière. */
 export function allow(): void {
   ai.setNotesAllowed(true);
@@ -78,7 +90,7 @@ export function allow(): void {
 function reach(n: Note, force = false) {
   const p = model.projectOfNote(n), sc = scope.of(p), pr = prefs();
   const others = p ? model.notesOf(p).filter(x => x.id !== n.id && ai.shareable(x) && scope.noteIn(sc, x)) : [];
-  const note = (pr.note || force) && canSend(n), project = !!p && pr.project && others.length > 0;
+  const note = (noteLinked(n) || force) && canSend(n), project = !!p && pr.project && others.length > 0;
   return { p, sc, others, note, project };
 }
 /** Contexte et outils d'une demande sur la note `n` (`history` : échanges précédents de la conversation). */
@@ -96,7 +108,8 @@ function request(n: Note, s: Sel | null, history: Msg[], force = false) {
 async function ask(n: Note, prompt: string, s: Sel | null, history: Msg[], ctx: Partial<ai.RunContext> = {}, force = false): Promise<string> {
   // Une sélection est un extrait de la note : même règle que la note entière.
   if (s && !ai.notesAllowed()) throw new Error('Les notes sont fermées à l’IA : autorise-les pour lui envoyer un passage.');
-  if (!canSend(n) && s) throw new Error('Cette note (chiffrée, #privé ou liste des tâches) n’est jamais envoyée à l’IA.');
+  if (!canSend(n) && s) throw new Error('Cette note (#privé ou liste des tâches) n’est jamais envoyée à l’IA.');
+  if ((s || force) && !linked(n)) throw new Error('Note chiffrée : joins-la d’abord (« Cette note chiffrée ») pour que l’IA la lise.');
   const q = request(n, s, history, force);
   const r = await ai.run({ prompt, context: q.context, tools: q.tools, chat: true }, { approve: hub.approve, scope: q.scope, notes: q.notes, ...ctx });
   return r.text.trim();
@@ -184,10 +197,10 @@ function paintCtx(): void {
     paintSel(el); paintQuick(); return;
   }
   box.innerHTML = `<div class="nai-ctx-l">L’IA lit</div><div class="nai-chips">`
-    + chip('note', r.note, noteOk, 'notes', 'Cette note', noteOk ? 'Joindre la note ouverte' : 'Note chiffrée, #privé ou liste des tâches : jamais envoyée')
+    + chip('note', r.note, noteOk, n.enc ? 'lock' : 'notes', n.enc ? 'Cette note chiffrée' : 'Cette note', !noteOk ? '#privé ou liste des tâches : jamais envoyée' : n.enc ? 'Joindre cette note chiffrée, pour elle seule et jusqu’à son verrouillage' : 'Joindre la note ouverte')
     + (r.p ? chip('project', r.project, r.others.length > 0, 'folder', `${esc(r.p.name)} · ${r.others.length} note${r.others.length > 1 ? 's' : ''}`, r.others.length ? `Laisser l’IA chercher et lire les notes du projet « ${r.p.name} »` : 'Aucune autre note lisible dans ce projet') : '')
     + `<button type="button" class="nai-chip nai-pj" data-nai="project" title="Ranger la note dans un projet">${icon('folder')}<span>${r.p ? 'Changer' : 'Ranger dans un projet…'}</span></button>`
-    + `</div>${!r.note && !r.project && !sel ? '<p class="nai-warn">L’IA ne lit rien : elle ne répondra qu’à ta question.</p>' : ''}`;
+    + `</div>${n.enc && noteOk && !r.note ? `<p class="nai-warn">${icon('lock')}Note chiffrée : l’IA ne la lit pas tant que tu ne la joins pas ici.</p>` : ''}${n.enc && r.note ? `<p class="nai-warn">${icon('lock')}Note chiffrée jointe : l’IA la lit jusqu’à son verrouillage.</p>` : ''}${!r.note && !r.project && !sel && !n.enc ? '<p class="nai-warn">L’IA ne lit rien : elle ne répondra qu’à ta question.</p>' : ''}`;
   paintSel(el); paintQuick();
 }
 
@@ -240,7 +253,9 @@ async function send(prompt: string, kind?: Msg['kind'], force = false): Promise<
   // « Améliorer » et « Continuer » sont une demande explicite sur la note : jointe pour cette demande seulement.
   if (kind) force = true;
   if ((force || sel) && !ai.notesAllowed()) { askAllow(); return; }
-  if ((kind === 'improve' || kind === 'continue') && !reach(n, force).note) { toast(canSend(n) ? 'Joins la note (« Cette note ») pour que l’IA puisse la retravailler.' : 'Cette note (chiffrée, #privé ou liste des tâches) n’est jamais envoyée à l’IA.'); return; }
+  // Note chiffrée : une action rapide ou une sélection ne la joignent pas d'elles-mêmes ; « Joindre » la lie puis relance.
+  if ((force || sel) && !linked(n)) { toast('Note chiffrée : l’IA ne la lit que si tu la joins.', { label: 'Joindre', run: () => { encLinked.add(n.id); paintCtx(); void send(prompt, kind, force); } }); return; }
+  if ((kind === 'improve' || kind === 'continue') && !reach(n, force).note) { toast(canSend(n) ? 'Joins la note (« Cette note ») pour que l’IA puisse la retravailler.' : 'Cette note (#privé ou liste des tâches) n’est jamais envoyée à l’IA.'); return; }
   await api.flush(n.id);
   const s = sel, history = t.msgs.slice();
   t.msgs.push({ role: 'user', text: kind === 'improve' ? 'Améliorer la note' : prompt, sel: s, ...(kind ? { kind } : {}) });
@@ -299,7 +314,12 @@ function bind(el: HTMLElement, n: Note): void {
       const items: MenuItem[] = projectsPage.projectMenuItems(n).map(i => (i.run ? { ...i, run: async () => { await i.run!(); setTimeout(paintCtx, 50); } } : i));
       menu(b, items); return;
     }
-    if (b.dataset.ctx) { const k = b.dataset.ctx as 'note' | 'project'; setPref(k, !(k === 'note' ? reach(n).note : reach(n).project)); paintCtx(); return; }
+    if (b.dataset.ctx) {
+      const k = b.dataset.ctx as 'note' | 'project';
+      if (k === 'note' && n.enc) { if (encLinked.has(n.id)) encLinked.delete(n.id); else encLinked.add(n.id); }
+      else setPref(k, !(k === 'note' ? reach(n).note : reach(n).project));
+      paintCtx(); return;
+    }
     if (b.dataset.quick) {
       // Toutes ces actions lisent la note : coupé, on demande d'abord l'autorisation.
       if (!ai.notesAllowed()) { askAllow(); return; }

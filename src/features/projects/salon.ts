@@ -533,15 +533,12 @@ function nowHTML(t: Thread, d: Detail | undefined, crew: Crew, ask: boolean): st
   })].join('');
   const q = quota.fiveHour(), pct = Math.max(0, Math.min(100, Math.round(q.pct)));
   const gauge = q.known ? `<div class="sl-quota" title="Fenêtre d’usage de 5 h"><span>5 h</span><i class="sl-bar"><i style="width:${pct}%"></i></i><b>${pct} %</b></div>` : '';
-  return `<h4>En ce moment</h4>${rows}<button type="button" class="btn btn-ghost sl-set" data-sl="team" title="${esc(subagents.HINT)}">${icon('gear')}<span>${esc(subagents.label(S.pid))}</span></button>${gauge}`;
+  return `<h4>Équipe</h4>${rows}<button type="button" class="btn btn-ghost sl-set" data-sl="team" title="${esc(subagents.HINT)}">${icon('gear')}<span>${esc(subagents.label(S.pid))}</span></button>${gauge}`;
 }
 // ---------- Vue Technique de la colonne (même colonne que « En ce moment », autre lecture des mêmes données) ----------
 // Sobre et typographique, avec les styles `.lv-*` de css/pulse.css (suivi en direct de l'onglet Claude Code) : ce que
 // l'agent fait maintenant (verbe + cible en chasse fixe), un chrono, ses dernières actions, ses derniers fichiers +/−.
 // Rien de nouveau n'est lu : actions de la conversation ouverte et sous-agents viennent de `S.detail`.
-type Side = 'team' | 'tech';
-const SIDE = 'studio.salon.side';
-let side: Side = (() => { try { return localStorage.getItem(SIDE) === 'tech' ? 'tech' : 'team'; } catch { return 'team'; } })();
 const TOOL_VERB: Record<string, string> = { Read: 'Lit', Grep: 'Cherche', Glob: 'Cherche', LS: 'Liste', WebFetch: 'Consulte', WebSearch: 'Cherche', Edit: 'Modifie', MultiEdit: 'Modifie', NotebookEdit: 'Modifie', Write: 'Écrit', Bash: 'Lance', BashOutput: 'Lit la sortie', Task: 'Délègue', Agent: 'Délègue' };
 const FILE_TOOL = /^(Read|Edit|MultiEdit|Write|NotebookEdit)$/, EDIT_TOOL = /^(Edit|MultiEdit|Write|NotebookEdit)$/;
 const amount = (v: unknown): number => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : 0; };
@@ -560,7 +557,7 @@ function stepHTML(working: boolean, last: { kind: string; text: string } | undef
   return `<span class="lv-now"><i class="lv-dot"></i><b>${esc(verb)}</b>${tg ? `<code title="${esc(tg)}">${esc(tg)}</code>` : ''}</span>`;
 }
 function techHTML(t: Thread, d: Detail | undefined, crew: Crew): string {
-  if (!d) return '<p class="st-wait">Lecture de la conversation…</p>';
+  if (!d) return skelHTML('tech');
   const work = t.group === 'work', acts = d.actions, lp = acts.map(a => a.kind).lastIndexOf('prompt'), last = acts[acts.length - 1];
   const t0 = ms(acts[lp]?.at) || ms(t.s.started), t1 = work ? 0 : ms(last?.at) || t0;
   // Dernières actions (outil + cible), les plus récentes d'abord ; celle en cours est déjà dite dans l'étape.
@@ -589,9 +586,13 @@ function techHTML(t: Thread, d: Detail | undefined, crew: Crew): string {
   }).join('');
   return main + subRows + (subs.length > 6 ? `<p class="lv-more">et ${subs.length - 6} autre${subs.length > 7 ? 's' : ''}</p>` : '');
 }
-/** Bascule en tête de colonne : Équipe (les gens) / Technique (le détail du travail). */
-const sideHTML = (): string => `<div class="st-seg" role="group" aria-label="Vue de la colonne">${(['team', 'tech'] as const).map(k => `<button type="button" data-sl="side" data-side="${k}" aria-pressed="${side === k}">${k === 'team' ? 'Équipe' : 'Technique'}</button>`).join('')}</div>`;
-// Seul le chrono tourne, une fois par seconde : et seulement vue Technique visible, fenêtre au premier plan, agent au travail.
+/** Squelette de la colonne : la place est tenue (avatars, lignes) le temps que le fil démarre ou que sa lecture arrive. */
+const skelHTML = (k: 'team' | 'tech'): string => k === 'team'
+  ? `<div class="sl-skel" aria-busy="true" aria-label="Chargement">${[72, 54].map((w, i) => `<div class="sl-skel-mem" style="--i:${i}"><i class="sl-skel-av"></i><div><i style="width:${w}%"></i><i style="width:${w - 18}%"></i></div></div>`).join('')}</div>`
+  : `<div class="sl-skel" aria-busy="true" aria-label="Chargement">${[64, 88, 46].map((w, i) => `<i style="width:${w}%;--i:${i}"></i>`).join('')}</div>`;
+/** Colonne de droite : Équipe en haut, Technique dessous (30 % de la hauteur, défile seule). */
+const colHTML = (team: string, tech: string): string => `<section class="sl-team" aria-label="Équipe">${team}</section><section class="sl-tech" aria-label="Technique"><h4>Technique</h4>${tech}</section>`;
+// Seul le chrono tourne, une fois par seconde : et seulement colonne visible, fenêtre au premier plan, agent au travail.
 let techTimer: ReturnType<typeof setInterval> | undefined;
 function tickClocks(): void {
   if (!root) return;
@@ -602,7 +603,7 @@ function tickClocks(): void {
   }
 }
 function syncClock(): void {
-  const on = root !== null && root.isConnected && side === 'tech' && teamShown(root) && !document.hidden && !!root.querySelector('[data-sl-now] time[data-live]');
+  const on = root !== null && root.isConnected && teamShown(root) && !document.hidden && !!root.querySelector('[data-sl-now] time[data-live]');
   if (on && techTimer === undefined) techTimer = setInterval(() => { if (root?.isConnected) tickClocks(); else syncClock(); }, 1000);
   else if (!on && techTimer !== undefined) { clearInterval(techTimer); techTimer = undefined; }
 }
@@ -718,10 +719,13 @@ function paint(): void {
   const head = need('[data-sl-head]', root);
   paintIfChanged(head, cur && crew ? headHTML(cur, crew, ask, 1 + (d?.subagents?.length ?? 0)) : '');
   head.querySelector('[data-sl="now"]')?.setAttribute('aria-pressed', String(teamShown(root)));
-  // Colonne de droite : Équipe ou Technique (celle-ci n'est calculée que si elle est à l'écran).
-  const tech = side === 'tech' && teamShown(root);
-  paintIfChanged(need('[data-sl-now]', root), cur && crew ? sideHTML() + (tech ? techHTML(cur, d, crew) : nowHTML(cur, d, crew, ask)) : '');
-  if (tech) tickClocks();
+  // Colonne de droite : Équipe puis Technique. Squelette tant que le fil démarre ; quand le vrai contenu
+  // remplace le squelette, il entre une fois en fondu (pas à chaque mise à jour).
+  const col = need<HTMLElement>('[data-sl-now]', root), skel = !(cur && crew), wasSkel = col.dataset.skel === '1';
+  const colH = cur && crew ? colHTML(nowHTML(cur, d, crew, ask), techHTML(cur, d, crew)) : opening?.pid === p.id ? colHTML(skelHTML('team'), skelHTML('tech')) : '';
+  if (paintIfChanged(col, colH) && wasSkel && !skel && !calm()) { col.classList.remove('sl-reveal'); void col.offsetWidth; col.classList.add('sl-reveal'); }
+  col.dataset.skel = skel ? '1' : '';
+  if (cur && crew) tickClocks();
   syncClock();
   // La fiche ouverte suit l'état de l'agent ; elle se ferme si l'agent n'est plus dans le fil.
   const pb = need<HTMLElement>('[data-sl-prof]', root), ph2 = prof && cur && crew ? profHTML(cur, d, crew, ask) : '';
@@ -762,6 +766,22 @@ function showAuto(): void {
   box.hidden = !on;
 }
 
+/** Envoi : le texte s'envole du champ vers le fil (un fantôme qui monte et s'efface), le champ jette un halo,
+ *  la flèche du bouton part vers le haut et revient par le bas. Rien si le mouvement est coupé. */
+function fly(form: HTMLElement, ta: HTMLTextAreaElement, text: string, btn: HTMLElement): void {
+  if (!root || calm()) return;
+  const ease = 'cubic-bezier(.2,.8,.2,1)';
+  btn.animate([{ scale: '1' }, { scale: '.9', offset: .3 }, { scale: '1' }], { duration: 260, easing: ease });
+  btn.querySelector('svg')?.animate([{ translate: '0 0', opacity: 1 }, { translate: '0 -12px', opacity: 0, offset: .4 }, { translate: '0 10px', opacity: 0, offset: .41 }, { translate: '0 0', opacity: 1 }], { duration: 560, easing: ease });
+  form.animate([{ boxShadow: '0 0 0 0 var(--accent-soft)' }, { boxShadow: '0 0 0 8px transparent' }], { duration: 520, easing: 'ease-out' });
+  if (!text) return;
+  const r = root.getBoundingClientRect(), a = ta.getBoundingClientRect(), g = document.createElement('div');
+  g.className = 'sl-fly'; g.setAttribute('aria-hidden', 'true'); g.textContent = text.length > 180 ? `${text.slice(0, 180)}…` : text;
+  g.style.cssText = `left:${a.left - r.left}px;top:${a.top - r.top}px;width:${a.width}px`;
+  root.append(g);
+  const end = (): void => g.remove();
+  g.animate([{ opacity: 1, translate: '0 0', scale: '1' }, { opacity: .9, translate: '0 -18px', scale: '.98', offset: .35 }, { opacity: 0, translate: '0 -64px', scale: '.94' }], { duration: 460, easing: ease }).finished.then(end, end);
+}
 async function send(quick = ''): Promise<void> {
   if (!root || !p || busy) return;
   const form = need<HTMLFormElement>('.sl-comp', root), n = quick ? 0 : attach.count(form);
@@ -774,8 +794,8 @@ async function send(quick = ''): Promise<void> {
   // Le champ est vidé tout de suite : pendant l'attente, l'utilisateur peut changer de fil sans que rien ne soit écrasé.
   // Les images partent avec le texte : retirées du champ tout de suite, rendues au fil si l'envoi échoue.
   const pics = n ? attach.take(form) : null, images = pics ? pics.pics.map(({ name, type, data }) => ({ name, type, data })) : [];
+  fly(form, ta, quick ? '' : ta.value.trim(), btn);
   if (!quick) { ta.value = ''; drafts.delete(key); grow(ta); showAuto(); ready(); }
-  if (!calm()) btn.animate([{ scale: '1' }, { scale: '.9', offset: .3 }, { scale: '1' }], { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)' });
   // Réponse d'un clic : trop courte pour juger, « Auto » n'est pas résolu et la conversation garde son modèle.
   const c = picked(), tune = { ...(quick && c.model === AUTO ? { model: '', effort: c.effort } : resolved(text, !!id)), voice: 'chat' as const };
   // Le message s'affiche aussitôt dans le fil (« envoi… »), sans attendre que le Mac l'ait écrit dans la conversation.
@@ -870,7 +890,6 @@ function bind(r: HTMLElement): void {
     else if (act === 'tech') openTech(t.dataset.id ?? '');
     else if (act === 'reply') need('textarea', r).focus();
     else if (act === 'now') toggleTeam(r);
-    else if (act === 'side') { side = t.dataset.side === 'tech' ? 'tech' : 'team'; try { localStorage.setItem(SIDE, side); } catch { /* plein */ } closeProf(); paint(); }
     else if (act === 'stop') void bridge.call('agent', 'stop', { run: t.dataset.run ?? '' }, 10000).then(x => { toast(x.ok ? 'Équipe arrêtée' : x.message ?? 'Arrêt impossible.'); void refresh(); });
     else if (act === 'publish' || act === 'review' || act === 'pr') void gesture(act, t.dataset.wt ?? '', t as HTMLButtonElement);
   });
@@ -917,8 +936,8 @@ export function mount(box: HTMLElement, proj: Project, o: { openTech: (session: 
   p = proj; root = box; openTech = o.openTech; shown = '';
   box.innerHTML = `<aside class="sl-side" aria-label="Fils du projet"><div class="sl-side-h"><b>Fils</b><button type="button" class="btn" data-sl="new">${icon('plus')}<span>Nouveau fil</span></button></div><div class="sl-list" data-sl-list></div></aside>
     <section class="sl-center"><header class="sl-head" data-sl-head></header><div class="sl-feed" data-sl-feed role="log" aria-live="polite" aria-label="Discussion"></div><button type="button" class="sl-down" data-sl="down" data-sl-down hidden>Nouveaux messages ${icon('chevron')}</button>
-      <form class="sl-comp" autocomplete="off"><textarea rows="1" aria-label="Ton message" placeholder="Dis à l’équipe ce que tu veux faire…"></textarea>${attach.stripHTML()}
-        <div class="sl-comp-row"><label class="sl-mode" data-sl-mode hidden><select name="mode" aria-label="Mode"><option value="edit">Modifier</option><option value="read">Analyser</option></select></label><select name="model" aria-label="Modèle" title="Modèle de l’agent principal. Auto : le plus économe qui suffit au message">${models(tuneFor('').model)}</select><select name="effort" aria-label="Niveau d’effort" title="Plus l’effort est élevé, plus l’agent réfléchit, et plus il consomme">${EFFORTS.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('')}</select><span class="sl-auto" data-sl-auto hidden></span><span class="sl-hint" data-sl-hint></span>${attach.buttonHTML()}<button type="submit" class="btn btn-primary" data-sl-send>Envoyer</button></div></form></section>
+      <form class="sl-comp" autocomplete="off"><div class="sl-drop" aria-hidden="true">${icon('upload')}<span>Dépose tes images ici</span></div><textarea rows="1" aria-label="Ton message" placeholder="Dis à l’équipe ce que tu veux faire…"></textarea>${attach.stripHTML()}
+        <div class="sl-comp-row"><label class="sl-mode" data-sl-mode hidden><select name="mode" aria-label="Mode"><option value="edit">Modifier</option><option value="read">Analyser</option></select></label><select name="model" aria-label="Modèle" title="Modèle de l’agent principal. Auto : le plus économe qui suffit au message">${models(tuneFor('').model)}</select><select name="effort" aria-label="Niveau d’effort" title="Plus l’effort est élevé, plus l’agent réfléchit, et plus il consomme">${EFFORTS.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('')}</select><span class="sl-auto" data-sl-auto hidden></span><span class="sl-hint" data-sl-hint></span><span class="sl-keys" aria-hidden="true"><span><kbd>↵</kbd> <span>envoyer</span></span><span><kbd>⇧</kbd><kbd>↵</kbd> <span>nouvelle ligne</span></span></span>${attach.buttonHTML()}<button type="submit" class="btn btn-primary sl-send" data-sl-send><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg><span>Envoyer</span></button></div></form></section>
     <aside class="sl-now" data-sl-now aria-label="En ce moment"></aside><div class="sl-prof" data-sl-prof role="dialog" aria-label="Fiche de l’agent" hidden></div>`;
   box.classList.add('sl-box', 'sl-solo');
   let off = false; try { off = localStorage.getItem(TEAM_OFF) === '1'; } catch { /* défaut */ }
