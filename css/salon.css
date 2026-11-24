@@ -309,3 +309,10 @@ button.sl-av:focus-visible, .sl-who:focus-visible, .sl-to:focus-visible, .sl-mem
 :root[data-motion="off"] :is(.sl-dot.work, .sl-dots i), :root[data-motion="subtle"] .sl-dot.work { animation: none; }
 :root[data-motion="off"] .sl-box, :root[data-motion="off"] .sl-now { transition: none; }
 @media (prefers-reduced-motion: reduce) { .sl-dot.work, .sl-dots i { animation: none; } .sl-box, .sl-now { transition: none; } }
+/* Images jointes (attach.ts) : bouton juste avant « Envoyer », vignettes sous le champ, rappel sous un message en cours d'envoi. */
+.sl-comp .at-strip { margin-top: 6px; }
+.sl-comp-row .at-add { margin-left: auto; flex: none; }
+.sl-comp-row .at-add ~ .btn { margin-left: 0; }
+.sl-comp.at-drop { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.sl-msg .at-gal { margin-top: 6px; }
+.sl-pics { margin: 4px 0 0; font-size: var(--t-1); color: var(--text-3); }

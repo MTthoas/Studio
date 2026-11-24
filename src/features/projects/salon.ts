@@ -15,6 +15,7 @@ import * as quota from '../../integrations/quota.ts';
 import { syncFeed, nameOf, live, copyStage, copyAct, answerHTML, modelName, modelOptions, EFFORTS } from './sessions.ts';
 import * as saved from './drafts.ts';
 import * as subagents from './subagents.ts';
+import * as attach from './attach.ts';
 import { AUTO, pickFor, label as autoLabel } from './autopick.ts';
 import { exchanges } from './team.ts';
 import * as catface from '../../ui/catface.ts';
@@ -348,9 +349,9 @@ function talk(t: string): string {
     + tail.map((x, i) => bubble(x, head.length + i)).join('');
 }
 /** Messages envoyés d'ici, montrés tout de suite, jusqu'à ce que le Mac les ait dans la conversation (ou 3 min). */
-const pend = new Map<string, { text: string; at: number; sent?: boolean }[]>();
+const pend = new Map<string, { text: string; at: number; sent?: boolean; pics?: number }[]>();
 /** Nouveau fil en cours de création : la consigne et « Moka écrit… » s'affichent avant que le Mac ait répondu. */
-let opening: { pid: string; text: string; at: number } | null = null;
+let opening: { pid: string; text: string; at: number; pics?: number } | null = null;
 /** Envoi récent par fil : l'agent paraît au travail dès l'envoi, sans attendre que le Mac le dise (45 s au plus). */
 const woke = new Map<string, number>();
 function awake(id: string): boolean {
@@ -387,7 +388,7 @@ function itemsOf(d: Detail, crew: Crew, board: BoardMsg[]): { items: Item[]; ask
   const spoken: string[] = [];
   d.actions.forEach((a, i) => {
     const at = ms(a.at);
-    if (a.kind === 'prompt') { add(at, 'me', msgHTML(crew.me, at, plain(a.text)), 'me'); return; }
+    if (a.kind === 'prompt') { add(at, 'me', msgHTML(crew.me, at, plain(a.text) + attach.galleryHTML(a.images)), 'me'); return; }
     if (a.kind === 'tool:Agent' || a.kind === 'tool:Task') {
       // Passation : « Moka a confié … à Filou » ; la consigne complète se déplie. Le n-ième envoi d'un rôle est le n-ième agent de ce rôle.
       if (!a.body && !a.to) return;
@@ -460,8 +461,10 @@ function pending(id: string, known: { text: string; at?: string }[], crew: Crew)
     return !k;
   });
   if (list.length) pend.set(id, list); else pend.delete(id);
-  return list.map(x => ({ key: `me|p|${x.at}`, html: msgHTML(crew.me, x.at, plain(x.text), x.sent ? { cls: 'sent', tag: `${icon('check')}envoyé` } : { cls: 'sending', tag: 'envoi…' }) }));
+  return list.map(x => ({ key: `me|p|${x.at}`, html: msgHTML(crew.me, x.at, plain(x.text) + picsNote(x.pics), x.sent ? { cls: 'sent', tag: `${icon('check')}envoyé` } : { cls: 'sending', tag: 'envoi…' }) }));
 }
+/** « 2 images jointes » sous un message pas encore rendu par le Mac (ses vignettes viennent avec la conversation). */
+const picsNote = (n = 0): string => n ? `<p class="sl-pics">+ ${n} image${n > 1 ? 's' : ''} jointe${n > 1 ? 's' : ''}</p>` : '';
 /** Réponses d'un clic quand l'agent pose une question. */
 const QUICK = ['Oui, vas-y', 'Non, attends', 'Explique-moi'];
 function blocksOf(t: Thread, d: Detail | undefined, crew: Crew): { blocks: Block[]; ask: boolean } {
@@ -486,7 +489,7 @@ function blocksOf(t: Thread, d: Detail | undefined, crew: Crew): { blocks: Block
   }
   const queued = S.queued.filter(x => x.session === id);
   for (const q of queued)
-    blocks.push({ key: `q|${q.id}`, html: msgHTML(crew.me, ms(q.at), plain(q.text), { cls: 'queued', tag: `${icon('history')}en attente` }) });
+    blocks.push({ key: `q|${q.id}`, html: msgHTML(crew.me, ms(q.at), plain(q.text) + attach.galleryHTML(q.images), { cls: 'queued', tag: `${icon('history')}en attente` }) });
   blocks.push(...pending(id, [...d.actions.filter(a => a.kind === 'prompt').slice(-5), ...queued], crew));
   if (work) blocks.push({ key: 'working', html: typing(crew, d) });
   const res = resultHTML(t, d);
@@ -661,7 +664,7 @@ const emptyHTML = (name: string, first: boolean): string => `<div class="sl-empt
 const calm = (): boolean => document.documentElement.dataset.motion === 'off' || matchMedia('(prefers-reduced-motion: reduce)').matches;
 const grow = (ta: HTMLTextAreaElement): void => { ta.style.height = 'auto'; ta.style.height = `${Math.min(ta.scrollHeight + 2, 200)}px`; };
 /** Le bouton d'envoi s'allume dès qu'il y a quelque chose à envoyer. */
-const ready = (): void => { root?.querySelector('.sl-comp')?.classList.toggle('sl-ready', !!root.querySelector('textarea')?.value.trim()); };
+const ready = (): void => { const f = root?.querySelector('.sl-comp'); f?.classList.toggle('sl-ready', !!root?.querySelector('textarea')?.value.trim() || attach.count(f as Element) > 0); };
 /** Place de chaque fil dans la liste, avant qu'elle soit redessinée. */
 const rowTops = (list: HTMLElement): Map<string, number> => new Map(Array.from(list.querySelectorAll<HTMLElement>('.sl-row'), x => [x.dataset.id ?? '', x.getBoundingClientRect().top]));
 /** Liste redessinée : un fil qui change de place y glisse (il remonte quand il se remet au travail), un nouveau apparaît. */
@@ -685,6 +688,7 @@ function paint(): void {
   if (switched) {
     if (shown) drafts.set(shown, ta.value);
     ta.value = drafts.get(key); grow(ta); shown = key; feed.replaceChildren(); closeProf(); setTune(id);
+    const form = need<HTMLFormElement>('.sl-comp', root); form.dataset.atKey = `salon:${key}`; attach.sync(form); // les images jointes restent à leur fil
     const m = sel('mode'); if (m && ta.value) m.value = drafts.mode(key);
     // Le fil entier entre d'un bloc (pas message par message : ce n'est pas du neuf).
     feed.classList.remove('sl-enter'); void feed.offsetWidth; feed.classList.add('sl-enter');
@@ -693,11 +697,12 @@ function paint(): void {
   if (paintIfChanged(list, listHTML(th, id))) glide(list, tops);
   let ask = false, crew: Crew | null = null, blocks: Block[];
   if (cur) { crew = crewOf(d?.subagents ?? [], d?.models ?? cur.s.models); const r = blocksOf(cur, d, crew); blocks = r.blocks; ask = r.ask; }
-  else if (opening?.pid === p.id) { const c0 = crewOf([], []); blocks = [{ key: `me|p|${opening.at}`, html: msgHTML(c0.me, opening.at, plain(opening.text), { cls: 'sending', tag: 'envoi…' }) }, { key: 'working', html: typing(c0, undefined) }]; }
+  else if (opening?.pid === p.id) { const c0 = crewOf([], []); blocks = [{ key: `me|p|${opening.at}`, html: msgHTML(c0.me, opening.at, plain(opening.text) + picsNote(opening.pics), { cls: 'sending', tag: 'envoi…' }) }, { key: 'working', html: typing(c0, undefined) }]; }
   else blocks = [{ key: 'empty', html: emptyHTML(p.name, !th.length) }];
   const end = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 60;
   const before = switched ? null : new Set(Array.from(feed.children, x => (x as HTMLElement).dataset.k));
   const changed = syncFeed(feed, blocks);
+  attach.hydrate(feed, p.id);
   // Seuls les blocs vraiment nouveaux s'animent (un bloc redessiné garde sa place sans rejouer son entrée).
   // Un message « envoi… » remplacé par sa version écrite par le Mac n'est pas du neuf : il ne rejoue pas son entrée.
   const now = new Set(Array.from(feed.children, x => (x as HTMLElement).dataset.k));
@@ -759,35 +764,41 @@ function showAuto(): void {
 
 async function send(quick = ''): Promise<void> {
   if (!root || !p || busy) return;
-  const ta = need<HTMLTextAreaElement>('textarea', root), text = quick || ta.value.trim(); if (!text) return;
+  const form = need<HTMLFormElement>('.sl-comp', root), n = quick ? 0 : attach.count(form);
+  if (n) { const why = attach.blocked(form); if (why) { toast(why); return; } }
+  const ta = need<HTMLTextAreaElement>('textarea', root), text = quick || ta.value.trim() || (n ? attach.DEFAULT_PROMPT : ''); if (!text) return;
   const id = curId(), btn = need<HTMLButtonElement>('[data-sl-send]', root), pid = p.id, key = `${pid}/${id}`;
   if (id.startsWith('run:')) { toast('L’équipe démarre : réessaie dans un instant.'); return; }
   // Seule la création d'un fil bloque l'envoi suivant ; dans un fil existant, on peut enchaîner les messages.
   if (!id) { busy = true; btn.disabled = true; }
   // Le champ est vidé tout de suite : pendant l'attente, l'utilisateur peut changer de fil sans que rien ne soit écrasé.
+  // Les images partent avec le texte : retirées du champ tout de suite, rendues au fil si l'envoi échoue.
+  const pics = n ? attach.take(form) : null, images = pics ? pics.pics.map(({ name, type, data }) => ({ name, type, data })) : [];
   if (!quick) { ta.value = ''; drafts.delete(key); grow(ta); showAuto(); ready(); }
   if (!calm()) btn.animate([{ scale: '1' }, { scale: '.9', offset: .3 }, { scale: '1' }], { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)' });
   // Réponse d'un clic : trop courte pour juger, « Auto » n'est pas résolu et la conversation garde son modèle.
   const c = picked(), tune = { ...(quick && c.model === AUTO ? { model: '', effort: c.effort } : resolved(text, !!id)), voice: 'chat' as const };
   // Le message s'affiche aussitôt dans le fil (« envoi… »), sans attendre que le Mac l'ait écrit dans la conversation.
-  const mine: { text: string; at: number; sent?: boolean } = { text, at: Date.now() };
+  const mine: { text: string; at: number; sent?: boolean; pics?: number } = { text, at: Date.now(), ...(n ? { pics: n } : {}) };
   if (id) { pend.set(id, [...(pend.get(id) ?? []), mine]); woke.set(id, mine.at); }
   else opening = { pid, ...mine };
   paint(); hurry();
   let ok = false;
   try {
     if (!id) {
-      const r = await startAgent(p, text, need<HTMLSelectElement>('[name=mode]', root).value === 'read' ? 'read' : 'edit', undefined, [], tune);
+      const r = await startAgent(p, text, need<HTMLSelectElement>('[name=mode]', root).value === 'read' ? 'read' : 'edit', undefined, images, tune);
       if (!r.ok) toast(r.message);
+      else if (!r.images) toast(attach.OLD_APP);
       else {
         ok = true; const nid = r.session || (r.run ? `run:${r.run}` : '');
         choose(pid, nid); pend.set(nid, [{ ...mine, sent: true }]); woke.set(nid, mine.at); if (r.session) saved.setSession(r.session, c);
         // Toujours sur ce projet et sur « nouveau fil » : le fil créé prend la place sans fondu ni rejouer le message.
         if (shown === key) shown = `${pid}/${nid}`;
       }
-    } else { ok = await reply({ project: pid, session: id }, text, false, [], tune); if (ok) mine.sent = true; }
+    } else { ok = await reply({ project: pid, session: id }, text, false, images, tune); if (ok) mine.sent = true; }
   } finally {
     if (!id) { busy = false; btn.disabled = false; opening = null; }
+    if (pics) { if (ok) attach.release(pics); else { attach.putBack(pics); ready(); } }
     if (!ok && id) woke.delete(id);
     if (!ok && id) { const l = (pend.get(id) ?? []).filter(x => x !== mine); if (l.length) pend.set(id, l); else pend.delete(id); }
     if (!ok && !quick) {
@@ -906,13 +917,14 @@ export function mount(box: HTMLElement, proj: Project, o: { openTech: (session: 
   p = proj; root = box; openTech = o.openTech; shown = '';
   box.innerHTML = `<aside class="sl-side" aria-label="Fils du projet"><div class="sl-side-h"><b>Fils</b><button type="button" class="btn" data-sl="new">${icon('plus')}<span>Nouveau fil</span></button></div><div class="sl-list" data-sl-list></div></aside>
     <section class="sl-center"><header class="sl-head" data-sl-head></header><div class="sl-feed" data-sl-feed role="log" aria-live="polite" aria-label="Discussion"></div><button type="button" class="sl-down" data-sl="down" data-sl-down hidden>Nouveaux messages ${icon('chevron')}</button>
-      <form class="sl-comp" autocomplete="off"><textarea rows="1" aria-label="Ton message" placeholder="Dis à l’équipe ce que tu veux faire…"></textarea>
-        <div class="sl-comp-row"><label class="sl-mode" data-sl-mode hidden><select name="mode" aria-label="Mode"><option value="edit">Modifier</option><option value="read">Analyser</option></select></label><select name="model" aria-label="Modèle" title="Modèle de l’agent principal. Auto : le plus économe qui suffit au message">${models(tuneFor('').model)}</select><select name="effort" aria-label="Niveau d’effort" title="Plus l’effort est élevé, plus l’agent réfléchit, et plus il consomme">${EFFORTS.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('')}</select><span class="sl-auto" data-sl-auto hidden></span><span class="sl-hint" data-sl-hint></span><button type="submit" class="btn btn-primary" data-sl-send>Envoyer</button></div></form></section>
+      <form class="sl-comp" autocomplete="off"><textarea rows="1" aria-label="Ton message" placeholder="Dis à l’équipe ce que tu veux faire…"></textarea>${attach.stripHTML()}
+        <div class="sl-comp-row"><label class="sl-mode" data-sl-mode hidden><select name="mode" aria-label="Mode"><option value="edit">Modifier</option><option value="read">Analyser</option></select></label><select name="model" aria-label="Modèle" title="Modèle de l’agent principal. Auto : le plus économe qui suffit au message">${models(tuneFor('').model)}</select><select name="effort" aria-label="Niveau d’effort" title="Plus l’effort est élevé, plus l’agent réfléchit, et plus il consomme">${EFFORTS.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('')}</select><span class="sl-auto" data-sl-auto hidden></span><span class="sl-hint" data-sl-hint></span>${attach.buttonHTML()}<button type="submit" class="btn btn-primary" data-sl-send>Envoyer</button></div></form></section>
     <aside class="sl-now" data-sl-now aria-label="En ce moment"></aside><div class="sl-prof" data-sl-prof role="dialog" aria-label="Fiche de l’agent" hidden></div>`;
   box.classList.add('sl-box', 'sl-solo');
   let off = false; try { off = localStorage.getItem(TEAM_OFF) === '1'; } catch { /* défaut */ }
   box.classList.toggle('sl-now-off', off); box.classList.remove('sl-now-open'); prof = ''; profAt = null;
   if (!box.dataset.slBound) { box.dataset.slBound = '1'; bind(box); }
+  attach.bind(box); // coller, déposer ou choisir des images : par fil (`data-at-key`, posé par paint)
   // La jauge se met à jour seule ; l'abonnement n'est pris qu'une fois (il repeint le Salon monté à ce moment-là).
   if (!quotaHooked) { quotaHooked = true; quota.onChange(() => { if (root?.isConnected) paint(); }); }
   catface.init();
