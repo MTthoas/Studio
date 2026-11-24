@@ -2272,6 +2272,10 @@ a.dk-port:hover { background: color-mix(in srgb, var(--c-blue) 14%, transparent)
 @keyframes sa-dot { 50% { opacity: .25; transform: translateY(-2px); } }
 .sa-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding-top: 6px; }
 .sa-sp { flex: 1; }
+.sa-lock { display: flex; align-items: center; gap: 8px; padding: 2px 2px 2px 6px; color: var(--text-2); font-size: var(--t-1); }
+.sa-lock span { flex: 1; }
+.sa-lock button { height: 24px; padding: 0 10px; border-radius: 6px; background: var(--accent); color: #fff; font-size: var(--t-1); }
+.sa-lock button:hover { background: var(--accent-hover); }
 @media (prefers-reduced-motion: reduce) { .selask, .sa-wait i { animation: none; } }
 
 /* ---------- Panneau IA de la note (src/features/noteai.ts) ---------- */

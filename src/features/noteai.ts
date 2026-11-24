@@ -65,7 +65,15 @@ const SEL_QUICK: Quick[] = [
 
 // ---------- Ce que l'IA lit ----------
 /** Une note peut-elle partir vers l'IA ? (chiffrée, #privé, liste des tâches, corbeille : jamais) */
-export const canSend = (n: Note): boolean => !n.deletedAt && !n.todo && !store.isLocked(n) && ai.shareable(n);
+export const canSend = (n: Note): boolean => eligible(n) && ai.notesAllowed();
+/** Même chose, interrupteur général mis à part : la note pourrait partir une fois les notes autorisées. */
+export const eligible = (n: Note): boolean => !n.deletedAt && !n.todo && !store.isLocked(n) && ai.sendable(n);
+/** Ouvre les notes à l'IA depuis la note même (clic explicite = consentement), avec de quoi revenir en arrière. */
+export function allow(): void {
+  ai.setNotesAllowed(true);
+  if (isOpen) paintCtx();
+  toast('Notes lisibles par l’IA : seules celles que tu lui joins partent.', { label: 'Couper', run: () => { ai.setNotesAllowed(false); if (isOpen) paintCtx(); } });
+}
 /** `force` : l'utilisateur vient de lancer une action sur la note (« Résumer »…), jointe pour cette seule demande. */
 function reach(n: Note, force = false) {
   const p = model.projectOfNote(n), sc = scope.of(p), pr = prefs();
@@ -87,7 +95,7 @@ function request(n: Note, s: Sel | null, history: Msg[], force = false) {
 }
 async function ask(n: Note, prompt: string, s: Sel | null, history: Msg[], ctx: Partial<ai.RunContext> = {}, force = false): Promise<string> {
   // Une sélection est un extrait de la note : même règle que la note entière.
-  if (s && !ai.notesAllowed()) throw new Error('Les notes sont fermées à l’IA : autorise-les dans Réglages → IA pour lui envoyer un passage.');
+  if (s && !ai.notesAllowed()) throw new Error('Les notes sont fermées à l’IA : autorise-les pour lui envoyer un passage.');
   if (!canSend(n) && s) throw new Error('Cette note (chiffrée, #privé ou liste des tâches) n’est jamais envoyée à l’IA.');
   const q = request(n, s, history, force);
   const r = await ai.run({ prompt, context: q.context, tools: q.tools, chat: true }, { approve: hub.approve, scope: q.scope, notes: q.notes, ...ctx });
@@ -171,7 +179,7 @@ function paintCtx(): void {
   if (!allowed) {
     // Interrupteur général coupé : rien à cocher, un seul geste utile.
     box.innerHTML = `<div class="nai-ctx-l">L’IA lit</div><p class="nai-warn">L’IA ne lit rien : les notes lui sont fermées.</p>`
-      + `<div class="nai-chips"><button type="button" class="nai-chip" data-nai="allow">${icon('lock')}<span>Autoriser dans les Réglages</span></button>`
+      + `<div class="nai-chips"><button type="button" class="nai-chip on" data-nai="allow" title="Ouvre les notes à l’IA (réversible dans Réglages → IA)">${icon('lock')}<span>Autoriser l’IA à lire mes notes</span></button>`
       + `<button type="button" class="nai-chip nai-pj" data-nai="project" title="Ranger la note dans un projet">${icon('folder')}<span>${r.p ? 'Changer de projet' : 'Ranger dans un projet…'}</span></button></div>`;
     paintSel(el); paintQuick(); return;
   }
@@ -222,7 +230,7 @@ function autosize(c: HTMLTextAreaElement) { c.style.height = 'auto'; c.style.hei
 
 // ---------- Actions ----------
 /** Les notes sont fermées à l'IA : on le dit, avec le geste qui les ouvre (au lieu d'échouer sans rien dire). */
-const askAllow = (): void => { toast('Les notes sont fermées à l’IA.', { label: 'Autoriser dans les Réglages', run: () => hub.openConnections('ia') }); };
+const askAllow = (): void => { toast('Les notes sont fermées à l’IA.', { label: 'Autoriser', run: allow }); };
 async function send(prompt: string, kind?: Msg['kind'], force = false): Promise<void> {
   const ed = api.editor(); if (!ed) return;
   const n = ed.note, t = thread(n.id);
@@ -285,7 +293,7 @@ function bind(el: HTMLElement, n: Note): void {
     if (act === 'close') return close();
     if (act === 'clear') { t.msgs = []; sel = null; paint(); return; }
     if (act === 'stop') { t.busy?.abort(); return; }
-    if (act === 'allow') { hub.openConnections('ia'); return; }
+    if (act === 'allow') { allow(); return; }
     if (act === 'unsel') { sel = null; paintCtx(); return; }
     if (act === 'project') {
       const items: MenuItem[] = projectsPage.projectMenuItems(n).map(i => (i.run ? { ...i, run: async () => { await i.run!(); setTimeout(paintCtx, 50); } } : i));
