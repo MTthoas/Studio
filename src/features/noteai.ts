@@ -79,7 +79,8 @@ const SEL_QUICK: Quick[] = [
 /** Une note peut-elle partir vers l'IA ? (#privé, liste des tâches, corbeille, chiffrée verrouillée : jamais ; chiffrée ouverte : jointe à la main) */
 export const canSend = (n: Note): boolean => eligible(n) && ai.notesAllowed();
 /** Même chose, interrupteur général mis à part : la note pourrait partir une fois les notes autorisées. */
-export const eligible = (n: Note): boolean => !n.deletedAt && !n.todo && ai.linkSendable(n);
+/** Note où l'IA est proposée (bouton, panneau, bulle, raccourci) : ni chiffrée, ni #privé, ni tâche, ni à la corbeille. */
+export const eligible = (n: Note): boolean => !n.deletedAt && !n.todo && ai.sendable(n);
 /** Ouvre les notes à l'IA depuis la note même (clic explicite = consentement), avec de quoi revenir en arrière. */
 export function allow(): void {
   ai.setNotesAllowed(true);
@@ -163,10 +164,11 @@ export function mount(ta: HTMLTextAreaElement | null): void {
 
 function paint(): void {
   const el = host(), ed = api?.editor();
-  document.body.classList.toggle('nai-on', isOpen && !!ed);
-  document.querySelectorAll('[data-act="ai"]').forEach(b => b.setAttribute('aria-pressed', String(isOpen && !!ed)));
+  const shown = isOpen && !!ed && eligible(ed.note);
+  document.body.classList.toggle('nai-on', shown);
+  document.querySelectorAll('[data-act="ai"]').forEach(b => b.setAttribute('aria-pressed', String(shown)));
   if (!el) return;
-  if (!isOpen || !ed) { el.hidden = true; el.innerHTML = ''; return; }
+  if (!shown || !ed) { el.hidden = true; el.innerHTML = ''; return; }
   const n = ed.note, t = thread(n.id), cfg = ai.config();
   el.hidden = false; el.dataset.note = n.id;
   el.innerHTML = `<header class="nai-head">${icon('sparkle')}<b>IA</b>

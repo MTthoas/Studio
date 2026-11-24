@@ -59,6 +59,12 @@ interface Prefs { model: string; effort: string; extra: string[]; sessions: Reco
 const PREFS = 'studio.cc.compose', MAX_EXTRA = 8, MAX_SESSIONS = 300;
 /** Identifiant ou alias de modèle accepté par le Mac (même règle que dans Agents.swift). */
 export const MODEL_RE = /^[a-z0-9][a-z0-9.-]{0,40}$/;
+/** Modèle Ollama de la machine où tourne l'agent : `ollama/<nom>` (Agents.swift branche alors Claude Code sur Ollama). */
+export const LOCAL_PREFIX = 'ollama/';
+const LOCAL_RE = /^ollama\/[A-Za-z0-9][A-Za-z0-9._/-]{0,100}(?::[A-Za-z0-9._-]{1,40})?$/;
+export const isLocal = (v: string): boolean => LOCAL_RE.test(v);
+/** Modèle accepté pour un agent : alias ou identifiant Claude, ou modèle Ollama. */
+export const validModel = (v: string): boolean => MODEL_RE.test(v) || isLocal(v);
 const str = (v: unknown): string => typeof v === 'string' ? v : '';
 const choice = (v: unknown): Choice => { const c = (v ?? {}) as Partial<Choice>; return { model: str(c.model), effort: str(c.effort) }; };
 
@@ -66,7 +72,7 @@ const prefs: Prefs = (() => {
   const o = object(PREFS), s = o.sessions;
   return {
     ...choice(o),
-    extra: Array.isArray(o.extra) ? (o.extra as unknown[]).filter((x): x is string => typeof x === 'string' && MODEL_RE.test(x)) : [],
+    extra: Array.isArray(o.extra) ? (o.extra as unknown[]).filter((x): x is string => typeof x === 'string' && validModel(x)) : [],
     sessions: s && typeof s === 'object' && !Array.isArray(s) ? Object.fromEntries(Object.entries(s as Record<string, unknown>).map(([k, v]) => [k, choice(v)])) : {},
   };
 })();

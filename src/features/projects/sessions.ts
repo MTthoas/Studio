@@ -26,6 +26,7 @@ import * as subagents from './subagents.ts';
 import { diffHTML, hasDiff } from './team.ts';
 import * as noteseal from '../../integrations/noteseal.ts';
 import * as infra from './infra.ts';
+import { t as tr } from '../../ui/i18n.ts';
 import type { Project } from './model.ts';
 
 interface Tokens { input: number; output: number; cacheRead: number; cacheWrite: number }
@@ -64,7 +65,7 @@ let treesRead = false;
 let treesFor = '';
 const ms = (iso: string) => Date.parse(iso) || 0;
 const short = (path: string, root: string | null) => path.includes('/.claude/worktrees/') ? path.replace(/^.*\/\.claude\/worktrees\/[^/]+\//, '') : root && path.startsWith(root + '/') ? path.slice(root.length + 1) : path.replace(/^\/Users\/[^/]+/, '~');
-export const modelName = (m: string) => m.replace(/^claude-/, '').replace(/-(\d)-(\d)$/, ' $1.$2').replace(/-/g, ' ');
+export const modelName = (m: string) => saved.isLocal(m) ? `${m.slice(saved.LOCAL_PREFIX.length)} (local)` : m.replace(/^claude-/, '').replace(/-(\d)-(\d)$/, ' $1.$2').replace(/-/g, ' ');
 export const live = (r: AgentRun) => r.status === 'running' || r.status === 'starting';
 export const elapsed = (r: AgentRun) => { const s = Math.max(0, Math.round(((r.finished ? ms(r.finished) : Date.now()) - ms(r.started)) / 1000)); return s < 60 ? `${s} s` : s < 3600 ? `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')}` : `${Math.floor(s / 3600)} h ${String(Math.floor(s % 3600 / 60)).padStart(2, '0')}`; };
 export const STATUS: Record<string, [string, string]> = { starting: ['amber', 'Démarrage'], running: ['amber', 'En cours'], done: ['green', 'Terminé'], error: ['red', 'Erreur'], stopped: ['gray', 'Arrêté'] };
@@ -381,12 +382,28 @@ export const EFFORTS: [string, string][] = [['', 'Effort par défaut'], ['low', 
 const OTHER = '+';
 export function modelOptions(cur: string, other = true): string {
   const list: [string, string][] = [[AUTO, 'Auto (selon la consigne)'], ...ai.CC_MODELS.map(([v, l]): [string, string] => [v, v ? l : 'Modèle par défaut'])];
-  for (const v of [...saved.extraModels(), cur]) if (v && !list.some(x => x[0] === v)) list.push([v, modelName(v)]);
-  return list.map(([v, l]) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(l)}</option>`).join('') + (other ? `<option value="${OTHER}">Autre modèle…</option>` : '');
+  const local = localModels.filter(v => !list.some(x => x[0] === v));
+  for (const v of [...saved.extraModels(), cur]) if (v && !list.some(x => x[0] === v) && !local.includes(v)) list.push([v, modelName(v)]);
+  const opt = ([v, l]: [string, string]) => `<option value="${esc(v)}"${v === cur ? ' selected' : ''}>${esc(l)}</option>`;
+  return list.map(opt).join('')
+    + (local.length ? `<optgroup label="${esc(tr('Modèles locaux (Ollama)'))}">${local.map(v => opt([v, v.slice(saved.LOCAL_PREFIX.length)])).join('')}</optgroup>` : '')
+    + (other ? `<option value="${OTHER}">Autre modèle…</option>` : '');
+}
+/** Modèles Ollama installés sur ce Mac (vue Modèles), proposés aux agents : relus au plus toutes les 5 minutes. */
+let localModels: string[] = [], localAt = 0;
+async function loadLocalModels(): Promise<void> {
+  if (!ai.cc.onMac() || Date.now() - localAt < 300000) return;
+  localAt = Date.now();
+  const r = await native.call('models', 'status', { project: '', server: '' }, 30000);
+  const found = r.ok && r.running !== false && Array.isArray(r.models) ? (r.models as { name?: unknown }[]) : [];
+  const list = found.map(m => typeof m.name === 'string' ? saved.LOCAL_PREFIX + m.name : '').filter(saved.isLocal);
+  if (list.join() === localModels.join()) return;
+  localModels = list;
+  document.querySelectorAll<HTMLSelectElement>('.ag-compose select[name=model]').forEach(s => { if (s.value !== OTHER) s.innerHTML = modelOptions(s.value); });
 }
 /** Bouton « Sous-agents » de la consigne : dit le réglage en cours et ouvre sa fenêtre (subagents.ts). */
 const subHTML = (pid: string): string => `<button type="button" class="btn ag-sub" data-ag-sub="${esc(pid)}" title="${esc(subagents.HINT)}">${icon('bot')}<span>${esc(subagents.label(pid))}</span></button>`;
-const tuneHTML = (c: saved.Choice): string => `<select class="field" name="model" aria-label="Modèle" title="Modèle utilisé par Claude Code. Auto : le plus économe qui suffit à la consigne en cours" data-prev="${esc(c.model)}">${modelOptions(c.model)}</select><select class="field" name="effort" aria-label="Niveau d’effort" title="Niveau d’effort : plus il est élevé, plus Claude réfléchit, et plus il consomme">${EFFORTS.map(([v, l]) => `<option value="${v}"${v === c.effort ? ' selected' : ''}>${l}</option>`).join('')}</select><span class="ag-auto" data-auto hidden></span>`;
+const tuneHTML = (c: saved.Choice): string => `<select class="field" name="model" aria-label="Modèle" title="Modèle utilisé par Claude Code : Claude, ou un modèle local d’Ollama. Auto : le plus économe qui suffit à la consigne en cours" data-prev="${esc(c.model)}">${modelOptions(c.model)}</select><select class="field" name="effort" aria-label="Niveau d’effort" title="Niveau d’effort : plus il est élevé, plus Claude réfléchit, et plus il consomme">${EFFORTS.map(([v, l]) => `<option value="${v}"${v === c.effort ? ' selected' : ''}>${l}</option>`).join('')}</select><span class="ag-auto" data-auto hidden></span>`;
 /** Modèle et effort réellement envoyés : « Auto » est remplacé d'après la consigne ; un effort choisi à la main est gardé. */
 const autoOf = (f: HTMLFormElement) => autoPick(f.querySelector('textarea')?.value ?? '', {
   read: f.querySelector<HTMLInputElement>('[name=mode]:checked')?.value === 'read', reply: !!f.dataset.session });
@@ -444,14 +461,15 @@ function askModel(): Promise<string | null> {
     let out: string | null = null;
     const m = modal({ title: 'Autre modèle', cls: 'small', onClose: () => res(out), html: `<form>
       <label class="pj-field"><span>Identifiant ou alias du modèle</span><input class="field" name="id" placeholder="claude-opus-5-5" spellcheck="false" autocomplete="off" autocapitalize="off" required></label>
-      <p class="modal-hint">Tel que l’accepte <code>claude --model</code>. Il reste ensuite proposé dans la liste, sur cet appareil.</p>
+      <p class="modal-hint">Tel que l’accepte <code>claude --model</code>, ou <code>ollama/&lt;modèle&gt;</code> pour un modèle Ollama de la machine où tourne l’agent (ce Mac ou le serveur). Il reste ensuite proposé dans la liste, sur cet appareil.</p>
       <p class="lock-err"></p>
       <div class="modal-actions"><button type="button" class="btn" data-x>Annuler</button><button class="btn btn-primary">Ajouter</button></div></form>` });
     need('[data-x]', m.node).onclick = m.close;
     need<HTMLFormElement>('form', m.node).onsubmit = e => {
       e.preventDefault();
-      const v = need<HTMLInputElement>('[name=id]', m.node).value.trim().toLowerCase();
-      if (!saved.MODEL_RE.test(v)) { need('.lock-err', m.node).textContent = 'Identifiant invalide : minuscules, chiffres, points et tirets (ex. claude-opus-5-5).'; return; }
+      const raw = need<HTMLInputElement>('[name=id]', m.node).value.trim();
+      const v = /^ollama\//i.test(raw) ? saved.LOCAL_PREFIX + raw.slice(saved.LOCAL_PREFIX.length) : raw.toLowerCase();
+      if (!saved.validModel(v)) { need('.lock-err', m.node).textContent = 'Identifiant invalide : minuscules, chiffres, points et tirets (ex. claude-opus-5-5), ou ollama/<modèle> (ex. ollama/qwen3-coder:30b).'; return; }
       saved.addModel(v); out = v; m.close();
     };
   });
@@ -519,6 +537,7 @@ async function fillMachines(root: HTMLElement, p: Project): Promise<void> {
 
 /** `server` : identifiant du serveur du projet visé quand `machine` vaut 'server' ("" : le premier). */
 export function composerHTML(p: Project, { session = '', compact = false, machine = '', server = '' } = {}): string {
+  void loadLocalModels();
   // Un agent lancé sur un serveur utilise la connexion Claude du serveur, pas l'abonnement lu sur le Mac.
   // Serveur repris du dernier lancement : « Commandes » et l'abonnement du Mac sont masqués dès le rendu.
   const far = !session && machine !== 'server' && infra.knownServers(p.id).some(s => machineValue(s) === lastMachine(p.id)), macOnly = far ? ' hidden' : '';

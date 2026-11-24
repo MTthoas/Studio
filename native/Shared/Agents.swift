@@ -72,6 +72,16 @@ final class Agents {
     // Les consignes ajoutées à celle de Claude Code et les réglages de contexte : voir AgentTuning, en bas de ce fichier.
     private static let modelRe = try! NSRegularExpression(pattern: "^[a-z0-9][a-z0-9.\\-]{0,40}$")
     private static let efforts: Set<String> = ["low", "medium", "high", "xhigh", "max"]
+    /// Préfixe d'un modèle Ollama choisi dans la page (`LOCAL_PREFIX` de drafts.ts).
+    static let localPrefix = "ollama/"
+    /// Claude Code vers Ollama (127.0.0.1:11434, API compatible Anthropic) : clé factice, abonnement ignoré, et
+    /// chaque alias (opus, sonnet, haiku, sous-agents, tâches de fond) renvoyé vers le même modèle local.
+    static func localEnv(_ model: String) -> [String: String] {
+        ["ANTHROPIC_BASE_URL": "http://127.0.0.1:11434", "ANTHROPIC_AUTH_TOKEN": "ollama", "ANTHROPIC_API_KEY": "",
+         "ANTHROPIC_MODEL": model, "ANTHROPIC_DEFAULT_OPUS_MODEL": model, "ANTHROPIC_DEFAULT_SONNET_MODEL": model,
+         "ANTHROPIC_DEFAULT_HAIKU_MODEL": model, "ANTHROPIC_SMALL_FAST_MODEL": model, "CLAUDE_CODE_SUBAGENT_MODEL": model,
+         "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"]
+    }
 
     private static func slug(_ s: String) -> String {
         let folded = s.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current).lowercased()
@@ -510,10 +520,15 @@ final class Agents {
         let browse = onServer || body["internal"] as? Bool == true ? nil : AgentPermissions.browserSetup(bubble: bubble != nil)
         if let b = browse { args += ["--mcp-config", b.config] }
         let useModel = model ?? "", useEffort = effort ?? ""
-        let modelOK = !useModel.isEmpty && Self.modelRe.firstMatch(in: useModel, range: NSRange(useModel.startIndex..., in: useModel)) != nil
-        let effortOK = Self.efforts.contains(useEffort)
-        if modelOK { args += ["--model", useModel] }
+        // Modèle Ollama (`ollama/<nom>`, vue Modèles) : Claude Code est branché sur l'Ollama de la machine qui le fait
+        // tourner (ce Mac ou le serveur), par son API compatible Anthropic. Tous ses appels, sous-agents compris, y vont.
+        let localModel = useModel.hasPrefix(Self.localPrefix) ? String(useModel.dropFirst(Self.localPrefix.count)) : ""
+        let localOK = !localModel.isEmpty && Models.validModel(localModel)
+        let modelOK = localOK || !useModel.isEmpty && Self.modelRe.firstMatch(in: useModel, range: NSRange(useModel.startIndex..., in: useModel)) != nil
+        let effortOK = !localOK && Self.efforts.contains(useEffort)
+        if modelOK { args += ["--model", localOK ? localModel : useModel] }
         if effortOK { args += ["--effort", useEffort] }
+        let localEnv = localOK ? Self.localEnv(localModel) : [:]
         // Hors bulle, le tableau d'équipe est ouvert par --add-dir (dans la bulle, le .git du dépôt l'est déjà).
         let addDirs = extraDirs + (bubble == nil ? board.map { [$0.dir] } ?? [] : []) + imageDirs
         if !addDirs.isEmpty { args += ["--add-dir"] + addDirs }
@@ -555,7 +570,7 @@ final class Agents {
             }
             // Première ligne du flux : le numéro du processus distant (exec le conserve), pour pouvoir l'arrêter.
             let remote = "cd \(Servers.qPath(cwd)) && \(prep)echo \"{\\\"type\\\":\\\"studio_pid\\\",\\\"pid\\\":$$}\" && PATH=\"$HOME/.local/bin:$HOME/.claude/local:$PATH\" "
-                + AgentTuning.env().merging(team?.env ?? [:]) { $1 }.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value) " }.joined() + "exec claude " + args.map(Servers.q).joined(separator: " ")
+                + AgentTuning.env().merging(team?.env ?? [:]) { $1 }.merging(localEnv) { $1 }.sorted { $0.key < $1.key }.map { "\($0.key)=\(Servers.q($0.value)) " }.joined() + "exec claude " + args.map(Servers.q).joined(separator: " ")
             let l = Servers.shared.launch(server, remote, env: [:])
             if let e = l.error { return done(["ok": false, "message": e]) }
             p.arguments = l.args
@@ -573,6 +588,7 @@ final class Agents {
         env["DISABLE_AUTOUPDATER"] = "1"; env["NO_COLOR"] = "1"
         for (k, v) in AgentTuning.env() { env[k] = v }
         for (k, v) in team?.env ?? [:] { env[k] = v }
+        for (k, v) in localEnv { env[k] = v }
         // Sur un serveur : l'agent SSH choisi par Servers.launch (celui de Studio pour une clé gardée par Studio).
         if onServer { env["SSH_AUTH_SOCK"] = sshSock }
         // Ouverte depuis le Dock, l'app n'a qu'un PATH minimal : les dossiers réglés passent devant (cargo, Homebrew…).
