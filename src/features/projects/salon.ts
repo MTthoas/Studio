@@ -532,7 +532,7 @@ function nowHTML(t: Thread, d: Detail | undefined, crew: Crew, ask: boolean): st
     return mem(w, s.live ? 'travaille' : 'a fini', s.live ? 'on' : '', l, s.live ? 'work' : 'sleep');
   })].join('');
   const q = quota.fiveHour(), pct = Math.max(0, Math.min(100, Math.round(q.pct)));
-  const gauge = q.known ? `<div class="sl-quota" title="Fenêtre d’usage de 5 h"><span>5 h</span><i class="sl-bar"><i style="width:${pct}%"></i></i><b>${pct} %</b></div>` : '';
+  const gauge = q.known ? `<div class="sl-quota" title="Fenêtre d’usage de 5 h"><span>Claude · 5 h</span><i class="sl-bar"><i style="width:${pct}%"></i></i><b>${pct} %</b></div>` : '';
   return `<h4>Équipe</h4>${rows}<button type="button" class="btn btn-ghost sl-set" data-sl="team" title="${esc(subagents.HINT)}">${icon('gear')}<span>${esc(subagents.label(S.pid))}</span></button>${gauge}`;
 }
 // ---------- Vue Technique de la colonne (même colonne que « En ce moment », autre lecture des mêmes données) ----------
@@ -544,7 +544,9 @@ const FILE_TOOL = /^(Read|Edit|MultiEdit|Write|NotebookEdit)$/, EDIT_TOOL = /^(E
 const amount = (v: unknown): number => { const n = Number(v); return Number.isFinite(n) && n > 0 ? n : 0; };
 const shortPath = (f: string): string => f.trim().split('/').filter(Boolean).slice(-2).join('/') || f;
 /** Cible d'une action : chemin raccourci pour un fichier, première ligne de la commande sinon. */
-const targetOf = (kind: string, text: string): string => FILE_TOOL.test(kind.slice(5)) ? shortPath(text) : oneLine(text, 120);
+const targetOf = (kind: string, text: string): string => FILE_TOOL.test(kind.slice(5)) ? shortPath(text) : oneLine(kind === 'tool:Bash' ? noCd(text) : text, 120);
+/** Commande sans son « cd <dossier> && » ou « cd <dossier>; » de tête : l'agent la répète à chaque appel, elle masquait la vraie commande. */
+const noCd = (c: string): string => c.replace(/^\s*(?:cd\s+(?:"[^"]*"|'[^']*'|\S+)\s*(?:&&|;)\s*)+/, '') || c;
 const gain = (add: number, del: number): string => `<span class="st-lines"><b class="a">+${add.toLocaleString('fr-FR')}</b> <b class="d">−${del.toLocaleString('fr-FR')}</b></span>`;
 /** Chrono : le texte est posé par `tickClocks` (après chaque rendu, puis chaque seconde) ; `t1` = 0 tant que ça travaille. */
 const clockHTML = (t0: number, t1: number): string => t0 ? `<time class="lv-clock" data-t0="${t0}" data-t1="${t1}"${t1 ? '' : ' data-live'}></time>` : '';

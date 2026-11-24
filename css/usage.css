@@ -3,15 +3,25 @@
 /* La jauge ne dicte jamais la largeur de la barre : un texte long (« 85 % · samedi 10:03 ») se coupe en « … » au lieu
    d'élargir le bloc, qui poussait la barre (overflow hidden) à défiler de côté et passait sous le panneau principal. */
 #usage-side { position: relative; flex: none; min-width: 0; margin: 0 8px 6px 10px; }
-.ub-box { all: unset; box-sizing: border-box; display: block; width: 100%; min-width: 0; overflow: hidden; padding: 7px 9px; border: 1px solid var(--border); border-radius: calc(var(--r) + 2px); background: var(--surface); cursor: pointer; }
+.ub-box { all: unset; box-sizing: border-box; display: block; width: 100%; min-width: 0; overflow: hidden; padding: 8px 10px; border: 1px solid var(--border); border-radius: calc(var(--r) + 2px); background: var(--surface); cursor: pointer; }
 .ub-box:hover { background: var(--hover); }
 .ub-box:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.ub-row + .ub-row { margin-top: 7px; }
-.ub-l { display: flex; justify-content: space-between; gap: 8px; font-size: var(--t-1); color: var(--text-2); margin-bottom: 4px; }
+.ub-row + .ub-row { margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--border); }
+.ub-l { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: var(--t-1); color: var(--text-2); margin-bottom: 5px; }
 .ub-l b { flex: none; font-weight: 600; color: var(--text); white-space: nowrap; }
 .ub-l span { min-width: 0; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
-.ub-l span.ub-amber { color: var(--c-amber); }
-.ub-l span.ub-red { color: var(--c-red); }
+.ub-box .ub-l span.ub-v { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+/* Ce que mesure le compteur et quand il repart, en petit sous la jauge. */
+.ub-sub { display: flex; justify-content: space-between; gap: 8px; margin-top: 4px; font-size: 11px; color: var(--text-3); }
+.ub-sub span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ub-sub span:last-child:not(:first-child) { flex: none; }
+/* Limite par modèle : nom, jauge fine, pourcentage sur une ligne. */
+.ub-mod { display: grid; grid-template-columns: 48px 1fr auto; align-items: center; gap: 8px; margin-top: 5px; font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.ub-mod .ub-bar { height: 2px; }
+.ub-mod span.ub-amber { color: var(--c-amber); }
+.ub-mod span.ub-red { color: var(--c-red); }
+.ub-l span.ub-amber, .ub-box .ub-l span.ub-v.ub-amber { color: var(--c-amber); }
+.ub-l span.ub-red, .ub-box .ub-l span.ub-v.ub-red { color: var(--c-red); }
 .ub-bar { display: block; height: 3px; border-radius: 3px; background: var(--active); overflow: hidden; }
 .ub-bar i { display: block; height: 100%; border-radius: 3px; background: var(--c-blue); }
 .ub-bar.ub-amber i { background: var(--c-amber); }

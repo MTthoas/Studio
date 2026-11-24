@@ -104,9 +104,9 @@ const VIEWS: Record<string, { label: string; icon: string }> = {
   inbox: { label: 'Boîte de réception', icon: 'inbox' }, ephemeral: { label: 'Éphémères', icon: 'hourglass' },
   graph: { label: 'Graphe', icon: 'graph' }, trash: { label: 'Corbeille', icon: 'trash' },
 };
-/** Teinte de l'icône de chaque section dans la barre latérale. */
-/** Teinte de l'icône de chaque vue dans la barre latérale (redemandée le 23 nov. 2026 : « remets des couleurs »). */
-const SIDE_HUE: Record<string, string> = { home: 'blue', all: 'amber', workspace: 'violet', planner: 'amber', projets: 'orange', models: 'teal', commerce: 'green', claude: 'orange', inbox: 'blue', today: 'amber', journal: 'pink', ephemeral: 'orange', tasks: 'green', agents: 'violet', help: 'blue', linear: 'indigo', github: 'gray', graph: 'teal', trash: 'gray' };
+/** Teinte des icônes de la barre latérale, une par zone et non plus une par vue (25 nov. 2026 : l'arc-en-ciel ne disait rien) :
+ *  Accueil = accent de la marque, « Écrire » = ambre, « Piloter » = violet, le reste en gris. Le vert reste réservé à « au travail ». */
+const SIDE_HUE: Record<string, string> = { home: 'accent', all: 'amber', journal: 'amber', ephemeral: 'amber', inbox: 'amber', today: 'amber', workspace: 'violet', planner: 'violet', projets: 'violet', agents: 'violet', tasks: 'violet', claude: 'violet' };
 /** Catégories de « Plus » dans la barre latérale (les vues absentes sont sautées). Le Journal est sous « Écrire », les extensions allumées sous « Extensions ». */
 const MORE_CATS: [string, string[]][] = [['Écriture', ['ephemeral']], ['Outils', ['models', 'graph']], ['Connexions', ['linear', 'github']], ['Divers', ['trash', 'help']]];
 const titleOf = (n: Note) => n.title.trim() || 'Sans titre';
@@ -229,29 +229,33 @@ document.addEventListener('pointerdown', e => { // dès l'appui : le clic ne sui
 function renderSidebar() {
   const idx = store.index(), v = ui.view;
   const count: Record<string, number> = { planner: planner.pending(), tasks: todo.openCount(), linear: notifs.unreadCount(), github: github.unseenCount(), ephemeral: idx.live.filter(n => n.expiresAt).length };
-  const item = (type: string, sel = v.type === type) => `<button class="side-item${sel ? ' sel' : ''}" data-view="${type}" style="--ic:var(--c-${SIDE_HUE[type] ?? 'gray'})">${icon(VIEWS[type]?.icon ?? 'notes')}<span>${VIEWS[type]?.label ?? type}</span>${count[type] ? sideCount(type, count[type]) : ''}</button>`;
+  const item = (type: string, sel = v.type === type) => `<button class="side-item${sel ? ' sel' : ''}" data-view="${type}" style="--ic:var(--${SIDE_HUE[type] === 'accent' ? 'accent' : `c-${SIDE_HUE[type] ?? 'gray'}`})">${icon(VIEWS[type]?.icon ?? 'notes')}<span>${VIEWS[type]?.label ?? type}</span>${count[type] ? sideCount(type, count[type]) : ''}</button>`;
   const tags = [...idx.tags].filter(([t]) => !t.startsWith('projet/')).sort((a, b) => a[0].localeCompare(b[0], 'fr'));
   const devs = vault.isOpen() ? link.devices().length : 0;
   // Le quotidien reste à l'écran ; le reste se range sous « Plus » (déplié d'office quand la vue ouverte s'y trouve).
   const more = [...(count.ephemeral || v.type === 'ephemeral' ? ['ephemeral'] : []), ...(models.available() ? ['models'] : []), 'linear', 'github', 'graph', 'trash', 'help'];
   const moreOpen = ui.moreOpen || more.includes(v.type), moreCount = (count.linear ?? 0) + (count.github ?? 0);
   const salonOn = projectsPage.claudeAvailable();
-  // « Salon » en tête de « Piloter » : le Salon du dernier projet ouvert (sinon du premier), sans passer par la liste des projets.
+  // « Salon » en tête de « Piloter », toujours à la même place : le Salon du dernier projet ouvert (sinon du premier), nommé à droite.
+  // Il ne disparaît plus quand un projet est ouvert (la liste sautait de 30 px) ; ses fils se lisent sous le projet.
   if (v.type === 'projets' && v.project && v.project !== salonLast) { salonLast = v.project; try { localStorage.setItem(SALON_LAST, v.project); } catch { /* plein */ } }
   const salonPid = salonOn ? (projectsModel.byId(salonLast)?.id ?? projectsModel.projects()[0]?.id ?? '') : '';
-  const salonTop = salonPid && !(v.type === 'projets' && v.project) ? `<button class="side-item side-salon-top" data-pj-open="${esc(salonPid)}" data-pj-tab="salon" style="--ic:var(--c-green)">${icon('sparkle')}<span>Salon</span></button>` : '';
+  const salonP = projectsModel.byId(salonPid), salonTab = v.type === 'projets' && v.project === salonPid && (v.tab ?? projectsPage.defaultTab()) === 'salon';
+  // Le fil retenu par le Salon ne compte que s'il est listé (au travail ou en PR) : sinon c'est la ligne « Salon » qui est choisie.
+  const salonTalks = salonP ? projectsPage.sideSessions(salonPid) : [], salonLive = salonTalks.filter(s => s.live).length;
+  const salonPick = salonTab ? salon.chosenThread(salonPid) : '', salonPicked = !!salonPick && salonTalks.some(s => s.id === salonPick);
+  const salonTop = salonP ? `<button class="side-item side-salon-top${salonTab && !salonPicked ? ' sel' : ''}" data-pj-open="${esc(salonPid)}" data-pj-tab="salon" style="--ic:var(--c-violet)" title="Salon de ${esc(salonP.name)}">${icon('sparkle')}<span>Salon</span><small class="side-ctx"><i class="tag-dot" style="--c:var(--c-${salonP.hue})"></i><b>${esc(salonP.name)}</b></small>${salonLive ? sideCount('salon:' + salonPid, salonLive) : ''}</button>` : '';
   const projRows = projectsModel.projects().slice(0, 8).map(p => {
       const open = v.type === 'projets' && v.project === p.id, tab = v.tab ?? projectsPage.defaultTab();
-      // Sous « Salon » : les conversations au travail (ou en PR) ; un clic ouvre leur fil dans le Salon.
+      // Sous le projet ouvert : ses conversations au travail (ou en PR), pastille d'état en tête ; un clic ouvre leur fil dans le Salon.
       const talks = open && salonOn ? projectsPage.sideSessions(p.id) : [], working = talks.filter(s => s.live).length;
-      const pick = tab === 'salon' ? salon.chosenThread(p.id) : '', picked = !!pick && talks.some(s => s.id === pick);
+      const pick = tab === 'salon' ? salon.chosenThread(p.id) : '';
       // Sous « Serveur » : les serveurs du projet, celui qui est affiché en surbrillance.
       const servers = open ? projectsPage.sideServers(p.id) : [], serving = tab === 'server' && servers.some(s => s.sel);
-      return `<button class="side-item side-sub${open && tab === projectsPage.defaultTab() && tab !== 'salon' ? ' sel' : ''}${open ? ' open' : ''}" data-pj-open="${esc(p.id)}"><i class="tag-dot" style="--c:var(--c-${p.hue})"></i><span>${esc(p.name)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`
-        // Le Salon vient en tête, mis en avant ; les autres onglets (Claude Code compris) restent dans la barre d'onglets de la fiche : ici, seulement l'onglet ouvert et les serveurs.
-        + (open && salonOn ? `<button class="side-item side-sub2 side-salon${tab === 'salon' && !picked ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="salon">${icon('sparkle')}<span>Salon</span>${working ? sideCount('salon:' + p.id, working) : ''}</button>`
-          + talks.map(s => `<button class="side-item side-sub3${s.id === pick ? ' sel' : ''}${!s.live && s.stage ? ` ${s.stage.cls}` : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="salon" data-pj-session="${esc(s.id)}" data-pj-salon="1" title="${esc(s.title)}${s.live ? ' · en cours' : s.stage ? ` · ${esc(s.stage.label)}` : ''}"><i class="ss-live${s.live ? ' on' : s.stage ? ` ${s.stage.cls}` : ''}"></i><span>${esc(s.title)}</span>${!s.live && s.stage?.cls === 'st-review' ? `<em class="side-stage">${esc(s.stage.label)}</em>` : ''}<i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('') : '')
-        + (open ? projectsPage.tabsOf(p, tab ?? '').slice(1).filter(([k]) => k === tab || (k === 'server' && servers.length > 0)).map(([k, l, ic]) => `<button class="side-item side-sub2${tab === k && !(k === 'server' && serving) ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="${k}">${icon(ic)}<span>${esc(l)}</span></button>`
+      return `<button class="side-item side-sub${open && tab === projectsPage.defaultTab() && tab !== 'salon' ? ' sel' : ''}${open ? ' open' : ''}" data-pj-open="${esc(p.id)}"><i class="tag-dot" style="--c:var(--c-${p.hue})"></i><span>${esc(p.name)}</span>${working && p.id !== salonPid ? sideCount('pj:' + p.id, working) : ''}<i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`
+        // Les autres onglets (Claude Code compris) restent dans la barre d'onglets de la fiche : ici, seulement les fils, l'onglet ouvert et les serveurs.
+        + (open && salonOn ? talks.map(s => `<button class="side-item side-sub2 side-talk${s.id === pick ? ' sel' : ''}${!s.live && s.stage ? ` ${s.stage.cls}` : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="salon" data-pj-session="${esc(s.id)}" data-pj-salon="1" title="${esc(s.title)}${s.live ? ' · en cours' : s.stage ? ` · ${esc(s.stage.label)}` : ''}"><i class="ss-live${s.live ? ' on' : s.stage ? ` ${s.stage.cls}` : ''}"></i><span>${esc(s.title)}</span>${!s.live && s.stage?.cls === 'st-review' ? `<em class="side-stage">${esc(s.stage.label)}</em>` : ''}<i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('') : '')
+        + (open ? projectsPage.tabsOf(p, tab ?? '').slice(1).filter(([k]) => k !== 'salon' && (k === tab || (k === 'server' && servers.length > 0))).map(([k, l, ic]) => `<button class="side-item side-sub2${tab === k && !(k === 'server' && serving) ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="${k}">${icon(ic)}<span>${esc(l)}</span></button>`
           + (k === 'server' ? servers.map(s => `<button class="side-item side-sub3${tab === 'server' && s.sel ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="server" data-pj-server="${esc(s.id)}" title="${esc(s.dest)}">${icon('server')}<span>${esc(s.name)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('') : '')).join('') : '');
   });
   const html = `
@@ -266,7 +270,7 @@ function renderSidebar() {
       <div class="side-label">Écrire</div>
       <div class="side-group">${item('all')}${treeHTML(idx.live)}${item('journal')}</div>
       <div class="side-label">Piloter</div>
-      <div class="side-group">${salonTop}${projectsPage.claudeAvailable() ? item('workspace') + item('planner') : ''}${item('projets', v.type === 'projets' && !projRows.some(r => /class="side-item[^"]* sel\b/.test(r)))}${projRows.join('')}</div>
+      <div class="side-group">${salonTop}${projectsPage.claudeAvailable() ? item('workspace') + item('planner') : ''}${item('projets', v.type === 'projets' && ![salonTop, ...projRows].some(r => /class="side-item[^"]* sel\b/.test(r)))}${projRows.join('')}</div>
       ${tags.length ? sideFold('tags', 'tags', ui.tagsOpen, 'Tags', '', `<div class="side-group">${tags.map(([t, c]) => `<button class="side-item${v.type === 'tag' && v.tag === t ? ' sel' : ''}" data-tag="${esc(t)}"><i class="tag-dot" style="--c:var(--c-${hue(t)})"></i><span>${esc(t)}</span>${sideCount('tag:' + t, c)}</button>`).join('')}</div>`) : ''}
       ${commerce.available() ? `<div class="side-label">Extensions</div><div class="side-group">${item('commerce')}</div>` : ''}
       ${sideFold('more', 'more-views', moreOpen, 'Plus', !moreOpen && moreCount ? sideCount('more', moreCount) : '', MORE_CATS.map(([label, types]) => { const here = types.filter(t => more.includes(t)); return here.length ? `<div class="side-cat">${label}</div><div class="side-group">${here.map(t => item(t)).join('')}</div>` : ''; }).join(''))}

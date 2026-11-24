@@ -34,7 +34,6 @@ const model = (key: string): string | null => {
   const k = /^seven_day_(opus|sonnet|fable|haiku)$/.exec(key)?.[1];
   return k ? k[0].toUpperCase() + k.slice(1) : null;
 };
-const short = (s: Source, m: Meter): string => m.key === 'five_hour' ? '5 h' : m.key === 'seven_day' ? 'Semaine' : model(m.key) ?? (m.key === 'extra' ? 'Crédit' : s.kind === 'subscription' ? 'Claude Code' : s.kind === 'local' ? 'Local' : s.id === 'openai' ? 'OpenAI' : 'Claude API');
 const right = (m: Meter): string => {
   if (m.pct === null) return esc(m.value ?? '');
   const w = m.pct >= 100 ? (m.resetsAt && m.resetsAt > Date.now() ? `épuisée · ${new Date(m.resetsAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` : 'épuisée') : `${m.pct} %${when(m.resetsAt) ? ` · ${when(m.resetsAt)}` : ''}`;
@@ -44,18 +43,32 @@ const right = (m: Meter): string => {
 /** Sources à montrer : celle du fournisseur actif d'abord, puis les autres, deux au plus. */
 const ordered = (): Source[] => [...quota.sources()].sort((a, b) => Number(b.active) - Number(a.active));
 
-/** Lignes de la barre : pour l'abonnement, la fenêtre de 5 h et chaque modèle entamé (Opus, Sonnet, Fable) avec son pourcentage ; sinon le compteur principal. Quatre au plus. */
+/** Nom court du fournisseur, en tête de sa carte : on doit voir d'où vient le chiffre. */
+const provider = (s: Source): string => s.kind === 'subscription' ? 'Claude' : s.kind === 'local' ? 'Local' : s.id === 'openai' ? 'OpenAI' : 'Claude API';
+/** « repart dans 4 h 48 », « repart jeudi 09:00 », ou rien. */
+function resets(ms?: number): string {
+  if (!ms || ms <= Date.now()) return '';
+  const d = ms - Date.now(), m = Math.ceil(d / 60000);
+  if (d < 864e5) return `repart dans ${m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`}`;
+  return `repart ${new Date(ms).toLocaleString('fr-FR', { weekday: 'long', hour: '2-digit', minute: '2-digit' })}`;
+}
+/** Valeur en tête de carte : « 12 % », « épuisée » ou la valeur brute (tokens, modèle). */
+const head = (m: Meter): string => m.pct === null ? esc(m.value ?? '') : m.pct >= 100 ? 'épuisée' : `${m.pct} %`;
+
+/** Une carte par source (deux au plus) : nom du fournisseur et valeur du compteur principal, sa jauge, puis en petit
+ *  ce qu'il mesure et quand il repart ; pour l'abonnement, une ligne compacte par modèle entamé (Opus, Sonnet, Fable). */
 function lines(): string {
-  const rows: [Source, Meter][] = [];
-  for (const s of ordered().slice(0, 2)) {
-    const per = s.kind === 'subscription' ? s.meters.filter(m => m.pct !== null && (m.key === 'five_hour' || model(m.key))) : [];
-    const ms = per.length ? per : [best(s)].filter((m): m is Meter => !!m);
-    for (const m of ms) rows.push([s, m]);
-  }
-  return rows.slice(0, 4).map(([s, m], i) => {
-    const p = m.pct;
-    const hint = s.note === 'limits-off' && rows.findIndex(r => r[0] === s) === i ? `<button class="ub-link" data-ub="limits">Afficher mes limites</button>` : '';
-    return `<div class="ub-row"><div class="ub-l"><b>${esc(short(s, m))}</b><span class="${level(p).trim()}">${right(m)}</span></div>${bar(p)}${hint}</div>`;
+  return ordered().slice(0, 2).map(s => {
+    const main = best(s);
+    if (!main) return '';
+    const p = main.pct;
+    const sub = [esc(main.label), esc(resets(main.resetsAt))].filter(Boolean);
+    const mods = s.kind === 'subscription' ? s.meters.filter(m => m !== main && m.pct !== null && model(m.key)).slice(0, 3) : [];
+    const hint = s.note === 'limits-off' ? `<button class="ub-link" data-ub="limits">Afficher mes limites</button>` : '';
+    return `<div class="ub-row"><div class="ub-l"><b>${esc(provider(s))}</b><span class="ub-v ${level(p).trim()}">${head(main)}</span></div>${bar(p)}`
+      + `<div class="ub-sub"><span>${sub[0] ?? ''}</span>${sub[1] ? `<span>${sub[1]}</span>` : ''}</div>`
+      + mods.map(m => `<div class="ub-mod"><span>${esc(model(m.key) ?? m.label)}</span>${bar(m.pct)}<span class="${level(m.pct).trim()}">${head(m)}</span></div>`).join('')
+      + `${hint}</div>`;
   }).join('');
 }
 

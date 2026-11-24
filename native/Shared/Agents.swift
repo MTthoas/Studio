@@ -591,10 +591,10 @@ final class Agents {
         for (k, v) in localEnv { env[k] = v }
         // Sur un serveur : l'agent SSH choisi par Servers.launch (celui de Studio pour une clé gardée par Studio).
         if onServer { env["SSH_AUTH_SOCK"] = sshSock }
-        // Ouverte depuis le Dock, l'app n'a qu'un PATH minimal : les dossiers réglés passent devant (cargo, Homebrew…).
-        if !onServer, !AgentPermissions.path.isEmpty {
-            env["PATH"] = (AgentPermissions.path + [env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"]).joined(separator: ":")
-        }
+        // Ouverte depuis le Dock, l'app n'a qu'un PATH minimal (/usr/bin:/bin:/usr/sbin:/sbin) : l'agent n'y trouvait ni node
+        // ni npm (/usr/local/bin, Homebrew) et concluait « rien à tester ». Même recherche que npm des sites : dossiers réglés,
+        // emplacements habituels (Homebrew, /usr/local/bin, ~/.local/bin, volta, bun, pnpm), puis le PATH de l'app.
+        if !onServer { env["PATH"] = Sites.searchPath().joined(separator: ":") }
         // npx est un script Node : le dossier où il a été trouvé (et donc node) doit être dans le PATH du serveur MCP.
         if let b = browse, !(env["PATH"] ?? "").split(separator: ":").contains(Substring(b.dir)) {
             env["PATH"] = b.dir + ":" + (env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin")
@@ -1381,6 +1381,8 @@ enum AgentPermissions {
     static let shellPrompt = "Tu as un terminal complet (Bash) dans une bulle macOS : tu n'écris que dans ta copie (et le .git de son dépôt), "
         + "les caches des outils et /tmp ; données de Studio, autres projets et autres sessions te sont illisibles. "
         + "Une commande qui échoue sur « Operation not permitted » bute sur la bulle : ne la contourne pas, dis-le. "
+        + "Un « command not found » ne prouve pas qu'un outil manque : cherche-le (/opt/homebrew/bin, /usr/local/bin, ~/.local/bin) "
+        + "avant de dire que tu n'as pas pu vérifier ; s'il manque des dépendances (node_modules), installe-les plutôt que de sauter typage, build et tests. "
         + guardPrompt + " "
         + "`git` et `gh` sont permis. Par défaut, ne commite ni ne pousse : Studio publie ta copie ; mais si l'utilisateur te demande "
         + "explicitement de travailler sur une branche ou une pull request (récupérer, fusionner, résoudre des conflits, commiter, pousser), fais-le. "
