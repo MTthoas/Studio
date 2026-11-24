@@ -54,6 +54,17 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'barre-laterale-zones-20261125', date: '2026-11-25', icon: 'sidebar', hue: 'violet',
+    title: 'Barre latérale plus lisible',
+    lead: 'Une couleur par zone, un Salon toujours à la même place et des jauges d’usage qui nomment leur fournisseur.',
+    bits: [
+      ['palette', 'Couleurs', 'Écrire en ambre, Piloter en violet, le reste en gris ; le vert signale un agent au travail'],
+      ['sparkle', 'Salon', 'reste en tête de Piloter et affiche le nom du projet qu’il ouvre'],
+      ['list', 'Fils', 'les conversations du projet ouvert s’alignent directement sous lui'],
+      ['activity', 'Usage', 'chaque jauge indique Claude ou OpenAI, ce qu’elle mesure et quand elle repart'],
+    ],
+    where: ['Barre latérale'],
+    visual: { kind: 'flow', steps: [['Écrire', 'amber', 'notes'], ['Piloter', 'violet', 'board'], ['Au travail', 'green', 'sparkle']] } },
   { id: 'salon-colonne-champ-20261124', date: '2026-11-24', icon: 'compose', hue: 'blue',
     title: 'Salon : colonne et champ revus',
     lead: 'Équipe et Technique se lisent ensemble dans la colonne de droite, et le champ d’écriture s’anime à l’envoi.',

@@ -240,9 +240,11 @@ button.sl-av:focus-visible, .sl-who:focus-visible, .sl-to:focus-visible, .sl-mem
 
 /* ---- Colonne de droite : Équipe en haut, Technique dessous (30 % de la hauteur), chacune défile seule.
    Vue Technique : styles .lv-* de pulse.css réutilisés. ---- */
-.sl-team { flex: 1 1 0; min-height: 0; overflow: hidden auto; padding: 12px 14px; }
-.sl-tech { flex: 0 0 30%; min-height: 0; overflow: hidden auto; padding: 0 14px 12px; border-top: 1px solid var(--border); }
-.sl-tech h4 { position: sticky; top: 0; z-index: 1; margin: 0 -14px 6px; padding: 10px 14px 4px; background: var(--bg-list); }
+.sl-team { flex: 0 1 auto; min-height: 0; overflow: hidden auto; padding: 12px 14px; }
+/* Technique prend toute la hauteur que l'Équipe laisse (au moins 30 %) : une équipe d'un agent ne laisse plus un grand vide
+   au-dessus d'une liste coupée. `.sl-now .sl-tech h4` : plus fort que `.sl-now h4`, qui annulait marges et retrait du titre. */
+.sl-tech { flex: 1 1 0; min-height: 30%; overflow: hidden auto; padding: 0 14px 12px; border-top: 1px solid var(--border); }
+.sl-now .sl-tech h4 { position: sticky; top: 0; z-index: 1; margin: 0 -14px 6px; padding: 10px 14px 4px; background: var(--bg-list); }
 .sl-box.sl-now-open .sl-tech h4 { background: var(--bg); }
 /* Squelette : lignes et avatars qui miroitent pendant que le fil démarre ; le vrai contenu entre ensuite une fois (sl-reveal). */
 .sl-skel { display: flex; flex-direction: column; gap: 10px; }
