@@ -413,7 +413,7 @@ export function askAI(prefill = '', opts: { improve?: boolean } = {}): void {
   if (improve) prefill = prefill || IMPROVE;
   // Périmètre : le projet de la note ouverte, sinon Général. La liste des tâches mêle tous les projets : jamais jointe.
   const sc = scope.of(n ? projectOfNote(n) : null), withLinear = scope.hasLinear(sc);
-  const canCtx = !!n && !n.deletedAt && !n.todo && ai.linkable(n);
+  const canCtx = !!n && !n.deletedAt && !n.todo && ai.shareable(n);
   const open = ai.notesAllowed();
   if (improve && !open) { toast('Les notes sont fermées à l’IA.', { label: 'Autoriser dans les Réglages', run: () => openConnections('ia') }); return; }
   if (improve && !canCtx) { toast(n.todo ? 'La liste des tâches n’est jamais envoyée à l’IA.' : store.isLocked(n) ? 'Déverrouille la note pour la joindre à l’IA.' : 'Cette note #privé n’est jamais envoyée à l’IA.'); return; }

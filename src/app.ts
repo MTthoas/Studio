@@ -263,10 +263,10 @@ function renderSidebar() {
     </div>
     <div class="side-scroll">
       <div class="side-group">${item('home')}</div>
-      <div class="side-label">Piloter</div>
-      <div class="side-group">${salonTop}${projectsPage.claudeAvailable() ? item('workspace') + item('planner') : ''}${item('projets', v.type === 'projets' && !projRows.some(r => /class="side-item[^"]* sel\b/.test(r)))}${projRows.join('')}</div>
       <div class="side-label">Écrire</div>
       <div class="side-group">${item('all')}${treeHTML(idx.live)}${item('journal')}</div>
+      <div class="side-label">Piloter</div>
+      <div class="side-group">${salonTop}${projectsPage.claudeAvailable() ? item('workspace') + item('planner') : ''}${item('projets', v.type === 'projets' && !projRows.some(r => /class="side-item[^"]* sel\b/.test(r)))}${projRows.join('')}</div>
       ${tags.length ? sideFold('tags', 'tags', ui.tagsOpen, 'Tags', '', `<div class="side-group">${tags.map(([t, c]) => `<button class="side-item${v.type === 'tag' && v.tag === t ? ' sel' : ''}" data-tag="${esc(t)}"><i class="tag-dot" style="--c:var(--c-${hue(t)})"></i><span>${esc(t)}</span>${sideCount('tag:' + t, c)}</button>`).join('')}</div>`) : ''}
       ${commerce.available() ? `<div class="side-label">Extensions</div><div class="side-group">${item('commerce')}</div>` : ''}
       ${sideFold('more', 'more-views', moreOpen, 'Plus', !moreOpen && moreCount ? sideCount('more', moreCount) : '', MORE_CATS.map(([label, types]) => { const here = types.filter(t => more.includes(t)); return here.length ? `<div class="side-cat">${label}</div><div class="side-group">${here.map(t => item(t)).join('')}</div>` : ''; }).join(''))}
@@ -470,7 +470,7 @@ function mountNote(main: HTMLElement, n: Note, keep: Keep | null): void {
         ${n.expiresAt && !trashed ? `<button class="chip chip-warn" data-act="expire" title="Autodestruction le ${esc(full(n.expiresAt))}">${icon('hourglass')}${until(n.expiresAt)}</button>` : ''}
         ${n.enc && !trashed ? tb('lock', locked ? 'lock' : 'unlock', locked ? 'Note verrouillée' : 'Verrouiller maintenant', locked ? '' : SC.lock, 'on') : ''}
         ${ro ? '' : `<div class="seg" role="tablist" title="Changer de mode (${keys(SC.mode)})">${seg.map(([m, ic, l]) => `<button role="tab" data-mode="${m}" aria-selected="${m === mode}" aria-label="${l}" title="${l}">${icon(ic)}</button>`).join('')}</div>`}
-        ${ro ? '' : `<button class="btn btn-ghost nai-btn" data-act="ai" aria-pressed="${noteai.opened()}" title="Panneau IA : demander, améliorer, réécrire la sélection (${keys(SC.ask)})">${icon('sparkle')}<span>IA</span></button>`}
+        ${ro || !noteai.eligible(n) ? '' : `<button class="btn btn-ghost nai-btn" data-act="ai" aria-pressed="${noteai.opened()}" title="Panneau IA : demander, améliorer, réécrire la sélection (${keys(SC.ask)})">${icon('sparkle')}<span>IA</span></button>`}
         ${ro || !projectsModel.projectOfNote(n) || !projectsPage.claudeAvailable() || !ai.linkable(n) ? '' : `<button class="btn btn-ghost" data-act="claude" title="Confier cette note à Claude Code, dans le projet ${esc(projectsModel.projectOfNote(n)?.name ?? '')}">${icon('terminal')}<span>Claude Code</span></button>`}
         ${ro ? '' : `<button class="btn btn-ghost pj-pick" data-act="project" title="Projet de la note">${icon('folder')}<span>${esc(projectsModel.projectOfNote(n)?.name ?? 'Projet')}</span></button>`}
         ${tb('more', 'more', 'Plus d’actions')}
@@ -595,7 +595,7 @@ function setFocus(on: boolean) {
 }
 
 /** « Demander à l'IA » : le panneau de la note quand une note est ouverte à l'écran, la fenêtre générale sinon. */
-function askAI(): void { if (ed && !ed.note.deletedAt && $('.nai')) noteai.open(); else hub.askAI(); }
+function askAI(): void { if (ed && noteai.eligible(ed.note) && $('.nai')) noteai.open(); else hub.askAI(); }
 function toggleSidebar() { ui.side = !ui.side; saveUI(); document.body.classList.toggle('no-side', !ui.side); document.body.classList.toggle('side-open', ui.side); }
 
 // ---------- Éditeur : confort d'écriture ----------
