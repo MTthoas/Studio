@@ -79,6 +79,8 @@
 /* ---------- Ouverture et fermeture de la barre : le contenu garde sa largeur et glisse, au lieu de se tasser avec la colonne ---------- */
 @media (min-width: 901px) {
   :root #sidebar > * { min-width: var(--side-w); }
+  /* Ceux qui ont des marges latérales (8 + 10 px) les retranchent, sinon ils dépassent à droite et la barre les coupe. */
+  :root #sidebar > :is(#usage-side, .side-foot) { min-width: calc(var(--side-w) - 18px); }
   :root #sidebar > :not(.side-foot) { transition: translate var(--mo-d4) var(--mo-out); }
   :root body.no-side #sidebar > :not(.side-foot), :root body.focus #sidebar > :not(.side-foot) { translate: -14px 0; transition: translate var(--mo-d3) var(--mo-in-out); }
 }
