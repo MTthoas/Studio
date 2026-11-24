@@ -157,6 +157,7 @@ export function current(pid: string): { id: string; title: string; sub?: { id: s
   const s = known.get(pid)?.list.find(x => x.id === selected);
   return { id: selected, title: selTitle || (s ? nameOf(s) : 'Conversation'), ...(sub ? { sub: { id: sub, title: subTitle || subName(selected, sub) } } : {}) };
 }
+const SIDE_RECENT = 5;
 export interface SideSub { id: string; title: string; live: boolean; sel: boolean }
 /** Conversations récentes d'un projet, pour la barre latérale, chacune avec ses sous-agents épinglés (et celui qui est ouvert). */
 export function sideSessions(pid: string): { id: string; title: string; live: boolean; sel: boolean; subs: SideSub[]; stage: { cls: string; label: string } | null }[] {
@@ -166,9 +167,10 @@ export function sideSessions(pid: string): { id: string; title: string; live: bo
     if (sid === sel && sub && !ids.includes(sub)) ids.push(sub);
     return ids.map(a => ({ id: a, title: sid === sel && a === sub && subTitle ? subTitle : subName(sid, a), live: !!subsOf.get(sid)?.find(x => x.id === a)?.live, sel: sid === sel && a === sub }));
   };
-  // Seulement les agents au travail et les PR en attente (plus la conversation ouverte, pour garder sa surbrillance).
+  // Les fils du Salon restent dans la barre, rangés sous leur projet (25 nov. 2026) : les SIDE_RECENT plus récents,
+  // plus tout agent au travail, toute PR en attente et la conversation ouverte au-delà (la liste complète est dans le Salon).
   return list.map(s => ({ id: s.id, title: s.id === sel && selTitle ? selTitle : nameOf(s), live: s.live || runs.some(r => r.session === s.id && live(r)), sel: s.id === sel, subs: subs(s.id), stage: sideStage(pid, s) }))
-    .filter(s => s.live || s.sel || s.stage?.cls === 'st-pr');
+    .filter((s, i) => i < SIDE_RECENT || s.live || s.sel || s.stage?.cls === 'st-pr');
 }
 /** État de la copie d'une conversation, pour teinter son point dans la barre latérale (seulement pour le projet dont les copies sont connues). */
 function sideStage(pid: string, s: Session): { cls: string; label: string } | null {
@@ -186,8 +188,12 @@ async function loadList(p: Project): Promise<Session[] | null> {
   return list;
 }
 /** Lit les conversations du projet si on ne les connaît pas encore (pour la barre latérale, hors de l'onglet Claude Code). */
+const asked = new Map<string, number>();
 export function preload(p: Project): void {
-  if (!bridge.where() || Date.now() - (known.get(p.id)?.at ?? 0) < 30000) return;
+  // Appelé à chaque rendu de la barre, pour chaque projet : une demande au plus toutes les 30 s, même si le Mac ne répond pas.
+  const now = Date.now();
+  if (!bridge.where() || now - Math.max(known.get(p.id)?.at ?? 0, asked.get(p.id) ?? 0) < 30000) return;
+  asked.set(p.id, now);
   void loadList(p);
 }
 

@@ -53,8 +53,9 @@
 
 /* ---------- Hiérarchie : un peu plus d'air, icône teintée atténuée au repos, pleine couleur au survol et sur la ligne choisie ---------- */
 :root #sidebar .side-item { height: 30px; gap: 10px; }
-:root #sidebar .side-item > .ic { color: color-mix(in srgb, var(--ic, var(--text-3)) 72%, var(--text-3)); }
-:root #sidebar .side-item:hover > .ic, :root #sidebar .side-item.sel > .ic { color: var(--ic, var(--text)); }
+/* Icônes neutres au repos (comme Linear, Notion, Raycast) : la couleur reste réservée à l'état (compteurs, pastilles). */
+:root #sidebar .side-item > .ic { color: var(--text-3); }
+:root #sidebar .side-item:hover > .ic, :root #sidebar .side-item.sel > .ic { color: var(--text); }
 :root #sidebar .side-count { font-size: 11.5px; transition: color var(--mo-d2) var(--mo-out); }
 :root #sidebar .side-item.sel .side-count { color: var(--text-2); }
 /* Niveaux : la hiérarchie se lit à la taille et au gris plus qu'à l'indentation. */

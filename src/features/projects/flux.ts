@@ -23,14 +23,16 @@ const REVIEW: Record<github.ReviewState, string> = { approved: 'approuvée', cha
 
 function card(it: github.FlowItem, local?: LocalBranch): string {
   const when = it.updated ? rel(Date.parse(it.updated)) : local?.date ? rel(Date.parse(local.date)) : '';
-  return `<article class="fx-card">
-    <div class="fx-branch">${icon('pr')}<code>${esc(it.branch)}</code>${local && !it.pr && it.stage === 'branche' && !local.upstream ? '<em class="pj-badge">locale</em>' : ''}</div>
-    ${it.pr ? `<a class="fx-pr" href="${esc(it.pr.url)}" target="_blank" rel="noopener"><span class="pj-num">#${it.pr.number}</span>${esc(it.pr.title)}</a>` : ''}
-    <footer>${it.ci !== 'none' ? `<span class="fx-ci"><i class="pj-ci" style="--c:var(--c-${CI[it.ci][0]})"></i>${CI[it.ci][1]}</span>` : ''}
+  const head = it.pr
+    ? `<a class="fx-pr" href="${esc(it.pr.url)}" target="_blank" rel="noopener">${esc(it.pr.title)}</a>`
+    : `<span class="fx-pr fx-nopr">${esc(it.branch)}</span>`;
+  return `<article class="fx-card">${head}
+    <div class="fx-branch">${it.pr ? `<span class="pj-num">#${it.pr.number}</span>` : ''}${icon('pr')}<code>${esc(it.branch)}</code>${local && !it.pr && it.stage === 'branche' && !local.upstream ? '<em class="pj-badge">locale</em>' : ''}</div>
+    <footer>${it.ci !== 'none' ? `<span class="fx-ci" style="--c:var(--c-${CI[it.ci][0]})"><i class="pj-ci"></i>${CI[it.ci][1]}</span>` : ''}
       ${REVIEW[it.review] ? `<em class="pj-badge ${it.review}">${REVIEW[it.review]}</em>` : ''}${it.pr?.draft ? '<em class="pj-badge">brouillon</em>' : ''}
       ${local && (local.ahead || local.behind) ? `<span class="fx-ab">${local.ahead ? `↑${local.ahead}` : ''}${local.behind ? ` ↓${local.behind}` : ''}</span>` : ''}
       ${it.release ? `<a class="pj-badge approved" href="${esc(it.release.url)}" target="_blank" rel="noopener">${esc(it.release.tag)}</a>` : ''}
-      ${it.pr?.author ? avatar(it.pr.author) : ''}<time>${esc(when)}</time></footer></article>`;
+      <span class="fx-when">${it.pr?.author ? avatar(it.pr.author) : ''}<time>${esc(when)}</time></span></footer></article>`;
 }
 
 // ---------- GitHub Actions : un workflow par ligne, sa dernière exécution et la bande des précédentes ----------
@@ -96,18 +98,82 @@ async function render(p: Project, fresh: boolean): Promise<{ html: string; live:
       if (f.actions.some(w => w.last.state === 'pending')) live = true;
       const byName = new Map(locals.map(b => [b.name, b]));
       const items = [...f.items];
-      if (i === 0) for (const b of locals) if (b.name !== f.base && !items.some(x => x.branch === b.name)) items.push({ branch: b.name, stage: 'branche', updated: b.date, ci: 'none', review: 'none' });
+      if (i === 0) for (const b of locals) if (b.name && b.name !== f.base && !items.some(x => x.branch === b.name)) items.push({ branch: b.name, stage: 'branche', updated: b.date, ci: 'none', review: 'none' });
       const visible = items.filter(x => x.stage !== 'fermee');
-      return `<div class="fx-repo"><div class="fx-head">${model.roleTag(role)}<strong>${icon('github')}${esc(f.repo)}</strong>
-          <span class="fx-base"><code>${esc(f.base)}</code><i class="pj-ci" style="--c:var(--c-${CI[f.baseCi][0]})"></i>${CI[f.baseCi][1]}</span>
-          ${f.releases.length ? `<span class="fx-rels">${f.releases.slice(0, 3).map(r => `<a class="pj-badge approved" href="${esc(r.url)}" target="_blank" rel="noopener" title="${esc(new Date(r.at).toLocaleString('fr-FR'))}">${esc(r.tag)}</a>`).join('')}</span>` : ''}</div>
-        ${actionsHTML(f)}
-        <div class="kb fx-board">${COLS.map(([key, label, tone, stages]) => {
-          const cards = visible.filter(x => stages.includes(x.stage)).slice(0, key === 'merged' || key === 'released' ? 6 : 30);
-          return `<section class="kb-col" data-col="${key}"><header class="kb-head"><i class="kb-dot" style="--c:var(--c-${tone})"></i><span>${label}</span><em class="kb-count">${cards.length}</em></header>
-            <div class="kb-cards">${cards.map(x => card(x, i === 0 ? byName.get(x.branch) : undefined)).join('') || '<p class="kb-empty">—</p>'}</div></section>`;
-        }).join('')}</div></div>`;
+      const by = COLS.map(([key, label, tone, stages]) => {
+        const all = visible.filter(x => stages.includes(x.stage));
+        return { key, label, tone, all, cards: all.slice(0, key === 'merged' || key === 'released' ? 6 : 30) };
+      });
+      const cols = by.filter(c => c.cards.length);
+      // Le parcours se lit d'un coup d'œil : une étape par colonne, son compte ; les étapes vides restent grises (et n'ont pas de colonne).
+      const pipe = `<ol class="fx-pipe" aria-label="Parcours des branches">${by.map(c => `<li class="${c.all.length ? 'on' : ''}" style="--c:var(--c-${c.tone})"><i></i><span>${c.label}</span><em>${c.all.length}</em></li>`).join('')}</ol>`;
+      return `<section class="fx-repo"><header class="fx-head">${model.roleTag(role)}<strong>${esc(f.repo)}</strong>
+          <span class="fx-base" style="--c:var(--c-${CI[f.baseCi][0]})" title="Branche principale"><i class="pj-ci"></i><code>${esc(f.base)}</code>${CI[f.baseCi][1]}</span>
+          <span class="fx-rels">${f.releases.slice(0, 3).map(r => `<a class="pj-badge approved" href="${esc(r.url)}" target="_blank" rel="noopener" title="${esc(new Date(r.at).toLocaleString('fr-FR'))}">${esc(r.tag)}</a>`).join('')}<a class="icon-btn" href="https://github.com/${esc(f.repo)}" target="_blank" rel="noopener" title="Ouvrir sur GitHub" aria-label="Ouvrir sur GitHub">${icon('github')}</a></span></header>
+        ${pipe}
+        ${cols.length ? `<div class="kb fx-board">${cols.map(c => `<section class="kb-col" data-col="${c.key}"><header class="kb-head"><i class="kb-dot" style="--c:var(--c-${c.tone})"></i><span>${c.label}</span><em class="kb-count">${c.all.length}</em></header>
+            <div class="kb-cards">${c.cards.map(x => card(x, i === 0 ? byName.get(x.branch) : undefined)).join('')}</div></section>`).join('')}</div>` : '<p class="fx-none">Aucune branche en cours : tout est fusionné.</p>'}
+        ${actionsHTML(f)}</section>`;
     } catch (e) { return `<p class="nf-empty">${esc(repo)} : ${esc(errMsg(e))}</p>`; }
   }));
-  return { html: `<p class="fx-legend">${icon('pr')}Branche de travail → PR (CI verte, revue) → fusion dans la branche principale → Release publiée automatiquement.</p>${out.join('')}`, live };
+  return { html: out.join(''), live };
+}
+
+// ---------- Livraison d'une branche fusionnée, montrée dans le fil du Salon ----------
+// Après la fusion : les workflows partis sur la branche principale (déploiement, tests), en direct, et la release qui la contient.
+// Lecture partagée par dépôt, relue toutes les 8 s tant qu'une exécution tourne, sinon toutes les minutes ; `onDelivery` repeint le fil.
+const ships = new Map<string, { at: number; busy: boolean; flow?: github.Flow; live?: boolean }>();
+let onShip: () => void = () => undefined;
+export function onDelivery(fn: () => void): void { onShip = fn; }
+function shipFlow(repo: string): github.Flow | undefined {
+  let s = ships.get(repo); if (!s) ships.set(repo, s = { at: 0, busy: false });
+  const me = s;
+  if (!me.busy && Date.now() - me.at > (me.live ? 8e3 : 60e3)) {
+    me.busy = true;
+    github.flow(repo, { fresh: me.at > 0 }).then(f => { me.flow = f; }, () => undefined)
+      .finally(() => { me.busy = false; me.at = Date.now(); onShip(); });
+  }
+  return me.flow;
+}
+
+export interface Delivery { repo: string; branch: string; title: string; meta: string; pr?: { number: number; url: string } }
+/** Carte « livré » du Salon : fusion → vérifications sur la branche principale → publication. '' tant que GitHub
+ *  n'a pas répondu ou n'est pas connecté (le Salon garde alors sa carte simple). */
+export function deliveryHTML(d: Delivery): string {
+  if (!github.connected() || !d.repo) return '';
+  const f = shipFlow(d.repo); if (!f) return '';
+  const it = f.items.find(x => x.branch === d.branch), merged = it?.pr?.mergedAt ? Date.parse(it.pr.mergedAt) : 0;
+  const pr = it?.pr ? { number: it.pr.number, url: it.pr.url } : d.pr;
+  // Pour chaque workflow, la première exécution partie sur la branche principale après la fusion (celle de la fusion).
+  const runs = merged ? f.actions.map(w => ({ w, r: w.runs.find(r => r.branch === f.base && Date.parse(r.at) >= merged - 30e3) })).filter((x): x is { w: github.Workflow; r: github.RunPoint } => !!x.r) : [];
+  const live = runs.some(x => x.r.state === 'pending'), bad = runs.filter(x => x.r.state === 'failure').length, ok = runs.filter(x => x.r.state === 'success').length;
+  const s = ships.get(d.repo); if (s) s.live = live;
+  const release = it?.release ?? (merged ? [...f.releases].reverse().find(r => Date.parse(r.at) >= merged) : undefined);
+  const checks: [string, string, string] = !runs.length ? ['gray', 'Pas de vérification', ''] : live ? ['amber', 'Vérifications en cours', `${ok}/${runs.length}`] : bad ? ['red', bad > 1 ? `${bad} vérifications en échec` : 'Une vérification en échec', ''] : ['green', 'Vérifications vertes', `${runs.length}`];
+  const step = (hue: string, label: string, sub: string, state: string) => `<li class="${state}" style="--c:var(--c-${hue})"><i></i><span>${label}</span>${sub ? `<small>${sub}</small>` : ''}</li>`;
+  const steps = step('violet', `Fusionnée dans <code>${esc(f.base)}</code>`, merged ? esc(rel(merged)) : '', 'done')
+    + step(checks[0], checks[1], checks[2], live ? 'live' : runs.length ? (bad ? 'bad' : 'done') : 'off')
+    + (f.releases.length ? step('teal', release ? `Publiée <b>${esc(release.tag)}</b>` : 'Pas encore publiée', '', release ? 'done' : 'off') : '');
+  const rows = runs.slice(0, 5).map(({ w, r }) => {
+    const [hue, txt] = r.state === 'pending' ? ['amber', 'en cours'] : RUN_ST[r.conclusion ?? ''] ?? (r.state === 'success' ? ['green', 'réussie'] : ['red', 'en échec']);
+    const again = r.state === 'failure' && r.id > 0 ? `<button type="button" class="btn btn-ghost fx-rerun" data-fx-ship-rerun="${r.id}" data-repo="${esc(f.repo)}" data-failed="${FAILED_JOBS.has(r.conclusion ?? '') ? '1' : ''}">${icon('refresh')}Relancer</button>` : '';
+    return `<div class="fx-ship-run${r.state === 'pending' ? ' live' : ''}" style="--c:var(--c-${hue})"><i class="pj-ci"></i><a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(w.name)}</a><span class="fx-act-st">${txt}</span><time>${esc(took(r.seconds))}</time>${again}</div>`;
+  }).join('');
+  return `<div class="sl-card fx-ship${live ? ' live' : ''}">
+    <header><span class="sl-pill" style="--c:var(--c-violet)">${live ? 'en livraison' : bad ? 'à vérifier' : 'livré'}</span><div class="sl-card-t"><b>${esc(d.title)}</b>${d.meta ? `<small>${d.meta}</small>` : ''}</div>
+      <div class="sl-card-a">${pr ? `<a class="btn btn-ghost" href="${esc(pr.url)}" target="_blank" rel="noopener">${icon('pr')}#${pr.number}</a>` : ''}<button type="button" class="btn" data-fx-ship-open>${icon('bolt')}Flux</button></div></header>
+    <ol class="fx-ship-steps">${steps}</ol>${rows ? `<div class="fx-ship-runs">${rows}</div>` : ''}</div>`;
+}
+/** Clics de la carte de livraison (relancer une vérification) ; `true` si le clic la concernait. */
+export function onDeliveryClick(e: Event, open: () => void): boolean {
+  const el = e.target as HTMLElement;
+  if (el.closest('[data-fx-ship-open]')) { open(); return true; }
+  const b = el.closest<HTMLButtonElement>('[data-fx-ship-rerun]'); if (!b) return false;
+  if (b.disabled) return true;
+  b.disabled = true;
+  const repo = b.dataset.repo ?? '';
+  github.rerun(repo, Number(b.dataset.fxShipRerun), { failedOnly: b.dataset.failed === '1' })
+    .then(() => { toast('Vérification relancée'); const s = ships.get(repo); if (s) { s.at = Date.now() - 6e3; s.live = true; } })
+    .catch(err => { b.disabled = false; toast(errMsg(err)); });
+  return true;
 }

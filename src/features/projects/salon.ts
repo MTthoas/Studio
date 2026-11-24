@@ -18,6 +18,7 @@ import * as subagents from './subagents.ts';
 import * as attach from './attach.ts';
 import { AUTO, pickFor, label as autoLabel } from './autopick.ts';
 import { exchanges } from './team.ts';
+import * as flux from './flux.ts';
 import * as catface from '../../ui/catface.ts';
 import { startAgent, reply } from '../workspace.ts';
 import { esc } from '../../lib/markdown.ts';
@@ -439,6 +440,11 @@ function resultHTML(t: Thread, d: Detail): string {
   const a = esc(w.name);
   if (st === 'review') return `<div class="sl-card res"><span class="sl-pill" style="--c:var(--c-green)">prêt à publier</span><div class="sl-card-t"><b>${esc(title)}</b>${meta ? `<small>${meta}</small>` : ''}</div><div class="sl-card-a"><button class="btn" data-sl="review" data-wt="${a}">Relire</button><button class="btn btn-primary" data-sl="publish" data-wt="${a}">${icon('upload')}Publier la PR</button></div></div>`;
   if (st === 'pr') return `<div class="sl-card res"><span class="sl-pill" style="--c:var(--c-blue)">PR ouverte</span><div class="sl-card-t"><b>${esc(title)}</b><small>En attente de fusion${meta ? ` · ${meta}` : ''}</small></div><div class="sl-card-a"><button class="btn" data-sl="pr" data-wt="${a}">${icon('pr')}Voir la PR</button></div></div>`;
+  // Fusionné : la carte suit la livraison en direct (vérifications sur la branche principale, release), voir `flux.deliveryHTML`.
+  if (st === 'merged') {
+    const live = flux.deliveryHTML({ repo: p?.stack[0]?.name ?? '', branch: w.pr?.branch ?? w.history?.find(h => h.merged)?.branch ?? w.branch, title, meta, pr: w.pr ? { number: w.pr.number, url: w.pr.url } : undefined });
+    if (live) return live;
+  }
   if (st === 'merged') return `<div class="sl-card res"><span class="sl-pill" style="--c:var(--c-violet)">fusionné</span><div class="sl-card-t"><b>${esc(title)}</b><small>Livré dans la branche principale</small></div></div>`;
   return '';
 }
@@ -680,6 +686,8 @@ function glide(list: HTMLElement, tops: Map<string, number>): void {
     else if (Math.abs(dy) > 1) x.animate([{ translate: `0 ${dy}px` }, { translate: '0 0' }], { duration: 320 * k, easing: 'cubic-bezier(.2,.8,.2,1)' });
   }
 }
+/** Fin du dernier défilement doux vers le bas du fil (performance.now()). */
+let glideEnd = 0;
 function paint(): void {
   if (!root || !p) return;
   const th = threads(), id = curId(th), cur = th.find(t => t.id === id), d = id ? S.detail.get(id) : undefined;
@@ -702,7 +710,8 @@ function paint(): void {
   if (cur) { crew = crewOf(d?.subagents ?? [], d?.models ?? cur.s.models); const r = blocksOf(cur, d, crew); blocks = r.blocks; ask = r.ask; }
   else if (opening?.pid === p.id) { const c0 = crewOf([], []); blocks = [{ key: `me|p|${opening.at}`, html: msgHTML(c0.me, opening.at, plain(opening.text) + picsNote(opening.pics), { cls: 'sending', tag: 'envoi…' }) }, { key: 'working', html: typing(c0, undefined) }]; }
   else blocks = [{ key: 'empty', html: emptyHTML(p.name, !th.length) }];
-  const end = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 60;
+  // Un défilement doux vers le bas encore en route compte comme « en bas » : un bloc arrivé entre-temps (carte de livraison) le suit.
+  const end = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 60 || performance.now() < glideEnd;
   const before = switched ? null : new Set(Array.from(feed.children, x => (x as HTMLElement).dataset.k));
   const changed = syncFeed(feed, blocks);
   attach.hydrate(feed, p.id);
@@ -715,7 +724,7 @@ function paint(): void {
     x.classList.add('sl-new', 'cf-hop'); fresh++;
   }
   if (switched) feed.scrollTop = feed.scrollHeight;
-  else if (changed && end) feed.scrollTo({ top: feed.scrollHeight, behavior: calm() ? 'auto' : 'smooth' });
+  else if (changed && end) { feed.scrollTo({ top: feed.scrollHeight, behavior: calm() ? 'auto' : 'smooth' }); glideEnd = performance.now() + 700; }
   else if (fresh && !end) need('[data-sl-down]', root).hidden = false;
   if (switched) need('[data-sl-down]', root).hidden = true;
   const head = need('[data-sl-head]', root);
@@ -855,6 +864,7 @@ function bind(r: HTMLElement): void {
     // Un clic ailleurs ferme la fiche ouverte, et le panneau Équipe posé par-dessus la discussion (écran étroit).
     if (prof && !el.closest('[data-sl-prof], [data-sl="who"]')) closeProf();
     if (r.classList.contains('sl-now-open') && !el.closest('[data-sl-now], [data-sl="now"], [data-sl-prof]')) { r.classList.remove('sl-now-open'); paint(); }
+    if (p && flux.onDeliveryClick(e, () => void go(p?.id ?? '', 'flux'))) return;
     if (!t || !p) return;
     const act = t.dataset.sl, pid = p.id;
     if (act === 'who') {
@@ -921,7 +931,7 @@ function bind(r: HTMLElement): void {
 /** Navigation vers un onglet de projet, fournie par la fiche projet (`init`) : le Salon n'a pas accès à la coquille de l'app. */
 let go: (pid: string, tab: string) => Promise<void> = () => Promise.resolve();
 /** À appeler une fois au démarrage (page.ts) avec `(pid, tab) => app.setView({ type: 'projets', project: pid, tab })`. */
-export function init(open: (pid: string, tab: string) => Promise<void>): void { go = open; }
+export function init(open: (pid: string, tab: string) => Promise<void>): void { go = open; flux.onDelivery(() => { if (root?.isConnected) paint(); }); }
 /** Ouvre le fil `session` du projet `pid` dans le Salon : le choisit (retenu dans `studio.salon.chosen`), puis ouvre l'onglet salon. */
 /** Fil choisi dans le Salon du projet (barre latérale). */
 export const chosenThread = (pid: string): string => chosen.get(pid) ?? '';

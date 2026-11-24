@@ -410,9 +410,11 @@ async function agentsStrip(root: HTMLElement, p: Project): Promise<void> {
 }
 
 /** Onglets d'une seule rangée : les principaux, l'onglet ouvert, puis « Plus » (menu rangé par famille, voir `moreTabs`). */
-const MAIN_TABS = ['salon', 'sessions', 'tasks', 'notes', 'code'];
+// Flux juste après le Salon (25 nov. 2026, « mets en avant Flux ») : les principaux dans cet ordre, l'onglet ouvert à la suite.
+const MAIN_TABS = ['salon', 'flux', 'sessions', 'tasks', 'notes', 'code'];
+const rank = (k: string) => { const i = MAIN_TABS.indexOf(k); return i < 0 ? MAIN_TABS.length : i; };
 const tabsHTML = (p: Project, tab: string): string => {
-  const have = tabsOf(p, tab), shown = have.filter(t => MAIN_TABS.includes(t[0]) || t[0] === tab);
+  const have = tabsOf(p, tab), shown = have.filter(t => MAIN_TABS.includes(t[0]) || t[0] === tab).sort((x, y) => rank(x[0]) - rank(y[0]));
   const btns = shown.map(([k, l]) => `<button data-pj-tab="${k}" class="${k === tab ? 'sel' : ''}"${k === tab ? ' aria-current="page"' : ''}>${esc(l)}</button>`).join('');
   return btns + (have.length > shown.length ? `<button type="button" class="pj-more" data-pj="tabs-more" aria-haspopup="menu">Plus${icon('chevron')}</button>` : '');
 };
@@ -659,6 +661,7 @@ export function toClaude(p: Project, what: { notes?: string[]; prompt?: string; 
 
 /** Conversations Claude Code récentes d'un projet, pour la barre latérale. */
 export const sideSessions = (pid: string) => sessions.sideSessions(pid);
+export const preloadSessions = (p: Project): void => sessions.preload(p);
 /** Choisit la conversation à ouvrir dans l'onglet Claude Code du projet (`null` : la liste). */
 export const sideServers = (pid: string) => infra.sideServers(pid);
 /** Choisit le serveur que l'onglet Serveur du projet affichera (clic dans la barre latérale). */
