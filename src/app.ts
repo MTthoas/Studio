@@ -37,6 +37,7 @@ import * as agentGuard from './features/projects/guard.ts';
 import { registerBuiltins } from './plugins/builtin.ts';
 import * as plugins from './plugins/registry.ts';
 import * as caret from './ui/caret.ts';
+import * as i18n from './ui/i18n.ts';
 import * as selask from './ui/selask.ts';
 import * as noteai from './features/noteai.ts';
 import * as biometric from './core/biometric.ts';
@@ -749,7 +750,7 @@ function tickTimers() {
     if (!n) { delete timers[key]; continue; }
     toast(`Minuteur terminé — ${titleOf(n)}`, { label: 'Ouvrir', run: () => openNote(n.id) });
     try { const a = new AudioContext(), o = a.createOscillator(), g = a.createGain(); o.frequency.value = 880; o.connect(g); g.connect(a.destination); g.gain.setValueAtTime(0.15, a.currentTime); g.gain.exponentialRampToValueAtTime(0.001, a.currentTime + 0.9); o.start(); o.stop(a.currentTime + 0.9); } catch { /* son indisponible */ }
-    if ('Notification' in window && Notification.permission === 'granted' && document.hidden) new Notification('Minuteur terminé', { body: titleOf(n) });
+    if ('Notification' in window && Notification.permission === 'granted' && document.hidden) new Notification(i18n.t('Minuteur terminé'), { body: titleOf(n) });
   }
   if (changed) saveTimers();
   if (changed || !document.hidden) paintTimers();
@@ -1456,7 +1457,7 @@ Les notes chiffrées et celles taguées \`#privé\` ne sont jamais envoyées à 
 window.carnet = { flush: async () => { await flushAll(); }, settings: () => hub.openConnections('coffre'), voice: (p: unknown) => voice.onNative(p), bio: (p: unknown) => biometric.onNative(p as biometric.BioReply), reply: (p: unknown) => native.onReply(p) };
 
 async function start() {
-  applyTheme(); motion.init(); cat.init();
+  i18n.init(); i18n.guard(k => store.findByTitle(k)?.title.trim() === k); applyTheme(); motion.init(); cat.init();
   if (!VIEWS[ui.view?.type] && ui.view?.type !== 'tag') ui.view = { type: 'home' };
   await hub.gate(); // coffre : rien n'est lu avant le déverrouillage
   const gone = await store.init();

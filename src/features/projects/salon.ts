@@ -24,6 +24,7 @@ import { icon, need, rel, toast, target, paintIfChanged } from '../../ui/kit.ts'
 import type { Block, Session, Action, AgentRun, Queued, Worktree, SubAgent } from './sessions.ts';
 import type { BoardMsg } from './team.ts';
 import type { Project } from './model.ts';
+import { t as tr } from '../../ui/i18n.ts';
 
 // ---------- Les prénoms ----------
 export interface Persona { name: string; role: string; hue: string }
@@ -723,11 +724,11 @@ function paint(): void {
   root.classList.toggle('sl-solo', !cur && opening?.pid !== p.id);
   // Le champ : seul son habillage change, jamais le texte.
   const isNew = !cur, ph = isNew ? 'Dis à l’équipe ce que tu veux faire…' : `Écris à ${crew?.main.name ?? 'Moka'}…`;
-  if (ta.placeholder !== ph) ta.placeholder = ph;
+  if (ta.placeholder !== tr(ph)) ta.placeholder = ph;
   need('[data-sl-mode]', root).hidden = !isNew;
   showAuto(); ready();
   const hint = need('[data-sl-hint]', root), ht = !isNew && cur?.group === 'work' ? 'Ton message part en attente : l’agent le lit à la fin de son tour.' : '';
-  if (hint.textContent !== ht) hint.textContent = ht;
+  if (hint.textContent !== tr(ht)) hint.textContent = ht;
 }
 
 // ---------- Modèle et effort ----------
@@ -752,7 +753,7 @@ function showAuto(): void {
   const box = root?.querySelector<HTMLElement>('[data-sl-auto]'), text = root?.querySelector('textarea')?.value.trim() ?? ''; if (!box) return;
   const on = picked().model === AUTO && !!text, id = curId();
   let t = ''; if (on) { const a = pickFor(text, { read: sel('mode')?.value === 'read', reply: !!id }), l = autoLabel(a); t = `${l.model}${picked().effort ? '' : ` · ${l.effort}`}`; box.title = `Auto : ${a.why}`; }
-  if (box.textContent !== t) box.textContent = t;
+  if (box.textContent !== tr(t)) box.textContent = t;
   box.hidden = !on;
 }
 

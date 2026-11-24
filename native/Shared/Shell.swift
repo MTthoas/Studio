@@ -84,6 +84,8 @@ enum Shell {
 final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate, WKScriptMessageHandler {
     weak var web: WKWebView?
     var onTheme: ((Bool) -> Void)?
+    /** La page a dit sa langue (« en » par défaut, « fr ») : rangée dans UserDefaults studio.lang pour les menus natifs. */
+    var onLang: (() -> Void)?
     var onLoad: (() -> Void)?
     private var pending: [WKDownload: URL] = [:]
 
@@ -93,6 +95,10 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
         // jamais un cadre intégré (Figma…) ni un document chargé hors de carnet://app.
         guard Self.trusted(message.frameInfo), let body = message.body as? [String: Any], let type = body["type"] as? String else { return }
         if type == "theme", let dark = body["dark"] as? Bool { onTheme?(dark) }
+        if type == "lang", let l = body["lang"] as? String {
+            let v = l == "fr" ? "fr" : "en"
+            if UserDefaults.standard.string(forKey: "studio.lang") != v { UserDefaults.standard.set(v, forKey: "studio.lang"); onLang?() }
+        }
         if type == "notify", let title = body["title"] as? String {
             Notifier.shared.post(title: String(title.prefix(200)), body: String((body["body"] as? String ?? "").prefix(500)), url: body["url"] as? String)
         }

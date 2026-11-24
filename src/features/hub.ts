@@ -29,6 +29,7 @@ import * as adsUI from './commerce/ads.ts';
 import * as pluginsUI from './plugins.ts';
 import * as registry from '../plugins/registry.ts';
 import * as motion from '../ui/motion.ts';
+import * as i18n from '../ui/i18n.ts';
 import type { AppEvent } from '../core/events.ts';
 import { renderMarkdown, esc, plain } from '../lib/markdown.ts';
 import { fold } from '../lib/fuzzy.ts';
@@ -93,7 +94,7 @@ export function init(api: HubApi) {
     if (e.type === 'remote') {
       // Toute action pilotée à distance est signalée sur le Mac.
       toast(`${e.name} pilote Claude Code : ${e.what}`);
-      window.webkit?.messageHandlers?.carnet?.postMessage({ type: 'notify', title: `Claude Code piloté depuis ${e.name}`, body: e.what, url: '' });
+      window.webkit?.messageHandlers?.carnet?.postMessage({ type: 'notify', title: i18n.t(`Claude Code piloté depuis ${e.name}`), body: e.what, url: '' });
     }
     if (e.type === 'status' || e.type === 'devices') { refreshConnections(); if (app.view() === 'home') app.renderMain(); }
   });
@@ -533,7 +534,7 @@ const TABS: [string, string, string, string][] = [
   ['commerce', 'shop', 'Boutiques', 'Tes boutiques Shopify et ton compte publicitaire Meta. Les identifiants restent dans le coffre ; seule l’app Mac parle à Shopify et à Meta.'],
   ['extensions', 'plug', 'Extensions', 'Des fonctions en plus, éteintes par défaut : Shopify, Meta Ads, Kubernetes, Spotify, Figma, n8n. Tout tourne sur cet appareil, sans serveur.'],
   ['appareils', 'devices', 'Appareils', 'Relie ton téléphone et tes ordinateurs, sans serveur, chiffré de bout en bout.'],
-  ['apparence', 'palette', 'Apparence', 'Thème de l’interface.'],
+  ['apparence', 'palette', 'Apparence', 'Langue et thème de l’interface.'],
   ['donnees', 'database', 'Données', 'Sauvegardes, import et export.'],
   ['maj', 'download', 'Mises à jour', 'Version installée et nouvelles versions de Studio.'],
 ];
@@ -583,7 +584,10 @@ function refreshConnections(): void {
 
 function tabLook() {
   const t = app.theme();
-  return `<section class="cx-sec"><h4>Thème</h4><div class="look">${[['auto', 'Système'], ['light', 'Clair'], ['dark', 'Sombre']].map(([k, l]) => `<label class="look-opt"><input type="radio" name="theme" value="${k}"${t === k ? ' checked' : ''}><span class="look-prev look-${k}"><i></i><i></i><i></i></span><span>${l}</span></label>`).join('')}</div></section>
+  // Les noms de langue restent dans leur propre langue : data-no-i18n les garde tels quels.
+  const lang = `<section class="cx-sec"><h4>Langue</h4><div class="ag-seg" role="radiogroup" aria-label="Langue" data-no-i18n>${[['en', 'English'], ['fr', 'Français']].map(([k, l]) => `<label><input type="radio" name="lang" value="${k}"${i18n.lang() === k ? ' checked' : ''}><span>${l}</span></label>`).join('')}</div>
+      <p class="look-note">Langue de l’interface. Studio se recharge pour l’appliquer ; tes notes ne changent pas.</p></section>`;
+  return `${lang}<section class="cx-sec"><h4>Thème</h4><div class="look">${[['auto', 'Système'], ['light', 'Clair'], ['dark', 'Sombre']].map(([k, l]) => `<label class="look-opt"><input type="radio" name="theme" value="${k}"${t === k ? ' checked' : ''}><span class="look-prev look-${k}"><i></i><i></i><i></i></span><span>${l}</span></label>`).join('')}</div></section>
     <section class="cx-sec"><h4>Fond</h4><div class="look">${[['plain', 'Uni'], ['sky', 'Ciel']].map(([k, l]) => `<label class="look-opt"><input type="radio" name="backdrop" value="${k}"${app.backdrop() === k ? ' checked' : ''}><span class="look-prev look-${k}"><i></i><i></i><i></i></span><span>${l}</span></label>`).join('')}</div></section>
     <section class="cx-sec"><h4>Mouvement</h4><div class="ag-seg" role="radiogroup" aria-label="Mouvement">${[['full', 'Complet'], ['subtle', 'Discret'], ['off', 'Aucun']].map(([k, l]) => `<label><input type="radio" name="motion" value="${k}"${motion.level() === k ? ' checked' : ''}><span>${l}</span></label>`).join('')}</div>
       <p class="look-note">Transitions entre vues, indicateurs glissants, menus et fenêtres. « Discret » garde les fondus ; le réglage « Réduire les animations » du système coupe tout.</p></section>`;
@@ -877,6 +881,7 @@ function onConnChange(e: Event): void {
   else if (t.name === 'theme') app.setTheme(t.value);
   else if (t.name === 'backdrop') app.setBackdrop(t.value);
   else if (t.name === 'motion') motion.setLevel(t.value as motion.Level);
+  else if (t.name === 'lang') void i18n.setLang(t.value as i18n.Lang);
   else if (t.dataset.cfg === 'budgetM') { ai.setConfig({ budgetM: Math.max(0, Number(t.value) || 0) }); refreshConnections(); }
   else if (t.dataset.cfg) ai.setConfig({ [t.dataset.cfg]: t.value.trim() });
   else if (t.matches('[data-autolock]')) vault.setSetting('autolock', Number(t.value));

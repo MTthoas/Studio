@@ -32,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.setFrameAutosaveName("Studio")
         // Le thème choisi dans Studio (clair, sombre, système) pilote aussi la fenêtre.
         shell.onTheme = { [weak self] dark in self?.window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua) }
+        shell.onLang = { [weak self] in self?.buildMenu() }
         if selfTest { shell.onLoad = { [weak self] in self?.runSelfTest() } }
         web.load(URLRequest(url: Shell.start))
         window.makeKeyAndOrderFront(nil)
@@ -56,6 +57,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildMenu() {
         let main = NSMenu()
+        // Même langue que la page (anglais par défaut) : elle l'envoie par le message « lang » (Shell.swift).
+        let fr = UserDefaults.standard.string(forKey: "studio.lang") == "fr"
+        func L(_ f: String, _ e: String) -> String { fr ? f : e }
         func submenu(_ title: String, _ items: [NSMenuItem]) {
             let item = NSMenuItem(); let menu = NSMenu(title: title)
             items.forEach(menu.addItem); item.submenu = menu; main.addItem(item)
@@ -64,33 +68,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let i = NSMenuItem(title: title, action: action, keyEquivalent: key); i.keyEquivalentModifierMask = mods; i.target = target; return i
         }
         submenu("Studio", [
-            item("À propos de Studio", #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
+            item(L("À propos de Studio", "About Studio"), #selector(NSApplication.orderFrontStandardAboutPanel(_:))),
             .separator(),
-            item("Réglages…", #selector(openSettings), ",", target: self),
+            item(L("Réglages…", "Settings…"), #selector(openSettings), ",", target: self),
             .separator(),
-            item("Masquer Studio", #selector(NSApplication.hide(_:)), "h"),
-            item("Masquer les autres", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
-            item("Tout afficher", #selector(NSApplication.unhideAllApplications(_:))),
+            item(L("Masquer Studio", "Hide Studio"), #selector(NSApplication.hide(_:)), "h"),
+            item(L("Masquer les autres", "Hide Others"), #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option]),
+            item(L("Tout afficher", "Show All"), #selector(NSApplication.unhideAllApplications(_:))),
             .separator(),
-            item("Quitter Studio", #selector(NSApplication.terminate(_:)), "q"),
+            item(L("Quitter Studio", "Quit Studio"), #selector(NSApplication.terminate(_:)), "q"),
         ])
         // Sans ce menu, ⌘C / ⌘V / ⌘Z ne fonctionnent pas dans la vue web.
-        submenu("Édition", [
-            item("Annuler", Selector(("undo:")), "z"),
-            item("Rétablir", Selector(("redo:")), "z", [.command, .shift]),
+        submenu(L("Édition", "Edit"), [
+            item(L("Annuler", "Undo"), Selector(("undo:")), "z"),
+            item(L("Rétablir", "Redo"), Selector(("redo:")), "z", [.command, .shift]),
             .separator(),
-            item("Couper", #selector(NSText.cut(_:)), "x"),
-            item("Copier", #selector(NSText.copy(_:)), "c"),
-            item("Coller", #selector(NSText.paste(_:)), "v"),
-            item("Tout sélectionner", #selector(NSText.selectAll(_:)), "a"),
+            item(L("Couper", "Cut"), #selector(NSText.cut(_:)), "x"),
+            item(L("Copier", "Copy"), #selector(NSText.copy(_:)), "c"),
+            item(L("Coller", "Paste"), #selector(NSText.paste(_:)), "v"),
+            item(L("Tout sélectionner", "Select All"), #selector(NSText.selectAll(_:)), "a"),
         ])
-        submenu("Présentation", [
-            item("Recharger", #selector(reload), "r", [.command, .shift], target: self),
-            item("Plein écran", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]),
+        submenu(L("Présentation", "View"), [
+            item(L("Recharger", "Reload"), #selector(reload), "r", [.command, .shift], target: self),
+            item(L("Plein écran", "Full Screen"), #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]),
         ])
-        submenu("Fenêtre", [
-            item("Réduire", #selector(NSWindow.performMiniaturize(_:)), "m"),
-            item("Fermer", #selector(NSWindow.performClose(_:)), "w"),
+        submenu(L("Fenêtre", "Window"), [
+            item(L("Réduire", "Minimize"), #selector(NSWindow.performMiniaturize(_:)), "m"),
+            item(L("Fermer", "Close"), #selector(NSWindow.performClose(_:)), "w"),
         ])
         NSApp.mainMenu = main
     }
