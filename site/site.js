@@ -7,6 +7,24 @@
 (() => {
   'use strict';
   const root = document.documentElement;
+  // Chaînes affichées par le script, selon la langue de la page (anglais par défaut ; boot.js renvoie vers fr.html au besoin).
+  const LANG = root.lang === 'fr' ? 'fr' : 'en';
+  const TXT = {
+    en: {
+      stages: ['Working', 'Working', 'Working', 'Ready to publish', 'PR opened'],
+      markTodo: 'Mark as to do', markDone: 'Mark as done',
+      task: ['task to do', 'tasks to do'], noTask: 'No tasks to do', link: ['link', 'links'], tag: ['tag', 'tags'],
+      iterations: '600,000 iterations', keyIn: ' · key derived in {0} ms', deriving: ' · deriving the key…',
+      iv: ' · 96-bit IV', bytes: ' · {0} bytes', copied: 'Copied', locale: 'en-US',
+    },
+    fr: {
+      stages: ['Au travail', 'Au travail', 'Au travail', 'À publier', 'PR ouverte'],
+      markTodo: 'Marquer à faire', markDone: 'Marquer comme fait',
+      task: ['tâche à faire', 'tâches à faire'], noTask: 'Aucune tâche à faire', link: ['lien', 'liens'], tag: ['tag', 'tags'],
+      iterations: '600 000 itérations', keyIn: ' · clé dérivée en {0} ms', deriving: ' · dérivation de la clé…',
+      iv: ' · IV de 96 bits', bytes: ' · {0} octets', copied: 'Copié', locale: 'fr-FR',
+    },
+  }[LANG];
   const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const canWatch = 'IntersectionObserver' in window;
   const wait = ms => new Promise(done => setTimeout(done, ms));
@@ -91,7 +109,7 @@
   // data-step = délai avant l'étape (ms) ; data-type = le texte se tape ; data-stage = étape atteinte : elle allume
   // les lignes de [data-stages] et règle la pastille [data-pill] du même [data-stage-host] ; data-loop = la séquence
   // recommence tant qu'elle est à l'écran. Sans animation : tout est affiché, rien n'est estompé.
-  const STAGE_PILL = ['Au travail', 'Au travail', 'Au travail', 'À publier', 'PR ouverte'];
+  const STAGE_PILL = TXT.stages;
   const setStage = (box, n) => {
     const host = box.closest('[data-stage-host]');
     if (!host) return;
@@ -183,7 +201,7 @@
         const v = calc(m[4]);
         const box = el('span', 'o-calc');
         box.append(el('code', '', `=${m[4]}`));
-        if (v != null) box.append(el('b', '', v.toLocaleString('fr-FR', { maximumFractionDigits: 2 })));
+        if (v != null) box.append(el('b', '', v.toLocaleString(TXT.locale, { maximumFractionDigits: 2 })));
         parent.append(box);
       }
       else if (m[5] != null) parent.append(el('span', 'o-timer', `▶ ${String(m[5]).padStart(2, '0')}:00`));
@@ -230,7 +248,7 @@
         const box = el('button', `box${done ? ' done' : ''}`);
         box.type = 'button';
         box.dataset.line = String(i);
-        box.setAttribute('aria-label', done ? 'Marquer à faire' : 'Marquer comme fait');
+        box.setAttribute('aria-label', done ? TXT.markTodo : TXT.markDone);
         const label = el('span');
         inline(task[4], label);
         row.append(box, label);
@@ -241,8 +259,8 @@
     });
     if (hl) hl.append('\n');
     if (stat) stat.textContent = [
-      todo ? plural(todo, 'tâche à faire', 'tâches à faire') : 'Aucune tâche à faire',
-      plural(count.links, 'lien', 'liens'), plural(count.tags, 'tag', 'tags'),
+      todo ? plural(todo, ...TXT.task) : TXT.noTask,
+      plural(count.links, ...TXT.link), plural(count.tags, ...TXT.tag),
     ].join(' · ');
   };
 
@@ -283,8 +301,8 @@
       vstat.textContent = '';
       const part = (strong, rest) => { const s = el('span'); s.append(el('b', '', strong), rest); return s; };
       vstat.append(
-        part('PBKDF2-SHA-256', key ? ` · 600 000 itérations · clé dérivée en ${Math.round(took)} ms` : ' · 600 000 itérations · dérivation de la clé…'),
-        part('AES-256-GCM', size ? ` · IV de 96 bits · ${size} octets` : ' · IV de 96 bits'),
+        part('PBKDF2-SHA-256', ` · ${TXT.iterations}` + (key ? TXT.keyIn.replace('{0}', String(Math.round(took))) : TXT.deriving)),
+        part('AES-256-GCM', TXT.iv + (size ? TXT.bytes.replace('{0}', String(size)) : '')),
       );
     };
     const seal = async () => {
@@ -336,13 +354,18 @@
     else wake();
   }
 
+  // ---------- Langue : le choix du sélecteur est mémorisé, boot.js le relit à la prochaine visite ----------
+  for (const a of $$('a.lang[data-lang]')) {
+    a.addEventListener('click', () => { try { localStorage.setItem('studio.site.lang', a.dataset.lang); } catch { /* sans stockage, le lien suffit */ } });
+  }
+
   // ---------- Commandes : un clic les copie ----------
   for (const btn of $$('[data-copy]')) {
     if (!navigator.clipboard) { btn.hidden = true; continue; }
     const label = btn.textContent;
     btn.addEventListener('click', async () => {
       try { await navigator.clipboard.writeText(btn.previousElementSibling.textContent); } catch { return; }
-      btn.textContent = 'Copié';
+      btn.textContent = TXT.copied;
       btn.classList.add('done');
       setTimeout(() => { btn.textContent = label; btn.classList.remove('done'); }, 1600);
     });

@@ -6,6 +6,7 @@ import * as events from '../../core/events.ts';
 import { esc } from '../../lib/markdown.ts';
 import { $, icon, toast, rel, need, target, errMsg, avatar, paintIfChanged } from '../../ui/kit.ts';
 import type { AppShell } from '../../types.ts';
+import { t } from '../../ui/i18n.ts';
 
 const EVERY = 60e3, SEEN = 'carnet.linear.seen', PREF = 'carnet.linear.notify';
 let app!: AppShell, items: linear.Notification[] = [], error = '', loaded = false, busy = false, shownSig = '', badged = -1;
@@ -49,7 +50,7 @@ function badge(): void {
 function announce(fresh: linear.Notification[]): void {
   if (!fresh.length) return;
   const one = fresh.length === 1 ? fresh[0] : null;
-  const title = one ? headline(one) : `${fresh.length} nouvelles notifications Linear`;
+  const title = t(one ? headline(one) : `${fresh.length} nouvelles notifications Linear`);
   const body = one ? excerpt(one) : fresh.slice(0, 3).map(subject).join(' · ');
   const away = document.hidden || !document.hasFocus();
   if (away && systemOn()) {

@@ -73,6 +73,9 @@ code, pre { font-family: var(--mono); font-size: .88em; }
 .brand svg { width: 20px; height: 20px; }
 .nav a:not(.brand):not(.go) { color: var(--text-2); transition: color .12s; }
 .nav a:not(.brand):not(.go):hover, .nav a[aria-current] { color: var(--text) !important; }
+/* Sélecteur de langue : un mot, sans drapeau ; reste visible quand les liens de sections disparaissent */
+.nav a.lang { margin-left: -10px; padding: 3px 6px; border: 1px solid var(--border); border-radius: 5px; font: 500 11px/1 var(--mono, ui-monospace, monospace); letter-spacing: .06em; }
+.nav a.lang:hover { border-color: var(--border-2); }
 
 /* ---------- Ouverture : le message, la fiche technique sur une ligne, l'écran dessous ---------- */
 .top { position: relative; padding-top: 64px; overflow-x: clip; }
@@ -337,7 +340,8 @@ code, pre { font-family: var(--mono); font-size: .88em; }
 @media (max-width: 680px) {
   :root { --pad: 20px; }
   .nav { gap: 18px; }
-  .nav a:not(.brand):not(.go) { display: none; }
+  .nav a:not(.brand):not(.go):not(.lang) { display: none; }
+  .nav a.lang { margin-left: 0; }
   .hero { padding: 48px 0 40px; }
   .sea { height: 900px; }
   .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 20px; margin-bottom: 36px; }

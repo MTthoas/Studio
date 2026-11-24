@@ -4,6 +4,8 @@
 import * as bridge from '../../integrations/remote.ts';
 import { esc } from '../../lib/markdown.ts';
 import { toast } from '../../ui/kit.ts';
+// tr : le texte tel que l'interface l'affiche (traduit en anglais), pour comparer avec ce qui est déjà posé.
+import { t as tr } from '../../ui/i18n.ts';
 
 export const MAX_COUNT = 6, MAX_BYTES = 8 * 1024 * 1024, MAX_TOTAL = 24 * 1024 * 1024, MAX_SIDE = 2000;
 export const DEFAULT_PROMPT = 'Regarde les images jointes.';
@@ -59,16 +61,16 @@ export function sync(f: Element): void {
   const add = f.querySelector<HTMLElement>('[data-at-pick]');
   if (add) {
     const t = why || `Joindre des images (${LIMITS})`;
-    if (add.title !== t) { add.title = t; add.setAttribute('aria-label', why ? `Images indisponibles : ${why}` : 'Joindre des images'); }
+    if (add.title !== tr(t)) { add.title = t; add.setAttribute('aria-label', why ? `Images indisponibles : ${why}` : 'Joindre des images'); }
     const off = why ? 'true' : 'false'; if (add.getAttribute('aria-disabled') !== off) add.setAttribute('aria-disabled', off);
     add.classList.toggle('at-off', !!why);
   }
   const btn = f.querySelector<HTMLElement>('button.btn-primary');
-  if (btn?.hasAttribute('data-at-bare')) { const t = n ? `Envoyer avec ${n} image${plural(n, '', 's')}` : ''; if (t && btn.title !== t) { btn.dataset.atTitle = btn.dataset.atTitle ?? btn.title; btn.title = t; } else if (!t && btn.dataset.atTitle) { btn.title = btn.dataset.atTitle; delete btn.dataset.atTitle; } }
+  if (btn?.hasAttribute('data-at-bare')) { const t = n ? `Envoyer avec ${n} image${plural(n, '', 's')}` : ''; if (t && btn.title !== tr(t)) { btn.dataset.atTitle = btn.dataset.atTitle ?? btn.title; btn.title = t; } else if (!t && btn.dataset.atTitle) { btn.title = btn.dataset.atTitle; delete btn.dataset.atTitle; } }
   else if (btn) {
     const want = n ? `+ ${n} image${plural(n, '', 's')}` : '', cur = btn.querySelector('.at-count');
     if (!want && cur) cur.remove();
-    else if (want && cur?.textContent !== want) {
+    else if (want && cur?.textContent !== tr(want)) {
       cur?.remove();
       const s = document.createElement('span'); s.className = 'at-count'; s.textContent = want;
       const kbd = btn.querySelector('kbd'); btn.insertBefore(s, kbd); if (!kbd) btn.appendChild(s);
@@ -78,7 +80,7 @@ export function sync(f: Element): void {
   if (hint) {
     const mine = own.get(hint), text = `${n} image${plural(n, '', 's')} jointe${plural(n, '', 's')} : Claude ${plural(n, 'la', 'les')} lira avec ta consigne.`;
     if (n) {
-      if (hint.textContent !== text) { own.set(hint, { text, was: hint.innerHTML }); hint.textContent = text; }
+      if (hint.textContent !== tr(text)) { own.set(hint, { text: tr(text), was: mine ? mine.was : hint.innerHTML }); hint.textContent = text; }
     } else if (mine && hint.textContent === mine.text) { hint.innerHTML = mine.was; own.delete(hint); }
   }
 }
