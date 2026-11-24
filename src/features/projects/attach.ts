@@ -95,6 +95,19 @@ export function clear(f: Element): void {
   for (const p of list(f)) URL.revokeObjectURL(p.url);
   pics.delete(keyOf(f)); sync(f);
 }
+/** Lot d'images retiré d'un formulaire pour l'envoi (le Salon vide le champ tout de suite). */
+export interface Taken { key: string; pics: Pic[] }
+/** Retire les images de `f` sans les libérer : `putBack` les rend après un échec, `release` les libère après un envoi. */
+export function take(f: Element): Taken {
+  const t = { key: keyOf(f), pics: list(f) };
+  pics.delete(t.key); sync(f); return t;
+}
+export function putBack(t: Taken): void {
+  if (!t.pics.length || !t.key) return;
+  pics.set(t.key, [...t.pics, ...(pics.get(t.key) ?? [])].slice(0, MAX_COUNT));
+  document.querySelectorAll('form').forEach(f => { if (keyOf(f) === t.key) sync(f); });
+}
+export function release(t: Taken): void { for (const p of t.pics) URL.revokeObjectURL(p.url); }
 function remove(f: Element, id: string): void {
   const all = list(f), hit = all.find(p => p.id === id); if (!hit) return;
   URL.revokeObjectURL(hit.url); pics.set(keyOf(f), all.filter(p => p.id !== id)); sync(f);

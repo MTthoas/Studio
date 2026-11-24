@@ -1,13 +1,15 @@
 /* Jauge d'usage de l'IA (pied de barre latérale) : voir src/features/usagebar.ts */
 #usage-side:empty { display: none; }
-#usage-side { position: relative; margin: 0 8px 6px 10px; }
-.ub-box { all: unset; box-sizing: border-box; display: block; width: 100%; padding: 7px 9px; border: 1px solid var(--border); border-radius: calc(var(--r) + 2px); background: var(--surface); cursor: pointer; }
+/* La jauge ne dicte jamais la largeur de la barre : un texte long (« 85 % · samedi 10:03 ») se coupe en « … » au lieu
+   d'élargir le bloc, qui poussait la barre (overflow hidden) à défiler de côté et passait sous le panneau principal. */
+#usage-side { position: relative; flex: none; min-width: 0; margin: 0 8px 6px 10px; }
+.ub-box { all: unset; box-sizing: border-box; display: block; width: 100%; min-width: 0; overflow: hidden; padding: 7px 9px; border: 1px solid var(--border); border-radius: calc(var(--r) + 2px); background: var(--surface); cursor: pointer; }
 .ub-box:hover { background: var(--hover); }
 .ub-box:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .ub-row + .ub-row { margin-top: 7px; }
 .ub-l { display: flex; justify-content: space-between; gap: 8px; font-size: var(--t-1); color: var(--text-2); margin-bottom: 4px; }
-.ub-l b { font-weight: 600; color: var(--text); white-space: nowrap; }
-.ub-l span { color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+.ub-l b { flex: none; font-weight: 600; color: var(--text); white-space: nowrap; }
+.ub-l span { min-width: 0; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
 .ub-l span.ub-amber { color: var(--c-amber); }
 .ub-l span.ub-red { color: var(--c-red); }
 .ub-bar { display: block; height: 3px; border-radius: 3px; background: var(--active); overflow: hidden; }

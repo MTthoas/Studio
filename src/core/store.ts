@@ -57,6 +57,9 @@ async function load() {
     if (!rec.enc) unlocked.delete(rec.id);
   }
   for (const id of [...notes.keys()]) if (!seen.has(id)) { notes.delete(id); unlocked.delete(id); }
+  // Un index lu avant le chargement (garde i18n au démarrage, rendu du coffre) serait vide et resterait en cache
+  // jusqu'à la prochaine écriture : on le jette à chaque chargement.
+  idx = null;
 }
 
 // ---------- Lecture ----------

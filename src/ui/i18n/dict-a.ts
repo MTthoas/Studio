@@ -644,6 +644,8 @@ export default {
   'Envoyer avec {0} images': 'Send with {0} images',
   '+ {0} image': '+ {0} image',
   '+ {0} images': '+ {0} images',
+  '+ {0} image jointe': '+ {0} image attached',
+  '+ {0} images jointes': '+ {0} images attached',
   '{0} image jointe : Claude la lira avec ta consigne.': '{0} image attached: Claude will read it with your instruction.',
   '{0} images jointes : Claude les lira avec ta consigne.': '{0} images attached: Claude will read them with your instruction.',
   'Les images n’ont pas été transmises : mets à jour l’app Studio pour Mac.': 'The images weren’t sent: update the Studio app for Mac.',
