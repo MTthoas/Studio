@@ -503,7 +503,9 @@ function mountNote(main: HTMLElement, n: Note, keep: Keep | null): void {
   const ta = E.ta, rd = E.read; if (!ta) return;
   caret.attach(ta);
   selask.attach(ta, {
-    enabled: () => noteai.canSend(n) && !noteai.opened(), // panneau ouvert : la sélection s'y joint d'elle-même
+    enabled: () => noteai.eligible(n) && !noteai.opened(), // panneau ouvert : la sélection s'y joint d'elle-même
+    locked: () => !ai.notesAllowed(),
+    unlock: () => noteai.allow(),
     run: (s, prompt) => noteai.quick(n, s, prompt),
     more: (s, prompt, answer) => noteai.adopt(n, s, prompt, answer),
     replace: (s, e, t) => replaceRange(ta, s, e, t),

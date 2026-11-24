@@ -95,7 +95,9 @@ export const notesAllowed = (): boolean => { try { return localStorage.getItem(N
 export function setNotesAllowed(on: boolean): void { try { if (on) localStorage.setItem(NOTES_KEY, '1'); else localStorage.removeItem(NOTES_KEY); } catch { /* stockage indisponible : reste coupé */ } }
 // Les notes chiffrées et celles marquées #privé ne sont JAMAIS envoyées à une IA ; et rien ne part (contenu ni titre)
 // tant que l'interrupteur général est coupé. Tout chemin qui lit une note pour une IA doit passer par ici.
-export const shareable = (n: Note): boolean => notesAllowed() && !n.enc && !n.deletedAt && !store.meta(n).tags.some(t => /^priv[ée](\/|$)/.test(t));
+export const shareable = (n: Note): boolean => notesAllowed() && sendable(n);
+/** La note pourrait partir si l'interrupteur général était ouvert (ni chiffrée, ni #privé, ni à la corbeille). */
+export const sendable = (n: Note): boolean => !n.enc && !n.deletedAt && !store.meta(n).tags.some(t => /^priv[ée](\/|$)/.test(t));
 /** Un événement issu d'une note (capture, tâche cochée) porte son titre ou son contenu : il ne part que si la note est partageable. */
 export function eventShareable(e: AppEvent): boolean {
   const id = e.origin?.noteId; if (!id) return true;

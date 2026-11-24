@@ -6,6 +6,9 @@
 export interface SelAskHooks {
   /** La note peut-elle partir vers l'IA ? (chiffrée, #privé : la bulle ne s'affiche pas) */
   enabled: () => boolean;
+  /** Notes fermées à l'IA (interrupteur général) : la bulle propose de les autoriser au lieu d'envoyer. */
+  locked?: () => boolean;
+  unlock?: () => void;
   run: (sel: { s: number; e: number; text: string }, prompt: string) => Promise<string>;
   /** Reprendre l'échange dans le panneau IA de la note. */
   more: (sel: { s: number; e: number; text: string }, prompt: string, answer: string) => void;
@@ -67,6 +70,10 @@ export function attach(ta: HTMLTextAreaElement, hooks: SelAskHooks) {
 
   function show() {
     open = true; box.hidden = false; box.classList.remove('wide');
+    if (hooks.locked?.()) {
+      box.innerHTML = `<div class="sa-lock">${SPARK}<span>L’IA ne lit pas tes notes pour l’instant.</span><button type="button" class="primary" data-a="unlock">Autoriser</button></div>`;
+      place(); return;
+    }
     box.innerHTML = `<form class="sa-row">${SPARK}<input class="sa-in" type="text" placeholder="Demander à l’IA…" aria-label="Consigne pour l’IA à propos de la sélection" autocomplete="off" spellcheck="false" enterkeyhint="send"><button class="sa-go" type="submit" title="Envoyer (↵)" aria-label="Envoyer">↵</button></form>`
       + `<div class="sa-quick">${QUICK.map(([l], i) => `<button type="button" data-q="${i}">${l}</button>`).join('')}</div>`;
     place();
@@ -135,13 +142,14 @@ export function attach(ta: HTMLTextAreaElement, hooks: SelAskHooks) {
   box.addEventListener('submit', e => { e.preventDefault(); ask(input()?.value ?? ''); });
   box.addEventListener('click', e => {
     const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-q], button[data-a]'); if (!b) return;
-    if (b.dataset.q) { ask(QUICK[+b.dataset.q][1]); return; }
+    if (b.dataset.q) { if (hooks.locked?.()) { show(); return; } ask(QUICK[+b.dataset.q][1]); return; }
     switch (b.dataset.a) {
       case 'replace': case 'after': apply(b.dataset.a); break;
       case 'copy': navigator.clipboard?.writeText(answer).then(() => { b.textContent = 'Copié'; }, () => { b.textContent = 'Copie impossible'; }); break;
       case 'again': ask(b.dataset.i ?? ''); break;
       case 'more': { const a = answer, r = { s: range.s, e: range.e, text }; close(); hooks.more(r, b.dataset.i ?? '', a); break; }
       case 'new': reselect(); break;
+      case 'unlock': hooks.unlock?.(); show(); input()?.focus(); break;
       case 'close': dismiss(); break;
     }
   });
