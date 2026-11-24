@@ -1222,7 +1222,6 @@ export default {
   'Arrêter l’équipe': 'Stop the team',
   'Afficher ou masquer l’équipe': 'Show or hide the team',
   'Technique': 'Technical',
-  'Vue de la colonne': 'Column view',
   'Vue technique': 'Technical view',
   'Voir les étapes dans l’onglet Claude Code': 'See the steps in the Claude Code tab',
   'travaille': 'working',

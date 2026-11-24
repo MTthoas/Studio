@@ -471,7 +471,7 @@ function mountNote(main: HTMLElement, n: Note, keep: Keep | null): void {
         ${n.enc && !trashed ? tb('lock', locked ? 'lock' : 'unlock', locked ? 'Note verrouillée' : 'Verrouiller maintenant', locked ? '' : SC.lock, 'on') : ''}
         ${ro ? '' : `<div class="seg" role="tablist" title="Changer de mode (${keys(SC.mode)})">${seg.map(([m, ic, l]) => `<button role="tab" data-mode="${m}" aria-selected="${m === mode}" aria-label="${l}" title="${l}">${icon(ic)}</button>`).join('')}</div>`}
         ${ro ? '' : `<button class="btn btn-ghost nai-btn" data-act="ai" aria-pressed="${noteai.opened()}" title="Panneau IA : demander, améliorer, réécrire la sélection (${keys(SC.ask)})">${icon('sparkle')}<span>IA</span></button>`}
-        ${ro || !projectsModel.projectOfNote(n) || !projectsPage.claudeAvailable() || !ai.shareable(n) ? '' : `<button class="btn btn-ghost" data-act="claude" title="Confier cette note à Claude Code, dans le projet ${esc(projectsModel.projectOfNote(n)?.name ?? '')}">${icon('terminal')}<span>Claude Code</span></button>`}
+        ${ro || !projectsModel.projectOfNote(n) || !projectsPage.claudeAvailable() || !ai.linkable(n) ? '' : `<button class="btn btn-ghost" data-act="claude" title="Confier cette note à Claude Code, dans le projet ${esc(projectsModel.projectOfNote(n)?.name ?? '')}">${icon('terminal')}<span>Claude Code</span></button>`}
         ${ro ? '' : `<button class="btn btn-ghost pj-pick" data-act="project" title="Projet de la note">${icon('folder')}<span>${esc(projectsModel.projectOfNote(n)?.name ?? 'Projet')}</span></button>`}
         ${tb('more', 'more', 'Plus d’actions')}
       </div>
@@ -513,7 +513,7 @@ function mountNote(main: HTMLElement, n: Note, keep: Keep | null): void {
   const ta = E.ta, rd = E.read; if (!ta) return;
   caret.attach(ta);
   selask.attach(ta, {
-    enabled: () => noteai.eligible(n) && !noteai.opened(), // panneau ouvert : la sélection s'y joint d'elle-même
+    enabled: () => noteai.eligible(n) && noteai.linked(n) && !noteai.opened(), // panneau ouvert : la sélection s'y joint d'elle-même
     locked: () => !ai.notesAllowed(),
     unlock: () => noteai.allow(),
     run: (s, prompt) => noteai.quick(n, s, prompt),

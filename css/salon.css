@@ -189,15 +189,36 @@ button.sl-av:focus-visible, .sl-who:focus-visible, .sl-to:focus-visible, .sl-mem
 .sl-card .btn[disabled] { opacity: .6; }
 
 /* Champ d'écriture. */
-.sl-comp { margin: 0 14px 12px; padding: 8px 10px; border: 1px solid var(--border-2); border-radius: 10px; background: var(--bg); transition: border-color var(--mo-d2), box-shadow var(--mo-d2); }
+.sl-comp { position: relative; margin: 0 14px 12px; padding: 10px 10px 8px 12px; border: 1px solid var(--border-2); border-radius: 14px; background: var(--bg); box-shadow: 0 1px 2px color-mix(in srgb, var(--text) 5%, transparent); transition: border-color var(--mo-d2), box-shadow var(--mo-d3) var(--mo-out), translate var(--mo-d3) var(--mo-out); }
+.sl-comp:focus-within { translate: 0 -1px; }
 /* Rien à envoyer : le bouton reste en retrait ; il s'allume à la première lettre. */
 .sl-comp [data-sl-send] { transition: opacity var(--mo-d2), scale var(--mo-d2) var(--mo-spring), background var(--mo-d2); }
 .sl-comp:not(.sl-ready) [data-sl-send] { opacity: .45; scale: .96; }
 .sl-comp [data-sl-send]:active { scale: var(--mo-press); }
 .sl-comp:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-.sl-comp textarea { display: block; width: 100%; min-height: 24px; max-height: 200px; resize: none; border: 0; outline: none; background: none; color: var(--text); font: var(--t-3)/1.45 var(--font); }
+.sl-comp textarea { display: block; width: 100%; min-height: 24px; max-height: 200px; resize: none; border: 0; outline: none; background: none; color: var(--text); font: var(--t-3)/1.5 var(--font); transition: height var(--mo-d2) var(--mo-out); }
+.sl-comp textarea::placeholder { color: var(--text-3); transition: opacity var(--mo-d2); }
+.sl-comp textarea:focus::placeholder { opacity: .7; }
+/* Bouton d'envoi : flèche + libellé ; la flèche s'envole à l'envoi (salon.ts, fly). */
+.sl-send { display: inline-flex; align-items: center; gap: 5px; padding-inline: 10px 12px; border-radius: 9px; overflow: hidden; }
+.sl-send .ic { width: 14px; height: 14px; }
+.sl-comp.sl-ready .sl-send .ic { animation: sl-nudge var(--mo-d4) var(--mo-spring) both; }
+@keyframes sl-nudge { from { translate: 0 3px; opacity: .4; } }
+/* Raccourcis clavier : visibles quand on écrit et que rien d'autre n'est à dire. */
+.sl-keys { flex: 1 1 140px; min-width: 0; display: flex; gap: 10px; overflow: hidden; white-space: nowrap; font-size: 11px; color: var(--text-3); opacity: 0; transition: opacity var(--mo-d3); }
+.sl-comp:focus-within .sl-keys { opacity: 1; }
+.sl-keys > span { display: inline-flex; align-items: center; gap: 3px; }
+.sl-keys kbd { min-width: 16px; height: 16px; padding: 0 3px; display: inline-grid; place-items: center; border: 1px solid var(--border-2); border-bottom-width: 2px; border-radius: 4px; background: var(--bg-list); font: 10px/1 var(--font); color: var(--text-2); }
+.sl-hint:empty { display: none; }
+.sl-hint:not(:empty) + .sl-keys { display: none; }
+/* Dépôt d'images : un voile en pointillés couvre le champ pendant le glissement (classe at-drop posée par attach.ts). */
+.sl-drop { position: absolute; inset: 4px; z-index: 2; display: flex; align-items: center; justify-content: center; gap: 8px; border: 1.5px dashed var(--accent); border-radius: 11px; background: color-mix(in srgb, var(--accent) 7%, var(--bg)); color: var(--accent); font-size: var(--t-2); font-weight: 500; opacity: 0; scale: .98; pointer-events: none; transition: opacity var(--mo-d2), scale var(--mo-d3) var(--mo-spring); }
+.sl-drop .ic { width: 16px; height: 16px; }
+.sl-comp.at-drop .sl-drop { opacity: 1; scale: 1; }
+/* Fantôme du message envoyé : part du champ et monte vers le fil (animé en JS, retiré à la fin). */
+.sl-fly { position: absolute; z-index: 4; max-height: 4.5em; overflow: hidden; padding: 0 2px; color: var(--text); font: var(--t-3)/1.5 var(--font); white-space: pre-wrap; pointer-events: none; transform-origin: right bottom; }
 .sl-comp-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
-.sl-comp-row .btn { margin-left: auto; height: 28px; flex: none; }
+.sl-comp-row .btn { margin-left: auto; height: 30px; flex: none; }
 .sl-comp-row > select { flex: none; max-width: 150px; height: 26px; padding: 0 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text-2); font: var(--t-1) var(--font); }
 .sl-comp-row > select:hover { border-color: var(--border-2); color: var(--text); }
 .sl-auto { flex: none; padding: 0 7px; border-radius: 8px; background: var(--hover); color: var(--text-3); font-size: 11px; line-height: 18px; white-space: nowrap; }
@@ -217,12 +238,20 @@ button.sl-av:focus-visible, .sl-who:focus-visible, .sl-to:focus-visible, .sl-mem
 .sl-chip:active { scale: var(--mo-press); }
 .sl-chip[style] { border-color: color-mix(in srgb, var(--c) 35%, var(--border)); color: color-mix(in srgb, var(--c) 70%, var(--text)); }
 
-/* ---- Colonne de droite : bascule Équipe / Technique, et vue Technique (styles .lv-* de pulse.css réutilisés) ---- */
-.st-seg { display: flex; gap: 14px; margin: 0 0 12px; border-bottom: 1px solid var(--border); }
-.st-seg button { margin: 0 0 -1px; padding: 0 0 6px; border: 0; border-bottom: 1px solid transparent; background: none; font: inherit; font-size: var(--t-1); color: var(--text-3); cursor: pointer; transition: color var(--mo-d2), border-color var(--mo-d2); }
-.st-seg button:hover { color: var(--text-2); }
-.st-seg button[aria-pressed="true"] { color: var(--text); border-bottom-color: var(--text); }
-.st-seg button:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--focus, var(--border-2)); border-radius: 3px; }
+/* ---- Colonne de droite : Équipe en haut, Technique dessous (30 % de la hauteur), chacune défile seule.
+   Vue Technique : styles .lv-* de pulse.css réutilisés. ---- */
+.sl-team { flex: 1 1 0; min-height: 0; overflow: hidden auto; padding: 12px 14px; }
+.sl-tech { flex: 0 0 30%; min-height: 0; overflow: hidden auto; padding: 0 14px 12px; border-top: 1px solid var(--border); }
+.sl-tech h4 { position: sticky; top: 0; z-index: 1; margin: 0 -14px 6px; padding: 10px 14px 4px; background: var(--bg-list); }
+.sl-box.sl-now-open .sl-tech h4 { background: var(--bg); }
+/* Squelette : lignes et avatars qui miroitent pendant que le fil démarre ; le vrai contenu entre ensuite une fois (sl-reveal). */
+.sl-skel { display: flex; flex-direction: column; gap: 10px; }
+.sl-skel i, .sl-skel-av { display: block; height: 9px; border-radius: 5px; background: linear-gradient(90deg, var(--active), var(--hover), var(--active)); background-size: 200% 100%; animation: skel 1.4s ease-in-out infinite; animation-delay: calc(var(--i, 0) * 120ms); }
+.sl-skel-mem { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.sl-skel-mem > div { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.sl-skel .sl-skel-av { flex: none; width: 34px; height: 34px; border-radius: 50%; }
+.sl-reveal :is(.sl-mem, .sl-set, .sl-quota, .lv, .st-wait, .lv-more) { animation: sl-in var(--mo-d4) var(--mo-out) both; }
+.sl-reveal .sl-tech :is(.lv, .st-wait, .lv-more) { animation-delay: var(--mo-d2); }
 .sl-now .lv { margin: 0 0 14px; padding: 0 0 12px; border-block-start: 0; }
 .sl-now .lv:last-child { border-bottom: 0; margin-bottom: 0; }
 .st-who { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0; font-size: var(--t-1); font-weight: 600; color: var(--text); }
@@ -234,7 +263,7 @@ button.sl-av:focus-visible, .sl-who:focus-visible, .sl-to:focus-visible, .sl-mem
 .st-wait { margin: 0; color: var(--text-3); font-size: var(--t-1); }
 
 /* ---- En ce moment (droite) ---- */
-.sl-now { min-width: 0; min-height: 0; overflow: hidden auto; padding: 12px 14px; border-left: 1px solid var(--border); background: var(--bg-list); transition: opacity var(--mo-d3), padding var(--mo-d4) var(--mo-out), visibility 0s; }
+.sl-now { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; border-left: 1px solid var(--border); background: var(--bg-list); transition: opacity var(--mo-d3), padding var(--mo-d4) var(--mo-out), visibility 0s; }
 .sl-now h4 { margin: 0 0 8px; font-size: var(--t-1); font-weight: 500; color: var(--text-3); }
 .sl-mem { width: calc(100% + 12px); margin: 0 -6px; display: flex; align-items: flex-start; gap: 10px; padding: 6px; border: 0; border-radius: 8px; background: none; color: var(--text); text-align: left; font: inherit; cursor: pointer; transition: background var(--mo-d2), scale var(--mo-d2) var(--mo-out); }
 .sl-mem:active { scale: var(--mo-press-row); }
@@ -293,7 +322,7 @@ button.sl-av:focus-visible, .sl-who:focus-visible, .sl-to:focus-visible, .sl-mem
   .sl-box, .sl-box.sl-solo { grid-template-columns: 220px minmax(0, 1fr); }
   .sl-meta, .sl-head [data-sl="stop"] span { display: none; }
   .sl-now { display: none; }
-  .sl-box.sl-now-open .sl-now { display: block; position: absolute; z-index: 3; top: 48px; right: 8px; bottom: auto; max-height: 70%; width: min(300px, calc(100% - 16px)); border: 1px solid var(--border-2); border-radius: 10px; background: var(--bg); box-shadow: var(--shadow); animation: sl-pop var(--mo-d3) var(--mo-out) both; transform-origin: top right; }
+  .sl-box.sl-now-open .sl-now { display: flex; position: absolute; z-index: 3; top: 48px; right: 8px; bottom: auto; height: 70%; width: min(300px, calc(100% - 16px)); border: 1px solid var(--border-2); border-radius: 10px; background: var(--bg); box-shadow: var(--shadow); animation: sl-pop var(--mo-d3) var(--mo-out) both; transform-origin: top right; }
   .sl-box.sl-now-open.sl-solo .sl-now, .sl-box.sl-now-open .sl-now:empty { display: none; }
 }
 @media (max-width: 719px) {
@@ -308,11 +337,12 @@ button.sl-av:focus-visible, .sl-who:focus-visible, .sl-to:focus-visible, .sl-mem
 /* Mouvement coupé : plus aucune boucle (les entrées, elles, suivent déjà les jetons --mo-*). */
 :root[data-motion="off"] :is(.sl-dot.work, .sl-dots i), :root[data-motion="subtle"] .sl-dot.work { animation: none; }
 :root[data-motion="off"] .sl-box, :root[data-motion="off"] .sl-now { transition: none; }
-@media (prefers-reduced-motion: reduce) { .sl-dot.work, .sl-dots i { animation: none; } .sl-box, .sl-now { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .sl-dot.work, .sl-dots i, .sl-skel i, .sl-skel-av, .sl-send .ic { animation: none; } .sl-box, .sl-now, .sl-comp, .sl-drop { transition: none; } }
+:root[data-motion="off"] :is(.sl-skel i, .sl-skel-av) { animation: none; }
 /* Images jointes (attach.ts) : bouton juste avant « Envoyer », vignettes sous le champ, rappel sous un message en cours d'envoi. */
 .sl-comp .at-strip { margin-top: 6px; }
 .sl-comp-row .at-add { margin-left: auto; flex: none; }
 .sl-comp-row .at-add ~ .btn { margin-left: 0; }
-.sl-comp.at-drop { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.sl-comp.at-drop { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
 .sl-msg .at-gal { margin-top: 6px; }
 .sl-pics { margin: 4px 0 0; font-size: var(--t-1); color: var(--text-3); }

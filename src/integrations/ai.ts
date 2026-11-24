@@ -93,11 +93,21 @@ const providerOf = (name: string): Provider | null => PROVIDER_NAMES[fold(name |
 const NOTES_KEY = 'studio.ai.notes';
 export const notesAllowed = (): boolean => { try { return localStorage.getItem(NOTES_KEY) === '1'; } catch { return false; } };
 export function setNotesAllowed(on: boolean): void { try { if (on) localStorage.setItem(NOTES_KEY, '1'); else localStorage.removeItem(NOTES_KEY); } catch { /* stockage indisponible : reste coupé */ } }
-// Les notes chiffrées et celles marquées #privé ne sont JAMAIS envoyées à une IA ; et rien ne part (contenu ni titre)
-// tant que l'interrupteur général est coupé. Tout chemin qui lit une note pour une IA doit passer par ici.
+// Deux niveaux, et rien ne part (contenu ni titre) tant que l'interrupteur général est coupé :
+// - `shareable` : ce que l'IA peut lire d'office (notes du projet, contextes IA, « Tout cocher ») : ni chiffrée, ni #privé ;
+// - `linkable` : ce que l'utilisateur peut joindre à la main, une note à la fois : une note chiffrée en fait partie,
+//   seulement déverrouillée (sinon son contenu n'existe pas ici) ; se reverrouiller la retire aussitôt.
+// Les notes #privé ne partent jamais. Tout chemin qui lit une note pour une IA passe par l'une des deux.
+const isPrivate = (n: Note): boolean => store.meta(n).tags.some(t => /^priv[ée](\/|$)/.test(t));
 export const shareable = (n: Note): boolean => notesAllowed() && sendable(n);
-/** La note pourrait partir si l'interrupteur général était ouvert (ni chiffrée, ni #privé, ni à la corbeille). */
-export const sendable = (n: Note): boolean => !n.enc && !n.deletedAt && !store.meta(n).tags.some(t => /^priv[ée](\/|$)/.test(t));
+/** La note pourrait partir d'office si l'interrupteur général était ouvert (ni chiffrée, ni #privé, ni à la corbeille). */
+export const sendable = (n: Note): boolean => !n.enc && linkSendable(n);
+/** Note jointe explicitement par l'utilisateur (case cochée une à une, note ouverte, bouton sur la note). */
+export const linkable = (n: Note): boolean => notesAllowed() && linkSendable(n);
+/** `linkable` sans l'interrupteur général. */
+export const linkSendable = (n: Note): boolean => !n.deletedAt && !isPrivate(n) && !store.isLocked(n);
+/** Note chiffrée encore verrouillée : les sélecteurs la montrent grisée (à déverrouiller pour la joindre). */
+export const lockedNote = (n: Note): boolean => !!n.enc && !n.deletedAt && store.isLocked(n);
 /** Un événement issu d'une note (capture, tâche cochée) porte son titre ou son contenu : il ne part que si la note est partageable. */
 export function eventShareable(e: AppEvent): boolean {
   const id = e.origin?.noteId; if (!id) return true;
@@ -154,8 +164,8 @@ export interface RunContext {
 
 function noteTools(ctx: RunContext, scope: sc.Scope): Tool[] {
   const picked = new Set(ctx.notes ?? []);
-  // L'IA ne lit jamais une note que l'utilisateur n'a pas sélectionnée.
-  const visible = (n: Note) => picked.has(n.id) && shareable(n) && sc.noteIn(scope, n);
+  // L'IA ne lit jamais une note que l'utilisateur n'a pas sélectionnée (une note chiffrée seulement si elle est déverrouillée).
+  const visible = (n: Note) => picked.has(n.id) && linkable(n) && sc.noteIn(scope, n);
   const find = (t: string) => { const n = store.findByTitle(t || ''); return n && visible(n) ? n : null; };
   const own = scope.project?.tag;
   return [

@@ -4,7 +4,7 @@
 // La demande part par `hooks.run` (features/noteai.ts `quick`) : même contexte que le panneau (note, notes du projet).
 
 export interface SelAskHooks {
-  /** La note peut-elle partir vers l'IA ? (chiffrée, #privé : la bulle ne s'affiche pas) */
+  /** La note peut-elle partir vers l'IA ? (#privé, chiffrée verrouillée : la bulle ne s'affiche pas) */
   enabled: () => boolean;
   /** Notes fermées à l'IA (interrupteur général) : la bulle propose de les autoriser au lieu d'envoyer. */
   locked?: () => boolean;

@@ -22,7 +22,7 @@ const titleOf = (id: string): string => store.get(id)?.title.trim() || 'Sans tit
 /**
  * `prompt` : consigne de l'utilisateur ; `ids` : notes liées.
  * `text` : la consigne + une ligne avec les titres (jamais le contenu) ; `sealed` : le contenu chiffré, absent s'il n'y a aucune note ;
- * `refused` : titres des notes non jointes (fermées à l'IA, chiffrées, #privé, introuvables, ou au-delà des limites de Réglages → Consignes).
+ * `refused` : titres des notes non jointes (fermées à l'IA, chiffrées et verrouillées, #privé, introuvables, ou au-delà des limites de Réglages → Consignes).
  * Interrupteur général coupé : toutes les notes sont refusées.
  */
 export async function seal(prompt: string, ids: string[], ctxOf: Project | null = null): Promise<{ text: string; refused: string[]; sealed?: Sealed }> {
@@ -31,7 +31,7 @@ export async function seal(prompt: string, ids: string[], ctxOf: Project | null 
   const MAX_NOTE = tuning.num('ctx.attach'), MAX_ALL = tuning.num('ctx.attachAll');
   for (const id of ids) {
     const n = store.get(id), body = n ? store.getBody(n) : null;
-    if (!n || body == null || !ai.shareable(n)) { refused.push(titleOf(id)); continue; }
+    if (!n || body == null || !ai.linkable(n)) { refused.push(titleOf(id)); continue; }
     const chunk = body.length > MAX_NOTE ? body.slice(0, MAX_NOTE) + '\n…(tronquée)' : body;
     if (total + chunk.length > MAX_ALL) { refused.push(titleOf(id)); continue; }
     total += chunk.length; titles.push(titleOf(id)); parts.push(`## Note « ${titleOf(id)} »\n\n${chunk}`);

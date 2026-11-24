@@ -54,6 +54,28 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'salon-colonne-champ-20261124', date: '2026-11-24', icon: 'compose', hue: 'blue',
+    title: 'Salon : colonne et champ revus',
+    lead: 'Équipe et Technique se lisent ensemble dans la colonne de droite, et le champ d’écriture s’anime à l’envoi.',
+    bits: [
+      ['list', 'Sans onglets', 'Équipe en haut, Technique dessous sur 30 % de la hauteur'],
+      ['hourglass', 'Au démarrage', 'un squelette tient la place pendant que l’équipe se lance'],
+      ['upload', 'Images', 'glisser des images sur le champ affiche une zone de dépôt'],
+      ['sparkle', 'Envoi', 'le message s’envole vers le fil ; raccourcis clavier rappelés sous le champ'],
+    ],
+    where: ['Projets', 'Salon'],
+    visual: { kind: 'flow', steps: [['Squelette', 'gray', 'hourglass'], ['Équipe', 'blue', 'list'], ['Technique', 'green', 'code']] } },
+  { id: 'notes-chiffrees-ia-20261124', date: '2026-11-24', icon: 'lock', hue: 'green',
+    title: 'Notes chiffrées et IA',
+    lead: 'Une note chiffrée n’est lue par l’IA que si elle est jointe à la main, une fois déverrouillée.',
+    bits: [
+      ['lock', 'Jamais d’office', 'ni notes du projet, ni contextes IA, ni « Tout cocher » ne l’incluent'],
+      ['check', 'À la main', 'elle se coche une à une dans les listes, avec un cadenas ; verrouillée, elle reste grisée'],
+      ['sparkle', 'Panneau IA', '« Cette note chiffrée » se joint pour cette note seule ; actions rapides et sélection le demandent d’abord'],
+      ['shield', 'Verrouillage', 'reverrouiller la note la détache de l’IA'],
+    ],
+    where: ['Notes', 'une note chiffrée'],
+    visual: { kind: 'flow', steps: [['Chiffrée', 'gray', 'lock'], ['Déverrouillée', 'blue', 'unlock'], ['Jointe', 'green', 'check']] } },
   { id: 'interface-simplifiee-20261123', date: '2026-11-23', icon: 'board', hue: 'gray',
     title: 'Interface simplifiée',
     lead: 'Chaque écran montre l’essentiel ; les réglages et les vues moins courantes se rangent derrière un bouton.',

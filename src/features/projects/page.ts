@@ -25,7 +25,7 @@ import * as infra from './infra.ts';
 import * as specs from './specs.ts';
 import * as chart from '../../ui/chart.ts';
 import * as bridge from '../../integrations/remote.ts';
-import { shareable, notesAllowed } from '../../integrations/ai.ts';
+import { shareable, linkable, notesAllowed } from '../../integrations/ai.ts';
 
 let app!: AppShell;
 export const init = (shell: AppShell): void => {
@@ -108,21 +108,24 @@ function taskRows(p: Project): string {
 }
 const taskBox = (p: Project) => `<form class="td-add pj-add"><span class="td-plus">${icon('plus')}</span><input placeholder="Nouvelle tâche du projet, ex. « Corriger la synchro vendredi »" aria-label="Nouvelle tâche du projet" autocomplete="off"></form><div class="pj-tasklist">${taskRows(p)}</div>`;
 // Notes cochées dans l'onglet Notes, par projet : la sélection part vers Claude Code (une consigne, ou un agent par
-// note) ou vers la page Claude, d'un clic. Seules les notes lisibles par l'IA se cochent (ni chiffrées, ni #privé).
+// note) ou vers la page Claude, d'un clic. Les notes #privé ne se cochent pas ; une note chiffrée se coche une à une,
+// déverrouillée (« Tout cocher » la saute, la reverrouiller la retire de la sélection).
 const pickedNotes = new Map<string, Set<string>>();
 function picksOf(p: Project): Set<string> { let s = pickedNotes.get(p.id); if (!s) { s = new Set(); pickedNotes.set(p.id, s); } return s; }
-const pickable = (p: Project): Note[] => model.notesOf(p).filter(n => shareable(n) && store.getBody(n) != null);
+const pickable = (p: Project): Note[] => model.notesOf(p).filter(n => linkable(n) && store.getBody(n) != null);
+/** Ce que « Tout cocher » coche : tout sauf les notes chiffrées. */
+const bulkPickable = (p: Project): Note[] => pickable(p).filter(n => !n.enc);
 /** Barre de sélection : une invitation tant que rien n'est coché, puis les envois possibles. */
 function pickBarHTML(p: Project): string {
-  const all = pickable(p), sel = picksOf(p), k = all.filter(n => sel.has(n.id)).length, cc = !!bridge.where();
+  const all = pickable(p), bulk = bulkPickable(p), sel = picksOf(p), k = all.filter(n => sel.has(n.id)).length, cc = !!bridge.where();
   // Interrupteur général coupé : on le dit, plutôt qu’une liste sans cases qui ne s’explique pas.
   if (!notesAllowed()) return `<span class="pj-pickbar-t">${icon('lock')}Notes fermées à l’IA : aucune ne peut être liée à Claude.</span><span class="pj-pickbar-end"><button class="link-btn" data-open-conn="ia">Autoriser dans les Réglages</button></span>`;
   if (!all.length) return '';
-  if (!k) return `<span class="pj-pickbar-t">${icon('check')}Coche des notes pour les envoyer à Claude${cc ? ' ou à Claude Code' : ''}.</span><span class="pj-pickbar-end"><button class="link-btn" data-pj="pick-all">Tout cocher (${all.length})</button></span>`;
+  if (!k) return `<span class="pj-pickbar-t">${icon('check')}Coche des notes pour les envoyer à Claude${cc ? ' ou à Claude Code' : ''}.</span><span class="pj-pickbar-end"><button class="link-btn" data-pj="pick-all">Tout cocher (${bulk.length})</button></span>`;
   return `<span class="pj-pickbar-t"><b>${k}</b> note${k > 1 ? 's' : ''} cochée${k > 1 ? 's' : ''}</span>
     ${cc ? `<button class="btn btn-primary" data-pj="pick-cc" title="Une consigne Claude Code, avec ces notes jointes">${icon('terminal')}Claude Code</button>${k > 1 ? `<button class="btn" data-pj="pick-fan" title="Prépare un agent Claude Code par note : ils travaillent en parallèle, chacun dans sa copie">${icon('bolt')}Un agent par note</button>` : ''}` : ''}
     <button class="btn" data-pj="pick-claude" title="Conversation du projet : Claude lit ces notes">${icon('sparkle')}Claude</button>
-    <span class="pj-pickbar-end">${k < all.length ? '<button class="link-btn" data-pj="pick-all">Tout cocher</button>' : ''}<button class="link-btn" data-pj="pick-none">Tout décocher</button></span>`;
+    <span class="pj-pickbar-end">${bulk.some(n => !sel.has(n.id)) ? '<button class="link-btn" data-pj="pick-all">Tout cocher</button>' : ''}<button class="link-btn" data-pj="pick-none">Tout décocher</button></span>`;
 }
 /** Importe des fichiers de contexte (CLAUDE.md, AGENTS.md, .cursorrules, notes d'architecture…) : une note du projet
  *  par fichier, marquée #contexte-ia. Titre : le premier titre « # » du fichier, sinon son nom. */
@@ -165,13 +168,13 @@ function noteRows(p: Project): string {
   const cc = bridge.where(), sel = picksOf(p), ok = new Set(pickable(p).map(n => n.id));
   // Une note supprimée, sortie du projet ou devenue privée quitte la sélection.
   for (const id of [...sel]) if (!ok.has(id)) sel.delete(id);
-  const pick = (n: Note) => ok.has(n.id) ? `<label class="pj-pick" title="Cocher pour l’envoyer à l’IA"><input type="checkbox" data-pj-pick="${n.id}"${sel.has(n.id) ? ' checked' : ''} aria-label="Cocher la note ${esc(titleOf(n))}"></label>` : `<span class="pj-pick" title="Chiffrée ou #privé : jamais envoyée à l’IA">${icon('lock')}</span>`;
+  const pick = (n: Note) => ok.has(n.id) ? `<label class="pj-pick${n.enc ? ' pj-enc' : ''}" title="${n.enc ? 'Note chiffrée : lue par l’IA seulement si tu la coches' : 'Cocher pour l’envoyer à l’IA'}"><input type="checkbox" data-pj-pick="${n.id}"${sel.has(n.id) ? ' checked' : ''} aria-label="Cocher la note ${esc(titleOf(n))}"></label>` : `<span class="pj-pick" title="${store.isLocked(n) ? 'Note chiffrée verrouillée : déverrouille-la pour la joindre à l’IA' : '#privé : jamais envoyée à l’IA'}">${icon('lock')}</span>`;
   // Un seul bouton IA par ligne : un menu (Claude, Claude Code) quand Claude Code est joignable, sinon Claude directement.
   const ask = (n: Note) => !ok.has(n.id) ? '' : cc
     ? `<button class="pj-cc pj-ai" data-pj-ai-note="${n.id}" title="Envoyer cette note à Claude ou à Claude Code" aria-label="Envoyer à l’IA">${icon('sparkle')}</button>`
     : `<button class="pj-cc pj-ai" data-pj-ask-note="${n.id}" title="Discuter de cette note avec Claude" aria-label="Discuter avec Claude">${icon('sparkle')}</button>`;
-  const meta = (n: Note) => [n.id === p.id ? 'Note du projet' : '', model.isContext(n) ? '<b class="pj-ctxtag" title="Lue d’office par l’IA dans ce projet">Contexte IA</b>' : '', esc(rel(n.updated))].filter(Boolean).join(' · ');
-  const row = (n: Note) => `<div class="pj-row pj-noterow${n.id === p.id ? ' pj-home' : ''}${sel.has(n.id) ? ' sel' : ''}">${pick(n)}<button class="w-row" data-open-note="${n.id}">${icon(n.id === p.id ? 'folder' : 'notes')}<span>${esc(titleOf(n))}</span><em>${meta(n)}</em></button>${ask(n)}</div>`;
+  const meta = (n: Note) => [n.id === p.id ? 'Note du projet' : '', n.enc ? `<span class="pj-enctag">${store.isLocked(n) ? 'Chiffrée, verrouillée' : 'Chiffrée'}</span>` : '', model.isContext(n) ? '<b class="pj-ctxtag" title="Lue d’office par l’IA dans ce projet">Contexte IA</b>' : '', esc(rel(n.updated))].filter(Boolean).join(' · ');
+  const row = (n: Note) => `<div class="pj-row pj-noterow${n.id === p.id ? ' pj-home' : ''}${sel.has(n.id) ? ' sel' : ''}">${pick(n)}<button class="w-row" data-open-note="${n.id}">${icon(n.id === p.id ? 'folder' : n.enc ? 'lock' : 'notes')}<span>${esc(titleOf(n))}</span><em>${meta(n)}</em></button>${ask(n)}</div>`;
   const ctxs = model.contextsOf(p).filter(n => ok.has(n.id)).length;
   return `<div class="pj-pickbar${sel.size ? ' on' : ''}" data-pickbar>${pickBarHTML(p)}</div>
     ${notes.map(row).join('')}
@@ -777,7 +780,7 @@ export function mount(main: HTMLElement): void {
     if (!p) return;
     if (act === 'edit') app.openNote(p.id);
     if (act === 'pick-all' || act === 'pick-none') {
-      const sel = picksOf(p); sel.clear(); if (act === 'pick-all') for (const n of pickable(p)) sel.add(n.id);
+      const sel = picksOf(p); if (act === 'pick-all') for (const n of bulkPickable(p)) sel.add(n.id); else sel.clear();
       const box = $('[data-sec="notes"] .pj-sec-body', root); if (box) box.innerHTML = noteRows(p);
       return;
     }
