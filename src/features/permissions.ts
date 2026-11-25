@@ -14,7 +14,7 @@ import * as native from '../core/native.ts';
 import { esc } from '../lib/markdown.ts';
 import { $, icon, toast, confirmBox } from '../ui/kit.ts';
 
-interface Values { web: boolean; anyCommand: boolean; commandsInRead: boolean; projectItems: boolean; commands: string[]; path: string[]; browser: boolean; sites: string[]; terminal: boolean }
+interface Values { web: boolean; anyCommand: boolean; commandsInRead: boolean; projectItems: boolean; artifacts: boolean; commands: string[]; path: string[]; browser: boolean; sites: string[]; terminal: boolean }
 interface Preview { read: string[]; readCommands: string[]; edit: string[]; editCommands: string[]; npx: boolean }
 type ListKey = 'commands' | 'path' | 'sites';
 const LISTS: ListKey[] = ['commands', 'path', 'sites'];
@@ -31,7 +31,7 @@ const strings = (v: unknown): string[] => Array.isArray(v) ? v.filter((x): x is 
 function parse(r: native.Reply): State | null {
   const v = r.values as Record<string, unknown> | undefined, d = r.defaults as Record<string, unknown> | undefined, p = r.preview as Record<string, unknown> | undefined;
   if (!r.ok || !v || !d || !p) return null;
-  const values = (o: Record<string, unknown>): Values => ({ web: o.web === true, anyCommand: o.anyCommand === true, commandsInRead: o.commandsInRead === true, projectItems: o.projectItems === true, commands: strings(o.commands), path: strings(o.path),
+  const values = (o: Record<string, unknown>): Values => ({ web: o.web === true, anyCommand: o.anyCommand === true, commandsInRead: o.commandsInRead === true, projectItems: o.projectItems === true, artifacts: o.artifacts === true, commands: strings(o.commands), path: strings(o.path),
     browser: o.browser === true, sites: strings(o.sites), terminal: o.terminal !== false });
   return { values: values(v), defaults: values(d), changed: strings(r.changed),
     preview: { read: strings(p.read), readCommands: strings(p.readCommands), edit: strings(p.edit), editCommands: strings(p.editCommands), npx: p.npx !== false } };
@@ -103,6 +103,8 @@ function bodyHTML(): string {
       ${listHTML('sites', 'Sites ouverts au navigateur', 'Une adresse par ligne : <code>exemple.fr</code> (https), <code>http://localhost:5173</code>. Chaque sous-domaine se liste à part (<code>www.exemple.fr</code>) ; le chemin est ignoré. Les redirections vers un autre site ne sont pas toutes bloquées : ce filtre n’est pas un cloisonnement strict. Au premier lancement, <code>npx</code> télécharge Playwright MCP, et il faut Google Chrome sur ce Mac.', [])}</section>
     <section class="cx-sec tn"><h4>${icon('check')}Notes et tâches du projet</h4>
       ${check('projectItems', 'Créer des notes et des tâches dans le projet de l’agent', 'Dans les deux modes. L’agent les écrit à la fin de son compte rendu, et Studio les crée dans le projet quand il a fini : 20 tâches et 5 notes par tour au plus. Il ne modifie ni ne supprime jamais une note existante, et cela ne lui ouvre aucun outil de plus sur ce Mac.')}</section>
+    <section class="cx-sec tn"><h4>${icon('link')}Pages publiées (artifacts)</h4>
+      ${check('artifacts', 'Laisser l’agent publier des pages sur claude.ai (outil Artifact)', 'Graphique, tableau de bord, revue annotée : l’agent publie une page interactive, privée à ton compte claude.ai, que tu rouvres depuis le lien affiché sous son fil, dans ton navigateur ou sur mobile. Demande d’être connecté à claude.ai (<code>/login</code>, pas une clé d’API) ; le contenu de la page est envoyé à Anthropic. Sur ce Mac seulement, pas avec un modèle local.')}</section>
     <section class="cx-sec tn"><h4>${icon('folder')}Dossiers des outils</h4>
       ${listHTML('path', 'Ajoutés en tête du PATH', 'Ouvert depuis le Dock, Studio n’a qu’un PATH minimal : un agent ne trouve ni <code>cargo</code>, ni les outils de Homebrew. Un dossier absolu par ligne, <code>~</code> accepté. Vide : le PATH de l’app.', PATH_IDEAS)}</section>`;
 }

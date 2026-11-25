@@ -36,7 +36,7 @@ interface Quota { status?: string; resetsAt?: number; rateLimitType?: string; is
 /** `file`, `old`, `new` : sur une écriture (Edit, Write…), le chemin et les extraits avant/après ; `to`, `body` : sur une délégation
  *  (Agent, Task), le sous-agent visé et la consigne qu'il reçoit. Absents avec une app Mac ancienne. */
 export interface Action { at: string; kind: string; text: string; add?: number | string; del?: number | string; file?: string; old?: string; new?: string; to?: string; body?: string; /** Chemins des images jointes à cette consigne (absent avec une app Mac ancienne). */ images?: string[] }
-export interface AgentRun { machine?: string; host?: string; run: string; mode: string; prompt: string; status: string; session: string; worktree: string; started: string; finished: string; result: string; lastText: string; turns: number; denials: string[]; quota?: Quota | null; /** Notes et tâches envoyées au projet par ce tour (features/projects/items.ts). */ items?: { tasks?: number; notes?: number } }
+export interface AgentRun { machine?: string; host?: string; run: string; mode: string; prompt: string; status: string; session: string; worktree: string; started: string; finished: string; result: string; lastText: string; turns: number; denials: string[]; /** Pages publiées sur claude.ai par l'outil Artifact (Réglages → Autorisations). */ artifacts?: string[]; quota?: Quota | null; /** Notes et tâches envoyées au projet par ce tour (features/projects/items.ts). */ items?: { tasks?: number; notes?: number } }
 export interface Worktree {
   name: string; branch: string; /** Commit de la copie (absent avec une app Mac ancienne). */ head?: string; changes: number; ahead: number; behind?: number; pushed: boolean; conflicts?: string[];
   /** Titre du dernier commit de la copie, si elle en a un. */ subject?: string;
@@ -807,6 +807,13 @@ function sentHTML(r: AgentRun): string {
   return `<p class="ag-sent">${icon('check')}${esc(what)} ajoutée${t + n > 1 ? 's' : ''} au projet</p>`;
 }
 
+/** Pages publiées par l'agent (outil Artifact de Claude Code) : un lien par page, ouvert hors de Studio. */
+function artifactsHTML(r: AgentRun): string {
+  const l = r.artifacts ?? [];
+  if (!l.length) return '';
+  return `<p class="ag-sent ag-artifacts">${icon('link')}${l.map((u, i) => `<a class="link-btn" href="${esc(u)}" target="_blank" rel="noopener" title="${esc(u)}">Page publiée${l.length > 1 ? ` ${i + 1}` : ''}</a>`).join(' · ')}</p>`;
+}
+
 function runCard(r: AgentRun): string {
   // Agent terminé dans une copie : on montre où en est son travail (à publier, PR, fusionné) plutôt qu'un simple « Terminé ».
   const w = !live(r) && r.status === 'done' && r.worktree ? trees.find(t => t.name === r.worktree) : undefined;
@@ -816,7 +823,7 @@ function runCard(r: AgentRun): string {
   const said = live(r) ? r.lastText : r.result ? r.result.replace(/[#*`>]/g, '').slice(0, 220) : '';
   return `<article class="ag-run${live(r) ? ' live' : ''}${st ? ` st-${st}` : ''}"><div class="ag-run-row">${w && st && st !== 'idle' ? stageBadge(st) : pill(r.status)}<span class="ag-run-t" title="${esc([r.prompt, said, more].filter(Boolean).join('\n'))}">${esc(r.prompt)}</span><time>${esc(elapsed(r))}</time>
     <span class="ag-run-act">${r.session ? `<button class="btn btn-ghost" data-ss="${esc(r.session)}">Suivre</button>` : ''}${live(r) ? `<button class="btn btn-ghost" data-ag="stop" data-run="${esc(r.run)}">Arrêter</button>` : `<button class="icon-btn ag-hide" data-ag="hide-run" data-run="${esc(r.run)}" title="Retirer de la liste (la conversation reste dans Sessions)" aria-label="Retirer cet agent de la liste">${icon('x')}</button>`}</span></div>
-    ${sentHTML(r)}
+    ${sentHTML(r)}${artifactsHTML(r)}
     ${r.denials.length ? `<p class="ag-denied" title="${esc(r.denials.join('\n'))}">${icon('shield')}${r.denials.length} action${r.denials.length > 1 ? 's' : ''} refusée${r.denials.length > 1 ? 's' : ''} par les garde-fous${bridge.local() ? ' · <button type="button" class="link-btn" data-open-conn="autorisations">Régler les autorisations</button>' : ''}</p>` : ''}</article>`;
 }
 
