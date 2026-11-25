@@ -17,6 +17,9 @@
 #     Le build complet et la publication se font une seule fois, sur main, après la fusion ;
 #   - push sur une autre branche → rien (avant, chaque push d'agent lançait deux builds : « push » ET « pull_request »,
 #     dans deux groupes de concurrence différents ; le second annulait parfois le premier, d'où des builds « au hasard »).
+#   - PR fermée ou fusionnée → une exécution vide (tous les jobs sautés) dont le seul rôle est d'annuler le build de PR
+#     encore en cours. Studio pousse la branche puis fusionne quelques secondes après : sans elle, le build de PR
+#     (macOS compris) continuait pour rien et prenait le runner macOS dont le build de main avait besoin.
 #   Une branche poussée sans PR se vérifie à la main : Actions → Build → Run workflow.
 #
 # Pourquoi un seul job macOS : le travail dure 2 à 3 minutes, mais un runner macOS se fait attendre 5 à 10 minutes.
@@ -28,23 +31,30 @@ on:
     branches: [main]
     tags: ['v*']
   pull_request:
+    types: [opened, synchronize, reopened, closed]
   workflow_dispatch:
 
 # Par défaut, le jeton du workflow ne peut que lire le dépôt.
 permissions:
   contents: read
 
-# Un seul build à la fois par PR (ou par branche lancée à la main) : un nouveau push annule le build devenu périmé.
-# Jamais sur main ni sur un tag : chaque fusion doit aller jusqu'à sa publication. Leur groupe est donc propre à
-# chaque exécution : dans un groupe partagé, GitHub ne garde qu'UN build en attente et annule les autres, même sans
-# `cancel-in-progress` (deux fusions rapprochées, et la première publication disparaissait).
+# Un seul build à la fois par PR (ou par branche lancée à la main) : un nouveau push, ou la fusion, annule le build
+# devenu périmé.
+# Sur main (et sur un tag), un seul build à la fois aussi, mais jamais annulé en cours : GitHub ne garde qu'UN build en
+# attente dans le groupe et remplace l'ancien par le plus récent. C'est voulu : le dernier commit de main contient
+# toutes les fusions d'avant, donc une seule version « avec tout » sort, et dans l'ordre.
+# Avant, chaque fusion avait son propre groupe : deux fusions rapprochées lançaient deux builds macOS en parallèle ; le
+# plus ancien, servi plus tard par un runner, publiait APRÈS le plus récent (v1.0.301 après v1.0.302, sans la
+# dernière fusion) et son paquet npm échouait. La garde « Déjà publié ? » du job release couvre ce qui resterait.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || (github.event_name == 'push' && github.run_id) || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
     name: Vérifications
+    # PR fermée ou fusionnée : rien à vérifier, l'exécution ne sert qu'à annuler le build de PR en cours.
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -185,13 +195,30 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          # Tout l'historique : la garde ci-dessous compare ce commit à celui de la dernière Release.
+          fetch-depth: 0
+      # Une Release plus récente qui contient déjà ce commit : publier celle-ci la ferait passer pour la dernière
+      # (l'updater prend /releases/latest) sans les fusions d'après, et le paquet npm, de version plus basse, échoue.
+      - name: Déjà publié ?
+        id: deja
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LAST="$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .target_commitish 2>/dev/null || true)"
+          if [[ "$GITHUB_REF" == refs/heads/main && -n "$LAST" && "$LAST" != "$GITHUB_SHA" ]] \
+             && git merge-base --is-ancestor "$GITHUB_SHA" "$LAST" 2>/dev/null; then
+            echo "Ce commit est déjà dans la Release de $LAST : rien à publier."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
       - uses: actions/setup-node@v7
+        if: steps.deja.outputs.skip != 'true'
         with:
           node-version: 24
           registry-url: https://npm.pkg.github.com
           scope: '@mtthoas'
       - name: Version
         id: v
+        if: steps.deja.outputs.skip != 'true'
         run: |
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             VERSION="${GITHUB_REF_NAME#v}"
@@ -201,12 +228,15 @@ jobs:
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@v8
+        if: steps.deja.outputs.skip != 'true'
         with:
           name: Studio-macOS
       - uses: actions/download-artifact@v8
+        if: steps.deja.outputs.skip != 'true'
         with:
           name: Studio-web
       - name: Créer la Release
+        if: steps.deja.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -215,6 +245,7 @@ jobs:
             gh release create "$TAG" Studio-macOS.zip Studio-web.zip \
               --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "Studio $TAG" --generate-notes
       - name: Publier le paquet @mtthoas/studio
+        if: steps.deja.outputs.skip != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.v.outputs.version }}
