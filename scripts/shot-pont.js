@@ -30,6 +30,9 @@
     sess(S_4, { title: 'Documentation de l’API publique', firstPrompt: 'Écris la documentation des routes publiques.', lastPrompt: 'Ajoute un exemple de pagination.',
       started: at(80 * 3600), updated: at(78 * 3600), active: at(78 * 3600), live: false, prompts: 2, branch: 'main',
       tools: { Read: 4, Write: 2 }, files: [`${home}/docs/api.md`], lines: { add: 210, del: 0 } }),
+    // Fils anciens (plus de 7 jours) : « Archiver les fils de plus de 7 jours » du Salon.
+    ...[['Migrer les images vers WebP', 12], ['Nettoyer les dépendances inutilisées', 16], ['Script de sauvegarde de la base', 23], ['Premier jet du tunnel de commande', 34]].map(([t, d], i) =>
+      sess(`5d0e${i}a7c-1f2b-4c3d-9e8f-0a1b2c3d4e5${i}`, { title: t, firstPrompt: t, lastPrompt: t, started: at(d * 86400 + 3600), updated: at(d * 86400), active: at(d * 86400), live: false, prompts: 2 })),
   ];
   const find = (id) => sessions.find((s) => s.id === id);
 
@@ -40,7 +43,7 @@
       prompt: 'Cartographie le calcul du total du panier : quelles fonctions interviennent, dans quel ordre, et où s’appliquent les remises existantes. Ne modifie rien.',
       last: { at: at(14 * 60), kind: 'text', text: 'Le total est calculé dans total.ts, les remises sont appliquées avant la TVA.' }, files: [], lines: { add: 0, del: 0 },
       report: 'Le total est assemblé dans `src/panier/total.ts` :\n\n1. `sousTotal(lignes)` additionne prix × quantité ;\n2. `appliquerRemises(sousTotal, remises)` retire les remises fixes puis en pourcentage ;\n3. `ajouterTva(montant, taux)` arrondit au centime.\n\nIl n’existe aucun point d’entrée pour un code promo : il faut ajouter une étape entre 1 et 2. Les montants sont en centimes (entiers), à conserver.' },
-    { id: SUB_B, title: 'Ajouter la route POST /panier/coupon', type: 'api-dev', started: at(13 * 60), updated: at(6), live: true, tokens: 5400, steps: 14,
+    { id: SUB_B, title: 'Ajouter la route POST /panier/coupon', type: 'api-dev', started: at(13 * 60), updated: at(6), live: true, tokens: 5400, tok: { input: 2100, output: 5400, cacheRead: 310000, cacheWrite: 18000 }, steps: 14,
       prompt: 'Ajoute la route POST /panier/coupon : elle reçoit { code }, vérifie le code dans la table des coupons et renvoie la remise. Réponds 404 si le code est inconnu. Reste dans src/api/.',
       last: { at: at(6), kind: 'tool:Edit', text: `${root}/src/api/coupon.ts` },
       files: [{ path: `${root}/src/api/coupon.ts`, add: 47, del: 3 }, { path: `${root}/src/api/routes.ts`, add: 2, del: 0 }, { path: `${root}/src/panier/remises.ts`, add: 31, del: 6 }], lines: { add: 80, del: 9 } },
@@ -261,7 +264,7 @@
     if (action === 'commits') return { found: true, days: commits };
     if (action === 'daily') return { tokens, sessions: ses };
     if (action === 'run') { const r = runs.find((x) => x.run === msg.run); return r ? { ...r, actions } : { ok: false, message: 'Agent introuvable.' }; }
-    if (action === 'server') return msg.op === 'list' ? { servers: [] } : msg.op === 'hosts' || msg.op === 'keys' ? { hosts: [], keys: [] } : { ok: false, message: 'Aucun serveur relié.' };
+    if (action === 'server') return msg.op === 'list' ? { servers: globalThis.__fakeServer ? [{ id: 's1', name: 'Production', host: 'atelier.example.com', dest: 'deploy@atelier.example.com', path: '/srv/atelier' }] : [] } : msg.op === 'hosts' || msg.op === 'keys' ? { hosts: [], keys: [] } : { ok: false, message: 'Aucun serveur relié.' };
     if (action === 'stop' || action === 'unqueue' || action === 'itemsDone') return {};
     if (action === 'pushcheck') return { ok: false, message: 'Rien à vérifier.' };
     return undefined;

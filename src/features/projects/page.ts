@@ -38,7 +38,7 @@ export const init = (shell: AppShell): void => {
     if (c && app.view() === 'projets') c.outerHTML = trailHTML();
   });
   // Serveurs du projet lus, ajoutés, retirés, ou autre serveur affiché : la barre latérale suit.
-  infra.onChange(() => app.renderSidebar());
+  infra.onChange(() => { app.renderSidebar(); const v = app.viewState(), pr = v.project ? model.byId(v.project) : null, slot = $('.pj-srv'); if (pr && slot) slot.outerHTML = serverBadge(pr); });
 };
 
 const titleOf = (n: Note) => n.title.trim() || 'Sans titre';
@@ -428,9 +428,17 @@ function moreTabs(p: Project, tab: string, anchor: Element): void {
   menu(anchor, items);
 }
 
+/** Pastille du serveur du projet, en tête de page : un nom, ou « N serveurs » ; ouvre l'onglet Serveur. Vide sans serveur. */
+function serverBadge(p: Project): string {
+  const all = infra.sideServers(p.id);
+  if (!all.length) return '<span class="pj-srv" hidden></span>';
+  const cur = all.find(s => s.sel) ?? all[0]!, label = all.length > 1 ? `${all.length} serveurs` : cur.name;
+  return `<button type="button" class="lv-chip pj-srv" data-pj-tab="server" title="${esc(all.map(s => s.name).join(', '))} · ouvrir l’onglet Serveur">${icon('server')}${esc(label)}</button>`;
+}
+
 function detailHTML(p: Project, tab: string): string {
   return `<div class="pj-head" style="--c:var(--c-${p.hue})"><div class="pj-title"><span class="pj-dot"></span><h1>${esc(p.name)}</h1></div>
-      <div class="pj-bar"><div class="pj-links" data-k="${esc(`${model.formatRepos(p.stack)}|${p.site ?? ''}|${p.linear ?? ''}`)}">${p.stack.map(r => `<a class="lv-chip pj-chip-repo" href="https://github.com/${esc(r.name)}" target="_blank" rel="noopener" title="${esc(`${model.ROLES[r.role].label} · ${r.name}`)}">${model.roleTag(r.role, 'sm')}${esc(r.name.split('/')[1] ?? r.name)}</a>`).join('')}${p.linear ? `<span class="lv-chip">${icon('linear')}${esc(p.linear)}</span>` : ''}${p.site ? `<a class="lv-chip" href="${esc(p.site)}" target="_blank" rel="noopener">${icon('link')}${esc(p.site.replace(/^https:\/\//, ''))}</a>` : ''}<span class="lv-chip">#${esc(p.tag)}</span></div><div class="pj-acts"><button class="btn btn-ghost pj-note" data-pj="edit">${icon('notes')}Note du projet</button><button class="btn btn-ghost pj-note" data-pj="claude" title="Conversation bornée à ce projet : Claude ne voit que ses données">${icon('sparkle')}Claude</button></div></div>
+      <div class="pj-bar"><div class="pj-links" data-k="${esc(`${model.formatRepos(p.stack)}|${p.site ?? ''}|${p.linear ?? ''}`)}">${p.stack.map(r => `<a class="lv-chip pj-chip-repo" href="https://github.com/${esc(r.name)}" target="_blank" rel="noopener" title="${esc(`${model.ROLES[r.role].label} · ${r.name}`)}">${model.roleTag(r.role, 'sm')}${esc(r.name.split('/')[1] ?? r.name)}</a>`).join('')}${p.linear ? `<span class="lv-chip">${icon('linear')}${esc(p.linear)}</span>` : ''}${p.site ? `<a class="lv-chip" href="${esc(p.site)}" target="_blank" rel="noopener">${icon('link')}${esc(p.site.replace(/^https:\/\//, ''))}</a>` : ''}<span class="lv-chip">#${esc(p.tag)}</span>${serverBadge(p)}</div><div class="pj-acts"><button class="btn btn-ghost pj-note" data-pj="edit">${icon('notes')}Note du projet</button><button class="btn btn-ghost pj-note" data-pj="claude" title="Conversation bornée à ce projet : Claude ne voit que ses données">${icon('sparkle')}Claude</button></div></div>
       <nav class="lv-tabs pj-tabs">${tabsHTML(p, tab)}</nav></div>
     <div class="pj-body" data-tab="${tab}">${tabBody(p, tab)}</div>`;
 }
