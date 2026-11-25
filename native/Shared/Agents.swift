@@ -43,6 +43,8 @@ final class Agents {
         var commands = false
         /// Ce tour peut créer des notes et des tâches dans son projet ; combien il en a envoyé.
         var projectItems = false, sentTasks = 0, sentNotes = 0
+        /// Pages publiées sur claude.ai par l'outil Artifact de Claude Code (adresses relevées dans le flux), dans l'ordre.
+        var artifacts: [String] = []
         /// Numéro du processus Claude Code sur le serveur (pour pouvoir l'arrêter là-bas).
         var remotePid = 0
         /// Étapes reçues du flux (pour suivre un agent qui tourne sur un serveur).
@@ -94,7 +96,7 @@ final class Agents {
         let f = ISO8601DateFormatter()
         return ["run": r.id, "project": r.project, "mode": r.mode, "prompt": r.prompt, "status": r.status, "session": r.session,
                 "worktree": r.worktree, "started": f.string(from: r.started), "finished": r.finished.map { f.string(from: $0) } ?? "",
-                "result": r.result, "lastText": r.lastText, "cost": r.cost, "turns": r.turns, "denials": r.denials, "items": ["tasks": r.sentTasks, "notes": r.sentNotes],
+                "artifacts": r.artifacts, "result": r.result, "lastText": r.lastText, "cost": r.cost, "turns": r.turns, "denials": r.denials, "items": ["tasks": r.sentTasks, "notes": r.sentNotes],
                 "quota": r.quota ?? NSNull(), "machine": r.machine, "host": r.host]
     }
 
@@ -509,7 +511,10 @@ final class Agents {
         // Sous-agents (outil Agent) : demandés par la consigne, jamais pour l'orchestrateur. Ils héritent des outils et
         // des permissions de l'agent, et tournent dans le même processus, donc dans la même bulle.
         let team = body["internal"] as? Bool == true ? nil : AgentTeam(body["subagents"])
-        let tools = AgentPermissions.tools(mode: mode, commands: tests, shell: shell) + (team == nil ? [] : ["Agent"])
+        // Artifacts (pages publiées sur claude.ai) : sur ce Mac seulement, jamais pour l'orchestrateur ni avec un modèle Ollama
+        // (il faut une session claude.ai). L'outil est coupé par défaut en mode -p : CLAUDE_CODE_ARTIFACT=1 le rouvre.
+        let artifactsOK = AgentPermissions.artifacts && !onServer && body["internal"] as? Bool != true && !(model ?? "").hasPrefix(Self.localPrefix)
+        let tools = AgentPermissions.tools(mode: mode, commands: tests, shell: shell) + (team == nil ? [] : ["Agent"]) + (artifactsOK ? ["Artifact"] : [])
         args += ["--tools", tools.joined(separator: ",")]
         if let j = team?.json(tools: tools) { args += ["--agents", j] }
         // Tableau d'équipe (AgentBoard) : en mode Modifier sur ce Mac, pour un agent qui délègue ou qui fait partie d'un groupe.
@@ -538,7 +543,7 @@ final class Agents {
         let mobileNote = onServer || body["internal"] as? Bool == true ? "" : Mobile.shared.agentNote(dir: cwd, shell: shell)
         // Salon (`voice: "chat"`) : l'utilisateur lit une discussion, pas un rapport ; demandé à chaque message, pas retenu.
         let voice = body["voice"] as? String == "chat" && body["internal"] as? Bool != true ? AgentTuning.chat : ""
-        let added = [AgentTuning.prompt(mode: mode, tests: tests, items: items, shell: shell), voice, team?.prompt(edit: mode == "edit") ?? "", repoNote, mobileNote, groupNote, board?.prompt ?? "", browse?.prompt ?? ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        let added = [AgentTuning.prompt(mode: mode, tests: tests, items: items, shell: shell), voice, team?.prompt(edit: mode == "edit") ?? "", repoNote, mobileNote, groupNote, board?.prompt ?? "", browse?.prompt ?? "", artifactsOK ? AgentPermissions.artifactLine : ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
         if !added.isEmpty { args += ["--append-system-prompt", added] }
         let closed = onServer ? [] : AgentPermissions.privateReads(project: pid, dirs: [dir, cwd] + addDirs)
         if !closed.isEmpty { args += ["--disallowedTools"] + closed }
@@ -586,6 +591,7 @@ final class Agents {
         }
         var env = ProcessInfo.processInfo.environment
         env["DISABLE_AUTOUPDATER"] = "1"; env["NO_COLOR"] = "1"
+        if artifactsOK { env["CLAUDE_CODE_ARTIFACT"] = "1" }
         for (k, v) in AgentTuning.env() { env[k] = v }
         for (k, v) in team?.env ?? [:] { env[k] = v }
         for (k, v) in localEnv { env[k] = v }
@@ -699,6 +705,15 @@ final class Agents {
 
     private func withOk(_ r: Run) -> [String: Any] { lock.lock(); defer { lock.unlock() }; var s = summary(r); s["ok"] = true; return s }
 
+    private static let artifactRe = try! NSRegularExpression(pattern: "https://claude\\.ai/code/artifact/[A-Za-z0-9-]+")
+    /// Relève les adresses de pages publiées (`https://claude.ai/code/artifact/<id>`), sans doublon (ancre `#vue` retirée).
+    /// Appelée verrou pris (comme tout `ingest`).
+    private static func addArtifacts(_ run: Run, in text: String) {
+        guard text.contains("claude.ai/code/artifact/") else { return }
+        let urls = artifactRe.matches(in: text, range: NSRange(text.startIndex..., in: text)).compactMap { Range($0.range, in: text).map { String(text[$0]) } }
+        for u in urls where !run.artifacts.contains(u) && run.artifacts.count < 20 { run.artifacts.append(u) }
+    }
+
     private func ingest(_ e: [String: Any], _ run: Run, _ answer: ([String: Any]) -> Void) {
         switch e["type"] as? String ?? "" {
         case "studio_pid":
@@ -718,6 +733,7 @@ final class Agents {
             let sub = !((e["parent_tool_use_id"] as? String) ?? "").isEmpty
             if let m = e["message"] as? [String: Any] {
                 for b in m["content"] as? [[String: Any]] ?? [] {
+                    if let t = b["text"] as? String { Self.addArtifacts(run, in: t) }
                     if !sub, b["type"] as? String == "text", let t = b["text"] as? String, !t.isEmpty {
                         run.lastText = String(t.prefix(300)); run.actions.append(["at": now, "kind": "text", "text": String(t.prefix(16000))])
                     }
@@ -734,6 +750,15 @@ final class Agents {
                 if run.actions.count > 150 { run.actions.removeFirst(run.actions.count - 150) }
             }
             lock.unlock()
+        case "user":
+            // Résultat de l'outil Artifact : l'adresse de la page publiée y est imprimée.
+            lock.lock(); defer { lock.unlock() }
+            if let m = e["message"] as? [String: Any] {
+                for b in m["content"] as? [[String: Any]] ?? [] where b["type"] as? String == "tool_result" {
+                    if let t = b["content"] as? String { Self.addArtifacts(run, in: t) }
+                    else { for c in b["content"] as? [[String: Any]] ?? [] { if let t = c["text"] as? String { Self.addArtifacts(run, in: t) } } }
+                }
+            }
         case "rate_limit_event":
             lock.lock(); run.quota = e["rate_limit_info"] as? [String: Any] ?? e; lock.unlock()
         case "result":
@@ -746,6 +771,7 @@ final class Agents {
             lock.lock()
             run.sentTasks += found.filter { $0["kind"] == "task" }.count; run.sentNotes += found.filter { $0["kind"] == "note" }.count
             run.result = String(text.prefix(8000))
+            Self.addArtifacts(run, in: text)
             run.cost = e["total_cost_usd"] as? Double ?? 0
             run.denials = (e["permission_denials"] as? [[String: Any]] ?? []).compactMap { d in
                 let input = d["tool_input"] as? [String: Any] ?? [:]
@@ -1262,7 +1288,7 @@ enum AgentPermissions {
     private static let maxCommands = 60, maxDirs = 20, maxSites = 50
     /// Réglages oui/non et leur valeur d'origine.
     private static let flagDefaults: [String: Bool] = ["web": false, "anyCommand": false, "commandsInRead": false, "browser": false, "projectItems": true,
-                                                       "terminal": true]
+                                                       "terminal": true, "artifacts": false]
     private static let flags = flagDefaults.keys.sorted()
     /// Nom du serveur MCP du navigateur : ses outils s'appellent `mcp__browser__…`.
     static let browserServer = "browser"
@@ -1277,6 +1303,10 @@ enum AgentPermissions {
     /// L'agent peut créer des notes et des tâches dans le projet d'où il est lancé (création seulement : il ne modifie
     /// ni ne supprime rien). Elles passent par son compte rendu, pas par un outil : rien de plus ne lui est ouvert sur ce Mac.
     static var projectItems: Bool { saved["projectItems"] as? Bool ?? true }
+    /// Outil Artifact de Claude Code : l'agent publie une page interactive sur claude.ai (privée, visible de ton compte
+    /// hors de Studio, y compris sur mobile). Demande une session `/login` claude.ai ; sur ce Mac seulement.
+    static var artifacts: Bool { saved["artifacts"] as? Bool ?? false }
+    static let artifactLine = "Tu peux publier une page interactive sur claude.ai avec l'outil Artifact (graphique, tableau de bord, revue de code annotée, comparaison d'options) quand l'utilisateur le demande ou que c'est plus lisible que du texte. Elle reste privée à son compte. Donne l'adresse de la page dans ton compte rendu."
     /// Terminal complet en mode Modifier, sans cocher « Commandes », dans la bulle macOS d'AgentSandbox
     /// (écriture limitée à la copie, données de Studio et autres projets illisibles). Sans bulle possible : coupé.
     static var terminal: Bool { saved["terminal"] as? Bool ?? true }
@@ -1415,7 +1445,7 @@ enum AgentPermissions {
 
     /// Valeurs en vigueur, valeurs d'origine, clés modifiées, et ce que reçoit Claude Code dans chaque mode.
     static func state(rejected: [String] = []) -> [String: Any] {
-        let values: [String: Any] = ["web": web, "anyCommand": anyCommand, "commandsInRead": commandsInRead, "projectItems": projectItems,
+        let values: [String: Any] = ["web": web, "anyCommand": anyCommand, "commandsInRead": commandsInRead, "projectItems": projectItems, "artifacts": artifacts,
                                      "commands": commands, "path": path, "browser": browser, "sites": sites, "terminal": terminal]
         var defaults: [String: Any] = ["commands": defaultCommands, "path": [String](), "sites": [String]()]
         for (k, v) in flagDefaults { defaults[k] = v }
