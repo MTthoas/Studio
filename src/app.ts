@@ -170,7 +170,7 @@ function viewNotes(v = ui.view) {
 async function setView(v: ViewState, { keepNote = false } = {}) {
   if (v.type !== 'projets') { const row = $(`#sidebar .side-item[data-view="${v.type}"]`); if (row) preSelect(row); } // palette, raccourci : la barre répond avant le rendu
   if (pending.size) await flushAll();
-  ui.view = v;
+  ui.view = v; zonePick = '';
   if (v.type === 'today') ui.id = (await store.dailyNote()).id;
   else if (!WIDE.has(v.type) && !keepNote) {
     const list = viewNotes();
@@ -226,15 +226,51 @@ document.addEventListener('pointerdown', e => { // dès l'appui : le clic ne sui
   if (row && e.button === 0 && !e.ctrlKey && e.pointerType !== 'touch' && !t.closest('[data-side-more], [data-tree-toggle]')) preSelect(row);
 }, true);
 
+/** Zones du rail (première barre). Une vue appartient à une zone (`zoneOf`) ; la seconde barre ne liste que la zone ouverte. */
+type Zone = 'home' | 'write' | 'pilot' | 'more' | 'none';
+const ZONES: Record<Zone, { label: string; icon: string; side: boolean }> = {
+  home: { label: 'Accueil', icon: 'home', side: false }, write: { label: 'Écrire', icon: 'notes', side: true },
+  pilot: { label: 'Piloter', icon: 'sparkle', side: true }, more: { label: 'Plus', icon: 'more', side: true }, none: { label: '', icon: '', side: false },
+};
+const ZONE_OF: Record<string, Zone> = { home: 'home', settings: 'none', all: 'write', tag: 'write', journal: 'write', ephemeral: 'write', inbox: 'write', today: 'write', projets: 'pilot', planner: 'pilot', workspace: 'pilot', claude: 'pilot', agents: 'pilot', tasks: 'pilot' };
+const zoneOf = (type: string): Zone => ZONE_OF[type] ?? 'more';
+/** Zone choisie au rail sans changer de vue (« Plus ») ; oubliée au changement de vue. */
+let zonePick: Zone | '' = '';
+const zone = (): Zone => zonePick || zoneOf(ui.view.type);
+
+function renderRail(z: Zone, dots: Partial<Record<Zone, number>>) {
+  const btn = (k: Zone) => `<button class="rail-btn${z === k ? ' sel' : ''}" data-zone="${k}" title="${ZONES[k].label}" aria-label="${ZONES[k].label}">${icon(ZONES[k].icon)}${dots[k] ? `<i class="rail-dot${k === 'pilot' ? ' live' : ''}"></i>` : ''}</button>`;
+  paintIfChanged(need('#rail'), `
+    <button class="ws rail-logo" data-act="workspace" aria-label="Menu Studio" title="Studio">${logo()}</button>
+    <button class="rail-btn" data-act="palette" title="Rechercher (${keys(SC.palette)})" aria-label="Rechercher">${icon('search')}</button>
+    <div class="rail-zones">${btn('home')}${btn('write')}${btn('pilot')}${btn('more')}</div>
+    <div class="rail-foot">
+      ${update.ready() ? `<button class="rail-btn rail-update" data-open-conn="maj" title="La nouvelle version est téléchargée : elle s’installe à la relance, ou quand tu quittes Studio" aria-label="Relancer pour mettre à jour">${icon('refresh')}<i class="rail-dot"></i></button>`
+        : update.available() ? `<button class="rail-btn rail-update" data-open-conn="maj" title="Une nouvelle version de Studio est disponible" aria-label="Mise à jour disponible">${icon('download')}<i class="rail-dot"></i></button>` : ''}
+      <button class="rail-btn" data-open-conn="${vault.enabled() ? 'appareils' : 'coffre'}" title="${vault.isOpen() ? 'Chiffré de bout en bout' : 'Non chiffré'}" aria-label="${vault.isOpen() ? 'Chiffré de bout en bout' : 'Non chiffré'}">${icon(vault.isOpen() ? 'shield' : 'unlock')}</button>
+      <button class="rail-btn${ui.view.type === 'settings' ? ' sel' : ''}" data-view="settings" title="Réglages (${keys(SC.settings)})" aria-label="Réglages">${icon('gear')}</button>
+    </div>`);
+}
+/** Clic sur une zone du rail : ouvre sa vue par défaut ; sur la zone déjà ouverte, replie ou rouvre la seconde barre. */
+async function pickZone(k: Zone): Promise<void> {
+  const here = zone() === k && ZONES[k].side;
+  if (here) { if (zonePick === k && zoneOf(ui.view.type) !== k && ui.side) { zonePick = ''; renderSidebar(); return; } toggleSidebar(); return; }
+  if (!ui.side && ZONES[k].side) toggleSidebar();
+  if (k === 'more') { zonePick = 'more'; renderSidebar(); return; }
+  zonePick = '';
+  const pid = projectsPage.claudeAvailable() ? (projectsModel.byId(salonLast)?.id ?? '') : '';
+  await (k === 'home' ? setView({ type: 'home' }) : k === 'write' ? setView({ type: 'all' }) : pid ? openSideRow({ pjOpen: pid, pjTab: 'salon' }) : setView({ type: 'projets' }));
+  if (k !== 'home' && !ui.side && matchMedia('(max-width: 900px)').matches) toggleSidebar(); // tiroir : setView l'a fermé, on veut voir la zone
+}
+
 function renderSidebar() {
   const idx = store.index(), v = ui.view;
   const count: Record<string, number> = { planner: planner.pending(), tasks: todo.openCount(), linear: notifs.unreadCount(), github: github.unseenCount(), ephemeral: idx.live.filter(n => n.expiresAt).length };
   const item = (type: string, sel = v.type === type) => `<button class="side-item${sel ? ' sel' : ''}" data-view="${type}" style="--ic:var(--${SIDE_HUE[type] === 'accent' ? 'accent' : `c-${SIDE_HUE[type] ?? 'gray'}`})">${icon(VIEWS[type]?.icon ?? 'notes')}<span>${VIEWS[type]?.label ?? type}</span>${count[type] ? sideCount(type, count[type]) : ''}</button>`;
   const tags = [...idx.tags].filter(([t]) => !t.startsWith('projet/')).sort((a, b) => a[0].localeCompare(b[0], 'fr'));
-  const devs = vault.isOpen() ? link.devices().length : 0;
   // Le quotidien reste à l'écran ; le reste se range sous « Plus » (déplié d'office quand la vue ouverte s'y trouve).
   const more = [...(count.ephemeral || v.type === 'ephemeral' ? ['ephemeral'] : []), ...(models.available() ? ['models'] : []), 'linear', 'github', 'graph', 'trash', 'help'];
-  const moreOpen = ui.moreOpen || more.includes(v.type), moreCount = (count.linear ?? 0) + (count.github ?? 0);
+  const moreCount = (count.linear ?? 0) + (count.github ?? 0);
   const salonOn = projectsPage.claudeAvailable();
   // « Salon » en tête de « Piloter », toujours à la même place : le Salon du dernier projet ouvert (sinon du premier), nommé à droite.
   // Il ne disparaît plus quand un projet est ouvert (la liste sautait de 30 px) ; ses fils se lisent sous le projet.
@@ -245,6 +281,7 @@ function renderSidebar() {
   const salonTalks = salonP ? projectsPage.sideSessions(salonPid) : [], salonLive = salonTalks.filter(s => s.live).length;
   const salonPick = salonTab ? salon.chosenThread(salonPid) : '', salonPicked = !!salonPick && salonTalks.some(s => s.id === salonPick);
   const salonTop = salonP ? `<button class="side-item side-salon-top${salonTab && !salonPicked ? ' sel' : ''}" data-pj-open="${esc(salonPid)}" data-pj-tab="salon" style="--ic:var(--c-violet)" title="Salon de ${esc(salonP.name)}">${icon('sparkle')}<span>Salon</span><small class="side-ctx"><i class="tag-dot" style="--c:var(--c-${salonP.hue})"></i><b>${esc(salonP.name)}</b></small>${salonLive ? sideCount('salon:' + salonPid, salonLive) : ''}</button>` : '';
+  const kids = (rows: string) => rows ? `<div class="side-kids">${rows}</div>` : '';
   const projRows = projectsModel.projects().slice(0, 8).map(p => {
       const open = v.type === 'projets' && v.project === p.id, tab = v.tab ?? projectsPage.defaultTab();
       // Sous chaque projet, ouvert ou non : ses fils du Salon (récents, au travail, en PR), pastille d'état en tête ; un clic ouvre le fil.
@@ -254,34 +291,45 @@ function renderSidebar() {
       const pick = open && tab === 'salon' ? salon.chosenThread(p.id) : '';
       // Sous « Serveur » : les serveurs du projet, celui qui est affiché en surbrillance.
       const servers = open ? projectsPage.sideServers(p.id) : [], serving = tab === 'server' && servers.some(s => s.sel);
-      return `<button class="side-item side-sub${open && tab === projectsPage.defaultTab() && tab !== 'salon' ? ' sel' : ''}${open ? ' open' : ''}" data-pj-open="${esc(p.id)}"><i class="tag-dot" style="--c:var(--c-${p.hue})"></i><span>${esc(p.name)}</span>${working && p.id !== salonPid ? sideCount('pj:' + p.id, working) : ''}<i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`
+      return `<button class="side-item side-sub${open && tab === projectsPage.defaultTab() && tab !== 'salon' ? ' sel' : ''}${open ? ' open' : ''}" data-pj-open="${esc(p.id)}"><i class="side-av" style="--c:var(--c-${p.hue})">${esc((p.name.trim()[0] ?? '·').toUpperCase())}</i><span>${esc(p.name)}</span>${working && p.id !== salonPid ? sideCount('pj:' + p.id, working) : ''}<i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`
         // Les autres onglets (Claude Code compris) restent dans la barre d'onglets de la fiche : ici, seulement les fils, l'onglet ouvert et les serveurs.
-        + (salonOn ? talks.map(s => `<button class="side-item side-sub2 side-talk${s.id === pick ? ' sel' : ''}${!s.live && s.stage ? ` ${s.stage.cls}` : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="salon" data-pj-session="${esc(s.id)}" data-pj-salon="1" title="${esc(s.title)}${s.live ? ' · en cours' : s.stage ? ` · ${esc(s.stage.label)}` : ''}"><i class="ss-live${s.live ? ' on' : s.stage ? ` ${s.stage.cls}` : ''}"></i><span>${esc(s.title)}</span>${!s.live && s.stage?.cls === 'st-review' ? `<em class="side-stage">${esc(s.stage.label)}</em>` : ''}<i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('') : '')
+        // Rangés dans `.side-kids`, qui trace l'arborescence (trait vertical, coude par ligne : css/rail.css).
+        + kids((salonOn ? talks.map(s => `<button class="side-item side-sub2 side-talk${s.id === pick ? ' sel' : ''}${!s.live && s.stage ? ` ${s.stage.cls}` : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="salon" data-pj-session="${esc(s.id)}" data-pj-salon="1" title="${esc(s.title)}${s.live ? ' · en cours' : s.stage ? ` · ${esc(s.stage.label)}` : ''}"><i class="ss-live${s.live ? ' on' : s.stage ? ` ${s.stage.cls}` : ''}"></i><span>${esc(s.title)}</span>${!s.live && s.stage?.cls === 'st-review' ? `<em class="side-stage">${esc(s.stage.label)}</em>` : ''}<i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('') : '')
         + (open ? projectsPage.tabsOf(p, tab ?? '').slice(1).filter(([k]) => k !== 'salon' && (k === tab || (k === 'server' && servers.length > 0))).map(([k, l, ic]) => `<button class="side-item side-sub2${tab === k && !(k === 'server' && serving) ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="${k}">${icon(ic)}<span>${esc(l)}</span></button>`
-          + (k === 'server' ? servers.map(s => `<button class="side-item side-sub3${tab === 'server' && s.sel ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="server" data-pj-server="${esc(s.id)}" title="${esc(s.dest)}">${icon('server')}<span>${esc(s.name)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('') : '')).join('') : '');
+          + (k === 'server' ? servers.map(s => `<button class="side-item side-sub3${tab === 'server' && s.sel ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="server" data-pj-server="${esc(s.id)}" title="${esc(s.dest)}">${icon('server')}<span>${esc(s.name)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('') : '')).join('') : ''));
   });
-  const html = `
-    <div class="side-head">
-      <button class="ws" data-act="workspace" aria-label="Menu Studio">${logo()}<span class="ws-name">Studio</span>${icon('chevron')}</button>
-      <button class="icon-btn" data-act="palette" title="Rechercher (${keys(SC.palette)})" aria-label="Rechercher">${icon('search')}</button>
-      ${voice.available() ? `<button class="icon-btn" data-act="voice" title="Note vocale" aria-label="Note vocale">${icon('mic')}</button>` : ''}
-      <button class="icon-btn" data-act="new" title="Nouvelle note (${keys(SC.newNote)})" aria-label="Nouvelle note">${icon('compose')}</button>
-    </div>
-    <div class="side-scroll">
-      <div class="side-group">${item('home')}</div>
-      <div class="side-label">Écrire</div>
-      <div class="side-group">${item('all')}${treeHTML(idx.live)}${item('journal')}</div>
-      <div class="side-label">Piloter</div>
-      <div class="side-group">${salonTop}${projectsPage.claudeAvailable() ? item('planner') : ''}${item('projets', v.type === 'projets' && ![salonTop, ...projRows].some(r => /class="side-item[^"]* sel\b/.test(r)))}${projRows.join('')}</div>
+  // Double barre : le rail (zones, recherche, réglages) est toujours là ; la barre de droite ne montre que la zone ouverte,
+  // et disparaît quand la zone n'a rien à lister (Accueil, Réglages) : l'espace va au contenu.
+  const z = zone(), live = salonOn ? projectsModel.projects().reduce((a, p) => a + projectsPage.sideSessions(p.id).filter(s => s.live).length, 0) : 0;
+  renderRail(z, { pilot: live, more: moreCount });
+  document.body.classList.toggle('side-none', !ZONES[z].side);
+  const head = (actions = '') => `<div class="side-head"><span class="side-title">${ZONES[z].label}</span>${actions}</div>`;
+  // En tête de zone, l'action principale sur une ligne entière (« + Nouvelle note », « + Nouveau projet ») ;
+  // puis des sections à petit intitulé, une action discrète à droite au besoin.
+  const newRow = (act: string, label: string, hint = '') => `<button class="side-new" data-act="${act}"${hint ? ` title="${label} (${hint})"` : ''}><i class="side-new-ic">${icon('plus')}</i><span>${label}</span></button>`;
+  const cat = (label: string, act = '') => `<div class="side-cat">${label}${act}</div>`;
+  const body = z === 'write' ? head(voice.available() ? `<button class="icon-btn" data-act="voice" title="Note vocale" aria-label="Note vocale">${icon('mic')}</button>` : '')
+      + `<div class="side-scroll">
+      ${newRow('new', 'Nouvelle note', keys(SC.newNote))}
+      <div class="side-group">${item('all')}${treeHTML(idx.live)}${item('journal')}${count.ephemeral || v.type === 'ephemeral' ? item('ephemeral') : ''}</div>
       ${tags.length ? sideFold('tags', 'tags', ui.tagsOpen, 'Tags', '', `<div class="side-group">${tags.map(([t, c]) => `<button class="side-item${v.type === 'tag' && v.tag === t ? ' sel' : ''}" data-tag="${esc(t)}"><i class="tag-dot" style="--c:var(--c-${hue(t)})"></i><span>${esc(t)}</span>${sideCount('tag:' + t, c)}</button>`).join('')}</div>`) : ''}
-      ${commerce.available() ? `<div class="side-label">Extensions</div><div class="side-group">${item('commerce')}</div>` : ''}
-      ${sideFold('more', 'more-views', moreOpen, 'Plus', !moreOpen && moreCount ? sideCount('more', moreCount) : '', MORE_CATS.map(([label, types]) => { const here = types.filter(t => more.includes(t)); return here.length ? `<div class="side-cat">${label}</div><div class="side-group">${here.map(t => item(t)).join('')}</div>` : ''; }).join(''))}
-    </div>
+    </div>`
+    : z === 'pilot' ? head()
+      + `<div class="side-scroll">
+      ${newRow('pj-create', 'Nouveau projet')}
+      ${salonOn ? `${cat('Agents')}<div class="side-group">${salonTop}${item('planner')}</div>` : ''}
+      ${cat('Projets', `<button class="side-cat-act${v.type === 'projets' && !v.project ? ' sel' : ''}" data-view="projets" title="Tous les projets" aria-label="Tous les projets">${icon('list')}</button>`)}
+      <div class="side-group">${projRows.join('') || `<p class="side-empty">Aucun projet pour l’instant.</p>`}</div>
+    </div>`
+    : z === 'more' ? head()
+      + `<div class="side-scroll">
+      ${commerce.available() ? `<div class="side-cat">Extensions</div><div class="side-group">${item('commerce')}</div>` : ''}
+      ${MORE_CATS.map(([label, types]) => { const here = types.filter(t => more.includes(t)); return here.length ? `<div class="side-cat">${label}</div><div class="side-group">${here.map(t => item(t)).join('')}</div>` : ''; }).join('')}
+    </div>`
+    : '<div class="side-scroll"></div>';
+  const html = `${body}
     <div id="plug-side"></div>
-    ${usagebar.html()}
-    ${update.ready() ? `<button class="side-foot side-update" data-open-conn="maj" title="La nouvelle version est téléchargée : elle s’installe à la relance, ou quand tu quittes Studio">${icon('refresh')}<span>Relancer pour mettre à jour</span></button>`
-      : update.available() ? `<button class="side-foot side-update" data-open-conn="maj" title="Une nouvelle version de Studio est disponible">${icon('download')}<span>Mise à jour disponible</span></button>` : ''}
-    <button class="side-foot" data-open-conn="${vault.enabled() ? 'appareils' : 'coffre'}" title="Réglages (${keys(SC.settings)})">${icon(vault.isOpen() ? 'shield' : 'unlock')}<span>${vault.isOpen() ? 'Chiffré de bout en bout' : 'Non chiffré'}</span>${devs ? `<span class="side-count">${icon('devices')}${devs}</span>` : ''}</button>`;
+    ${usagebar.html()}`;
   // Redessinée à chaque enregistrement (donc à chaque pause de frappe) : rien n'est réécrit si rien n'a changé,
   // et le défilement est gardé quand elle l'est.
   const box = need('#sidebar'), top = $('.side-scroll', box)?.scrollTop ?? 0;
@@ -1260,6 +1308,7 @@ async function onClick(e: MouseEvent): Promise<void> {
   const anchor = t.closest('[data-act]'), act = anchor?.dataset.act, n = store.get(ui.id);
   if (anchor && act) {
     if (act === 'new') { await newNote(); return; }
+    if (act === 'pj-create') { await projectsPage.createDialog(); return; }
     if (act === 'workspace') { workspaceMenu(anchor); return; }
     if (act === 'more-views') { ui.moreOpen = !ui.moreOpen; saveUI(); renderSidebar(); return; }
     if (act === 'tags') { ui.tagsOpen = !ui.tagsOpen; saveUI(); renderSidebar(); return; }
@@ -1288,6 +1337,7 @@ async function onClick(e: MouseEvent): Promise<void> {
   if (await plugins.click(t)) return;
   if (await hub.click(e)) return;
   let x: HTMLElement | null;
+  if ((x = t.closest('#rail [data-zone]'))) { await pickZone((x.dataset.zone ?? 'home') as Zone); return; }
   if ((x = t.closest('#sidebar [data-side-more]'))) { const row = x.closest<HTMLElement>('[data-pj-open]'); if (row) sideRowMenu(row, x); return; }
   if ((x = t.closest('[data-pj-open], [data-project-open]')) && !t.closest('.pj')) { await openSideRow(x.dataset); return; }
   if ((x = t.closest('[data-chat]'))) { await setView(x.dataset.chat ? { type: 'claude', chat: x.dataset.chat } : { type: 'claude' }); return; }
