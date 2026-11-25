@@ -1387,16 +1387,26 @@ button.lv-chip:hover, .lv-chip.sel { color: var(--text); background: var(--btn);
 @media (max-width: 700px) { .st-row { flex-wrap: wrap; } }
 
 /* Flux (gitflow) */
-.fx-legend { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--text-3); font-size: var(--t-1); }
-.fx-legend .ic { width: 13px; height: 13px; }
-.fx-legend + .fx-repo { margin-top: 4px; } .fx-repo + .fx-repo { margin-top: 26px; }
-.fx-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
-.fx-head strong { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
-.fx-head strong .ic { width: 14px; height: 14px; }
-.fx-base { display: inline-flex; align-items: center; gap: 7px; color: var(--text-2); font-size: var(--t-1); }
-.fx-rels { display: inline-flex; gap: 5px; margin-left: auto; }
-.fx-rels a { text-decoration: none; }
-.fx-acts { margin-top: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); font-size: var(--t-2); }
+/* Flux (refait le 25 nov. 2026) : en-tête du dépôt, parcours en étapes avec leurs comptes, colonnes non vides, puis les Actions. */
+.fx-repo { display: flex; flex-direction: column; gap: 14px; }
+.fx-repo + .fx-repo { margin-top: 36px; padding-top: 24px; border-top: 1px solid var(--border); }
+.fx-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.fx-head strong { font-weight: 600; font-size: var(--t-3); }
+.fx-base { display: inline-flex; align-items: center; gap: 7px; height: 24px; padding: 0 10px; border: 1px solid var(--border); border-radius: 12px; color: var(--text-2); font-size: var(--t-1); }
+.fx-base .pj-ci { width: 7px; height: 7px; }
+.fx-base code { padding: 0; background: none; color: var(--text); }
+.fx-rels { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; }
+.fx-rels a.pj-badge { text-decoration: none; }
+.fx-pipe { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 4px; margin: 0; padding: 0; list-style: none; }
+.fx-pipe li { display: flex; align-items: center; gap: 7px; min-width: 0; padding-top: 8px; border-top: 2px solid var(--border); color: var(--text-3); font-size: var(--t-1); white-space: nowrap; }
+.fx-pipe li span { overflow: hidden; text-overflow: ellipsis; }
+.fx-pipe li i { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--border-2); }
+.fx-pipe li em { margin-left: auto; font-style: normal; font-variant-numeric: tabular-nums; }
+.fx-pipe li.on { border-top-color: var(--c); color: var(--text-2); }
+.fx-pipe li.on i { background: var(--c); }
+.fx-pipe li.on em { color: var(--text); font-weight: 600; }
+.fx-none { margin: 0; color: var(--text-3); font-size: var(--t-2); }
+.fx-acts { margin-top: 0; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); font-size: var(--t-2); }
 .fx-acts-head { display: flex; align-items: center; gap: 7px; padding: 8px 11px; color: var(--text-2); font-weight: 500; }
 .fx-acts-head .ic { width: 13px; height: 13px; color: var(--text-3); }
 .fx-acts-head .link-btn { margin-left: auto; font-size: var(--t-1); font-weight: 400; color: var(--text-3); }
@@ -1413,19 +1423,45 @@ button.lv-chip:hover, .lv-chip.sel { color: var(--text); background: var(--btn);
 .fx-rerun { padding: 2px 8px; font-size: var(--t-1); }
 .fx-rerun .ic { width: 12px; height: 12px; }
 @media (max-width: 720px) { .fx-act { grid-template-columns: 8px 1fr auto auto auto; } .fx-act code, .fx-act-ev, .fx-act .ch-strip { display: none; } }
-.fx-board { margin-top: 12px; grid-auto-columns: minmax(210px, 1fr); }
-.fx-card { display: flex; flex-direction: column; gap: 6px; padding: 10px 11px; border-radius: 8px; background: var(--bg); border: 1px solid var(--border); font-size: var(--t-2); }
-.fx-branch { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.fx-branch .ic { width: 12px; height: 12px; color: var(--text-3); flex: none; }
-.fx-branch code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.fx-pr { color: var(--text); text-decoration: none; line-height: 1.4; }
-.fx-pr:hover { text-decoration: underline; }
-.fx-pr .pj-num { margin-right: 5px; }
-.fx-card footer { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--text-3); font-size: var(--t-1); }
+.fx-board { margin-top: 0; grid-auto-columns: minmax(230px, 320px); justify-content: start; }
+.fx-card { display: flex; flex-direction: column; gap: 5px; padding: 10px 12px; border-radius: 8px; background: var(--bg); border: 1px solid var(--border); font-size: var(--t-2); transition: border-color var(--mo-d2) var(--mo-out), box-shadow var(--mo-d2) var(--mo-out); }
+.fx-card:hover { border-color: var(--border-2); box-shadow: 0 2px 8px -4px rgba(0, 0, 0, .18); }
+.fx-pr { color: var(--text); font-weight: 500; line-height: 1.4; text-decoration: none; overflow-wrap: anywhere; }
+a.fx-pr:hover { text-decoration: underline; text-decoration-color: var(--border-2); text-underline-offset: 3px; }
+.fx-nopr { font-family: var(--mono); font-size: .92em; font-weight: 400; }
+.fx-branch { display: flex; align-items: center; gap: 5px; min-width: 0; color: var(--text-3); font-size: var(--t-1); }
+.fx-branch .ic { width: 11px; height: 11px; flex: none; }
+.fx-branch code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; padding: 0; background: none; color: inherit; }
+.fx-card footer { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 3px; color: var(--text-3); font-size: var(--t-1); }
 .fx-card footer a { text-decoration: none; }
-.fx-card footer time { margin-left: auto; }
+.fx-when { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
 .fx-ci { display: inline-flex; align-items: center; gap: 6px; }
 .fx-ci .pj-ci { width: 7px; height: 7px; }
+.fx-act { transition: background-color var(--mo-d2) var(--mo-out); }
+.fx-act:hover { background: var(--hover); }
+/* Carte « livré » du fil du Salon (flux.deliveryHTML) : fusion → vérifications → publication, puis les exécutions en direct. */
+.sl-card.fx-ship { flex-direction: column; align-items: stretch; gap: 10px; }
+.fx-ship > header { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.fx-ship .sl-card-a .btn { display: inline-flex; align-items: center; gap: 5px; text-decoration: none; }
+.fx-ship .sl-card-a .ic { width: 13px; height: 13px; }
+.fx-ship-steps { display: flex; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.fx-ship-steps li { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 1px 6px; padding-top: 7px; border-top: 2px solid var(--border); color: var(--text-3); font-size: var(--t-1); line-height: 1.35; }
+/* Colonne de chat étroite : le libellé passe à la ligne plutôt que d'être coupé ; le détail (heure, n/total) va dessous. */
+.fx-ship-steps li span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.fx-ship-steps li code { padding: 0; background: none; color: inherit; }
+.fx-ship-steps li i { flex: none; width: 7px; height: 7px; margin-top: 5px; border-radius: 50%; background: var(--border-2); }
+.fx-ship-steps li:not(.off) { border-top-color: var(--c); color: var(--text-2); }
+.fx-ship-steps li:not(.off) i { background: var(--c); }
+.fx-ship-steps small { flex-basis: 100%; padding-left: 13px; font-size: inherit; font-variant-numeric: tabular-nums; color: var(--text-3); }
+.fx-ship-runs { display: flex; flex-direction: column; padding-top: 4px; border-top: 1px solid var(--border); }
+.fx-ship-run { display: flex; align-items: center; gap: 9px; min-height: 28px; font-size: var(--t-1); }
+.fx-ship-run .pj-ci { width: 7px; height: 7px; }
+.fx-ship-run a { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); text-decoration: none; }
+.fx-ship-run a:hover { text-decoration: underline; text-decoration-color: var(--border-2); text-underline-offset: 3px; }
+.fx-ship-run time { margin-left: auto; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.fx-ship-steps li.live i, .fx-ship-run.live .pj-ci { animation: fx-live 1.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .fx-ship-steps li.live i, .fx-ship-run.live .pj-ci { animation: none; } }
+@media (max-width: 720px) { .fx-pipe { grid-template-columns: repeat(3, minmax(0, 1fr)); } .fx-ship > header { flex-wrap: wrap; } .fx-ship-steps { flex-wrap: wrap; } .fx-ship-steps li { flex-basis: 40%; } }
 .fx-ab { font-variant-numeric: tabular-nums; }
 
 /* Sessions IA */
