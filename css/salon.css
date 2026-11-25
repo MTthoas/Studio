@@ -348,3 +348,9 @@ button.sl-av:focus-visible, .sl-who:focus-visible, .sl-to:focus-visible, .sl-mem
 .sl-comp.at-drop { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
 .sl-msg .at-gal { margin-top: 6px; }
 .sl-pics { margin: 4px 0 0; font-size: var(--t-1); color: var(--text-3); }
+
+/* Captures d'écran d'un agent (talk → captures) : plus grandes que les images jointes, cadrées sur le haut. */
+.sl-shots .at-gal { gap: 8px; margin-top: 6px; }
+.sl-shots .at-gthumb { width: 220px; height: 138px; border-radius: 10px; }
+.sl-shots .at-gthumb img { object-fit: cover; object-position: top center; }
+@media (max-width: 520px) { .sl-shots .at-gthumb { width: calc(50% - 4px); height: auto; aspect-ratio: 16 / 10; } }

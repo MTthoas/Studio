@@ -535,7 +535,11 @@ final class Agents {
         if effortOK { args += ["--effort", useEffort] }
         let localEnv = localOK ? Self.localEnv(localModel) : [:]
         // Hors bulle, le tableau d'équipe est ouvert par --add-dir (dans la bulle, le .git du dépôt l'est déjà).
-        let addDirs = extraDirs + (bubble == nil ? board.map { [$0.dir] } ?? [] : []) + imageDirs
+        // Captures d'écran à montrer avant de rendre : agent qui modifie, sur ce Mac (le Salon les lit dans le .git du projet).
+        let shotsDir = onServer || mode != "edit" || body["internal"] as? Bool == true ? nil : AgentImages.capturesDir(repo: dir, copy: wtName)
+        // Le dossier des images est ouvert entier (captures comprises) ; créé à l'instant, il n'était pas dans imageDirs.
+        let shotDirs = imageDirs.isEmpty && shotsDir != nil ? AgentImages.existing(repo: dir).map { [$0] } ?? [] : []
+        let addDirs = extraDirs + (bubble == nil ? board.map { [$0.dir] } ?? [] : []) + imageDirs + shotDirs
         if !addDirs.isEmpty { args += ["--add-dir"] + addDirs }
         // Notes et tâches du projet : permises par les réglages, jamais pour l'orchestrateur (résolution de conflits).
         let items = AgentPermissions.projectItems && body["internal"] as? Bool != true
@@ -543,7 +547,8 @@ final class Agents {
         let mobileNote = onServer || body["internal"] as? Bool == true ? "" : Mobile.shared.agentNote(dir: cwd, shell: shell)
         // Salon (`voice: "chat"`) : l'utilisateur lit une discussion, pas un rapport ; demandé à chaque message, pas retenu.
         let voice = body["voice"] as? String == "chat" && body["internal"] as? Bool != true ? AgentTuning.chat : ""
-        let added = [AgentTuning.prompt(mode: mode, tests: tests, items: items, shell: shell), voice, team?.prompt(edit: mode == "edit") ?? "", repoNote, mobileNote, groupNote, board?.prompt ?? "", browse?.prompt ?? "", artifactsOK ? AgentPermissions.artifactLine : ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        let captureNote = shotsDir.map(AgentImages.captureNote) ?? ""
+        let added = [AgentTuning.prompt(mode: mode, tests: tests, items: items, shell: shell), voice, team?.prompt(edit: mode == "edit") ?? "", repoNote, mobileNote, captureNote, groupNote, board?.prompt ?? "", browse?.prompt ?? "", artifactsOK ? AgentPermissions.artifactLine : ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
         if !added.isEmpty { args += ["--append-system-prompt", added] }
         let closed = onServer ? [] : AgentPermissions.privateReads(project: pid, dirs: [dir, cwd] + addDirs)
         if !closed.isEmpty { args += ["--disallowedTools"] + closed }
@@ -937,10 +942,40 @@ enum AgentImages {
         return .success((lot: lot, paths: paths))
     }
 
-    /// Supprime les lots trop anciens (30 jours) et, au-delà de 200, les plus vieux.
+    /// Captures d'écran prises par les agents, pour l'utilisateur : `.git/studio-images/captures/<copie>/`, un dossier par
+    /// copie isolée (`principal` hors copie). Le Salon les montre en vignettes quand le compte rendu les cite en
+    /// `![légende](chemin absolu)` (`captures` dans salon.ts), lues par `read` comme les images jointes.
+    static let capturesFolder = "captures"
+    static func capturesDir(repo: String, copy: String) -> String? {
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: repo + "/.git", isDirectory: &isDir), isDir.boolValue else { return nil }
+        let name = copy.range(of: "^[A-Za-z0-9._-]{1,80}$", options: .regularExpression) != nil && !copy.hasPrefix(".") ? copy : "principal"
+        let root = repo + "/.git/" + folder, dir = root + "/" + capturesFolder + "/" + name
+        do { try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]) } catch { return nil }
+        sweep(root)
+        return dir
+    }
+    /// Consigne de l'agent qui modifie : montrer chaque changement visible par des captures avant de rendre.
+    static func captureNote(_ dir: String) -> String {
+        "Captures pour l'utilisateur (obligatoire) : dès que ton changement se voit (interface, page, écran d'app, style, mise en page), " +
+        "tu le montres avant de rendre ton travail, à chaque fois, sans attendre qu'on te le demande. Capture l'écran concerné " +
+        "(navigateur sans fenêtre, outil de navigateur, simulateur ou script de capture du dépôt ; avant/après si ça aide, deux largeurs " +
+        "si la mise en page change), enregistre les PNG ou JPEG (8 Mo au plus chacun, noms parlants) dans \(dir)/, regarde-les avec Read " +
+        "pour vérifier qu'ils montrent bien le changement, puis cite chacun dans ton compte rendu, seul sur sa ligne : " +
+        "![ce qu'elle montre](\(dir)/nom.png). Studio les affiche en vignettes dans le Salon, pour relecture avant publication. " +
+        "Changement sans rendu visible : rien à capturer. Capture impossible : dis-le et pourquoi, ne t'en passe jamais en silence."
+    }
+
+    /// Supprime les lots trop anciens (30 jours) et, au-delà de 200, les plus vieux ; les captures d'une copie
+    /// (`captures/<copie>/`) partent elles aussi après 30 jours sans nouvelle capture.
     static func sweep(_ root: String) {
         let fm = FileManager.default
-        let lots = ((try? fm.contentsOfDirectory(atPath: root)) ?? []).filter { !$0.hasPrefix(".") }.sorted()
+        let limit0 = Date().addingTimeInterval(-keepDays * 86_400), shots = root + "/" + capturesFolder
+        for c in (try? fm.contentsOfDirectory(atPath: shots)) ?? [] where !c.hasPrefix(".") {
+            let at = ((try? fm.attributesOfItem(atPath: shots + "/" + c))?[.modificationDate] as? Date) ?? .distantFuture
+            if at < limit0 { try? fm.removeItem(atPath: shots + "/" + c) }
+        }
+        let lots = ((try? fm.contentsOfDirectory(atPath: root)) ?? []).filter { !$0.hasPrefix(".") && $0 != capturesFolder }.sorted()
         let limit = Date().addingTimeInterval(-keepDays * 86_400)
         var kept: [String] = []
         for l in lots {

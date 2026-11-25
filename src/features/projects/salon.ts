@@ -338,6 +338,19 @@ const bubble = (x: string, i: number): string => `<div class="sl-bub md" style="
 /** Un message d'agent en bulles courtes, une par paragraphe. Un pavé ne montre que son début (et sa question finale,
  *  s'il en pose une) : le reste se déplie sous « Lire la suite ». */
 function talk(t: string): string {
+  const { text, shots } = captures(t), pics = shots.length ? `<div class="sl-shots">${attach.galleryHTML(shots)}</div>` : '';
+  return bubbles(text) + pics;
+}
+/** Captures d'écran citées par un agent (`![légende](/…/.git/studio-images/…)`, voir `AgentImages.captureNote` côté Mac) :
+ *  retirées du texte et montrées en vignettes sous le message, toujours visibles (jamais sous « Lire la suite »). */
+const SHOT_RE = /!\[[^\]\n]*\]\(<?(\/[^)\s>]*\/\.git\/studio-images\/[^)\s>]+\.(?:png|jpe?g|webp|gif))>?\)/gi;
+function captures(t: string): { text: string; shots: string[] } {
+  if (!t.includes('studio-images/')) return { text: t, shots: [] };
+  const shots: string[] = [];
+  const text = t.replace(SHOT_RE, (_m, path: string) => { if (!shots.includes(path) && shots.length < 12) shots.push(path); return ''; });
+  return { text: text.replace(/\n{3,}/g, '\n\n'), shots };
+}
+function bubbles(t: string): string {
   const c = chunks(t); if (!c.length) return '';
   if (c.reduce((n, x) => n + x.length, 0) <= SHORT && c.length <= 4) return c.map(bubble).join('');
   const head: string[] = []; let n = 0;
