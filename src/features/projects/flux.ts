@@ -136,12 +136,16 @@ function shipFlow(repo: string): github.Flow | undefined {
   return me.flow;
 }
 
-export interface Delivery { repo: string; branch: string; title: string; meta: string; pr?: { number: number; url: string } }
+export interface Delivery { repo: string; /** Tous les dépôts du projet : la PR peut avoir été fusionnée dans l'un d'eux (site, API…), pas forcément le premier. */ repos?: string[]; branch: string; title: string; meta: string; pr?: { number: number; url: string } }
 /** Carte « livré » du Salon : fusion → vérifications sur la branche principale → publication. '' tant que GitHub
  *  n'a pas répondu ou n'est pas connecté (le Salon garde alors sa carte simple). */
 export function deliveryHTML(d: Delivery): string {
   if (!github.connected() || !d.repo) return '';
-  const f = shipFlow(d.repo); if (!f) return '';
+  // Le dépôt où la branche a été fusionnée ; à défaut, le premier dont la lecture est arrivée.
+  const flows = [...new Set([d.repo, ...(d.repos ?? [])])].map(r => shipFlow(r));
+  const f = flows.find(x => x?.items.some(i => i.branch === d.branch && i.pr?.mergedAt)) ?? flows.find(x => x?.items.some(i => i.branch === d.branch)) ?? flows[0];
+  if (!f) return '';
+  d = { ...d, repo: f.repo };
   const it = f.items.find(x => x.branch === d.branch), merged = it?.pr?.mergedAt ? Date.parse(it.pr.mergedAt) : 0;
   const pr = it?.pr ? { number: it.pr.number, url: it.pr.url } : d.pr;
   // Pour chaque workflow, la première exécution partie sur la branche principale après la fusion (celle de la fusion).

@@ -442,7 +442,7 @@ function resultHTML(t: Thread, d: Detail): string {
   if (st === 'pr') return `<div class="sl-card res"><span class="sl-pill" style="--c:var(--c-blue)">PR ouverte</span><div class="sl-card-t"><b>${esc(title)}</b><small>En attente de fusion${meta ? ` · ${meta}` : ''}</small></div><div class="sl-card-a"><button class="btn" data-sl="pr" data-wt="${a}">${icon('pr')}Voir la PR</button></div></div>`;
   // Fusionné : la carte suit la livraison en direct (vérifications sur la branche principale, release), voir `flux.deliveryHTML`.
   if (st === 'merged') {
-    const live = flux.deliveryHTML({ repo: p?.stack[0]?.name ?? '', branch: w.pr?.branch ?? w.history?.find(h => h.merged)?.branch ?? w.branch, title, meta, pr: w.pr ? { number: w.pr.number, url: w.pr.url } : undefined });
+    const live = flux.deliveryHTML({ repo: p?.stack[0]?.name ?? '', repos: p?.stack.map(x => x.name), branch: w.pr?.branch ?? w.history?.find(h => h.merged)?.branch ?? w.branch, title, meta, pr: w.pr ? { number: w.pr.number, url: w.pr.url } : undefined });
     if (live) return live;
   }
   if (st === 'merged') return `<div class="sl-card res"><span class="sl-pill" style="--c:var(--c-violet)">fusionné</span><div class="sl-card-t"><b>${esc(title)}</b><small>Livré dans la branche principale</small></div></div>`;
