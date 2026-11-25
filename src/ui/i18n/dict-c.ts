@@ -1,5 +1,8 @@
 // Dictionnaire français → anglais (voir src/ui/i18n.ts pour le format des clés).
 export default {
+  'Zones': 'Areas',
+  'Tous les projets': 'All projects',
+  'Aucun projet pour l’instant.': 'No projects yet.',
   'Automatisations, « Demander à l’IA » et Claude': 'Automations, “Ask AI” and Claude',
   'La consigne système est assemblée à partir de ces blocs. Elle ne contient rien qui change d’une exécution à l’autre : c’est ce qui permet au fournisseur de la relire depuis son cache.': 'The system prompt is assembled from these blocks. Nothing in it changes from one run to the next, which lets the provider read it back from its cache.',
   'Tâches de fond et revue': 'Background tasks and review',

@@ -1,0 +1,96 @@
+/* Double barre : un rail d'icônes (zones, recherche, réglages), toujours là, puis la barre de la zone ouverte (#sidebar),
+   qui disparaît quand la zone n'a rien à lister (`body.side-none` : Accueil, Réglages). Rendu par `renderRail` (src/app.ts).
+   Importé après sidebar.css mais avant les règles d'app.css : d'où le `:root` en tête des sélecteurs. Sélection = fond plein, jamais de trait d'accent. */
+:root { --rail-w: 52px; }
+
+/* ---------- Grille : rail | barre | liste | contenu ---------- */
+:root #app { grid-template-columns: var(--rail-w) var(--side-w) var(--list-w) minmax(0, 1fr); padding: 8px 8px 8px 0; }
+:root body:is(.no-side, .side-none) #app { grid-template-columns: var(--rail-w) 0 var(--list-w) minmax(0, 1fr); padding-left: 0; }
+:root body.no-list #app { grid-template-columns: var(--rail-w) var(--side-w) 0 minmax(0, 1fr); }
+:root body.no-list:is(.no-side, .side-none) #app { grid-template-columns: var(--rail-w) 0 0 minmax(0, 1fr); }
+/* Mode concentration : tout s'efface, rail compris (classe répétée pour passer devant les règles ci-dessus). */
+:root body.focus.focus.focus #app { grid-template-columns: 0 0 0 minmax(0, 1fr); padding-left: 8px; }
+:root #rail { grid-column: 1; } :root #sidebar { grid-column: 2; } :root #list { grid-column: 3; } :root #main { grid-column: 4; }
+:root body.side-none #sidebar { visibility: hidden; opacity: 0; }
+:root body.focus #rail { visibility: hidden; opacity: 0; }
+
+/* ---------- Rail ---------- */
+:root #rail { min-width: 0; min-height: 0; overflow: hidden; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px 0 6px; -webkit-user-select: none; user-select: none; }
+:root #rail > * { flex: none; }
+:root #rail .rail-logo { flex: none; width: 36px; height: 36px; padding: 0; justify-content: center; margin-bottom: 2px; }
+:root #rail .rail-logo .logo { width: 22px; height: 22px; }
+:root #rail .rail-zones { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+:root #rail .rail-foot { margin-top: auto; display: flex; flex-direction: column; gap: 2px; }
+:root #rail .rail-btn { position: relative; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 9px; color: var(--text-3); transition: background-color var(--mo-d2, .12s) var(--mo-out, ease), color var(--mo-d2, .12s) var(--mo-out, ease), scale var(--mo-d4, .2s) var(--mo-spring, ease); }
+:root #rail .rail-btn .ic { width: 18px; height: 18px; }
+:root #rail .rail-foot .rail-btn { height: 32px; }
+:root #rail .rail-foot .rail-btn .ic { width: 16px; height: 16px; }
+:root #rail .rail-btn:hover { background: var(--hover); color: var(--text); }
+:root #rail .rail-btn:active { scale: .94; }
+:root #rail .rail-btn.sel { background: var(--active); color: var(--text); }
+:root #rail :is(.rail-btn, .rail-logo):focus-visible { outline: 2px solid color-mix(in srgb, var(--text) 55%, transparent); outline-offset: -2px; }
+/* Pastille : mise à jour, notifications non lues (Plus) ; verte quand des agents travaillent (Piloter). */
+:root #rail .rail-dot { position: absolute; top: 7px; right: 7px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--frame); }
+:root #rail .rail-dot.live { background: var(--c-green); }
+:root #rail .rail-update { color: var(--text-2); }
+
+/* ---------- Barre de zone : un titre court et ses actions, puis la liste ---------- */
+:root #sidebar .side-head { height: 44px; padding: 4px 6px 4px 18px; gap: 2px; }
+:root #sidebar .side-title { flex: 1; min-width: 0; font-weight: 600; font-size: var(--t-2); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root #sidebar .side-scroll { padding-top: 2px; }
+:root #sidebar .side-scroll > .side-cat:first-child { padding-top: 2px; }
+
+/* ---------- Contenu de la barre : action principale, sections, lignes aérées ---------- */
+/* « + Nouvelle note » / « + Nouveau projet » : la première ligne de la zone, pleine largeur. */
+:root #sidebar .side-new { display: flex; align-items: center; gap: 10px; width: 100%; height: 34px; padding: 0 8px; margin: 0 0 8px; border-radius: 8px; color: var(--text-2); font-weight: 500; transition: background-color var(--mo-d2, .12s) var(--mo-out, ease), color var(--mo-d2, .12s) var(--mo-out, ease); }
+:root #sidebar .side-new > span { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root #sidebar .side-new-ic { flex: none; width: 20px; height: 20px; display: grid; place-items: center; border-radius: 6px; border: 1px solid var(--border-2); color: var(--text-3); }
+:root #sidebar .side-new-ic .ic { width: 12px; height: 12px; }
+:root #sidebar .side-new:hover { background: var(--hover); color: var(--text); }
+:root #sidebar .side-new:hover .side-new-ic { color: var(--text); border-color: var(--text-3); }
+:root #sidebar .side-new:active { scale: .98; }
+:root #sidebar .side-new:focus-visible { outline: 2px solid color-mix(in srgb, var(--text) 55%, transparent); outline-offset: -2px; }
+/* Intitulé de section, petit et gris, avec au besoin une action à droite (« Tous les projets »). */
+:root #sidebar .side-cat { display: flex; align-items: center; gap: 6px; min-height: 26px; padding: 12px 4px 4px 10px; font-size: 11.5px; font-weight: 500; color: var(--text-3); opacity: 1; }
+:root #sidebar .side-cat-act { margin-left: auto; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 6px; color: var(--text-3); }
+:root #sidebar .side-cat-act .ic { width: 13px; height: 13px; }
+:root #sidebar .side-cat-act:hover { background: var(--hover); color: var(--text); }
+:root #sidebar .side-cat-act.sel { background: var(--active); color: var(--text); }
+:root #sidebar .side-empty { margin: 2px 10px; font-size: var(--t-1); color: var(--text-3); }
+/* Lignes plus hautes, plus d'air. */
+:root #sidebar .side-item { height: 32px; }
+:root #sidebar .side-tree { height: 30px; }
+/* Projet : un avatar à l'initiale, teinté de sa couleur, à la place du point. */
+:root #sidebar .side-sub { height: 32px; padding-left: 8px; font-size: var(--t-2); }
+:root #sidebar .side-av { flex: none; width: 18px; height: 18px; display: grid; place-items: center; border-radius: 5px; font-style: normal; font-size: 10.5px; font-weight: 700; line-height: 1; color: var(--c); background: color-mix(in srgb, var(--c) 16%, transparent); }
+:root #sidebar .side-sub.open .side-av, :root #sidebar .side-sub.sel .side-av { color: var(--bg); background: var(--c); }
+/* Fils, onglet ouvert, serveurs : rattachés au projet par l'arborescence (trait vertical sous l'avatar, un coude par ligne) ;
+   le fond de sélection commence après les traits. */
+:root #sidebar .side-kids { position: relative; display: flex; flex-direction: column; gap: 1px; margin-bottom: 4px; }
+:root #sidebar .side-kids::before { content: ""; position: absolute; left: 17px; top: 0; bottom: 22px; width: 1px; background: var(--border-2); pointer-events: none; }
+:root #sidebar .side-kids > .side-item { position: relative; height: 28px; margin-left: 26px; width: calc(100% - 26px); padding-left: 8px; }
+:root #sidebar .side-kids > .side-item::after { content: ""; position: absolute; left: -9px; top: calc(50% - 8px); width: 8px; height: 8px; border-left: 1px solid var(--border-2); border-bottom: 1px solid var(--border-2); border-bottom-left-radius: 6px; pointer-events: none; }
+:root #sidebar .side-kids > .side-sub3 { margin-left: 42px; width: calc(100% - 42px); }
+:root #sidebar .side-kids > .side-sub3::after { left: -25px; width: 24px; }
+:root #sidebar .side-kids > .side-talk > .ss-live { margin: 0 2px 0 0; }
+
+/* ---------- En-têtes du contenu : un titre simple, sans filet ---------- */
+:root .toolbar, :root .list-head { border-bottom-color: transparent; }
+:root .toolbar { padding-left: 12px; }
+:root .toolbar .crumb-cur { font-weight: 600; }
+
+/* ---------- Fenêtres étroites : rail et barre forment un seul tiroir ---------- */
+@media (max-width: 900px) {
+  :root #app, :root body:is(.no-side, .side-none) #app { grid-template-columns: 0 0 var(--list-w) minmax(0, 1fr); padding-left: 8px; }
+  :root body.no-list #app, :root body.no-list:is(.no-side, .side-none) #app { grid-template-columns: 0 0 0 minmax(0, 1fr); }
+  :root #rail { position: fixed; z-index: 41; top: 0; bottom: 0; left: 0; width: var(--rail-w); padding-top: max(10px, env(safe-area-inset-top, 0px)); background: var(--frame); transform: translateX(-102%); transition: transform .2s ease; visibility: visible; }
+  :root body.side-open #rail { transform: none; }
+  :root body.side-open.side-none #rail { box-shadow: var(--shadow); }
+  :root #sidebar { left: var(--rail-w); transform: translateX(calc(-100% - var(--rail-w) - 4px)); }
+  :root body.side-open:not(.side-none) #sidebar { transform: none; }
+  :root body.side-open.side-none #sidebar { transform: translateX(calc(-100% - var(--rail-w) - 4px)); box-shadow: none; }
+}
+@media (max-width: 640px) {
+  :root #app, :root body:is(.no-side, .side-none) #app { grid-template-columns: 0 0 minmax(0, 1fr) 0; padding: 0; }
+  :root body:is(.pane-main, .no-list, .focus) #app, :root body.no-list:is(.no-side, .side-none) #app { grid-template-columns: 0 0 0 minmax(0, 1fr); padding: 0; }
+}

@@ -1,7 +1,7 @@
 /* Fond « Ciel » (`data-backdrop="sky"` sur <html>, choix `ui.backdrop` d'app.ts) : cadre noir, barre latérale posée sur le noir,
    liste et contenu en panneaux arrondis qui flottent sur un ciel en pixels tramés (`--sky`, dessiné par src/ui/sky.ts). */
 :root[data-backdrop="sky"] { --frame: #050506; }
-:root[data-backdrop="sky"] #sidebar, :root[data-backdrop="sky"] #list, :root[data-backdrop="sky"] #main { grid-row: 1; }
+:root[data-backdrop="sky"] #rail, :root[data-backdrop="sky"] #sidebar, :root[data-backdrop="sky"] #list, :root[data-backdrop="sky"] #main { grid-row: 1; }
 /* Le ciel : un pseudo-élément de la grille, sous les colonnes 2 et 3 (liste et contenu). */
 :root[data-backdrop="sky"] #app::before {
   content: ""; grid-column: 2 / 4; grid-row: 1; border-radius: 14px; pointer-events: none;
@@ -20,7 +20,7 @@
 :root[data-backdrop="sky"][data-theme="dark"] #list, :root[data-backdrop="sky"][data-theme="dark"] #main { border-color: rgb(255 255 255 / .08); box-shadow: 0 24px 60px -24px rgb(0 0 0 / .7); }
 
 /* Barre latérale : toujours sur le noir du cadre, donc avec les teintes du thème sombre, quel que soit le thème. */
-:root[data-backdrop="sky"] #sidebar {
+:root[data-backdrop="sky"] :is(#sidebar, #rail) {
   color-scheme: dark; color: var(--text);
   --bg: #0b0b0c; --surface: #141516; --surface-2: #1a1b1d;
   --text: #f1f2f4; --text-2: #a2a6ad; --text-3: #6b6f77;
