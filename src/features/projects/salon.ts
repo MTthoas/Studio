@@ -16,6 +16,7 @@ import { syncFeed, nameOf, live, copyStage, copyAct, answerHTML, modelName, mode
 import * as saved from './drafts.ts';
 import * as subagents from './subagents.ts';
 import * as attach from './attach.ts';
+import * as outbox from './outbox.ts';
 import { AUTO, pickFor, label as autoLabel } from './autopick.ts';
 import { exchanges } from './team.ts';
 import * as flux from './flux.ts';
@@ -380,13 +381,21 @@ function crewMember(crew: Crew, name: string): Who | null {
   return id ? crew.subs.get(id) ?? null : null;
 }
 
+/** Adresses de pages publiées (`https://claude.ai/code/artifact/<id>`) citées dans un texte, sans doublon. */
+const artifactUrls = (t: string): string[] => [...new Set(t.match(/https:\/\/claude\.ai\/code\/artifact\/[A-Za-z0-9-]+/g) ?? [])];
+/** Carte d'une page publiée : ouvrir, et rappel de « Install as app » (app Claude Mac/Windows, bêta : menu Partager). */
+function artifactCard(u: string): string {
+  return `<div class="sl-card res art"><span class="sl-pill" style="--c:var(--c-violet)">page publiée</span><div class="sl-card-t"><b>Page interactive sur claude.ai</b><small>Privée à ton compte</small></div><div class="sl-card-a"><a class="btn btn-primary" href="${esc(u)}" target="_blank" rel="noopener">${icon('link')}Ouvrir</a></div>`
+    + `<details class="sl-fold"><summary>L’installer comme app${icon('chevron')}</summary><p>Ouvre la page dans l’app Claude (Mac ou Windows), puis menu Partager → « Install as app » (bêta). Elle aura sa propre fenêtre et se mettra à jour quand l’agent la republie.</p></details></div>`;
+}
+
 interface Item { at: number; key: string; html: string; who: string }
 /** Tout ce qui se dit dans le fil, du plus ancien au plus récent ; `ask` : la dernière chose écrite est une réponse de l'agent qui pose une question. */
 function itemsOf(d: Detail, crew: Crew, board: BoardMsg[]): { items: Item[]; ask: boolean } {
   const out: Item[] = [], seq = new Map<string, number>(), nth = new Map<string, number>();
   const add = (at: number, k: string, html: string, who = ''): void => { const key = `${k}|${at}`, n = seq.get(key) ?? 0; seq.set(key, n + 1); out.push({ at, key: n ? `${key}|${n}` : key, html, who }); };
   let lastTests = 0, lastText = -1;
-  const spoken: string[] = [];
+  const spoken: string[] = [], shown = new Set<string>();
   d.actions.forEach((a, i) => {
     const at = ms(a.at);
     if (a.kind === 'prompt') { add(at, 'me', msgHTML(crew.me, at, plain(a.text) + attach.galleryHTML(a.images)), 'me'); return; }
@@ -407,6 +416,10 @@ function itemsOf(d: Detail, crew: Crew, board: BoardMsg[]): { items: Item[]; ask
     }
     lastText = i; spoken.push(norm(a.text));
     add(at, 'ai', msgHTML(crew.main, at, talk(a.text), { cls: 'ai' }), 'main');
+    // Page publiée sur claude.ai par l'outil Artifact : une carte juste après le message qui donne l'adresse.
+    for (const u of artifactUrls(a.text)) if (!shown.has(u)) { shown.add(u); add(at + 1, `artifact:${u.slice(-12)}`, artifactCard(u)); }
+    // Fichiers envoyés par l'agent (dossier .git/studio-sorties) : une carte par fichier, remplie par `outbox.hydrate`.
+    for (const f of outbox.pathsOf(a.text)) if (!shown.has(f)) { shown.add(f); add(at + 1, `file:${f.slice(-24)}`, outbox.cardHTML(f)); }
   });
   // Comptes rendus des sous-agents : un message de leur part à l'agent principal, replié s'il est long.
   for (const s of d.subagents ?? []) {
@@ -714,7 +727,7 @@ function paint(): void {
   const end = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 60 || performance.now() < glideEnd;
   const before = switched ? null : new Set(Array.from(feed.children, x => (x as HTMLElement).dataset.k));
   const changed = syncFeed(feed, blocks);
-  attach.hydrate(feed, p.id);
+  attach.hydrate(feed, p.id); outbox.hydrate(feed, p.id);
   // Seuls les blocs vraiment nouveaux s'animent (un bloc redessiné garde sa place sans rejouer son entrée).
   // Un message « envoi… » remplacé par sa version écrite par le Mac n'est pas du neuf : il ne rejoue pas son entrée.
   const now = new Set(Array.from(feed.children, x => (x as HTMLElement).dataset.k));

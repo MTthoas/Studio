@@ -314,6 +314,7 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
         // Suppressions et installations qu'un agent demande à faire confirmer (AgentGuard) : la page les lit et y répond.
         case "guard": send(AgentGuard.shared.list())
         case "guardAnswer": AgentGuard.shared.answer(id: body["ask"] as? String ?? "", allow: body["allow"] as? Bool == true, done: send)
+        case "file": DispatchQueue.global(qos: .userInitiated).async { Agents.shared.file(project: pid, body: body, done: send) }
         case "image": DispatchQueue.global(qos: .userInitiated).async { Agents.shared.image(project: pid, body: body, done: send) }
         case "unqueue": send(Agents.shared.unqueue(project: pid, id: body["queued"] as? String ?? ""))
         case "stop": send(Agents.shared.stop(body["run"] as? String ?? ""))

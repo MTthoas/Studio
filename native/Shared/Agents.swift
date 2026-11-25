@@ -150,6 +150,10 @@ final class Agents {
 
     /// Lit une image jointe à une consigne, pour la montrer dans le fil (action de pont `agent` / `image`).
     /// Seuls les fichiers du dossier d'images du projet demandé sont lisibles (voir AgentImages.read).
+    func file(project pid: String, body: [String: Any], done: @escaping ([String: Any]) -> Void) {
+        guard let repo = ProjectFolders.shared.path(pid) else { return done(["ok": false, "message": "Projet introuvable sur ce Mac."]) }
+        done(AgentOutbox.read(repo: repo, path: body["path"] as? String ?? ""))
+    }
     func image(project pid: String, body: [String: Any], done: @escaping ([String: Any]) -> Void) {
         guard let repo = ProjectFolders.shared.path(pid) else { return done(["ok": false, "message": "Projet introuvable sur ce Mac."]) }
         done(AgentImages.read(repo: repo, path: body["path"] as? String ?? ""))
@@ -381,7 +385,9 @@ final class Agents {
         let allImages = queuedImages + newImages
         // Le dossier des images est ouvert à l'outil Read de l'agent (--add-dir), dans la bulle comme hors bulle,
         // dès qu'il existe : une réponse plus tard dans la discussion peut relire une image d'un tour précédent.
-        let imageDirs = onServer || body["internal"] as? Bool == true ? [] : AgentImages.existing(repo: dir).map { [$0] } ?? []
+        let local = !(onServer || body["internal"] as? Bool == true)
+        let outbox = local ? AgentOutbox.ensure(repo: dir) : nil
+        let imageDirs = (local ? AgentImages.existing(repo: dir).map { [$0] } ?? [] : []) + (outbox.map { [$0] } ?? [])
 
         var cwd = dir, mode = body["mode"] as? String == "edit" ? "edit" : "read", newWorktree = "", restored = "", groupNote = ""
         var args = ["-p", "--output-format", "stream-json", "--verbose", "--restricted", "--permission-mode", "dontAsk",
@@ -543,7 +549,7 @@ final class Agents {
         let mobileNote = onServer || body["internal"] as? Bool == true ? "" : Mobile.shared.agentNote(dir: cwd, shell: shell)
         // Salon (`voice: "chat"`) : l'utilisateur lit une discussion, pas un rapport ; demandé à chaque message, pas retenu.
         let voice = body["voice"] as? String == "chat" && body["internal"] as? Bool != true ? AgentTuning.chat : ""
-        let added = [AgentTuning.prompt(mode: mode, tests: tests, items: items, shell: shell), voice, team?.prompt(edit: mode == "edit") ?? "", repoNote, mobileNote, groupNote, board?.prompt ?? "", browse?.prompt ?? "", artifactsOK ? AgentPermissions.artifactLine : ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
+        let added = [AgentTuning.prompt(mode: mode, tests: tests, items: items, shell: shell), voice, team?.prompt(edit: mode == "edit") ?? "", repoNote, mobileNote, groupNote, board?.prompt ?? "", browse?.prompt ?? "", artifactsOK ? AgentPermissions.artifactLine : "", outbox.map { AgentOutbox.line($0) } ?? ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
         if !added.isEmpty { args += ["--append-system-prompt", added] }
         let closed = onServer ? [] : AgentPermissions.privateReads(project: pid, dirs: [dir, cwd] + addDirs)
         if !closed.isEmpty { args += ["--disallowedTools"] + closed }
@@ -1000,6 +1006,53 @@ enum AgentImages {
     }
 }
 
+/// Fichiers que l'agent envoie à l'utilisateur (vidéo, image, PDF, export…) : il les écrit dans `<dépôt>/.git/studio-sorties/`
+/// (créé au lancement et ouvert par --add-dir) et en cite le chemin absolu dans son message ; le Salon en fait une carte
+/// (lecteur vidéo, aperçu, téléchargement) en les lisant par l'action de pont `agent` / `file`. Jamais commités, 40 Mo au plus
+/// par fichier, 30 jours de garde.
+enum AgentOutbox {
+    static let folder = "studio-sorties", maxBytes = 40 * 1024 * 1024, keepDays = 30.0
+    static let types: [String: String] = [
+        "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp", "svg": "image/svg+xml",
+        "mp4": "video/mp4", "mov": "video/quicktime", "m4v": "video/mp4", "webm": "video/webm",
+        "mp3": "audio/mpeg", "m4a": "audio/mp4", "wav": "audio/wav", "pdf": "application/pdf",
+        "txt": "text/plain", "md": "text/markdown", "csv": "text/csv", "json": "application/json", "html": "text/html", "zip": "application/zip"]
+    static func dir(repo: String) -> String { repo + "/.git/" + folder }
+
+    /// Crée le dossier (s'il y a un vrai .git) et supprime les fichiers de plus de 30 jours ; renvoie le dossier à ouvrir à l'agent.
+    static func ensure(repo: String) -> String? {
+        var isDir: ObjCBool = false
+        let fm = FileManager.default, d = dir(repo: repo)
+        guard fm.fileExists(atPath: repo + "/.git", isDirectory: &isDir), isDir.boolValue else { return nil }
+        guard (try? fm.createDirectory(atPath: d, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])) != nil else { return nil }
+        let limit = Date().addingTimeInterval(-keepDays * 86_400)
+        for f in (try? fm.contentsOfDirectory(atPath: d)) ?? [] where !f.hasPrefix(".") {
+            let p = d + "/" + f
+            if let at = (try? fm.attributesOfItem(atPath: p))?[.modificationDate] as? Date, at < limit { try? fm.removeItem(atPath: p) }
+        }
+        return d
+    }
+
+    static func line(_ d: String) -> String {
+        "Pour envoyer un fichier à l'utilisateur (vidéo, capture, image, PDF, export…), écris-le dans \(d)/ (nom simple, sans espace) puis cite son chemin absolu complet dans ton message : Studio l'affiche dans le Salon (lecteur vidéo, aperçu, téléchargement). 40 Mo au plus par fichier."
+    }
+
+    /// Lecture d'un fichier envoyé, pour le fil : fichier ordinaire sous le dossier du projet (liens résolus, sans `..`).
+    static func read(repo: String, path: String) -> [String: Any] {
+        let bad: [String: Any] = ["ok": false, "message": "Fichier introuvable."]
+        guard path.hasPrefix("/"), path.utf8.count < 1024, !path.contains("\0"), !path.split(separator: "/").contains("..") else { return bad }
+        let root = URL(fileURLWithPath: dir(repo: repo)).resolvingSymlinksInPath().path
+        let file = URL(fileURLWithPath: path).resolvingSymlinksInPath().path
+        guard file.hasPrefix(root + "/") else { return bad }
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: file), attrs[.type] as? FileAttributeType == .typeRegular,
+              let size = attrs[.size] as? Int, size > 0 else { return bad }
+        if size > maxBytes { return ["ok": false, "big": true, "size": size, "message": "Fichier trop gros pour le fil (40 Mo au plus)."] }
+        guard let data = FileManager.default.contents(atPath: file) else { return bad }
+        let ext = (file as NSString).pathExtension.lowercased()
+        return ["ok": true, "name": (file as NSString).lastPathComponent, "type": types[ext] ?? "application/octet-stream", "size": size, "data": data.base64EncodedString()]
+    }
+}
+
 /// Tableau d'équipe : le canal entre un agent, ses sous-agents, les autres agents de son groupe et l'utilisateur.
 /// Un dossier de fichiers Markdown dans le .git commun du dépôt (`.git/studio-equipe/<copie ou groupe>/`) : jamais
 /// commité, lisible et modifiable par chaque copie du dépôt (la bulle permet l'écriture dans ce .git), partagé par
@@ -1306,7 +1359,7 @@ enum AgentPermissions {
     /// Outil Artifact de Claude Code : l'agent publie une page interactive sur claude.ai (privée, visible de ton compte
     /// hors de Studio, y compris sur mobile). Demande une session `/login` claude.ai ; sur ce Mac seulement.
     static var artifacts: Bool { saved["artifacts"] as? Bool ?? false }
-    static let artifactLine = "Tu peux publier une page interactive sur claude.ai avec l'outil Artifact (graphique, tableau de bord, revue de code annotée, comparaison d'options) quand l'utilisateur le demande ou que c'est plus lisible que du texte. Elle reste privée à son compte. Donne l'adresse de la page dans ton compte rendu."
+    static let artifactLine = "Tu peux publier une page interactive sur claude.ai avec l'outil Artifact (graphique, tableau de bord, revue de code annotée, comparaison d'options) quand l'utilisateur le demande ou que c'est plus lisible que du texte. Elle reste privée à son compte. Donne toujours l'adresse complète (https://claude.ai/code/artifact/…) dans ton message : Studio en fait une carte dans le Salon, avec le rappel qu'on peut l'installer comme app depuis l'app Claude (Partager → Install as app). Pour modifier une page déjà publiée, republie le même fichier ou passe son adresse en `url` : le lien et l'app installée restent les mêmes."
     /// Terminal complet en mode Modifier, sans cocher « Commandes », dans la bulle macOS d'AgentSandbox
     /// (écriture limitée à la copie, données de Studio et autres projets illisibles). Sans bulle possible : coupé.
     static var terminal: Bool { saved["terminal"] as? Bool ?? true }
