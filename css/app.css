@@ -2610,3 +2610,22 @@ a.dk-port:hover { background: color-mix(in srgb, var(--c-blue) 14%, transparent)
 .ag-set .ag-lims { min-height: 0; margin-top: 8px; padding: 0; border-top: 0; }
 /* Notes jointes : les pastilles restent visibles, le bouton « Joindre des notes » attend les réglages. */
 .ag-compose:not(.set-open) .ag-ctx:not(:has(.ag-note)) { display: none; }
+
+/* ---------- Pleine largeur et pleine hauteur (demande du 26 nov. 2026) ---------- */
+/* Les vues de projet et les pages larges prennent toute la zone de contenu ; seul le texte courant garde une mesure lisible. */
+.pj-in, .lv-in, .hp-in, .au-in, .todo.wide .todo-in, .lv-in { max-width: none; }
+.todo.pj { display: flex; flex-direction: column; }
+.pj-in { box-sizing: border-box; width: 100%; flex: 1 0 auto; display: flex; flex-direction: column; }
+.pj-in > .pj-head { flex: none; }
+/* Moins de marge autour des projets : l'espace va aux vues (barre de navigation déjà au-dessus). */
+@media (min-width: 720px) { .todo-in.pj-in { padding: 20px 28px 24px; } .pj-in > .pj-head { margin-bottom: 14px; } }
+.pj-in > .pj-body { flex: 1 0 auto; }
+.pj-in > .pj-body > .sk, .pj-in > .pj-body > .sv-box, .pj-in > .pj-body > .dk-box { flex: 1 0 auto; }
+.sv-form { max-width: 720px; }
+.ml-page { max-width: none; }
+.pl-body { max-width: none; }
+.er-scroll, .mb-scroll { max-height: min(75dvh, 1100px); }
+.sv-log { max-height: 75dvh; }
+.tm-lines, .sk-log .st-log, .st-log { max-height: min(50dvh, 700px); }
+.tm-rows { max-height: min(40dvh, 520px); }
+@media (max-width: 560px) { .mb-scroll { max-height: 220px; } }

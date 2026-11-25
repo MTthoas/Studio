@@ -21,6 +21,8 @@
 // Un appareil lié ne peut jamais demander les commandes (voir link.ts), ni changer les autorisations.
 import Foundation
 import CryptoKit
+import AVFoundation
+import ImageIO
 #if os(macOS)
 
 final class Agents {
@@ -869,6 +871,10 @@ enum AgentImages {
     static let folder = "studio-images"
     static let maxCount = 6, maxBytes = 8 * 1024 * 1024, maxTotal = 24 * 1024 * 1024, keepDays = 30.0, keepLots = 200
     static let defaultPrompt = "Regarde les images jointes."
+    /// Vidéos (enregistrements d'écran) : validées à `ftyp`, écrites un instant dans le lot, puis remplacées par des images
+    /// extraites (une par seconde, `maxFrames` au plus par vidéo, 1280 px de large, JPEG) : Claude ne lit pas de vidéo.
+    /// Plafond à part des 6 images : `maxVideos` vidéos, `maxVideoBytes` chacune, `maxVideoTotal` en tout.
+    static let maxVideos = 2, maxVideoBytes = 40 * 1024 * 1024, maxVideoTotal = 60 * 1024 * 1024, maxFrames = 12, frameWidth = 1280.0
     /// Délimiteurs du bloc dans la consigne : voir `block` et ClaudeSessions.
     static let mark = "\n\n<images-jointes>\n", end = "\n</images-jointes>"
     struct Failure: Error { let message: String }
@@ -890,6 +896,40 @@ enum AgentImages {
         return nil
     }
 
+    /// Vidéo MP4 / MOV reconnue à sa boîte `ftyp` (octets 4 à 7).
+    static func sniffVideo(_ d: Data) -> String? {
+        let b = [UInt8](d.prefix(12))
+        guard b.count >= 12, b[4] == 0x66, b[5] == 0x74, b[6] == 0x79, b[7] == 0x70 else { return nil }
+        return b[8] == 0x71 && b[9] == 0x74 ? "mov" : "mp4"
+    }
+
+    /// Images d'une vidéo écrites dans `dir`, dans l'ordre du temps : `<n>-<nom>-t<dixièmes de seconde sur 4 chiffres>.jpg`
+    /// (`block` en tire « vidéo <nom>, image à 3,0 s »). Nil si la vidéo n'est pas lisible.
+    static func extractFrames(video: String, into dir: String, index: Int, name: String) -> [String]? {
+        let asset = AVURLAsset(url: URL(fileURLWithPath: video))
+        let secs = CMTimeGetSeconds(asset.duration)
+        guard secs.isFinite, secs > 0, !asset.tracks(withMediaType: .video).isEmpty else { return nil }
+        let gen = AVAssetImageGenerator(asset: asset)
+        gen.appliesPreferredTrackTransform = true
+        gen.maximumSize = CGSize(width: frameWidth, height: 4096)
+        gen.requestedTimeToleranceBefore = CMTime(seconds: 0.2, preferredTimescale: 600)
+        gen.requestedTimeToleranceAfter = CMTime(seconds: 0.2, preferredTimescale: 600)
+        // Une image par seconde ; au-delà de `maxFrames` secondes, les images s'espacent pour couvrir toute la vidéo.
+        let step = max(1.0, secs / Double(maxFrames))
+        let count = min(maxFrames, Int(secs / step) + 1)
+        var out: [String] = []
+        for k in 0..<count {
+            let t = min(Double(k) * step, max(0, secs - 0.05))
+            guard let img = try? gen.copyCGImage(at: CMTime(seconds: t, preferredTimescale: 600), actualTime: nil) else { continue }
+            let tenths = String(format: "%04d", min(9999, Int((t * 10).rounded())))
+            let path = dir + "/\(index)-" + slug(name) + "-t" + tenths + ".jpg"
+            guard let dest = CGImageDestinationCreateWithURL(URL(fileURLWithPath: path) as CFURL, "public.jpeg" as CFString, 1, nil) else { continue }
+            CGImageDestinationAddImage(dest, img, [kCGImageDestinationLossyCompressionQuality: 0.8] as CFDictionary)
+            if CGImageDestinationFinalize(dest) { out.append(path) }
+        }
+        return out.isEmpty ? nil : out
+    }
+
     /// Nom de fichier sûr : sans accents ni signes, 40 caractères au plus, sans l'extension d'origine.
     static func slug(_ name: String) -> String {
         var base = (name as NSString).lastPathComponent
@@ -903,20 +943,31 @@ enum AgentImages {
 
     /// Valide et écrit les images d'une consigne. Succès : le lot (nom du dossier) et les chemins absolus, dans l'ordre.
     static func save(repo: String, items: [Any]) -> Result<(lot: String, paths: [String]), Failure> {
-        guard items.count <= maxCount else { return .failure(Failure(message: "\(maxCount) images au plus par consigne.")) }
-        var decoded: [(name: String, data: Data, ext: String)] = []
-        var total = 0
+        guard items.count <= maxCount + maxVideos else { return .failure(Failure(message: "\(maxCount) images au plus par consigne.")) }
+        var decoded: [(name: String, data: Data, ext: String, video: Bool)] = []
+        var total = 0, totalVideo = 0, nImages = 0, nVideos = 0
         for (i, raw) in items.enumerated() {
             guard let o = raw as? [String: Any], let b64 = o["data"] as? String, !b64.isEmpty else { return .failure(Failure(message: "Image \(i + 1) illisible : renvoie la consigne.")) }
             let name = (o["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "image"
-            // Avant de décoder : la taille du base64 borne celle de l'image (4 octets pour 3).
-            guard b64.utf8.count <= maxBytes / 3 * 4 + 8 else { return .failure(Failure(message: "« \(name) » dépasse 8 Mo.")) }
+            // Avant de décoder : la taille du base64 borne celle du fichier (4 octets pour 3).
+            let announcedVideo = (o["type"] as? String ?? "").hasPrefix("video/")
+            let cap = announcedVideo ? maxVideoBytes : maxBytes
+            guard b64.utf8.count <= cap / 3 * 4 + 8 else { return .failure(Failure(message: "« \(name) » dépasse \(cap / 1_048_576) Mo.")) }
             guard let data = Data(base64Encoded: b64, options: .ignoreUnknownCharacters), !data.isEmpty else { return .failure(Failure(message: "« \(name) » est illisible.")) }
+            if let v = sniffVideo(data) {
+                guard data.count <= maxVideoBytes else { return .failure(Failure(message: "« \(name) » dépasse \(maxVideoBytes / 1_048_576) Mo : raccourcis l’enregistrement.")) }
+                nVideos += 1; totalVideo += data.count
+                guard nVideos <= maxVideos else { return .failure(Failure(message: "\(maxVideos) vidéos au plus par consigne.")) }
+                guard totalVideo <= maxVideoTotal else { return .failure(Failure(message: "Les vidéos pèsent plus de \(maxVideoTotal / 1_048_576) Mo au total : raccourcis-les.")) }
+                decoded.append((name, data, v, true)); continue
+            }
             guard data.count <= maxBytes else { return .failure(Failure(message: "« \(name) » dépasse 8 Mo.")) }
-            guard let kind = sniff(data) else { return .failure(Failure(message: "« \(name) » n’est pas une image PNG, JPEG, WebP ou GIF.")) }
+            guard let kind = sniff(data) else { return .failure(Failure(message: "« \(name) » n’est pas une image PNG, JPEG, WebP ou GIF, ni une vidéo MP4 ou MOV.")) }
+            nImages += 1
+            guard nImages <= maxCount else { return .failure(Failure(message: "\(maxCount) images au plus par consigne.")) }
             total += data.count
             guard total <= maxTotal else { return .failure(Failure(message: "Les images pèsent plus de 24 Mo au total : joins-en moins, ou plus légères.")) }
-            decoded.append((name, data, kind.ext))
+            decoded.append((name, data, kind.ext, false))
         }
         guard !decoded.isEmpty else { return .success((lot: "", paths: [])) }
         var isDir: ObjCBool = false
@@ -934,6 +985,16 @@ enum AgentImages {
         catch { return .failure(Failure(message: "Impossible de créer le dossier des images dans .git.")) }
         var paths: [String] = []
         for (i, d) in decoded.enumerated() {
+            if d.video {
+                // La vidéo n'est qu'un intermédiaire : seules les images extraites restent dans le lot.
+                let tmp = dir + "/.video-\(i + 1)." + d.ext
+                do { try d.data.write(to: URL(fileURLWithPath: tmp), options: .atomic) }
+                catch { try? fm.removeItem(atPath: dir); return .failure(Failure(message: "Écriture des images impossible (disque plein ?).")) }
+                let frames = extractFrames(video: tmp, into: dir, index: i + 1, name: d.name)
+                try? fm.removeItem(atPath: tmp)
+                guard let frames else { try? fm.removeItem(atPath: dir); return .failure(Failure(message: "« \(d.name) » n’a pas pu être lue : exporte l’enregistrement en MP4 ou MOV (H.264 ou HEVC).")) }
+                paths += frames; continue
+            }
             let path = dir + "/\(i + 1)-" + slug(d.name) + "." + d.ext
             do { try d.data.write(to: URL(fileURLWithPath: path), options: .atomic) }
             catch { try? fm.removeItem(atPath: dir); return .failure(Failure(message: "Écriture des images impossible (disque plein ?).")) }
@@ -1002,8 +1063,19 @@ enum AgentImages {
     /// Bloc ajouté à la fin de la consigne : les chemins absolus, et l'ordre de les lire avant de répondre.
     static func block(_ paths: [String]) -> String {
         guard !paths.isEmpty else { return "" }
-        let list = paths.enumerated().map { "\($0.offset + 1). \($0.element)" }.joined(separator: "\n")
-        return mark + "Studio a joint \(paths.count == 1 ? "une image" : "\(paths.count) images") à ce message. Lis-\(paths.count == 1 ? "la" : "les") avec ton outil Read (chemins absolus ci-dessous) avant de répondre : elles font partie de la demande.\n" + list + end
+        let labels = paths.map(frameLabel)
+        let list = paths.enumerated().map { "\($0.offset + 1). \($0.element)" + (labels[$0.offset].map { " — " + $0 } ?? "") }.joined(separator: "\n")
+        let video = labels.contains { $0 != nil } ? " Celles marquées « vidéo » sont des images extraites d'une vidéo (enregistrement d'écran), à lire dans l'ordre : elles montrent le déroulé, avec l'instant de chacune." : ""
+        return mark + "Studio a joint \(paths.count == 1 ? "une image" : "\(paths.count) images") à ce message. Lis-\(paths.count == 1 ? "la" : "les") avec ton outil Read (chemins absolus ci-dessous) avant de répondre : elles font partie de la demande.\(video)\n" + list + end
+    }
+
+    /// « vidéo <nom>, image à 3,0 s » pour une image extraite d'une vidéo (d'après son nom de fichier), nil pour une image jointe.
+    static func frameLabel(_ path: String) -> String? {
+        let file = (path as NSString).lastPathComponent
+        guard let re = try? NSRegularExpression(pattern: "^[0-9]+-(.+)-t([0-9]{4})\\.jpg$"),
+              let m = re.firstMatch(in: file, range: NSRange(file.startIndex..., in: file)),
+              let nameR = Range(m.range(at: 1), in: file), let tR = Range(m.range(at: 2), in: file), let tenths = Int(file[tR]) else { return nil }
+        return "vidéo \(file[nameR]), image à \(tenths / 10),\(tenths % 10) s"
     }
 
     /// Chemins d'images d'un bloc `<images-jointes>` dans un texte, et le texte sans le bloc. Pour ClaudeSessions.
@@ -1014,7 +1086,8 @@ enum AgentImages {
         let tail = after.range(of: end).map { String(after[$0.upperBound...]) } ?? ""
         let paths = inner.split(separator: "\n").compactMap { line -> String? in
             guard let dot = line.firstIndex(of: "."), line[..<dot].allSatisfy(\.isNumber), !line[..<dot].isEmpty else { return nil }
-            let p = line[line.index(after: dot)...].trimmingCharacters(in: .whitespaces)
+            var p = line[line.index(after: dot)...].trimmingCharacters(in: .whitespaces)
+            if let sep = p.range(of: " — ") { p = String(p[..<sep.lowerBound]) }
             return p.hasPrefix("/") && p.contains("/.git/" + folder + "/") ? p : nil
         }
         return (String(text[..<r.lowerBound]) + tail, paths)

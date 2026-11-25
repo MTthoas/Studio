@@ -10,16 +10,25 @@ import { t as tr } from '../../ui/i18n.ts';
 export const MAX_COUNT = 6, MAX_BYTES = 8 * 1024 * 1024, MAX_TOTAL = 24 * 1024 * 1024, MAX_SIDE = 2000;
 export const DEFAULT_PROMPT = 'Regarde les images jointes.';
 const TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+// Vidéos (enregistrement d'écran) : le Mac en extrait des images (une par seconde, 12 au plus) que l'agent lit. Limite de poids prudente :
+// le pont transporte tout en base64 dans un seul message (40 Mo de vidéo = ~54 Mo de texte).
+export const MAX_VIDEOS = 2, MAX_VIDEO_BYTES = 40 * 1024 * 1024, MAX_VIDEO_TOTAL = 60 * 1024 * 1024;
+const VIDEO_TYPES = ['video/mp4', 'video/quicktime'];
+const VIDEO_EXT: Record<string, string> = { mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime' };
+const isVideo = (p: { type: string }): boolean => p.type.startsWith('video/');
 const EXT: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif' };
-const LIMITS = `${MAX_COUNT} images au plus, ${MAX_BYTES / 1048576} Mo chacune`;
+const LIMITS = `${MAX_COUNT} images au plus, ${MAX_BYTES / 1048576} Mo chacune ; ${MAX_VIDEOS} vidéos, ${MAX_VIDEO_BYTES / 1048576} Mo chacune`;
 
-export interface Pic { id: string; name: string; type: string; data: string; bytes: number; url: string }
+/** `poster` : première image d'une vidéo (vignette) ; `dur` : sa durée en secondes. */
+export interface Pic { id: string; name: string; type: string; data: string; bytes: number; url: string; poster?: string; dur?: number }
 export interface Payload { name: string; type: string; data: string }
 
 const pics = new Map<string, Pic[]>();
 const busy = new Set<string>();
 let seq = 0;
 
+const free = (p: Pic): void => { URL.revokeObjectURL(p.url); if (p.poster) URL.revokeObjectURL(p.poster); };
+const clock = (s: number): string => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, '0')}`;
 const keyOf = (f: Element): string => (f as HTMLElement).dataset.atKey || (f as HTMLElement).dataset.draft || '';
 const list = (f: Element): Pic[] => pics.get(keyOf(f)) ?? [];
 const plural = (n: number, one: string, many: string): string => n > 1 ? many : one;
@@ -44,31 +53,31 @@ const ICON = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke
 /** Zone des vignettes, à placer sous le champ de consigne. */
 export const stripHTML = (): string => '<div class="at-strip" data-at-strip hidden></div>';
 /** Bouton « Joindre des images » et son sélecteur de fichiers, à placer près du micro. */
-export const buttonHTML = (): string => `<button type="button" class="icon-btn at-add" data-at-pick title="Joindre des images (${LIMITS})" aria-label="Joindre des images">${ICON}</button><input type="file" class="at-file" data-at-file accept="${TYPES.join(',')}" multiple hidden tabindex="-1" aria-hidden="true">`;
+export const buttonHTML = (): string => `<button type="button" class="icon-btn at-add" data-at-pick title="Joindre des images ou des vidéos (${LIMITS})" aria-label="Joindre des images ou des vidéos">${ICON}</button><input type="file" class="at-file" data-at-file accept="${[...TYPES, ...VIDEO_TYPES].join(',')}" multiple hidden tabindex="-1" aria-hidden="true">`;
 
 const own = new WeakMap<Element, { text: string; was: string }>();
 
 /** Remet à jour vignettes, bouton « Joindre », bouton d'envoi et aide de `f` (idempotent : sans changement, rien n'est touché). */
 export function sync(f: Element): void {
   const strip = f.querySelector<HTMLElement>('[data-at-strip]'); if (!strip) return;
-  const items = list(f), n = items.length, why = blocked(f);
-  const sig = `${items.map(p => p.id).join(',')}|${why}|${busy.has(keyOf(f)) ? 'b' : ''}`;
+  const items = list(f), n = items.length, vids = items.filter(isVideo).length, why = blocked(f);
+  const sig = `${items.map(p => p.id + (p.poster ? 'p' : '')).join(',')}|${why}|${busy.has(keyOf(f)) ? 'b' : ''}`;
   if (strip.dataset.at !== sig) {
     strip.dataset.at = sig;
     strip.hidden = !n && !busy.has(keyOf(f));
-    strip.innerHTML = `<ul class="at-list" aria-label="Images jointes">${items.map(p => `<li class="at-item"><button type="button" class="at-thumb" data-at-zoom="${esc(p.id)}" title="Agrandir" aria-label="Agrandir ${esc(p.name)}"><img src="${esc(p.url)}" alt=""></button><span class="at-meta"><span class="at-name" title="${esc(p.name)}">${esc(p.name)}</span><span class="at-size">${size(p.bytes)}</span></span><button type="button" class="at-rm" data-at-rm="${esc(p.id)}" title="Retirer" aria-label="Retirer ${esc(p.name)}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></li>`).join('')}${busy.has(keyOf(f)) ? '<li class="at-item at-wait" role="status">Préparation…</li>' : ''}</ul>${n && why ? `<p class="at-note at-warn" role="status">${esc(why)} Retire-les pour envoyer.</p>` : n ? `<p class="at-note">${n} sur ${MAX_COUNT} · ${MAX_BYTES / 1048576} Mo au plus chacune</p>` : ''}`;
+    strip.innerHTML = `<ul class="at-list" aria-label="Images jointes">${items.map(p => `<li class="at-item"><button type="button" class="at-thumb${isVideo(p) ? ' at-vid' : ''}" data-at-zoom="${esc(p.id)}" title="${isVideo(p) ? 'Lire la vidéo' : 'Agrandir'}" aria-label="${isVideo(p) ? 'Lire' : 'Agrandir'} ${esc(p.name)}">${isVideo(p) ? `${p.poster ? `<img src="${esc(p.poster)}" alt="">` : ''}<span class="at-play" aria-hidden="true"><svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg></span>` : `<img src="${esc(p.url)}" alt="">`}</button><span class="at-meta"><span class="at-name" title="${esc(p.name)}">${esc(p.name)}</span><span class="at-size">${size(p.bytes)}${isVideo(p) && p.dur ? ` · ${clock(p.dur)}` : ''}</span></span><button type="button" class="at-rm" data-at-rm="${esc(p.id)}" title="Retirer" aria-label="Retirer ${esc(p.name)}"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></li>`).join('')}${busy.has(keyOf(f)) ? '<li class="at-item at-wait" role="status">Préparation…</li>' : ''}</ul>${n && why ? `<p class="at-note at-warn" role="status">${esc(why)} Retire-les pour envoyer.</p>` : n ? `<p class="at-note">${vids ? `${n - vids} sur ${MAX_COUNT} images · ${vids} sur ${MAX_VIDEOS} vidéos · ${MAX_VIDEO_BYTES / 1048576} Mo au plus par vidéo` : `${n} sur ${MAX_COUNT} · ${MAX_BYTES / 1048576} Mo au plus chacune`}</p>` : ''}`;
   }
   const add = f.querySelector<HTMLElement>('[data-at-pick]');
   if (add) {
-    const t = why || `Joindre des images (${LIMITS})`;
-    if (add.title !== tr(t)) { add.title = t; add.setAttribute('aria-label', why ? `Images indisponibles : ${why}` : 'Joindre des images'); }
+    const t = why || `Joindre des images ou des vidéos (${LIMITS})`;
+    if (add.title !== tr(t)) { add.title = t; add.setAttribute('aria-label', why ? `Images indisponibles : ${why}` : 'Joindre des images ou des vidéos'); }
     const off = why ? 'true' : 'false'; if (add.getAttribute('aria-disabled') !== off) add.setAttribute('aria-disabled', off);
     add.classList.toggle('at-off', !!why);
   }
   const btn = f.querySelector<HTMLElement>('button.btn-primary');
-  if (btn?.hasAttribute('data-at-bare')) { const t = n ? `Envoyer avec ${n} image${plural(n, '', 's')}` : ''; if (t && btn.title !== tr(t)) { btn.dataset.atTitle = btn.dataset.atTitle ?? btn.title; btn.title = t; } else if (!t && btn.dataset.atTitle) { btn.title = btn.dataset.atTitle; delete btn.dataset.atTitle; } }
+  if (btn?.hasAttribute('data-at-bare')) { const t = n ? (vids ? `Envoyer avec ${n} pièce${plural(n, '', 's')} jointe${plural(n, '', 's')}` : `Envoyer avec ${n} image${plural(n, '', 's')}`) : ''; if (t && btn.title !== tr(t)) { btn.dataset.atTitle = btn.dataset.atTitle ?? btn.title; btn.title = t; } else if (!t && btn.dataset.atTitle) { btn.title = btn.dataset.atTitle; delete btn.dataset.atTitle; } }
   else if (btn) {
-    const want = n ? `+ ${n} image${plural(n, '', 's')}` : '', cur = btn.querySelector('.at-count');
+    const want = n ? (vids ? `+ ${n} pièce${plural(n, '', 's')} jointe${plural(n, '', 's')}` : `+ ${n} image${plural(n, '', 's')}`) : '', cur = btn.querySelector('.at-count');
     if (!want && cur) cur.remove();
     else if (want && cur?.textContent !== tr(want)) {
       cur?.remove();
@@ -78,7 +87,7 @@ export function sync(f: Element): void {
   }
   const hint = f.querySelector<HTMLElement>('[data-hint]');
   if (hint) {
-    const mine = own.get(hint), text = `${n} image${plural(n, '', 's')} jointe${plural(n, '', 's')} : Claude ${plural(n, 'la', 'les')} lira avec ta consigne.`;
+    const mine = own.get(hint), text = vids ? `${n} pièce${plural(n, '', 's')} jointe${plural(n, '', 's')} : Claude lira les images, et celles tirées de ${plural(vids, 'la vidéo', 'tes vidéos')}, avec ta consigne.` : `${n} image${plural(n, '', 's')} jointe${plural(n, '', 's')} : Claude ${plural(n, 'la', 'les')} lira avec ta consigne.`;
     if (n) {
       if (hint.textContent !== tr(text)) { own.set(hint, { text: tr(text), was: mine ? mine.was : hint.innerHTML }); hint.textContent = text; }
     } else if (mine && hint.textContent === mine.text) { hint.innerHTML = mine.was; own.delete(hint); }
@@ -92,7 +101,7 @@ export const count = (f: Element): number => list(f).length;
 export const payload = (f: Element): Payload[] => list(f).map(({ name, type, data }) => ({ name, type, data }));
 /** À appeler après un envoi réussi seulement. */
 export function clear(f: Element): void {
-  for (const p of list(f)) URL.revokeObjectURL(p.url);
+  for (const p of list(f)) free(p);
   pics.delete(keyOf(f)); sync(f);
 }
 /** Lot d'images retiré d'un formulaire pour l'envoi (le Salon vide le champ tout de suite). */
@@ -104,16 +113,16 @@ export function take(f: Element): Taken {
 }
 export function putBack(t: Taken): void {
   if (!t.pics.length || !t.key) return;
-  pics.set(t.key, [...t.pics, ...(pics.get(t.key) ?? [])].slice(0, MAX_COUNT));
+  pics.set(t.key, [...t.pics, ...(pics.get(t.key) ?? [])].slice(0, MAX_COUNT + MAX_VIDEOS));
   document.querySelectorAll('form').forEach(f => { if (keyOf(f) === t.key) sync(f); });
 }
-export function release(t: Taken): void { for (const p of t.pics) URL.revokeObjectURL(p.url); }
+export function release(t: Taken): void { for (const p of t.pics) free(p); }
 function remove(f: Element, id: string): void {
   const all = list(f), hit = all.find(p => p.id === id); if (!hit) return;
-  URL.revokeObjectURL(hit.url); pics.set(keyOf(f), all.filter(p => p.id !== id)); sync(f);
+  free(hit); pics.set(keyOf(f), all.filter(p => p.id !== id)); sync(f);
 }
-/** Le Mac répond `images: <n>` : sans lui, l'app est trop ancienne et l'agent n'a pas vu les images. */
-export function confirmed(reply: Record<string, unknown>, n: number): boolean { return n === 0 || reply.images === n; }
+/** Le Mac répond `images: <n>` (n images, plus celles extraites des vidéos : au moins une par pièce jointe) : sans lui, l'app est trop ancienne et l'agent n'a pas vu les images. */
+export function confirmed(reply: Record<string, unknown>, n: number): boolean { return n === 0 || (typeof reply.images === 'number' && reply.images >= n); }
 export const OLD_APP = 'Les images n’ont pas été transmises : mets à jour l’app Studio pour Mac.';
 
 // ---------- Ajout ----------
@@ -141,33 +150,67 @@ async function fit(file: File, type: string): Promise<{ blob: Blob; type: string
   return out && out.size <= MAX_BYTES ? { blob: out, type: t } : null;
 }
 
+/** Première image (vers le milieu de la première seconde) et durée d'une vidéo ; `{}` si la vue web ne sait pas la lire. */
+function probe(url: string): Promise<{ poster?: string; dur?: number }> {
+  return new Promise(ok => {
+    const v = document.createElement('video'); let done = false;
+    const end = (r: { poster?: string; dur?: number }) => { if (done) return; done = true; clearTimeout(timer); v.removeAttribute('src'); v.load(); ok(r); };
+    const timer = setTimeout(() => end({}), 5000);
+    v.muted = true; v.preload = 'auto'; (v as HTMLVideoElement & { playsInline: boolean }).playsInline = true;
+    v.onerror = () => end({});
+    v.onloadedmetadata = () => { const d = isFinite(v.duration) ? v.duration : undefined; v.dataset.d = String(d ?? ''); v.currentTime = d ? Math.min(0.5, d / 2) : 0; };
+    v.onseeked = () => {
+      const d = Number(v.dataset.d) || undefined, w = v.videoWidth, h = v.videoHeight;
+      if (!w || !h) return end({ dur: d });
+      const k = Math.min(1, 160 / Math.max(w, h)), c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
+      c.getContext('2d')?.drawImage(v, 0, 0, c.width, c.height);
+      void toBlob(c, 'image/jpeg', 0.7).then(b => end({ dur: d, poster: b ? URL.createObjectURL(b) : undefined }));
+    };
+    v.src = url;
+  });
+}
+
 const GENERIC = /^(image|capture|screenshot|blob|unnamed)?\.?(png|jpe?g|webp|gif)?$/i;
 /** Ajoute des fichiers au formulaire `f`, en disant clairement ce qui est refusé. */
 export async function add(f: Element, files: File[]): Promise<void> {
   const why = blocked(f); if (why) { toast(why); return; }
   const key = keyOf(f); if (!key || !files.length) return;
   busy.add(key); sync(f);
-  const skipped: string[] = [], odd: string[] = [], heavy: string[] = [];
-  let over = false, total = list(f).reduce((s, p) => s + p.bytes, 0);
+  const skipped: string[] = [], odd: string[] = [], heavy: string[] = [], heavyVid: string[] = [];
+  let over = false, overVid = false, total = list(f).filter(p => !isVideo(p)).reduce((s, p) => s + p.bytes, 0), totalVid = list(f).filter(isVideo).reduce((s, p) => s + p.bytes, 0);
   try {
     for (const file of files) {
       const lower = file.name.toLowerCase();
       let type = file.type === 'image/jpg' ? 'image/jpeg' : file.type;
       if (!type && /\.(png|jpe?g|webp|gif)$/.test(lower)) type = lower.endsWith('png') ? 'image/png' : lower.endsWith('webp') ? 'image/webp' : lower.endsWith('gif') ? 'image/gif' : 'image/jpeg';
+      const ext = lower.match(/\.([a-z0-9]+)$/)?.[1] ?? '';
+      if (!VIDEO_TYPES.includes(type) && !type.startsWith('image/') && VIDEO_EXT[ext]) type = VIDEO_EXT[ext];
+      if (type === 'video/x-m4v') type = 'video/mp4';
+      if (VIDEO_TYPES.includes(type)) {
+        if (list(f).filter(isVideo).length >= MAX_VIDEOS) { overVid = true; continue; }
+        if (file.size > MAX_VIDEO_BYTES || totalVid + file.size > MAX_VIDEO_TOTAL) { heavyVid.push(file.name || 'vidéo'); continue; }
+        const url = URL.createObjectURL(file), info = await probe(url);
+        const stem = GENERIC.test(file.name) || !file.name ? `video-${list(f).filter(isVideo).length + 1}` : file.name;
+        const vid: Pic = { id: `p${++seq}`, name: /\.(mp4|m4v|mov)$/i.test(stem) ? stem : `${stem}.${type === 'video/mp4' ? 'mp4' : 'mov'}`, type, data: await readB64(file), bytes: file.size, url, poster: info.poster, dur: info.dur };
+        totalVid += vid.bytes; pics.set(key, [...list(f), vid]); sync(f); continue;
+      }
       if (!TYPES.includes(type)) { (type.startsWith('image/') || /\.(heic|heif|tiff?|svg|bmp|avif)$/.test(lower) ? odd : skipped).push(file.name || 'fichier'); continue; }
-      if (list(f).length >= MAX_COUNT) { over = true; break; }
+      if (list(f).filter(p => !isVideo(p)).length >= MAX_COUNT) { over = true; continue; }
       const fitted = await fit(file, type).catch(() => null);
       if (!fitted) { heavy.push(file.name || 'image'); continue; }
       if (total + fitted.blob.size > MAX_TOTAL) { heavy.push(file.name || 'image'); continue; }
-      const stem = GENERIC.test(file.name) ? `image-${list(f).length + 1}` : file.name, name = withExt(stem, fitted.type);
+      const stem = GENERIC.test(file.name) ? `image-${list(f).filter(p => !isVideo(p)).length + 1}` : file.name, name = withExt(stem, fitted.type);
       const pic: Pic = { id: `p${++seq}`, name, type: fitted.type, data: await readB64(fitted.blob), bytes: fitted.blob.size, url: URL.createObjectURL(fitted.blob) };
       total += pic.bytes; pics.set(key, [...list(f), pic]);
       sync(f);
     }
   } finally { busy.delete(key); sync(f); }
-  if (odd.length) toast(`Format non pris en charge : ${odd.join(', ')}. Joins des images PNG, JPEG, WebP ou GIF (une capture d’écran ou un export JPEG convient).`);
-  if (skipped.length) toast(`${skipped.join(', ')} n’${skipped.length > 1 ? 'étaient pas des images' : 'est pas une image'} : ${skipped.length > 1 ? 'ignorés' : 'ignoré'}.`);
+  if (odd.length) toast(`Format non pris en charge : ${odd.join(', ')}. Joins des images PNG, JPEG, WebP ou GIF, ou une vidéo MP4 ou MOV (une capture d’écran ou un export JPEG convient).`);
+  if (skipped.length) toast(`${skipped.join(', ')} n’${skipped.length > 1 ? 'étaient ni des images ni des vidéos' : 'est ni une image ni une vidéo'} : ${skipped.length > 1 ? 'ignorés' : 'ignoré'}.`);
   if (heavy.length) toast(`Trop lourde${heavy.length > 1 ? 's' : ''} même réduite${heavy.length > 1 ? 's' : ''} (${MAX_BYTES / 1048576} Mo au plus chacune, ${MAX_TOTAL / 1048576} Mo en tout) : ${heavy.join(', ')}.`);
+  if (heavyVid.length) toast(`Vidéo trop lourde (${MAX_VIDEO_BYTES / 1048576} Mo au plus chacune, ${MAX_VIDEO_TOTAL / 1048576} Mo en tout) : ${heavyVid.join(', ')}. Raccourcis l’enregistrement.`);
+  if (overVid) toast(`${MAX_VIDEOS} vidéos au plus par consigne : les suivantes n’ont pas été jointes.`);
   if (over) toast(`${MAX_COUNT} images au plus par consigne : les suivantes n’ont pas été jointes.`);
 }
 
@@ -179,13 +222,13 @@ function onKey(e: KeyboardEvent): void {
   else if (e.key === 'Tab') { e.preventDefault(); viewer?.querySelector<HTMLElement>('button')?.focus(); }
 }
 /** Affiche une image en grand ; Échap, un clic à côté ou le bouton la referment. */
-export function view(src: string, label = 'Image jointe'): void {
+export function view(src: string, label = 'Image jointe', video = false): void {
   closeView();
   back = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const el = document.createElement('div');
   el.className = 'at-view'; el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', label);
-  el.innerHTML = `<img src="${esc(src)}" alt="${esc(label)}"><button type="button" class="at-close" aria-label="Fermer l’image" title="Fermer (Échap)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
-  el.addEventListener('click', e => { if ((e.target as HTMLElement).tagName !== 'IMG') closeView(); });
+  el.innerHTML = `${video ? `<video src="${esc(src)}" controls autoplay muted playsinline aria-label="${esc(label)}"></video>` : `<img src="${esc(src)}" alt="${esc(label)}">`}<button type="button" class="at-close" aria-label="Fermer l’image" title="Fermer (Échap)"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>`;
+  el.addEventListener('click', e => { if (!['IMG', 'VIDEO'].includes((e.target as HTMLElement).tagName)) closeView(); });
   document.body.appendChild(el); viewer = el;
   document.addEventListener('keydown', onKey, true);
   el.querySelector<HTMLElement>('.at-close')?.focus();
@@ -277,7 +320,7 @@ export function bind(root: HTMLElement): void {
     const rm = t.closest<HTMLElement>('[data-at-rm]');
     if (rm) { const f = rm.closest('form'); if (f) { remove(f, rm.dataset.atRm ?? ''); f.querySelector<HTMLElement>('[data-at-pick], textarea')?.focus(); } return; }
     const zoom = t.closest<HTMLElement>('[data-at-zoom]');
-    if (zoom) { const f = zoom.closest('form'), p = f && list(f).find(x => x.id === zoom.dataset.atZoom); if (p) view(p.url, p.name); return; }
+    if (zoom) { const f = zoom.closest('form'), p = f && list(f).find(x => x.id === zoom.dataset.atZoom); if (p) view(p.url, p.name, isVideo(p)); return; }
     const g = t.closest<HTMLElement>('[data-at-path]');
     const src = g?.querySelector('img')?.getAttribute('src');
     if (g && src) view(src);

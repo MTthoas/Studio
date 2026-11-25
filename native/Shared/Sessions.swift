@@ -299,6 +299,8 @@ final class ClaudeSessions {
         let live = Date().timeIntervalSince(mtime(url)) < 45
         var r: [String: Any] = ["id": id, "title": title, "type": meta?.type ?? "", "started": st.started, "updated": st.updated,
                 "live": live, "tokens": st.tokOut,
+                // Détail des tokens du sous-agent (son propre journal : ceux de la session ne les comptent pas).
+                "tok": ["input": st.tokIn, "output": st.tokOut, "cacheRead": st.tokCacheRead, "cacheWrite": st.tokCacheWrite],
                 "steps": st.tools.values.reduce(0, +),
                 "prompt": st.firstFull, "lines": ["add": st.added, "del": st.removed],
                 "files": st.files.prefix(15).map { p -> [String: Any] in let l = st.fileLines[p] ?? (0, 0); return ["path": p, "add": l.add, "del": l.del] }]

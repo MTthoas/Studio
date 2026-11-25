@@ -17,6 +17,7 @@ import * as model from './model.ts';
 import { AUTO, pickFor as autoPick, label as autoLabel } from './autopick.ts';
 import * as saved from './drafts.ts';
 import * as attach from './attach.ts';
+import * as archived from './archive.ts';
 import * as echo from './echo.ts';
 import { paintPulse } from './pulse.ts';
 import * as permissions from '../permissions.ts';
@@ -96,7 +97,7 @@ const byActivity = (list: Session[]): Session[] => [...list].sort((a, b) => ms(b
 // Sous-agents : les tâches que Claude délègue pendant une conversation ont chacune leur propre fil (voir Sessions.swift).
 // On en ouvre un depuis sa conversation, on passe de l'un à l'autre, et on peut l'épingler dans la barre latérale.
 /** `prompt`, `last`, `files`, `lines`, `report` : absents avec une app Mac ancienne ; `report` seulement une fois le sous-agent fini. */
-export interface SubAgent { id: string; title: string; type: string; started: string; updated: string; live: boolean; tokens: number; steps: number; prompt?: string; last?: { at: string; kind: string; text: string }; files?: { path: string; add: number; del: number }[]; lines?: { add: number; del: number }; report?: string }
+export interface SubAgent { id: string; title: string; type: string; started: string; updated: string; live: boolean; tokens: number; /** Détail des tokens (absent avec une app Mac ancienne : seuls `tokens`, écrits, sont connus). */ tok?: Tokens; steps: number; prompt?: string; last?: { at: string; kind: string; text: string }; files?: { path: string; add: number; del: number }[]; lines?: { add: number; del: number }; report?: string }
 /** Sous-agent ouvert dans la conversation sélectionnée, et son nom une fois connu. */
 let sub: string | null = null, subTitle = '';
 /** Derniers sous-agents lus, par conversation. */
@@ -151,13 +152,13 @@ function notify(): void {
   if (sig === lastSig) return;
   lastSig = sig; listener?.();
 }
+archived.onChange(() => { lastSig = ''; notify(); });
 /** Conversation ouverte dans ce projet, s'il y en a une, et le sous-agent qu'on y regarde. */
 export function current(pid: string): { id: string; title: string; sub?: { id: string; title: string } } | null {
   if (!selected || selFor !== pid) return null;
   const s = known.get(pid)?.list.find(x => x.id === selected);
   return { id: selected, title: selTitle || (s ? nameOf(s) : 'Conversation'), ...(sub ? { sub: { id: sub, title: subTitle || subName(selected, sub) } } : {}) };
 }
-const SIDE_RECENT = 5;
 export interface SideSub { id: string; title: string; live: boolean; sel: boolean }
 /** Conversations récentes d'un projet, pour la barre latérale, chacune avec ses sous-agents épinglés (et celui qui est ouvert). */
 export function sideSessions(pid: string): { id: string; title: string; live: boolean; sel: boolean; subs: SideSub[]; stage: { cls: string; label: string } | null }[] {
@@ -167,10 +168,10 @@ export function sideSessions(pid: string): { id: string; title: string; live: bo
     if (sid === sel && sub && !ids.includes(sub)) ids.push(sub);
     return ids.map(a => ({ id: a, title: sid === sel && a === sub && subTitle ? subTitle : subName(sid, a), live: !!subsOf.get(sid)?.find(x => x.id === a)?.live, sel: sid === sel && a === sub }));
   };
-  // Les fils du Salon restent dans la barre, rangés sous leur projet (25 nov. 2026) : les SIDE_RECENT plus récents,
-  // plus tout agent au travail, toute PR en attente et la conversation ouverte au-delà (la liste complète est dans le Salon).
+  // Barre latérale = les fils actifs seulement (26 nov. 2026, doublon avec le Salon) : agent au travail, copie à relire,
+  // PR en attente, conversation ouverte. La liste complète, la recherche et le rangement sont dans le Salon.
   return list.map(s => ({ id: s.id, title: s.id === sel && selTitle ? selTitle : nameOf(s), live: s.live || runs.some(r => r.session === s.id && live(r)), sel: s.id === sel, subs: subs(s.id), stage: sideStage(pid, s) }))
-    .filter((s, i) => i < SIDE_RECENT || s.live || s.sel || s.stage?.cls === 'st-pr');
+    .filter(s => s.live || s.sel || ((s.stage?.cls === 'st-pr' || s.stage?.cls === 'st-review') && !archived.isArchived(pid, s.id)));
 }
 /** État de la copie d'une conversation, pour teinter son point dans la barre latérale (seulement pour le projet dont les copies sont connues). */
 function sideStage(pid: string, s: Session): { cls: string; label: string } | null {
@@ -1714,6 +1715,9 @@ export function sideMenu(anchor: Element | { x: number; y: number }, p: Project,
   menu(anchor, [
     { label: 'Ouvrir', icon: 'eye', run: go },
     { label: 'Renommer…', icon: 'pencil', run: () => renameSession(id, name) },
+    archived.isArchived(p.id, id)
+      ? { label: 'Remettre dans la liste', icon: 'restore', run: () => archived.restore(p.id, [id]) }
+      : { label: 'Archiver', icon: 'inbox', hint: 'retire de la liste, rien n’est effacé', run: () => { archived.archive(p.id, [id]); toast('Fil archivé', { label: 'Annuler', run: () => archived.restore(p.id, [id]) }); } },
     { label: 'Copier l’identifiant', icon: 'copy', hint: 'claude --resume', run: () => navigator.clipboard.writeText(id).then(() => toast('Identifiant copié'), () => toast('Copie impossible.')) },
     ...(busy.length ? ['-' as const, { label: 'Arrêter l’agent', icon: 'stop', run: async () => { for (const r of busy) await bridge.call('agent', 'stop', { run: r.run }, 10000); toast('Agent arrêté'); } }] : []),
     ...(wt && !remote ? ['-' as const, { label: 'Copie de l’agent' },
@@ -1727,7 +1731,7 @@ export function sideMenu(anchor: Element | { x: number; y: number }, p: Project,
 }
 
 /** Ménage : choisir d'un coup les conversations au repos à supprimer (celles qui travaillent ne sont pas proposées). */
-function cleanUp(p: Project): void {
+export function cleanUp(p: Project): void {
   const list = (known.get(p.id)?.list ?? []).filter(idle);
   if (!list.length) { toast('Aucune conversation terminée à supprimer.'); return; }
   const week = Date.now() - 7 * 864e5;

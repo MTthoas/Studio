@@ -56,3 +56,10 @@ form.at-drop textarea { pointer-events: none; }
 }
 @keyframes at-in { from { opacity: 0; transform: scale(.96); } }
 @keyframes at-fade { from { opacity: 0; } }
+
+/* Vidéos jointes : vignette avec sa première image (ou un aplat neutre) et un repère de lecture. */
+.at-thumb.at-vid { position: relative; display: grid; place-items: center; background: var(--surface-3, var(--border)); color: var(--text-2); }
+.at-thumb.at-vid img { position: absolute; inset: 0; }
+.at-play { position: relative; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: rgba(8, 9, 10, .62); color: #fff; }
+.at-play svg { margin-left: 1px; }
+.at-view video { max-width: 100%; max-height: 100%; border-radius: 6px; cursor: default; background: #000; }

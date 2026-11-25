@@ -12,7 +12,10 @@
 // Styles : css/salon.css (préfixe `sl-`). Tout ce qui vient du Mac passe par `esc()`.
 import * as bridge from '../../integrations/remote.ts';
 import * as quota from '../../integrations/quota.ts';
-import { syncFeed, nameOf, live, copyStage, copyAct, answerHTML, modelName, modelOptions, EFFORTS } from './sessions.ts';
+import * as usage from '../../integrations/usage.ts';
+import { syncFeed, nameOf, live, copyStage, copyAct, answerHTML, modelName, modelOptions, EFFORTS, cleanUp, sideMenu } from './sessions.ts';
+import * as archived from './archive.ts';
+import { fold } from '../../lib/fuzzy.ts';
 import * as saved from './drafts.ts';
 import * as subagents from './subagents.ts';
 import * as attach from './attach.ts';
@@ -60,7 +63,8 @@ const HELP = '~';
 const helper = (k: number): Persona => ({ name: NAMES[k % NAMES.length] ?? 'Caramel', role: 'renfort', hue: HUES[(k + 1) % HUES.length] ?? 'blue' });
 
 // ---------- État (rattaché à un projet : remis à zéro quand on en monte un autre) ----------
-interface Detail { actions: Action[]; subagents?: SubAgent[]; live?: boolean; worktree?: string; models?: string[]; files?: string[]; lines?: { add: number; del: number }; message?: string }
+interface Tok { input: number; output: number; cacheRead: number; cacheWrite: number }
+interface Detail { actions: Action[]; tokens?: Tok; subagents?: SubAgent[]; live?: boolean; worktree?: string; models?: string[]; files?: string[]; lines?: { add: number; del: number }; message?: string }
 interface Thread { id: string; s: Session; group: 'work' | 'mine' | 'recent'; act: number }
 interface Who extends Persona { id: string; base: string; model?: string; me?: boolean }
 const TICK = 2500, TICK_WORK = 1200, SEEN = 'studio.salon.seen', MORE = 8, TEAM_OFF = 'studio.salon.teamOff';
@@ -130,6 +134,11 @@ function choose(pid: string, id: string): void {
   // Un lancement pas encore devenu conversation (`run:`) ne survit pas à l'app : on ne le retient pas.
   if (!id.startsWith('run:')) try { localStorage.setItem(CHOSEN, JSON.stringify(Object.fromEntries(chosen))); } catch { /* plein */ }
 }
+/** Retour au choix automatique du fil (celui au travail, sinon le plus récent). */
+function unchoose(pid: string): void {
+  chosen.delete(pid);
+  try { localStorage.setItem(CHOSEN, JSON.stringify(Object.fromEntries(chosen))); } catch { /* plein */ }
+}
 /** Brouillon du champ, par fil (`<projet>/<fil>`, fil vide = nouvelle consigne) : dans drafts.ts, comme ceux de Claude Code. */
 const DRAFT = 'salon:';
 const drafts = {
@@ -140,6 +149,9 @@ const drafts = {
 };
 let root: HTMLElement | null = null, p: Project | null = null, timer: ReturnType<typeof setTimeout> | undefined;
 let listing = false, busy = false, refreshing = false, moreOpen = false, shown = '', quotaHooked = false;
+/** Filtre et recherche de la liste des fils (gardés d'un projet à l'autre, le temps de la session). */
+type Filt = 'all' | 'work' | 'mine' | 'done' | 'arch';
+let filt: Filt = 'all', query = '';
 /** Dernière lecture de chaque source (ms) : chacune a son rythme, aucune n'attend l'autre. */
 let last = { sessions: 0, trees: 0, detail: 0, board: 0 };
 const fetching = new Set<string>();
@@ -171,7 +183,8 @@ function curId(th = threads()): string {
   const c = chosen.get(S.pid);
   // Un fil retenu qui n'existe plus (conversation effacée) : retour au choix automatique.
   if (c !== undefined && (!c || c.startsWith('run:') || !S.loaded || th.some(t => t.id === c))) return c;
-  return (th.find(t => t.group === 'work') ?? th.find(t => t.group === 'mine') ?? th[0])?.id ?? '';
+  const vis = th.filter(t => t.group === 'work' || !archived.isArchived(S.pid, t.id));
+  return (vis.find(t => t.group === 'work') ?? vis.find(t => t.group === 'mine') ?? vis[0])?.id ?? '';
 }
 async function loadSessions(pid: string): Promise<void> {
   const r = await bridge.call('project', 'sessions', { project: pid }, 20000);
@@ -517,14 +530,35 @@ function blocksOf(t: Thread, d: Detail | undefined, crew: Crew): { blocks: Block
 }
 
 // ---------- Pièces de la page ----------
+/** Un fil au travail n'est jamais caché, même archivé. */
+const isArch = (t: Thread): boolean => t.group !== 'work' && archived.isArchived(S.pid, t.id);
+const OLD_DAYS = 7;
+const oldOnes = (th: Thread[]): Thread[] => th.filter(t => t.group === 'recent' && !isArch(t) && Date.now() - t.act > OLD_DAYS * 864e5);
+const FILTS: [Filt, string, (t: Thread) => boolean][] = [
+  ['all', 'Tous', t => !isArch(t)], ['work', 'En cours', t => t.group === 'work'], ['mine', 'À toi', t => t.group === 'mine' && !isArch(t)],
+  ['done', 'Terminés', t => t.group === 'recent' && !isArch(t)], ['arch', 'Archivés', isArch],
+];
+const matches = (t: Thread, q: string): boolean => !q || fold([nameOf(t.s), t.s.firstPrompt ?? '', t.s.lastPrompt, t.s.branch, t.s.worktree].join(' ')).includes(q);
+function filtHTML(th: Thread[]): string {
+  return FILTS.map(([k, l, f]) => { const n = th.filter(f).length; return k !== 'all' && k !== filt && !n ? '' : `<button type="button" class="sl-chip${k === filt ? ' on' : ''}" data-sl="filt" data-f="${k}" aria-pressed="${k === filt}">${l}${k === 'all' ? '' : `<span>${n}</span>`}</button>`; }).join('');
+}
 function listHTML(th: Thread[], id: string): string {
   if (!S.loaded && !th.length) return '<p class="sl-empty-s"><span class="spin"></span>Lecture des fils…</p>';
-  const row = (t: Thread): string => `<button type="button" class="sl-row${t.id === id ? ' cur' : ''}" data-sl="pick" data-id="${esc(t.id)}"${t.id === id ? ' aria-current="true"' : ''}><i class="sl-dot ${t.group}" aria-hidden="true"></i><span class="sl-row-t">${esc(nameOf(t.s))}</span><time>${esc(rel(t.act))}</time></button>`;
+  const arch = filt === 'arch';
+  const row = (t: Thread): string => `<div class="sl-row${t.id === id ? ' cur' : ''}" data-id="${esc(t.id)}"><button type="button" class="sl-pick" data-sl="pick" data-id="${esc(t.id)}"${t.id === id ? ' aria-current="true"' : ''} title="${esc(nameOf(t.s))}"><i class="sl-dot ${t.group}" aria-hidden="true"></i><span class="sl-row-t">${esc(nameOf(t.s))}</span><time>${esc(rel(t.act))}</time></button>${t.group === 'work' || t.id.startsWith('run:') ? '' : arch
+    ? `<button type="button" class="sl-x" data-sl="unarch" data-id="${esc(t.id)}" title="Remettre dans la liste" aria-label="Remettre dans la liste">${icon('restore')}</button>`
+    : `<button type="button" class="sl-x" data-sl="arch" data-id="${esc(t.id)}" title="Archiver (rien n’est effacé)" aria-label="Archiver ce fil">${icon('inbox')}</button>`}</div>`;
   const grp = (title: string, list: Thread[], extra = ''): string => list.length ? `<section class="sl-grp"><h4>${title}<span>${list.length}</span></h4>${list.map(row).join('')}${extra}</section>` : '';
-  const rec = th.filter(t => t.group === 'recent');
+  const q = fold(query.trim()), f = FILTS.find(x => x[0] === filt)?.[2] ?? FILTS[0][2], shownTh = th.filter(t => f(t) && matches(t, q));
+  const old = oldOnes(th).length;
+  const foot = arch ? (shownTh.length > 1 ? `<div class="sl-foot"><button type="button" class="sl-more" data-sl="unarch-all">Tout remettre dans la liste</button></div>` : '')
+    : `<div class="sl-foot">${old && !q ? `<button type="button" class="sl-more" data-sl="tidy" title="Les fils terminés depuis plus de ${OLD_DAYS} jours passent dans « Archivés »">${icon('inbox')}<span>Archiver les fils de plus de ${OLD_DAYS} jours (${old})</span></button>` : ''}<button type="button" class="sl-more" data-sl="clean" title="Choisir des conversations terminées à supprimer pour de bon">${icon('trash')}<span>Supprimer des fils…</span></button></div>`;
+  if (!shownTh.length) return `<p class="sl-empty-s">${q ? 'Aucun fil ne correspond.' : arch ? 'Aucun fil archivé.' : 'Aucun fil pour l’instant.'}</p>${q || arch ? '' : foot}`;
+  // Recherche ou filtre : une liste à plat, du plus récent au plus ancien.
+  if (q || filt !== 'all') return grp(q ? 'Résultats' : FILTS.find(x => x[0] === filt)?.[1] ?? '', shownTh) + foot;
+  const rec = shownTh.filter(t => t.group === 'recent');
   const more = rec.length > MORE ? `<button type="button" class="sl-more" data-sl="more">${moreOpen ? 'Moins' : `${rec.length - MORE} de plus`}</button>` : '';
-  return grp('En cours', th.filter(t => t.group === 'work')) + grp('À toi', th.filter(t => t.group === 'mine')) + grp('Récentes', moreOpen ? rec : rec.slice(0, MORE), more)
-    || '<p class="sl-empty-s">Aucun fil pour l’instant.</p>';
+  return grp('En cours', shownTh.filter(t => t.group === 'work')) + grp('À toi', shownTh.filter(t => t.group === 'mine')) + grp('Récentes', moreOpen ? rec : rec.slice(0, MORE), more) + foot;
 }
 type Mood = 'work' | 'ask' | 'ready' | 'done';
 const MOOD: Record<Mood, [string, string]> = { work: ['au travail', 'amber'], ask: ['attend ta réponse', 'orange'], ready: ['prêt à publier', 'green'], done: ['terminé', 'gray'] };
@@ -540,6 +574,42 @@ function headHTML(t: Thread, crew: Crew, ask: boolean, n: number): string {
   const faces = [crew.main, ...crew.subs.values()].slice(0, 5).map(w => face(w)).join('');
   return `<h2>${esc(nameOf(t.s))}</h2><span class="sl-pill" style="--c:var(--c-${c})">${label}</span><span class="sl-meta">${n} agent${n > 1 ? 's' : ''}${min ? ` · ${min} min` : ''}</span>${run ? `<button type="button" class="btn btn-ghost" data-sl="stop" data-run="${esc(run.run)}" title="Arrêter l’équipe">${icon('stop')}<span>Arrêter</span></button>` : ''}<button type="button" class="btn btn-ghost sl-nowbtn" data-sl="now" aria-pressed="false" title="Afficher ou masquer l’équipe"><span class="sl-stack">${faces}</span><span>Équipe</span></button>${t.id.startsWith('run:') ? '' : `<button type="button" class="btn" data-sl="tech" data-id="${esc(t.id)}" title="Voir les étapes dans l’onglet Claude Code">${icon('terminal')}<span>Vue technique</span></button>`}`;
 }
+// ---------- Consommation de tokens du fil ----------
+// Le journal de la session ne compte que l'agent principal ; chaque sous-agent a le sien (`tok`, app Mac récente,
+// sinon ses seuls tokens écrits). Lus = entrée + écriture en cache (comme l'onglet Claude Code), à part les relectures du cache.
+const NO_TOK: Tok = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+const mainTok = (t: Thread, d: Detail | undefined): Tok => ({ ...NO_TOK, ...t.s.tokens, ...d?.tokens });
+const subTok = (s: SubAgent): Tok => s.tok ? { ...NO_TOK, ...s.tok } : { ...NO_TOK, output: s.tokens || 0 };
+const read = (k: Tok): number => k.input + k.cacheWrite;
+const tokTip = (k: Tok): string => `${usage.fmt(k.output)} ${tr('tokens écrits')} · ${usage.fmt(read(k))} ${tr('lus')} · ${usage.fmt(k.cacheRead)} ${tr('relus du cache')}`;
+/** Détail par agent replié, ouvert ou non d'un rendu à l'autre (le Salon repeint toutes les secondes ou presque). */
+let useOpen = false;
+function useHTML(t: Thread, d: Detail | undefined, crew: Crew): string {
+  const rows: [string, Tok][] = [[crew.main.name, mainTok(t, d)], ...(d?.subagents ?? []).map((s): [string, Tok] => [crew.subs.get(s.id)?.name ?? s.title, subTok(s)])];
+  const tot = rows.reduce((a, [, k]) => ({ input: a.input + k.input, output: a.output + k.output, cacheRead: a.cacheRead + k.cacheRead, cacheWrite: a.cacheWrite + k.cacheWrite }), NO_TOK);
+  if (!tot.output && !read(tot)) return '';
+  const line = (name: string, k: Tok, cls = ''): string => `<div class="sl-use-row${cls}" title="${esc(tokTip(k))}"><span>${esc(name)}</span><b>${usage.fmt(k.output)}</b><span>${usage.fmt(read(k))}</span></div>`;
+  const head = `<div class="sl-use-row hd"><span></span><b>écrits</b><span>lus</span></div>`;
+  const detail = head + (rows.length > 1 ? rows.map(([n, k]) => line(n, k)).join('') + line('Total', tot, ' tot') : line(rows[0]?.[0] ?? '', tot));
+  return `<details class="sl-use" data-sl-use${useOpen ? ' open' : ''}><summary title="${esc(tokTip(tot))}">${icon('chevron')}<span>Ce fil</span><b>${usage.fmt(tot.output)} écrits</b></summary>${detail}</details>`;
+}
+/** Remise à zéro d'une limite, en clair : « dans 2 h 10 », « dans 3 j ». */
+function resetIn(at?: number): string {
+  if (!at) return '';
+  const m = Math.max(0, Math.round((at - Date.now()) / 6e4));
+  return m >= 2880 ? `dans ${Math.round(m / 1440)} j` : m >= 60 ? `dans ${Math.floor(m / 60)} h${m % 60 ? ` ${String(m % 60).padStart(2, '0')}` : ''}` : `dans ${m} min`;
+}
+/** Fin de la colonne Équipe : tokens du fil (détail par agent), puis les limites de l'abonnement (5 h, semaine…). */
+function consHTML(t: Thread, d: Detail | undefined, crew: Crew): string {
+  const src = quota.sources().find(x => x.id === 'claudecode');
+  const meters = (src?.meters ?? []).map(m => m.pct !== null
+    ? `<div class="sl-quota" title="${esc(m.resetsAt ? `Remise à zéro ${resetIn(m.resetsAt)}` : m.label)}"><span>${esc(m.label)}</span><i class="sl-bar${m.pct >= 90 ? ' hot' : m.pct >= 70 ? ' warm' : ''}"><i style="width:${m.pct}%"></i></i><b>${m.pct} %</b>${m.resetsAt ? `<small>${esc(resetIn(m.resetsAt))}</small>` : ''}</div>`
+    : m.value ? `<div class="sl-quota"><span>${esc(m.label)}</span><b>${esc(m.value)}</b></div>` : '').join('');
+  const off = src?.note === 'limits-off' && !src.meters.some(m => m.pct !== null)
+    ? `<button type="button" class="btn btn-ghost sl-lim" data-sl="limits" title="Lit tes limites d’abonnement depuis l’app Mac">${icon('cpu')}<span>Afficher les limites (5 h, semaine)</span></button>` : '';
+  const use = useHTML(t, d, crew);
+  return use || meters || off ? `<section class="sl-cons" aria-label="Consommation"><h4>Consommation</h4>${use}${meters}${off}</section>` : '';
+}
 function nowHTML(t: Thread, d: Detail | undefined, crew: Crew, ask: boolean): string {
   const work = t.group === 'work', lastTool = [...(d?.actions ?? [])].reverse().find(a => a.kind.startsWith('tool:') && doing(a.kind, a.text));
   const line = work && lastTool ? doing(lastTool.kind, lastTool.text) : !work && d?.lines ? `+${d.lines.add} −${d.lines.del}` : '';
@@ -550,9 +620,7 @@ function nowHTML(t: Thread, d: Detail | undefined, crew: Crew, ask: boolean): st
     const l = s.live ? (s.last?.kind.startsWith('tool:') ? doing(s.last.kind, s.last.text) || 'réfléchit' : 'réfléchit') : s.files?.length ? `${s.files.length} fichier${s.files.length > 1 ? 's' : ''} touché${s.files.length > 1 ? 's' : ''}` : '';
     return mem(w, s.live ? 'travaille' : 'a fini', s.live ? 'on' : '', l, s.live ? 'work' : 'sleep');
   })].join('');
-  const q = quota.fiveHour(), pct = Math.max(0, Math.min(100, Math.round(q.pct)));
-  const gauge = q.known ? `<div class="sl-quota" title="Fenêtre d’usage de 5 h"><span>Claude · 5 h</span><i class="sl-bar"><i style="width:${pct}%"></i></i><b>${pct} %</b></div>` : '';
-  return `<h4>Équipe</h4>${rows}<button type="button" class="btn btn-ghost sl-set" data-sl="team" title="${esc(subagents.HINT)}">${icon('gear')}<span>${esc(subagents.label(S.pid))}</span></button>${gauge}`;
+  return `<h4>Équipe</h4>${rows}<button type="button" class="btn btn-ghost sl-set" data-sl="team" title="${esc(subagents.HINT)}">${icon('gear')}<span>${esc(subagents.label(S.pid))}</span></button>`;
 }
 // ---------- Vue Technique de la colonne (même colonne que « En ce moment », autre lecture des mêmes données) ----------
 // Sobre et typographique, avec les styles `.lv-*` de css/pulse.css (suivi en direct de l'onglet Claude Code) : ce que
@@ -612,7 +680,8 @@ const skelHTML = (k: 'team' | 'tech'): string => k === 'team'
   ? `<div class="sl-skel" aria-busy="true" aria-label="Chargement">${[72, 54].map((w, i) => `<div class="sl-skel-mem" style="--i:${i}"><i class="sl-skel-av"></i><div><i style="width:${w}%"></i><i style="width:${w - 18}%"></i></div></div>`).join('')}</div>`
   : `<div class="sl-skel" aria-busy="true" aria-label="Chargement">${[64, 88, 46].map((w, i) => `<i style="width:${w}%;--i:${i}"></i>`).join('')}</div>`;
 /** Colonne de droite : Équipe en haut, Technique dessous (30 % de la hauteur, défile seule). */
-const colHTML = (team: string, tech: string): string => `<section class="sl-team" aria-label="Équipe">${team}</section><section class="sl-tech" aria-label="Technique"><h4>Technique</h4>${tech}</section>`;
+/** Colonne de droite : Équipe, Technique, puis la consommation en pied, toujours visible (chaque section défile seule). */
+const colHTML = (team: string, tech: string, cons = ''): string => `<section class="sl-team" aria-label="Équipe">${team}</section><section class="sl-tech" aria-label="Technique"><h4>Technique</h4>${tech}</section>${cons}`;
 // Seul le chrono tourne, une fois par seconde : et seulement colonne visible, fenêtre au premier plan, agent au travail.
 let techTimer: ReturnType<typeof setInterval> | undefined;
 function tickClocks(): void {
@@ -649,8 +718,10 @@ function profHTML(t: Thread, d: Detail | undefined, crew: Crew, ask: boolean): s
   const lines = main ? d?.lines ?? t.s.lines : s?.lines;
   const started = ms(main ? t.s.started : s?.started), steps = main ? 0 : s?.steps ?? 0;
   const mission = (main ? t.s.firstPrompt : s?.prompt) ?? '';
+  const tok = main ? mainTok(t, d) : s ? subTok(s) : NO_TOK;
   const facts = [model ? `<span><small>Modèle</small><b>${esc(model)}</b></span>` : '', started ? `<span><small>${main ? 'Fil ouvert' : 'Parti'}</small><b>${esc(hm(started))}</b></span>` : '',
     steps ? `<span><small>Étapes</small><b>${steps}</b></span>` : '', files.length ? `<span><small>Fichiers</small><b>${files.length}${lines && (lines.add || lines.del) ? ` <i class="sl-add">+${lines.add}</i> <i class="sl-del">−${lines.del}</i>` : ''}</b></span>` : '',
+    tok.output || read(tok) ? `<span title="${esc(tokTip(tok))}"><small>Tokens écrits</small><b>${usage.fmt(tok.output)}</b></span>` : '',
     main && crew.subs.size ? `<span><small>Équipe</small><b>${plural(crew.subs.size, 'agent')}</b></span>` : ''].join('');
   const fl = files.slice(0, 6).map(f => `<code title="${esc(f)}">${esc(f.split('/').pop() ?? f)}</code>`).join('') + (files.length > 6 ? `<small>+${files.length - 6}</small>` : '');
   const helpers = main ? [...crew.subs.values()].map(x => `<button type="button" class="sl-chip" style="--c:var(--c-${x.hue})" data-sl="who" data-who="${esc(x.id)}">${esc(x.name)}</button>`).join('') : '';
@@ -719,6 +790,8 @@ function paint(): void {
   }
   const list = need('[data-sl-list]', root), tops = rowTops(list);
   if (paintIfChanged(list, listHTML(th, id))) glide(list, tops);
+  paintIfChanged(need('[data-sl-filt]', root), filtHTML(th));
+  const nb = need('[data-sl-n]', root), nt = String(th.filter(t => !isArch(t)).length); if (nb.textContent !== nt) nb.textContent = nt;
   let ask = false, crew: Crew | null = null, blocks: Block[];
   if (cur) { crew = crewOf(d?.subagents ?? [], d?.models ?? cur.s.models); const r = blocksOf(cur, d, crew); blocks = r.blocks; ask = r.ask; }
   else if (opening?.pid === p.id) { const c0 = crewOf([], []); blocks = [{ key: `me|p|${opening.at}`, html: msgHTML(c0.me, opening.at, plain(opening.text) + picsNote(opening.pics), { cls: 'sending', tag: 'envoi…' }) }, { key: 'working', html: typing(c0, undefined) }]; }
@@ -746,7 +819,7 @@ function paint(): void {
   // Colonne de droite : Équipe puis Technique. Squelette tant que le fil démarre ; quand le vrai contenu
   // remplace le squelette, il entre une fois en fondu (pas à chaque mise à jour).
   const col = need<HTMLElement>('[data-sl-now]', root), skel = !(cur && crew), wasSkel = col.dataset.skel === '1';
-  const colH = cur && crew ? colHTML(nowHTML(cur, d, crew, ask), techHTML(cur, d, crew)) : opening?.pid === p.id ? colHTML(skelHTML('team'), skelHTML('tech')) : '';
+  const colH = cur && crew ? colHTML(nowHTML(cur, d, crew, ask), techHTML(cur, d, crew), consHTML(cur, d, crew)) : opening?.pid === p.id ? colHTML(skelHTML('team'), skelHTML('tech')) : '';
   if (paintIfChanged(col, colH) && wasSkel && !skel && !calm()) { col.classList.remove('sl-reveal'); void col.offsetWidth; col.classList.add('sl-reveal'); }
   col.dataset.skel = skel ? '1' : '';
   if (cur && crew) tickClocks();
@@ -912,6 +985,23 @@ function bind(r: HTMLElement): void {
     if (act === 'pick') { const id = t.dataset.id ?? ''; choose(pid, id); paint(); fetchThread(pid, id); void refresh(); }
     else if (act === 'new') { choose(pid, ''); paint(); need('textarea', r).focus(); }
     else if (act === 'more') { moreOpen = !moreOpen; paint(); }
+    else if (act === 'filt') { filt = (t.dataset.f ?? 'all') as Filt; moreOpen = false; paint(); }
+    else if (act === 'arch' || act === 'unarch') {
+      const id = t.dataset.id ?? '';
+      if (act === 'arch') { archived.archive(pid, [id]); toast('Fil archivé', { label: 'Annuler', run: () => archived.restore(pid, [id]) }); }
+      else { archived.restore(pid, [id]); toast('Fil remis dans la liste'); }
+      // Le fil ouvert vient d'être archivé : on passe au suivant (choix automatique).
+      if (act === 'arch' && chosen.get(pid) === id) unchoose(pid);
+      paint();
+    }
+    else if (act === 'unarch-all') { archived.restore(pid, threads().filter(isArch).map(x => x.id)); filt = 'all'; toast('Fils remis dans la liste'); paint(); }
+    else if (act === 'tidy') {
+      const ids = oldOnes(threads()).map(x => x.id);
+      archived.archive(pid, ids); if (ids.includes(chosen.get(pid) ?? '')) unchoose(pid); paint();
+      toast(`${ids.length} fil${ids.length > 1 ? 's' : ''} archivé${ids.length > 1 ? 's' : ''}`, { label: 'Annuler', run: () => archived.restore(pid, ids) });
+    }
+    else if (act === 'clean') cleanUp(p);
+    else if (act === 'limits') { t.setAttribute('disabled', ''); void quota.limits('enable').then(paint); }
     else if (act === 'tech') openTech(t.dataset.id ?? '');
     else if (act === 'reply') need('textarea', r).focus();
     else if (act === 'now') toggleTeam(r);
@@ -924,6 +1014,14 @@ function bind(r: HTMLElement): void {
     const row = target(e).closest<HTMLElement>('.sl-row[data-id]'), id = row?.dataset.id ?? '';
     if (p && id && !S.detail.has(id)) fetchThread(p.id, id);
   });
+  // Clic droit sur un fil : le même menu que dans la barre latérale (renommer, archiver, publier, supprimer…).
+  r.addEventListener('contextmenu', e => {
+    const row = target(e).closest<HTMLElement>('.sl-row[data-id]'), id = row?.dataset.id ?? '';
+    if (!p || !id || id.startsWith('run:')) return;
+    e.preventDefault(); const pid = p.id;
+    sideMenu({ x: e.clientX, y: e.clientY }, p, id, '', () => { choose(pid, id); paint(); fetchThread(pid, id); });
+  });
+  r.addEventListener('input', e => { const q = target(e); if (q instanceof HTMLInputElement && q.matches('[data-sl-q]')) { query = q.value; paint(); return; } });
   r.addEventListener('input', e => { const t = target(e); if (t instanceof HTMLTextAreaElement) { grow(t); showAuto(); ready(); if (p) drafts.set(shown || `${p.id}/${curId()}`, t.value); } });
   // Revenu en bas du fil à la main : l'invitation « Nouveaux messages » n'a plus lieu d'être.
   r.addEventListener('scroll', e => {
@@ -938,6 +1036,24 @@ function bind(r: HTMLElement): void {
   r.addEventListener('keydown', e => {
     if (e.key === 'Escape' && (prof || r.classList.contains('sl-now-open'))) { e.preventDefault(); closeProf(); r.classList.remove('sl-now-open'); paint(); return; }
     if (target(e) instanceof HTMLTextAreaElement && e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); void send(); }
+    const q = target(e);
+    if (q instanceof HTMLInputElement && q.matches('[data-sl-q]')) {
+      if (e.key === 'Escape' && q.value) { e.preventDefault(); e.stopPropagation(); q.value = ''; query = ''; paint(); }
+      // Entrée : ouvre le premier fil trouvé.
+      else if (e.key === 'Enter') { e.preventDefault(); r.querySelector<HTMLElement>('[data-sl-list] .sl-pick')?.click(); }
+    }
+  });
+  // Raccourcis du Salon, hors des champs : « / » cherche, ⌥N nouveau fil, ⌥↑ / ⌥↓ fil précédent ou suivant.
+  document.addEventListener('keydown', e => {
+    if (!r.isConnected || !p || e.metaKey || e.ctrlKey) return;
+    const el = e.target as HTMLElement | null, typing = !!el?.closest('input, textarea, select, [contenteditable]');
+    if (e.key === '/' && !typing && !e.altKey) { e.preventDefault(); r.querySelector<HTMLInputElement>('[data-sl-q]')?.focus(); return; }
+    if (!e.altKey) return;
+    if (e.code === 'KeyN') { e.preventDefault(); choose(p.id, ''); paint(); need('textarea', r).focus(); return; }
+    if (typing || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+    const rows = [...r.querySelectorAll<HTMLElement>('[data-sl-list] .sl-pick')], i = rows.findIndex(x => x.getAttribute('aria-current') === 'true');
+    const next = rows[e.key === 'ArrowUp' ? Math.max(0, i - 1) : Math.min(rows.length - 1, i + 1)];
+    if (next) { e.preventDefault(); next.click(); next.scrollIntoView({ block: 'nearest' }); }
   });
 }
 
@@ -959,7 +1075,7 @@ export function mount(box: HTMLElement, proj: Project, o: { openTech: (session: 
   stop();
   if (S.pid !== proj.id) reset(proj.id);
   p = proj; root = box; openTech = o.openTech; shown = '';
-  box.innerHTML = `<aside class="sl-side" aria-label="Fils du projet"><div class="sl-side-h"><b>Fils</b><button type="button" class="btn" data-sl="new">${icon('plus')}<span>Nouveau fil</span></button></div><div class="sl-list" data-sl-list></div></aside>
+  box.innerHTML = `<aside class="sl-side" aria-label="Fils du projet"><div class="sl-side-h"><b>Fils <span class="sl-n" data-sl-n></span></b><button type="button" class="btn" data-sl="new" title="Nouveau fil (⌥N)">${icon('plus')}<span>Nouveau fil</span></button></div><label class="sl-q">${icon('search')}<input type="search" data-sl-q placeholder="Chercher un fil…" aria-label="Chercher un fil" value="${esc(query)}"><kbd aria-hidden="true">/</kbd></label><div class="sl-filt" data-sl-filt role="toolbar" aria-label="Filtrer les fils"></div><div class="sl-list" data-sl-list></div></aside>
     <section class="sl-center"><header class="sl-head" data-sl-head></header><div class="sl-feed" data-sl-feed role="log" aria-live="polite" aria-label="Discussion"></div><button type="button" class="sl-down" data-sl="down" data-sl-down hidden>Nouveaux messages ${icon('chevron')}</button>
       <form class="sl-comp" autocomplete="off"><div class="sl-drop" aria-hidden="true">${icon('upload')}<span>Dépose tes images ici</span></div><textarea rows="1" aria-label="Ton message" placeholder="Dis à l’équipe ce que tu veux faire…"></textarea>${attach.stripHTML()}
         <div class="sl-comp-row"><label class="sl-mode" data-sl-mode hidden><select name="mode" aria-label="Mode"><option value="edit">Modifier</option><option value="read">Analyser</option></select></label><select name="model" aria-label="Modèle" title="Modèle de l’agent principal. Auto : le plus économe qui suffit au message">${models(tuneFor('').model)}</select><select name="effort" aria-label="Niveau d’effort" title="Plus l’effort est élevé, plus l’agent réfléchit, et plus il consomme">${EFFORTS.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('')}</select><span class="sl-auto" data-sl-auto hidden></span><span class="sl-hint" data-sl-hint></span><span class="sl-keys" aria-hidden="true"><span><kbd>↵</kbd> <span>envoyer</span></span><span><kbd>⇧</kbd><kbd>↵</kbd> <span>nouvelle ligne</span></span></span>${attach.buttonHTML()}<button type="submit" class="btn btn-primary sl-send" data-sl-send><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg><span>Envoyer</span></button></div></form></section>
@@ -967,10 +1083,13 @@ export function mount(box: HTMLElement, proj: Project, o: { openTech: (session: 
   box.classList.add('sl-box', 'sl-solo');
   let off = false; try { off = localStorage.getItem(TEAM_OFF) === '1'; } catch { /* défaut */ }
   box.classList.toggle('sl-now-off', off); box.classList.remove('sl-now-open'); prof = ''; profAt = null;
-  if (!box.dataset.slBound) { box.dataset.slBound = '1'; bind(box); }
+  if (!box.dataset.slBound) {
+    box.dataset.slBound = '1'; bind(box);
+    box.addEventListener('toggle', e => { const el = e.target; if (el instanceof HTMLDetailsElement && el.matches('[data-sl-use]')) useOpen = el.open; }, true);
+  }
   attach.bind(box); // coller, déposer ou choisir des images : par fil (`data-at-key`, posé par paint)
   // La jauge se met à jour seule ; l'abonnement n'est pris qu'une fois (il repeint le Salon monté à ce moment-là).
-  if (!quotaHooked) { quotaHooked = true; quota.onChange(() => { if (root?.isConnected) paint(); }); }
+  if (!quotaHooked) { quotaHooked = true; quota.onChange(() => { if (root?.isConnected) paint(); }); archived.onChange(() => { if (root?.isConnected) paint(); }); }
   catface.init();
   paint(); start();
 }
