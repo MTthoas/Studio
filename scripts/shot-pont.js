@@ -100,7 +100,7 @@
   // Fils des autres conversations : un échange court.
   const quick = (s) => [
     { at: s.started, kind: 'prompt', text: s.firstPrompt },
-    { at: s.updated, kind: 'text', text: 'C’est fait : les changements sont dans la copie, prêts à être relus.' },
+    { at: s.updated, kind: 'text', text: `C’est fait : les changements sont dans la copie, prêts à être relus.\n\n![Panier avec le code promo](${home}/.git/studio-images/captures/demo/panier.png)\n![Panier sur iPhone](${home}/.git/studio-images/captures/demo/panier-etroit.png)` },
   ];
 
   // ---------- Agents lancés depuis Studio ----------
@@ -252,6 +252,8 @@
   }
   if (type === 'agent') {
     if (action === 'list') return { runs, queued: [] };
+    // Captures d'agent (salon.ts `captures`) : l'image vient de `window.__shotImage` (base64 PNG), posée par un `js=`.
+    if (action === 'image') return window.__shotImage ? { ok: true, type: 'image/png', data: window.__shotImage } : { ok: false, message: 'Image introuvable.' };
     if (action === 'worktrees') return { worktrees, fetching: false };
     if (action === 'jobs') return { jobs: [] };
     if (action === 'items') return { pending: [] };

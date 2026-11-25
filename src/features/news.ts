@@ -54,6 +54,16 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'salon-captures-agents-20261125', date: '2026-11-25', icon: 'eye', hue: 'violet', mac: true,
+    title: 'Captures des agents',
+    lead: 'Les agents montrent chaque changement visible par des captures d’écran, affichées dans le Salon avant publication.',
+    bits: [
+      ['eye', 'Avant publication', 'tout changement d’interface arrive avec ses captures, à relire avant la pull request'],
+      ['focus', 'Vignettes', 'les captures s’affichent sous le compte rendu ; un clic les agrandit'],
+      ['shield', 'Hors du dépôt', 'rangées dans le dossier .git du projet, jamais commitées, effacées après 30 jours'],
+    ],
+    where: ['Projet', 'Salon'],
+    visual: { kind: 'flow', steps: [['Changement', 'amber', 'pencil'], ['Capture', 'violet', 'eye'], ['Relecture', 'green', 'check']] } },
   { id: 'barre-laterale-zones-20261125', date: '2026-11-25', icon: 'sidebar', hue: 'violet',
     title: 'Barre latérale plus lisible',
     lead: 'Une couleur par zone, un Salon toujours à la même place et des jauges d’usage qui nomment leur fournisseur.',
