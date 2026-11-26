@@ -93,8 +93,10 @@ export function allow(): void {
 function reach(n: Note, force = false) {
   const p = model.projectOfNote(n), sc = scope.of(p), pr = prefs();
   const others = p ? model.notesOf(p).filter(x => x.id !== n.id && ai.shareable(x) && scope.noteIn(sc, x)) : [];
-  const note = (noteLinked(n) || force) && canSend(n), project = !!p && pr.project && others.length > 0;
-  return { p, sc, others, note, project };
+  // Notes du projet cochées : la note ouverte en fait partie (sinon l'IA lisait tout le projet sauf elle, et refusait de la modifier).
+  const viaProject = !!p && pr.project && !n.enc && ai.shareable(n) && scope.noteIn(sc, n);
+  const note = (noteLinked(n) || force || viaProject) && canSend(n), project = !!p && pr.project && others.length > 0;
+  return { p, sc, others, note, project, viaProject };
 }
 /** Contexte et outils d'une demande sur la note `n` (`history` : échanges précédents de la conversation). */
 function request(n: Note, s: Sel | null, history: Msg[], force = false) {
@@ -204,7 +206,7 @@ function paintCtx(): void {
     paintSel(el); paintQuick(); return;
   }
   box.innerHTML = `<div class="nai-ctx-l">L’IA lit</div><div class="nai-chips">`
-    + chip('note', r.note, noteOk, n.enc ? 'lock' : 'notes', n.enc ? 'Cette note chiffrée' : 'Cette note', !noteOk ? '#privé ou liste des tâches : jamais envoyée' : n.enc ? 'Joindre cette note chiffrée, pour elle seule et jusqu’à son verrouillage' : 'Joindre la note ouverte')
+    + chip('note', r.note, noteOk && !r.viaProject, n.enc ? 'lock' : 'notes', n.enc ? 'Cette note chiffrée' : 'Cette note', !noteOk ? '#privé ou liste des tâches : jamais envoyée' : r.viaProject ? 'Jointe avec les notes du projet' : n.enc ? 'Joindre cette note chiffrée, pour elle seule et jusqu’à son verrouillage' : 'Joindre la note ouverte')
     + (r.p ? chip('project', r.project, r.others.length > 0, 'folder', `${esc(r.p.name)} · ${r.others.length} note${r.others.length > 1 ? 's' : ''}`, r.others.length ? `Laisser l’IA chercher et lire les notes du projet « ${r.p.name} »` : 'Aucune autre note lisible dans ce projet') : '')
     + `<button type="button" class="nai-chip nai-pj" data-nai="project" title="Ranger la note dans un projet">${icon('folder')}<span>${r.p ? 'Changer' : 'Ranger dans un projet…'}</span></button>`
     + `</div>${n.enc && noteOk && !r.note ? `<p class="nai-warn">${icon('lock')}Note chiffrée : l’IA ne la lit pas tant que tu ne la joins pas ici.</p>` : ''}${n.enc && r.note ? `<p class="nai-warn">${icon('lock')}Note chiffrée jointe : l’IA la lit jusqu’à son verrouillage.</p>` : ''}${!r.note && !r.project && !sel && !n.enc ? '<p class="nai-warn">L’IA ne lit rien : elle ne répondra qu’à ta question.</p>' : ''}`;

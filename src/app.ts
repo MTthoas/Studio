@@ -587,8 +587,12 @@ function mountNote(main: HTMLElement, n: Note, keep: Keep | null): void {
     const a = ta, b = rd, max = a.scrollHeight - a.clientHeight;
     if (max > 0) b.scrollTop = a.scrollTop / max * (b.scrollHeight - b.clientHeight);
   }, { passive: true });
+  // Trait sous le titre dès que le volet visible a défilé (scroll ne remonte pas : écoute en capture).
+  const head = need('.note-head', main), edge = (): void => { head.classList.toggle('scrolled', (!!ta.offsetParent && ta.scrollTop > 0) || (!!rd?.offsetParent && rd.scrollTop > 0)); };
+  need('.panes', main).addEventListener('scroll', edge, { capture: true, passive: true });
   renderPreview();
   if (keep) { ta.setSelectionRange(keep.s, keep.e); ta.scrollTop = keep.top; if (keep.ptop != null && rd) rd.scrollTop = keep.ptop; if (keep.focus) ta.focus(); }
+  edge();
 }
 
 function onBodyInput(): void {
@@ -643,6 +647,7 @@ function setMode(m: UiState['mode']) {
   $$('.seg button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.mode === m)));
   if (m !== 'edit' && previewT) { clearTimeout(previewT); previewT = 0; renderPreview(); }
   if (m === 'read') ed.ta.blur(); else ed.ta.focus();
+  $('.panes')?.dispatchEvent(new Event('scroll')); // le volet visible a changé : trait sous le titre à revoir
 }
 
 function setFocus(on: boolean) {

@@ -323,12 +323,13 @@ button.sl-av:focus-visible, .sl-who:focus-visible, .sl-to:focus-visible, .sl-mem
 .sl-use summary b { margin-left: auto; font-weight: 500; color: var(--text-2); font-variant-numeric: tabular-nums; }
 .sl-use summary .ic { width: 11px; height: 11px; align-self: center; transform: rotate(-90deg); transition: transform var(--mo-d2) var(--mo-out); }
 .sl-use[open] summary .ic { transform: none; }
-.sl-use-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; padding: 3px 0; font-variant-numeric: tabular-nums; }
+.sl-use-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto 3.6em; gap: 10px; padding: 3px 0; font-variant-numeric: tabular-nums; }
 .sl-use-row:first-of-type { margin-top: 6px; }
 .sl-use-row span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
 .sl-use-row b { font-weight: 500; color: var(--text-2); }
 .sl-use-row.hd { font-size: 11px; color: var(--text-3); }
 .sl-use-row.hd b { font-weight: 400; color: inherit; }
+.sl-use-row > span:last-child { text-align: right; color: var(--text-3); }
 .sl-use-row.tot { margin-top: 4px; padding-top: 6px; border-top: 1px solid var(--border); }
 .sl-cons { flex: 0 0 auto; max-height: 45%; overflow: hidden auto; padding: 10px 14px 12px; border-top: 1px solid var(--border); background: var(--bg-list); }
 .sl-use summary > span { white-space: nowrap; }
@@ -357,6 +358,9 @@ button.sl-av:focus-visible, .sl-who:focus-visible, .sl-to:focus-visible, .sl-mem
 .sl-x { align-self: flex-start; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: none; color: var(--text-3); cursor: pointer; }
 .sl-x:hover { background: var(--hover); color: var(--text); }
 .sl-x .ic { width: 14px; height: 14px; }
+/* Les boutons de la fiche (renommer, fermer) ne sont pas ceux des lignes de fils (.sl-x absolu, visible au survol). */
+.sl-prof header .sl-x { position: static; translate: none; opacity: 1; display: grid; }
+.sl-prof header .sl-x + .sl-x { margin-left: -6px; }
 .sl-pf-st { display: flex; align-items: center; gap: 6px; margin: 0 0 10px; color: var(--text-2); font-size: var(--t-1); }
 .sl-pf-st.on { color: color-mix(in srgb, var(--c-amber) 70%, var(--text)); }
 .sl-pf-st.ask { color: color-mix(in srgb, var(--c-orange) 70%, var(--text)); }

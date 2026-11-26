@@ -25,7 +25,7 @@ import * as flux from './flux.ts';
 import * as catface from '../../ui/catface.ts';
 import { startAgent, reply } from '../workspace.ts';
 import { esc } from '../../lib/markdown.ts';
-import { icon, need, rel, toast, target, paintIfChanged } from '../../ui/kit.ts';
+import { icon, need, rel, toast, target, paintIfChanged, modal } from '../../ui/kit.ts';
 import type { Block, Session, Action, AgentRun, Queued, Worktree, SubAgent } from './sessions.ts';
 import type { BoardMsg } from './team.ts';
 import type { Project } from './model.ts';
@@ -61,12 +61,25 @@ const generic = (type: string): boolean => GENERIC.test(flat(type));
 const HELP = '~';
 /** Le k-ième renfort du fil : un prénom et une couleur à lui, dans l'ordre des départs. */
 const helper = (k: number): Persona => ({ name: NAMES[k % NAMES.length] ?? 'Caramel', role: 'renfort', hue: HUES[(k + 1) % HUES.length] ?? 'blue' });
+/** Prénoms choisis à la main, par prénom d'origine (« Moka », « Filou », « Caramel »…), valables dans tous les fils.
+ *  Seul l'affichage change : clés de `byBase` et chat (`Who.look`) gardent le prénom d'origine. */
+const ALIASES = 'studio.salon.names';
+let aliasMap: Record<string, string> | null = null;
+function aliases(): Record<string, string> {
+  if (!aliasMap) { try { aliasMap = JSON.parse(localStorage.getItem(ALIASES) ?? '{}') as Record<string, string>; } catch { aliasMap = {}; } }
+  return aliasMap;
+}
+const alias = (base: string): string => aliases()[base] || base;
+function setAlias(base: string, name: string): void {
+  const m = { ...aliases() }; if (name && name !== base) m[base] = name; else delete m[base];
+  aliasMap = m; try { localStorage.setItem(ALIASES, JSON.stringify(m)); } catch { /* plein */ }
+}
 
 // ---------- État (rattaché à un projet : remis à zéro quand on en monte un autre) ----------
 interface Tok { input: number; output: number; cacheRead: number; cacheWrite: number }
 interface Detail { actions: Action[]; tokens?: Tok; subagents?: SubAgent[]; live?: boolean; worktree?: string; models?: string[]; files?: string[]; lines?: { add: number; del: number }; message?: string }
 interface Thread { id: string; s: Session; group: 'work' | 'mine' | 'recent'; act: number }
-interface Who extends Persona { id: string; base: string; model?: string; me?: boolean }
+interface Who extends Persona { id: string; base: string; model?: string; me?: boolean; look?: string }
 const TICK = 2500, TICK_WORK = 1200, SEEN = 'studio.salon.seen', MORE = 8, TEAM_OFF = 'studio.salon.teamOff';
 const ms = (iso?: string): number => Date.parse(iso || '') || 0;
 const seen: Record<string, number> = (() => { try { return JSON.parse(localStorage.getItem(SEEN) || '{}') as Record<string, number>; } catch { return {}; } })();
@@ -266,7 +279,7 @@ interface Crew { main: Who; me: Who; subs: Map<string, Who>; byBase: Map<string,
 function crewOf(subs: SubAgent[], models: string[], codex = false): Crew {
   // Un fil Codex n'a pas d'équipe Studio : l'agent s'appelle Codex et garde le nom de son modèle (gpt-5-codex…).
   const main: Who = codex ? { ...persona('principal'), name: 'Codex', role: 'OpenAI', id: 'main', base: 'Codex', model: models[models.length - 1] ?? '' }
-    : { ...persona('principal'), id: 'main', base: 'Moka', model: family(models[models.length - 1]) };
+    : { ...persona('principal'), name: alias('Moka'), look: 'Moka', id: 'main', base: 'Moka', model: family(models[models.length - 1]) };
   const me: Who = { name: 'Toi', role: '', hue: 'gray', id: '', base: 'Toi', me: true };
   const by = new Map<string, Who>(), count = new Map<string, number>(), byBase = new Map<string, string[]>();
   // Plusieurs agents du même rôle : « Filou », « Filou 2 », dans l'ordre où ils sont partis.
@@ -274,14 +287,14 @@ function crewOf(subs: SubAgent[], models: string[], codex = false): Crew {
   for (const s of [...subs].sort((a, b) => ms(a.started) - ms(b.started))) {
     const g = generic(s.type), key = g ? HELP : persona(s.type).name, ps = g ? helper(byBase.get(HELP)?.length ?? 0) : persona(s.type), n = (count.get(ps.name) ?? 0) + 1;
     count.set(ps.name, n); byBase.set(key, [...(byBase.get(key) ?? []), s.id]);
-    by.set(s.id, { ...ps, name: n > 1 ? `${ps.name} ${n}` : ps.name, id: s.id, base: ps.name });
+    by.set(s.id, { ...ps, name: n > 1 ? `${alias(ps.name)} ${n}` : alias(ps.name), look: n > 1 ? `${ps.name} ${n}` : ps.name, id: s.id, base: ps.name });
   }
   return { main, me, subs: by, byBase, raw: subs };
 }
 const initials = (w: Who): string => w.me ? 'T' : w.name.replace(/\s+/g, '').slice(0, 2).replace(/^./, c => c.toUpperCase());
 /** Pastille d'un agent ; celle d'un agent du fil ouvre sa fiche (`data-sl="who"`). */
 /** Le chat d'un agent (même prénom = même chat), dans l'humeur donnée ; moi, je garde mon initiale. */
-const cat = (w: Who, mood: catface.Mood = 'idle', look = false): string => w.me ? esc(initials(w)) : catface.face(w.name, mood, { look });
+const cat = (w: Who, mood: catface.Mood = 'idle', look = false): string => w.me ? esc(initials(w)) : catface.face(w.look ?? w.name, mood, { look });
 /** Rond d'un agent sans geste (pile de l'en-tête, panneau, passations). `cls` : `mini`, `big`, `cf-live` (le chat bouge en boucle). */
 const face = (w: Who, mood: catface.Mood = 'idle', cls = ''): string => `<i class="sl-av${cls ? ` ${cls}` : ''}" style="--c:var(--c-${w.hue})" aria-hidden="true">${cat(w, mood, cls.includes('big'))}</i>`;
 const avatar = (w: Who, big = false, mood: catface.Mood = 'idle', live = false): string => w.id && !w.me
@@ -424,7 +437,7 @@ function itemsOf(d: Detail, crew: Crew, board: BoardMsg[]): { items: Item[]; ask
       if (!a.body && !a.to) return;
       const g = generic(a.to || ''), key = g ? HELP : persona(a.to || '').name, k = nth.get(key) ?? 0; nth.set(key, k + 1);
       const ps = g ? helper(k) : persona(a.to || '');
-      const w = crew.subs.get(crew.byBase.get(key)?.[k] ?? '') ?? { ...ps, id: '', base: ps.name };
+      const w = crew.subs.get(crew.byBase.get(key)?.[k] ?? '') ?? { ...ps, name: alias(ps.name), look: ps.name, id: '', base: ps.name };
       const what = a.text ? ` « ${esc(oneLine(a.text, 70))} »` : ' une tâche';
       add(at, 'delegate', noteHTML(`${face(crew.main, 'idle', 'mini')}${nameBtn(crew.main)} a confié${what} à ${face(w, 'idle', 'mini')}${nameBtn(w, 'sl-nm')}`, at, a.body ?? ''));
       return;
@@ -589,16 +602,27 @@ const NO_TOK: Tok = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 const mainTok = (t: Thread, d: Detail | undefined): Tok => ({ ...NO_TOK, ...t.s.tokens, ...d?.tokens });
 const subTok = (s: SubAgent): Tok => s.tok ? { ...NO_TOK, ...s.tok } : { ...NO_TOK, output: s.tokens || 0 };
 const read = (k: Tok): number => k.input + k.cacheWrite;
-const tokTip = (k: Tok): string => `${usage.fmt(k.output)} ${tr('tokens écrits')} · ${usage.fmt(read(k))} ${tr('lus')} · ${usage.fmt(k.cacheRead)} ${tr('relus du cache')}`;
+// Les relectures du cache (contexte déjà lu, resservi par Claude à prix réduit) ne s'affichent pas : peu parlantes, presque gratuites.
+const tokTip = (k: Tok): string => `${usage.fmt(k.output)} ${tr('tokens écrits')} · ${usage.fmt(read(k))} ${tr('lus')}`;
+/** Temps passé, en clair : « 40 s », « 12 min », « 1 h 05 ». */
+function took(from: number, to: number): string {
+  const sec = Math.max(0, Math.round((to - from) / 1000));
+  if (!from || !sec) return '';
+  const m = Math.round(sec / 60);
+  return sec < 60 ? `${sec} s` : m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, '0')}`;
+}
+const mainTook = (t: Thread): string => took(ms(t.s.started), t.group === 'work' ? Date.now() : ms(t.s.updated));
+const subTook = (s: SubAgent): string => took(ms(s.started), s.live ? Date.now() : ms(s.updated));
 /** Détail par agent replié, ouvert ou non d'un rendu à l'autre (le Salon repeint toutes les secondes ou presque). */
 let useOpen = false;
 function useHTML(t: Thread, d: Detail | undefined, crew: Crew): string {
-  const rows: [string, Tok][] = [[crew.main.name, mainTok(t, d)], ...(d?.subagents ?? []).map((s): [string, Tok] => [crew.subs.get(s.id)?.name ?? s.title, subTok(s)])];
+  const rows: [string, Tok, string][] = [[crew.main.name, mainTok(t, d), mainTook(t)], ...(d?.subagents ?? []).map((s): [string, Tok, string] => [crew.subs.get(s.id)?.name ?? s.title, subTok(s), subTook(s)])];
   const tot = rows.reduce((a, [, k]) => ({ input: a.input + k.input, output: a.output + k.output, cacheRead: a.cacheRead + k.cacheRead, cacheWrite: a.cacheWrite + k.cacheWrite }), NO_TOK);
   if (!tot.output && !read(tot)) return '';
-  const line = (name: string, k: Tok, cls = ''): string => `<div class="sl-use-row${cls}" title="${esc(tokTip(k))}"><span>${esc(name)}</span><b>${usage.fmt(k.output)}</b><span>${usage.fmt(read(k))}</span></div>`;
-  const head = `<div class="sl-use-row hd"><span></span><b>écrits</b><span>lus</span></div>`;
-  const detail = head + (rows.length > 1 ? rows.map(([n, k]) => line(n, k)).join('') + line('Total', tot, ' tot') : line(rows[0]?.[0] ?? '', tot));
+  const line = (name: string, k: Tok, time: string, cls = ''): string => `<div class="sl-use-row${cls}" title="${esc(tokTip(k))}"><span>${esc(name)}</span><b>${usage.fmt(k.output)}</b><span>${usage.fmt(read(k))}</span><span>${esc(time || '—')}</span></div>`;
+  const head = `<div class="sl-use-row hd"><span></span><b>écrits</b><span>lus</span><span>durée</span></div>`;
+  // Total : la durée du fil (les agents travaillent en même temps, additionner leurs durées n'aurait pas de sens).
+  const detail = head + (rows.length > 1 ? rows.map(([n, k, d]) => line(n, k, d)).join('') + line('Total', tot, mainTook(t), ' tot') : line(rows[0]?.[0] ?? '', tot, rows[0]?.[2] ?? ''));
   return `<details class="sl-use" data-sl-use${useOpen ? ' open' : ''}><summary title="${esc(tokTip(tot))}">${icon('chevron')}<span>Ce fil</span><b>${usage.fmt(tot.output)} écrits</b></summary>${detail}</details>`;
 }
 /** Remise à zéro d'une limite, en clair : « dans 2 h 10 », « dans 3 j ». */
@@ -728,14 +752,15 @@ function profHTML(t: Thread, d: Detail | undefined, crew: Crew, ask: boolean): s
   const lines = main ? d?.lines ?? t.s.lines : s?.lines;
   const started = ms(main ? t.s.started : s?.started), steps = main ? 0 : s?.steps ?? 0;
   const mission = (main ? t.s.firstPrompt : s?.prompt) ?? '';
-  const tok = main ? mainTok(t, d) : s ? subTok(s) : NO_TOK;
+  const tok = main ? mainTok(t, d) : s ? subTok(s) : NO_TOK, time = main ? mainTook(t) : s ? subTook(s) : '';
   const facts = [model ? `<span><small>Modèle</small><b>${esc(model)}</b></span>` : '', started ? `<span><small>${main ? 'Fil ouvert' : 'Parti'}</small><b>${esc(hm(started))}</b></span>` : '',
+    time ? `<span><small>Durée</small><b>${esc(time)}</b></span>` : '',
     steps ? `<span><small>Étapes</small><b>${steps}</b></span>` : '', files.length ? `<span><small>Fichiers</small><b>${files.length}${lines && (lines.add || lines.del) ? ` <i class="sl-add">+${lines.add}</i> <i class="sl-del">−${lines.del}</i>` : ''}</b></span>` : '',
     tok.output || read(tok) ? `<span title="${esc(tokTip(tok))}"><small>Tokens écrits</small><b>${usage.fmt(tok.output)}</b></span>` : '',
     main && crew.subs.size ? `<span><small>Équipe</small><b>${plural(crew.subs.size, 'agent')}</b></span>` : ''].join('');
   const fl = files.slice(0, 6).map(f => `<code title="${esc(f)}">${esc(f.split('/').pop() ?? f)}</code>`).join('') + (files.length > 6 ? `<small>+${files.length - 6}</small>` : '');
   const helpers = main ? [...crew.subs.values()].map(x => `<button type="button" class="sl-chip" style="--c:var(--c-${x.hue})" data-sl="who" data-who="${esc(x.id)}">${esc(x.name)}</button>`).join('') : '';
-  return `<header>${avatar({ ...w, id: '' }, true, on ? 'work' : main && ask ? 'ask' : main ? 'done' : 'sleep', true)}<div><b>${esc(w.name)}</b><small>${esc(w.role || 'agent')}</small></div><button type="button" class="sl-x" data-sl="unprof" aria-label="Fermer">${icon('x')}</button></header>
+  return `<header>${avatar({ ...w, id: '' }, true, on ? 'work' : main && ask ? 'ask' : main ? 'done' : 'sleep', true)}<div><b>${esc(w.name)}</b><small>${esc(w.role || 'agent')}</small></div>${w.base === 'Codex' ? '' : `<button type="button" class="sl-x" data-sl="rename" data-base="${esc(w.base)}" title="Renommer" aria-label="Renommer ${esc(w.name)}">${icon('pencil')}</button>`}<button type="button" class="sl-x" data-sl="unprof" aria-label="Fermer">${icon('x')}</button></header>
     <p class="sl-pf-st${on ? ' on' : main && ask ? ' ask' : ''}"><i class="sl-dot${on ? ' work' : main && ask ? ' mine' : ''}"></i>${esc(state)}${now ? ` · ${esc(now)}` : ''}</p>
     ${facts ? `<div class="sl-pf-facts">${facts}</div>` : ''}
     ${mission ? `<details class="sl-pf-mis"><summary><small>${main ? 'Ta consigne' : `Confié par ${esc(crew.main.name)}`}</small><span>${esc(oneLine(mission, 140))}</span></summary><div class="sl-brief">${esc(mission)}</div></details>` : ''}
@@ -760,7 +785,7 @@ function closeProf(): void {
   root?.querySelectorAll('.sl-mem.cur').forEach(x => x.classList.remove('cur'));
 }
 const SUGGEST: [string, string, 'edit' | 'read'][] = [['Corriger un bug', 'Corrige ce bug : ', 'edit'], ['Ajouter une fonction', 'Ajoute ', 'edit'], ['Relire le travail récent', 'Relis les derniers changements et signale ce qui cloche.', 'read'], ['M’expliquer le code', 'Explique-moi comment fonctionne ', 'read']];
-const emptyHTML = (name: string, first: boolean): string => `<div class="sl-empty">${avatar({ ...persona('principal'), id: '', base: 'Moka' }, true, 'idle', true)}<h3>${first ? `Un salon pour ${esc(name)}` : 'Nouveau fil'}</h3><p>Dis ce que tu veux faire : ${esc(persona('principal').name)} prend la consigne, répartit le travail et te prévient quand c’est prêt.</p><div class="sl-sugg">${SUGGEST.map(([l, t, m]) => `<button type="button" class="sl-chip" data-sl="suggest" data-text="${esc(t)}" data-mode="${m}">${esc(l)}</button>`).join('')}</div><p class="sl-faint">Les fils de ${esc(name)} restent ici : rien ne se mélange avec les autres projets.</p></div>`;
+const emptyHTML = (name: string, first: boolean): string => `<div class="sl-empty">${avatar({ ...persona('principal'), name: alias('Moka'), look: 'Moka', id: '', base: 'Moka' }, true, 'idle', true)}<h3>${first ? `Un salon pour ${esc(name)}` : 'Nouveau fil'}</h3><p>Dis ce que tu veux faire : ${esc(alias('Moka'))} prend la consigne, répartit le travail et te prévient quand c’est prêt.</p><div class="sl-sugg">${SUGGEST.map(([l, t, m]) => `<button type="button" class="sl-chip" data-sl="suggest" data-text="${esc(t)}" data-mode="${m}">${esc(l)}</button>`).join('')}</div><p class="sl-faint">Les fils de ${esc(name)} restent ici : rien ne se mélange avec les autres projets.</p></div>`;
 
 // ---------- Rendu ----------
 /** Mouvement coupé (réglage de l'app ou du système) : défilement direct. */
@@ -841,7 +866,7 @@ function paint(): void {
   // Fil Codex : pas de champ (Studio ne parle qu'à Claude Code), une ligne qui dit où le reprendre.
   const cx = isCodex(cur); need<HTMLFormElement>('.sl-comp', root).hidden = cx; need('[data-sl-codex]', root).hidden = !cx;
   // Le champ : seul son habillage change, jamais le texte.
-  const isNew = !cur, ph = isNew ? 'Dis à l’équipe ce que tu veux faire…' : `Écris à ${crew?.main.name ?? 'Moka'}…`;
+  const isNew = !cur, ph = isNew ? 'Dis à l’équipe ce que tu veux faire…' : `Écris à ${crew?.main.name ?? alias('Moka')}…`;
   if (ta.placeholder !== tr(ph)) ta.placeholder = ph;
   need('[data-sl-mode]', root).hidden = !isNew;
   showAuto(); ready();
@@ -946,6 +971,22 @@ async function gesture(act: string, wt: string, b: HTMLButtonElement): Promise<v
   await loadTrees(pid); if (root?.isConnected) paint();
 }
 
+/** Renomme un agent par son prénom d'origine : vaut pour tous les fils ; vide = prénom d'origine. */
+function renameAgent(base: string): void {
+  const m = modal({ title: 'Renommer l’agent', html: `<form class="ss-rename">
+    <input class="field" name="t" value="${esc(alias(base))}" placeholder="${esc(base)}" maxlength="24" spellcheck="false" autocomplete="off" autofocus>
+    <p class="sl-faint">Vaut pour tous les fils. Laisse vide pour revenir à ${esc(base)}.</p>
+    <div class="modal-actions"><button type="button" class="btn" data-x>Annuler</button><button class="btn btn-primary">Renommer</button></div></form>` });
+  const f = need<HTMLFormElement>('form', m.body), input = need<HTMLInputElement>('input', f);
+  input.select();
+  need('[data-x]', f).addEventListener('click', () => m.close());
+  f.addEventListener('submit', e => {
+    e.preventDefault();
+    setAlias(base, input.value.replace(/\s+/g, ' ').trim());
+    m.close(); if (root?.isConnected) paint();
+  });
+}
+
 // ---------- Panneau Équipe ----------
 /** Écran large : la colonne de droite se masque (réglage retenu). Écran étroit : elle s'ouvre par-dessus la discussion. */
 const narrow = (): boolean => matchMedia('(max-width: 1099px)').matches;
@@ -973,6 +1014,7 @@ function bind(r: HTMLElement): void {
       return;
     }
     if (act === 'unprof') { closeProf(); return; }
+    if (act === 'rename') { const base = t.dataset.base ?? ''; closeProf(); if (base) renameAgent(base); return; }
     if (act === 'down') { const f = need('[data-sl-feed]', r); f.scrollTo({ top: f.scrollHeight, behavior: calm() ? 'auto' : 'smooth' }); t.hidden = true; return; }
     if (act === 'mention') {
       const ta = need<HTMLTextAreaElement>('textarea', r), at = `@${t.dataset.name ?? ''} `;
