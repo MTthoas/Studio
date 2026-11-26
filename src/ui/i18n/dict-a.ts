@@ -1183,6 +1183,8 @@ export default {
   'a confié « {0} » à': 'handed off “{0}” to',
   'a confié une tâche à': 'handed off a task to',
   'Les tests sont lancés': 'Tests are running',
+  'Conversation résumée': 'Conversation summarised',
+  'Contexte plein : conversation résumée': 'Context full: conversation summarised',
   'Lire le compte rendu': 'Read the report',
   '{0} fichier': '{0} file',
   '{0} fichiers': '{0} files',

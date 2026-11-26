@@ -101,6 +101,12 @@ final class ClaudeSessions {
         switch e["type"] as? String ?? "" {
         case "ai-title": if let t = e["aiTitle"] as? String { st.title = t }
         case "user":
+            // Résumé écrit par Claude Code quand il compacte le contexte : entrée « user » qui n'est pas une consigne.
+            // La page n'en montre qu'une ligne (action `compact`, sans texte).
+            if (e["isCompactSummary"] as? Bool) == true || (e["isVisibleInTranscriptOnly"] as? Bool) == true
+                || ((e["message"] as? [String: Any])?["content"] as? String)?.hasPrefix("This session is being continued from a previous conversation") == true {
+                push(st, Action(at: ts, kind: "compact", text: "")); return
+            }
             guard (e["isMeta"] as? Bool) != true, let m = e["message"] as? [String: Any] else { return }
             // La consigne d'un sous-agent peut être écrite en blocs de texte plutôt qu'en une seule chaîne.
             var content = m["content"] as? String

@@ -73,7 +73,7 @@ export function paintPulse(box: HTMLElement, d: PulseInput): void {
   const marks = acts.slice(-64);
   const tape = marks.map((a, i) => {
     const c = a.kind === 'prompt' ? 'prompt' : catOf(a), cur = d.working && i === marks.length - 1;
-    const tip = a.kind === 'prompt' ? 'Ta demande' : a.kind === 'text' ? 'Réponse' : `${a.kind.slice(5)} ${d.short(a.text)}`;
+    const tip = a.kind === 'prompt' ? 'Ta demande' : a.kind === 'text' ? 'Réponse' : a.kind === 'compact' ? 'Conversation résumée' : `${a.kind.slice(5)} ${d.short(a.text)}`;
     return `<i class="k-${c}${cur ? ' cur' : ''}" title="${esc(tip)}"></i>`;
   }).join('');
 

@@ -432,6 +432,7 @@ function itemsOf(d: Detail, crew: Crew, board: BoardMsg[]): { items: Item[]; ask
   d.actions.forEach((a, i) => {
     const at = ms(a.at);
     if (a.kind === 'prompt') { add(at, 'me', msgHTML(crew.me, at, plain(a.text) + attach.galleryHTML(a.images)), 'me'); return; }
+    if (a.kind === 'compact') { add(at, 'compact', noteHTML('Contexte plein : conversation résumée', at)); return; }
     if (a.kind === 'tool:Agent' || a.kind === 'tool:Task') {
       // Passation : « Moka a confié … à Filou » ; la consigne complète se déplie. Le n-ième envoi d'un rôle est le n-ième agent de ce rôle.
       if (!a.body && !a.to) return;

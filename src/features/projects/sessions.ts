@@ -946,7 +946,8 @@ export function feedBlocks(actions: Action[], root: string | null, working: bool
     if (a.kind.startsWith('tool:') && hasDiff(a)) { flush(false); out.push({ key: key(a, 'diff'), html: diffHTML(a, short(a.file ?? '', root)) }); continue; }
     if (a.kind.startsWith('tool:')) { group.push(a); continue; }
     flush(false);
-    if (a.kind === 'prompt') out.push({ key: key(a, 'user'), html: `<div class="ss-msg user"><header><strong>${asker}</strong><time>${esc(clock(a.at))}</time></header><p>${esc(a.text)}</p>${attach.galleryHTML(a.images)}</div>` });
+    if (a.kind === 'compact') out.push({ key: key(a, 'compact'), html: '<p class="ss-cut">Contexte plein : conversation résumée</p>' });
+    else if (a.kind === 'prompt') out.push({ key: key(a, 'user'), html: `<div class="ss-msg user"><header><strong>${asker}</strong><time>${esc(clock(a.at))}</time></header><p>${esc(a.text)}</p>${attach.galleryHTML(a.images)}</div>` });
     else out.push({ key: key(a, 'ai'), html: `<div class="ss-msg ai"><header><strong>${answerer}</strong><time>${esc(clock(a.at))}</time><button class="icon-btn ss-copy" data-ag="copy" title="Copier la réponse" aria-label="Copier la réponse">${icon('copy')}</button></header><div class="md">${answerHTML(a.text)}</div></div>` });
   }
   flush(true);

@@ -86,6 +86,7 @@
     { at: at(9 * 60), kind: 'tool:Agent', text: 'Écrire les tests des remises', to: 'test-writer', body: 'Écris les tests de appliquerRemises : remise fixe, remise en pourcentage, cumul, code expiré. Utilise le même style que tests/total.test.ts.' },
     { at: at(7 * 60), kind: 'tool:Edit', text: `${root}/src/panier/remises.ts`, file: `${root}/src/panier/remises.ts`, old: remisesOld, new: remisesNew, add: 4, del: 2 },
     { at: at(5 * 60), kind: 'tool:Bash', text: 'npm test -- remises' },
+    { at: at(4 * 60 + 30), kind: 'compact', text: '' },
     { at: at(3 * 60), kind: 'tool:Edit', text: `${root}/src/api/coupon.ts`, file: `${root}/src/api/coupon.ts`, old: couponOld, new: couponNew, add: 5, del: 3 },
     { at: at(90), kind: 'tool:Read', text: `${root}/src/api/routes.ts` },
     { at: at(40), kind: 'tool:Edit', text: `${root}/src/panier/total.ts`, file: `${root}/src/panier/total.ts`, old: '  return ajouterTva(appliquerRemises(sousTotal(lignes), []), TAUX);', new: '  return ajouterTva(appliquerRemises(sousTotal(lignes), remises), TAUX);', add: 1, del: 1 },
