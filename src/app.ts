@@ -240,7 +240,8 @@ let zonePick: Zone | '' = '';
 const zone = (): Zone => zonePick || zoneOf(ui.view.type);
 
 function renderRail(z: Zone, dots: Partial<Record<Zone, number>>) {
-  const btn = (k: Zone) => `<button class="rail-btn${z === k ? ' sel' : ''}" data-zone="${k}" title="${ZONES[k].label}" aria-label="${ZONES[k].label}">${icon(ZONES[k].icon)}${dots[k] ? `<i class="rail-dot${k === 'pilot' ? ' live' : ''}"></i>` : ''}</button>`;
+  // Une zone = son icône et son nom dessous (double barre de la maquette, 27 nov. 2026).
+  const btn = (k: Zone) => `<button class="rail-btn rail-zone${z === k ? ' sel' : ''}" data-zone="${k}" title="${ZONES[k].label}" aria-label="${ZONES[k].label}">${icon(ZONES[k].icon)}<span class="rail-lbl">${ZONES[k].label}</span>${dots[k] ? `<i class="rail-dot${k === 'pilot' ? ' live' : ''}"></i>` : ''}</button>`;
   paintIfChanged(need('#rail'), `
     <button class="ws rail-logo" data-act="workspace" aria-label="Menu Studio" title="Studio">${logo()}</button>
     <button class="rail-btn" data-act="palette" title="Rechercher (${keys(SC.palette)})" aria-label="Rechercher">${icon('search')}</button>
@@ -294,11 +295,13 @@ function renderSidebar() {
       const pick = open && tab === 'salon' ? salon.chosenThread(p.id) : '';
       // Sous « Serveur » : les serveurs du projet, celui qui est affiché en surbrillance.
       const servers = open ? projectsPage.sideServers(p.id) : [], serving = tab === 'server' && servers.some(s => s.sel);
-      return `<button class="side-item side-sub${open && tab === projectsPage.defaultTab(p) && tab !== 'salon' ? ' sel' : ''}${open ? ' open' : ''}" data-pj-open="${esc(p.id)}">${projIcons.tile(p)}<span>${esc(p.name)}</span>${working && p.id !== salonPid ? sideCount('pj:' + p.id, working) : ''}<i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`
+      // Projet social : ses onglets sont listés dessous (Recos photo, Tâches, Notes), la ligne du projet n'est donc jamais « choisie ».
+      const social = p.kind === 'social';
+      return `<button class="side-item side-sub${open && !social && tab === projectsPage.defaultTab(p) && tab !== 'salon' ? ' sel' : ''}${open ? ' open' : ''}" data-pj-open="${esc(p.id)}">${projIcons.tile(p)}<span>${esc(p.name)}</span>${working && p.id !== salonPid ? sideCount('pj:' + p.id, working) : ''}<i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`
         // Les autres onglets (Claude Code compris) restent dans la barre d'onglets de la fiche : ici, seulement les fils, l'onglet ouvert et les serveurs.
         // Rangés dans `.side-kids`, qui trace l'arborescence (trait vertical, coude par ligne : css/rail.css).
         + kids((salonOn ? talks.map(s => `<button class="side-item side-sub2 side-talk${s.id === pick ? ' sel' : ''}${!s.live && s.stage ? ` ${s.stage.cls}` : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="salon" data-pj-session="${esc(s.id)}" data-pj-salon="1" title="${esc(s.title)}${s.live ? ' · en cours' : s.stage ? ` · ${esc(s.stage.label)}` : ''}"><i class="ss-live${s.live ? ' on' : s.stage ? ` ${s.stage.cls}` : ''}"></i><span>${esc(s.title)}</span>${!s.live && s.stage?.cls === 'st-review' ? `<em class="side-stage">${esc(s.stage.label)}</em>` : ''}<i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('') : '')
-        + (open ? projectsPage.tabsOf(p, tab ?? '').slice(1).filter(([k]) => k !== 'salon' && (k === tab || (k === 'server' && servers.length > 0))).map(([k, l, ic]) => `<button class="side-item side-sub2${tab === k && !(k === 'server' && serving) ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="${k}">${icon(ic)}<span>${esc(l)}</span></button>`
+        + (open ? projectsPage.tabsOf(p, tab ?? '').filter(([k], i) => k !== 'salon' && (social || (i > 0 && (k === tab || (k === 'server' && servers.length > 0))))).map(([k, l, ic]) => `<button class="side-item side-sub2${tab === k && !(k === 'server' && serving) ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="${k}">${icon(ic)}<span>${esc(l)}</span></button>`
           + (k === 'server' ? servers.map(s => `<button class="side-item side-sub3${tab === 'server' && s.sel ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="server" data-pj-server="${esc(s.id)}" title="${esc(s.dest)}">${icon('server')}<span>${esc(s.name)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('') : '')).join('') : ''));
   });
   // Double barre : le rail (zones, recherche, réglages) est toujours là ; la barre de droite ne montre que la zone ouverte,

@@ -1,7 +1,7 @@
 /* Double barre : un rail d'icônes (zones, recherche, réglages), toujours là, puis la barre de la zone ouverte (#sidebar),
    qui disparaît quand la zone n'a rien à lister (`body.side-none` : Accueil, Réglages). Rendu par `renderRail` (src/app.ts).
    Importé après sidebar.css mais avant les règles d'app.css : d'où le `:root` en tête des sélecteurs. Sélection = fond plein, jamais de trait d'accent. */
-:root { --rail-w: 52px; }
+:root { --rail-w: 62px; }
 
 /* ---------- Grille : rail | barre | liste | contenu ---------- */
 :root #app { grid-template-columns: var(--rail-w) var(--side-w) var(--list-w) minmax(0, 1fr); padding: 8px 8px 8px 0; }
@@ -94,3 +94,8 @@
   :root #app, :root body:is(.no-side, .side-none) #app { grid-template-columns: 0 0 minmax(0, 1fr) 0; padding: 0; }
   :root body:is(.pane-main, .no-list, .focus) #app, :root body.no-list:is(.no-side, .side-none) #app { grid-template-columns: 0 0 0 minmax(0, 1fr); padding: 0; }
 }
+
+/* Zones nommées : l'icône et son nom dessous, comme sur la maquette du 27 nov. 2026. */
+:root #rail .rail-zone { width: 54px; height: auto; min-height: 44px; padding: 6px 0 5px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; }
+:root #rail .rail-lbl { font-size: 10px; font-weight: 500; line-height: 1; letter-spacing: .01em; white-space: nowrap; max-width: 52px; overflow: hidden; text-overflow: ellipsis; }
+:root #rail .rail-zone .rail-dot { top: 5px; right: 13px; }

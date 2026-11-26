@@ -112,3 +112,14 @@
 .pj-create .pj-social { display: none; }
 .pj-create.pj-is-social .pj-social { display: flex; animation: mo-item var(--mo-d3) var(--mo-out) backwards; }
 .pj-create.pj-is-social .pj-code { display: none; }
+
+/* ---------- En-tête d'un projet social : une seule ligne ---------- */
+.pj-head.pj-head-slim { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "title tabs bar"; align-items: center; gap: 6px 18px; margin-bottom: 12px; }
+.pj-head-slim > .pj-title { grid-area: title; }
+.pj-head-slim > .pj-tabs { grid-area: tabs; margin: 0; }
+.pj-head-slim > .pj-bar { grid-area: bar; }
+.pj-head-slim .pj-bar .pj-links { display: none; }
+.pj-head-slim .pj-title h1 { font-size: var(--t-4); }
+.pj-head-slim .pj-title .pi-lg { --pi: 26px; }
+.pj-handle { font-size: var(--t-1); color: var(--text-3); white-space: nowrap; }
+@media (max-width: 900px) { .pj-head.pj-head-slim { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title bar" "tabs tabs"; } }

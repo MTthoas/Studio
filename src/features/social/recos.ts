@@ -1,9 +1,10 @@
 // Recos photo d'un projet social (onglet « Recos photo », préfixe rc-, styles css/recos.css).
 //
+// Mise en page de la planche G de la maquette (canevas « Studio Mac — nouveau Salon ») : à suivre de près.
 // Une séance = des photos envoyées à Praline (la stratège du projet), son analyse et ce qu'on en fait. À gauche le fil :
-// la demande, le classement, la question de format, puis les questions qu'on lui pose. À droite l'Établi : la photo choisie
-// cadrée en 9:16 avec les zones que cache l'interface de TikTok (on la recadre en la faisant glisser), ses quatre signaux,
-// le texte à l'écran, la légende et les hashtags, puis la publication (image 9:16 à télécharger, note du projet).
+// la demande, le classement, la question de format, puis les questions qu'on lui pose. À droite l'Établi : « Photo » (la photo
+// cadrée en 9:16 avec les zones que cache l'interface de TikTok, recadrée au glisser, ses quatre signaux et les recos),
+// « Légende » (texte à l'écran, légende, hashtags) et « Calendrier » (jour et heure : une tâche datée dans le projet).
 //
 // L'analyse passe par `ai.vision` (fournisseur de Réglages → IA ; Claude Code reçoit les photos dans le message, sans outil),
 // avec un schéma de réponse fixe. Les photos sont réduites avant l'envoi (1280 px, JPEG) et gardées avec la séance dans le
@@ -15,6 +16,7 @@ import * as db from '../../core/db.ts';
 import * as store from '../../core/store.ts';
 import * as ai from '../../integrations/ai.ts';
 import * as hub from '../hub.ts';
+import * as todo from '../tasks.ts';
 import * as catface from '../../ui/catface.ts';
 import * as motion from '../../ui/motion.ts';
 import * as i18n from '../../ui/i18n.ts';
@@ -34,6 +36,8 @@ interface Seance {
   id: string; project: string; title: string; at: number; updated: number; brief: string;
   photos: Photo[]; analysis: Analysis | null; msgs: Msg[];
   pick: string; format: FormatId | ''; crop: Record<string, { x: number; y: number }>; hook: Record<string, string>; caption: Record<string, string>; off: string[];
+  /** Publication planifiée : une tâche datée a été ajoutée au projet. */
+  planned?: { day: string; time: string };
 }
 
 const MAX = 8, NAME = 'Praline';
@@ -101,8 +105,8 @@ const lists = new Map<string, Seance[]>();
 let cur: Seance | null = null;
 let pending: Photo[] = [];
 const busy = new Map<string, { ctrl: AbortController; step: number; timer: number; kind: 'analysis' | 'text' }>();
-let tab: 'photo' | 'legende' | 'publier' = 'photo';
-let zones = true, burn = true;
+let tab: 'photo' | 'legende' | 'calendrier' = 'photo';
+let burn = true;
 const seen = new Set<string>();
 const shown = new Map<string, number>();
 let saveTimer = 0, docBound = false;
@@ -218,12 +222,11 @@ async function analyze(s: Seance): Promise<void> {
       images: s.photos.map(x => ({ type: 'image/jpeg', data: x.full })), schema: SCHEMA, signal: ctrl.signal });
     if (!r.data) throw new Error('Réponse illisible : relance l’analyse.');
     const a = clean(r.data, n), best = s.photos[a.meilleure - 1];
-    const before = railRects();
     s.analysis = a; s.format = a.format_conseille; s.pick = best?.id ?? s.photos[0]?.id ?? '';
     for (const [i, ph] of s.photos.entries()) { const rc = a.photos[i]; if (rc && !s.crop[ph.id]) s.crop[ph.id] = rc.cadrage; }
     s.msgs.push({ id: uid(), who: 'ai', kind: 'analysis', text: a.resume, at: Date.now() });
     endBusy(s); save(s, true);
-    if (cur?.id === s.id) { paint(); flipRail(before); }
+    if (cur?.id === s.id) paint();
   } catch (e) {
     endBusy(s);
     if (!ctrl.signal.aborted) { s.msgs.push({ id: uid(), who: 'ai', kind: 'error', text: errMsg(e), at: Date.now() }); save(s, true); }
@@ -244,9 +247,10 @@ async function follow(s: Seance, question: string): Promise<void> {
   if (cur?.id === s.id) paint();
 }
 
-// ---------- Rendu : le fil ----------
+// ---------- Rendu : le fil (planche G de la maquette : fil de 400 px, bulles serrées, classement encadré) ----------
 const cat = (mood: catface.Mood, cls = ''): string => `<span class="rc-av ${cls}" style="--c:var(--c-pink)">${catface.face(NAME, mood, { look: true })}</span>`;
-const who = (t: number, role = 'stratège social'): string => `<header><b>${NAME}</b><span class="rc-role">${esc(role)}</span><time>${esc(new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }))}</time></header>`;
+const hhmm = (t: number): string => new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+const who = (t: number, role = 'stratège social'): string => `<header><b>${NAME}</b><span class="rc-role">${esc(role)} · ${esc(hhmm(t))}</span></header>`;
 
 function introHTML(s: Seance): string {
   const empty = !s.photos.length && !pending.length;
@@ -258,33 +262,29 @@ function introHTML(s: Seance): string {
 }
 
 function meHTML(s: Seance, m: Msg): string {
-  const ph = (m.photos ?? []).map((id, i) => {
-    const r = recoOf(s, id), rank = s.analysis ? ranked(s).findIndex(x => x.id === id) + 1 : 0;
-    return `<button type="button" class="rc-mph${s.pick === id ? ' on' : ''}" data-rc="show" data-id="${id}" data-mph="${id}" style="--i:${i}" aria-label="Voir la photo ${i + 1}">
-      <img src="${thumbOf(s, id)}" alt="">${rank ? `<em class="rc-rank${rank === 1 ? ' top' : ''}" data-k="mrank:${id}:${rank}" style="--i:${i}">${rank}</em>` : ''}${r ? '' : '<i class="rc-scan"></i>'}</button>`;
-  }).join('');
-  return `<div class="rc-msg me" data-k="${m.id}"><span class="rc-av me">T</span><div class="rc-bd"><header><b>Toi</b><time>${esc(new Date(m.at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }))}</time></header>
-    ${ph ? `<div class="rc-mphs${busy.get(s.id)?.kind === 'analysis' ? ' scanning' : ''}">${ph}</div>` : ''}${m.text ? `<p class="rc-plain" data-no-i18n>${esc(m.text)}</p>` : ''}</div></div>`;
+  const ph = (m.photos ?? []).map((id, i) => `<button type="button" class="rc-mph${s.pick === id ? ' on' : ''}" data-rc="show" data-id="${id}" data-mph="${id}" style="--i:${i}" aria-label="Voir la photo ${i + 1}" aria-pressed="${s.pick === id}">
+      <img src="${thumbOf(s, id)}" alt="">${recoOf(s, id) ? '' : '<i class="rc-scan"></i>'}</button>`).join('');
+  return `<div class="rc-msg me" data-k="${m.id}"><span class="rc-av me">T</span><div class="rc-bd"><header><b>Toi</b><span class="rc-role">${esc(hhmm(m.at))}</span></header>
+    ${m.text ? `<p class="rc-plain" data-no-i18n>${esc(m.text)}</p>` : ''}${ph ? `<div class="rc-mphs${busy.get(s.id)?.kind === 'analysis' ? ' scanning' : ''}">${ph}</div>` : ''}</div></div>`;
 }
 
-function analysisHTML(s: Seance, m: Msg, last: boolean): string {
+function analysisHTML(s: Seance, m: Msg): string {
   const a = s.analysis; if (!a) return '';
   const rows = ranked(s).map((ph, i) => {
     const r = recoOf(s, ph.id);
-    return `<button type="button" class="rc-rk${s.pick === ph.id ? ' on' : ''}" data-rc="show" data-id="${ph.id}" style="--i:${i}">
-      <span class="rc-rk-n${i === 0 ? ' top' : ''}">${i + 1}</span><img src="${ph.thumb}" alt="">
-      <span class="rc-rk-t"><b data-no-i18n>${esc(r?.titre ?? '')}</b><small data-no-i18n>${esc(r?.pourquoi ?? '')}</small></span>
-      <span class="rc-rk-s" data-count="rk:${ph.id}" data-to="${r?.note ?? 0}">${r?.note ?? 0}</span></button>`;
+    return `<button type="button" class="rc-rk${s.pick === ph.id ? ' on' : ''}" data-rc="show" data-id="${ph.id}" data-rank="${ph.id}" style="--i:${i}">
+      <span class="rc-rk-n">${i + 1}</span><span class="rc-rk-t"><b data-no-i18n>${esc(r?.titre ?? '')}</b><small data-no-i18n>${esc(r?.pourquoi ?? '')}</small></span>
+      <span class="rc-rk-s">${r?.note ?? 0}</span></button>`;
   }).join('');
   const fmt = s.format || a.format_conseille;
   const choices = a.formats.map((f, i) => `<button type="button" class="rc-ch${fmt === f.id ? ' on' : ''}" data-rc="format" data-f="${f.id}" aria-pressed="${fmt === f.id}" style="--i:${i}">
-    <b><span>${esc(FMT_LABEL[f.id])}</span>${f.id === a.format_conseille ? '<em>conseillé</em>' : ''}</b><small data-no-i18n>${esc(f.detail || f.titre)}</small></button>`).join('');
-  return `<div class="rc-msg" data-k="${m.id}">${cat('done', last ? 'cf-hop' : '')}<div class="rc-bd">${who(m.at)}
-    <p class="rc-plain" data-no-i18n>${esc(m.text)}</p>
-    <div class="rc-rks" role="list">${rows}</div>
-    <p class="rc-q">Sous quelle forme on la publie ?</p>
-    <div class="rc-chs" role="group" aria-label="Format">${choices}</div>
-    ${a.question ? `<p class="rc-plain rc-ask" data-no-i18n>${esc(a.question)}</p>` : ''}</div></div>`;
+    <b><span data-no-i18n>${esc(f.titre || FMT_LABEL[f.id])}</span>${f.id === a.format_conseille ? '<em>conseillé</em>' : ''}</b><small data-no-i18n>${esc(f.detail)}</small></button>`).join('');
+  // Deux bulles, comme dans la maquette : le classement, puis la question du format (sans en-tête : même auteur).
+  return `<div class="rc-msg" data-k="${m.id}">${cat('done', 'cf-hop')}<div class="rc-bd">${who(m.at)}
+      <p class="rc-plain" data-no-i18n>${esc(m.text)}</p><div class="rc-rks" role="list">${rows}</div></div></div>
+    <div class="rc-msg rc-cont" data-k="${m.id}:fmt">${cat('idle')}<div class="rc-bd">
+      <p>Sous quelle forme on la publie ?</p><div class="rc-chs" role="group" aria-label="Format">${choices}</div>
+      ${a.question ? `<p class="rc-plain rc-ask" data-no-i18n>${esc(a.question)}</p>` : ''}</div></div>`;
 }
 
 function aiHTML(m: Msg): string {
@@ -309,69 +309,57 @@ function setupHTML(): string {
 function feedHTML(s: Seance): string {
   const last = [...s.msgs].reverse().find(m => m.kind === 'analysis');
   // Une analyse refaite (photos ajoutées) remplace la précédente : seul le dernier message porte le classement et les formats.
-  return introHTML(s) + setupHTML() + s.msgs.map(m => m.who === 'me' ? meHTML(s, m) : m.kind === 'analysis' ? (m === last ? analysisHTML(s, m, true) : aiHTML({ ...m, kind: 'text' })) : aiHTML(m)).join('') + typingHTML(s);
+  return introHTML(s) + setupHTML() + s.msgs.map(m => m.who === 'me' ? meHTML(s, m) : m.kind === 'analysis' ? (m === last ? analysisHTML(s, m) : aiHTML({ ...m, kind: 'text' })) : aiHTML(m)).join('') + typingHTML(s);
 }
 
 function stripHTML(): string {
   return pending.map((ph, i) => `<span class="rc-pend" data-pend="${ph.id}" style="--i:${i}"><img src="${ph.thumb}" alt=""><button type="button" class="rc-pend-x" data-rc="unpend" data-id="${ph.id}" aria-label="Retirer cette photo">${icon('x')}</button></span>`).join('');
 }
 
-// ---------- Rendu : l'Établi ----------
-function railHTML(s: Seance): string {
-  return ranked(s).map((ph, i) => {
-    const r = recoOf(s, ph.id);
-    return `<button type="button" class="rc-th${s.pick === ph.id ? ' on' : ''}" data-rc="show" data-id="${ph.id}" data-rail="${ph.id}" aria-label="Photo ${i + 1}" aria-pressed="${s.pick === ph.id}">
-      <img src="${ph.thumb}" alt="">${r ? `<em class="rc-rank${i === 0 ? ' top' : ''}" data-k="rrank:${ph.id}:${i + 1}" style="--i:${i}">${i + 1}</em>` : ''}</button>`;
-  }).join('');
-}
+// ---------- Rendu : l'Établi (Photo · Légende · Calendrier) ----------
+/** Photo montrée : celle qu'on a choisie, sinon la première de la séance, sinon la première en attente d'envoi. */
+const shownPhoto = (s: Seance): Photo | null => s.photos.find(x => x.id === s.pick) ?? ranked(s)[0] ?? pending[0] ?? null;
 
 function phoneHTML(s: Seance, ph: Photo | null): string {
-  const c = ph ? s.crop[ph.id] ?? recoOf(s, ph.id)?.cadrage ?? { x: .5, y: .45 } : { x: .5, y: .5 };
-  const hook = ph ? s.hook[ph.id] ?? recoOf(s, ph.id)?.accroche ?? '' : '';
-  return `<div class="rc-phone${zones ? ' zones' : ''}${ph ? '' : ' empty'}" data-phone>
-    ${ph ? `<img src="${srcOf(ph)}" alt="" draggable="false" style="object-position:${(c.x * 100).toFixed(1)}% ${(c.y * 100).toFixed(1)}%">` : '<span class="rc-phone-ph">L’aperçu 9:16 s’affiche ici</span>'}
-    ${hook ? `<span class="rc-hook" data-no-i18n>${esc(hook)}</span>` : ''}
-    <span class="rc-ui" aria-hidden="true"><i class="rc-ui-r"><b></b><b></b><b></b><b></b></i><i class="rc-ui-b"><b></b><b></b></i></span>
-    <span class="rc-zone rc-zone-r" aria-hidden="true"><em>Boutons</em></span><span class="rc-zone rc-zone-b" aria-hidden="true"><em>Légende</em></span><span class="rc-zone rc-zone-t" aria-hidden="true"></span>
-  </div>`;
+  if (!ph) return '<div class="rc-phone empty" data-phone><span class="rc-phone-ph">L’aperçu 9:16 s’affiche ici</span></div>';
+  const c = s.crop[ph.id] ?? recoOf(s, ph.id)?.cadrage ?? { x: .5, y: .45 }, hook = s.hook[ph.id] ?? recoOf(s, ph.id)?.accroche ?? '';
+  return `<div class="rc-phone" data-phone role="img" aria-label="Photo cadrée en 9:16, avec les zones que cache l’interface de TikTok" title="Glisse pour recadrer · double-clic pour recentrer">
+    <img src="${srcOf(ph)}" alt="" draggable="false" style="object-position:${(c.x * 100).toFixed(1)}% ${(c.y * 100).toFixed(1)}%">
+    ${hook ? `<span class="rc-hook" data-no-i18n>${esc(hook)}</span>` : ''}<span class="rc-zone rc-zone-r" aria-hidden="true"></span><span class="rc-zone rc-zone-b" aria-hidden="true"></span></div>`;
 }
 
-function ringHTML(v: number, key: string): string {
-  const C = 2 * Math.PI * 26, from = shown.get(key) ?? 0;
-  return `<svg class="rc-ring" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="26" class="rc-ring-bg"/><circle cx="32" cy="32" r="26" class="rc-ring-fg" data-ring="${key}" data-to="${v}" stroke-dasharray="${C.toFixed(2)}" stroke-dashoffset="${(C * (1 - from / 100)).toFixed(2)}"/></svg>`;
-}
-
-const copyBtn = (what: string, label: string): string => `<button type="button" class="icon-btn rc-copy" data-rc="copy" data-what="${what}" title="${label}" aria-label="${label}">${icon('copy')}</button>`;
+const copyBtn = (what: string, label: string): string => `<button type="button" class="rc-copy" data-rc="copy" data-what="${what}" title="${label}" aria-label="${label}">${icon('copy')}</button>`;
+const level = (v: number): string => v >= 75 ? 'var(--ok)' : v >= 55 ? 'var(--c-amber)' : 'var(--accent)';
 
 function photoPane(s: Seance): string {
-  const ph = s.photos.find(x => x.id === s.pick) ?? ranked(s)[0] ?? null;
-  const r = ph ? recoOf(s, ph.id) : null, a = s.analysis, working = busy.get(s.id)?.kind === 'analysis';
-  const fmt = (s.format || a?.format_conseille || 'video') as FormatId, f = a?.formats.find(x => x.id === fmt);
-  const info = r && a ? `<div class="rc-score" data-k="score:${ph?.id}">${ringHTML(r.note, 'ring')}<span class="rc-score-n" data-count="score" data-to="${r.note}">${shown.get('score') ?? 0}</span>
-      <span class="rc-score-t"><b data-no-i18n>${esc(r.titre)}</b><small data-no-i18n>${esc(r.pourquoi)}</small></span></div>
-    <div class="rc-sigs" data-k="sigs:${ph?.id}">${SIG_LABEL.map(([k, l, tip], i) => `<div class="rc-sig" title="${esc(tip)}" style="--i:${i}"><span>${esc(l)}</span><b data-count="sig:${k}" data-to="${r.signaux[k]}">${shown.get(`sig:${k}`) ?? 0}</b>
-      <i><u data-bar="sig:${k}" data-to="${r.signaux[k]}" style="scale:${(shown.get(`sig:${k}`) ?? 0) / 100} 1"></u></i></div>`).join('')}</div>
+  const ph = shownPhoto(s), r = ph ? recoOf(s, ph.id) : null, a = s.analysis, working = busy.get(s.id)?.kind === 'analysis';
+  const fmt = (s.format || a?.format_conseille || 'video') as FormatId, f = a?.formats.find(x => x.id === fmt), c = captionOf(s), when = a ? whenOf(a.publication.quand) : null;
+  const info = r && a && ph ? `<h2 data-no-i18n data-k="title:${ph.id}">${esc(r.titre)}</h2>
+    <div class="rc-sigs">${SIG_LABEL.map(([k, l, tip], i) => `<div class="rc-sig" title="${esc(tip)}" style="--i:${i}"><span>${esc(l)}</span><b data-count="sig:${k}" data-to="${r.signaux[k]}">${shown.get(`sig:${k}`) ?? 0}</b>
+      <i><u data-bar="sig:${k}" data-to="${r.signaux[k]}" style="scale:${(shown.get(`sig:${k}`) ?? 0) / 100} 1;background:${level(r.signaux[k])}"></u></i></div>`).join('')}</div>
     ${r.attention.length ? `<ul class="rc-warn">${r.attention.map(t => `<li data-no-i18n>${esc(t)}</li>`).join('')}</ul>` : ''}
-    <div class="rc-seg" role="group" aria-label="Format">${(['video', 'carrousel', 'photo'] as FormatId[]).map(id => `<button type="button" data-rc="format" data-f="${id}" aria-pressed="${fmt === id}" class="${fmt === id ? 'on' : ''}">${esc(FMT_LABEL[id])}</button>`).join('')}<i class="rc-seg-ind" aria-hidden="true"></i></div>
-    ${f?.plan ? `<p class="rc-plan" data-no-i18n data-k="plan:${fmt}">${esc(f.plan)}</p>` : ''}
+    <h2 class="rc-h2-recos">Recos</h2>
     <dl class="rc-list">
-      <div><dt>${icon('type')}Texte à l’écran</dt><dd data-no-i18n>${esc(s.hook[ph!.id] ?? r.accroche)}</dd>${copyBtn('hook', 'Copier le texte')}</div>
-      <div><dt>${icon('music')}Son</dt><dd data-no-i18n>${esc(a.publication.son)}</dd></div>
-      <div><dt>${icon('clock')}Quand</dt><dd data-no-i18n>${esc(a.publication.quand)}${a.publication.quand_pourquoi ? `<small>${esc(a.publication.quand_pourquoi)}</small>` : ''}</dd></div>
-    </dl>`
+      <div data-k="fmt:${fmt}"><dt>Format</dt><dd data-no-i18n><b>${esc(f?.titre || FMT_LABEL[fmt])}</b>${f?.plan ? ` · ${esc(f.plan)}` : ''}</dd></div>
+      <div><dt>Texte à l’écran</dt><dd data-no-i18n>« ${esc(c.hook)} »</dd>${copyBtn('hook', 'Copier le texte')}</div>
+      <div><dt>Légende</dt><dd data-no-i18n>${esc(c.text)}</dd>${copyBtn('all', 'Copier légende et hashtags')}</div>
+      <div><dt>Hashtags</dt><dd data-no-i18n>${esc(c.tags.join(' '))}</dd></div>
+      <div><dt>Son</dt><dd data-no-i18n>${esc(a.publication.son)}</dd></div>
+      <div><dt>Quand</dt><dd data-no-i18n>${esc(a.publication.quand)}${a.publication.quand_pourquoi ? `<small>${esc(a.publication.quand_pourquoi)}</small>` : ''}</dd></div>
+    </dl>
+    <div class="rc-acts rc-main-acts"><button type="button" class="btn rc-go" data-rc="export">${icon('download')}Télécharger l’image 9:16</button>
+      <button type="button" class="btn" data-rc="schedule">${icon('clock')}${s.planned ? `Prévu ${esc(dayLabel(s.planned.day))} ${esc(s.planned.time)}` : `Planifier ${esc(when ? `${dayLabel(when.day)} ${when.time}` : '')}`.trim()}</button>
+      <button type="button" class="btn" data-rc="note">${icon('notes')}Garder en note</button></div>
+    <p class="rc-fine">Rien n’est publié d’ici : tu publies depuis l’app TikTok, au moment prévu.</p>`
     : working ? `<div class="rc-skel" aria-label="Analyse en cours"><i></i><i></i><i></i><i></i><i></i></div>`
     : ph ? `<div class="rc-wait"><p>${a ? 'Cette photo n’était pas dans l’analyse.' : 'Envoie la séance à Praline pour classer tes photos et recevoir les recos.'}</p>${a ? '<button type="button" class="btn" data-rc="retry">Analyser à nouveau</button>' : ''}</div>`
     : '<div class="rc-wait"><p>Tes photos apparaîtront ici, cadrées comme sur TikTok.</p></div>';
-  return `<div class="rc-rail" role="group" aria-label="Photos de la séance">${railHTML(s)}</div>
-    <div class="rc-stage"><div class="rc-phone-col">${phoneHTML(s, ph)}
-      <div class="rc-phone-bar"><button type="button" class="btn btn-ghost${zones ? ' on' : ''}" data-rc="zones" aria-pressed="${zones}" title="Montrer ce que cachent les boutons et la légende de TikTok">${icon('frame')}Zones cachées</button>${ph ? `<button type="button" class="btn btn-ghost" data-rc="recenter">${icon('crop')}Recentrer</button>` : ''}</div>
-      ${ph ? '<p class="rc-hint">Fais glisser la photo pour la recadrer</p>' : ''}</div>
-    <div class="rc-info">${info}</div></div>`;
+  return `<div class="rc-photo"><div class="rc-phone-col">${phoneHTML(s, ph)}${ph ? '<span class="rc-cap">hachures = caché par les boutons et la légende</span>' : ''}</div><div class="rc-info">${info}</div></div>`;
 }
 
 function captionOf(s: Seance): { hook: string; text: string; tags: string[] } {
-  const r = recoOf(s, s.pick), a = s.analysis;
-  return { hook: s.hook[s.pick] ?? r?.accroche ?? '', text: s.caption[s.pick] ?? r?.legende ?? '', tags: (a?.publication.hashtags ?? []).filter(t => !s.off.includes(t)) };
+  const id = shownPhoto(s)?.id ?? s.pick, r = recoOf(s, id), a = s.analysis;
+  return { hook: s.hook[id] ?? r?.accroche ?? '', text: s.caption[id] ?? r?.legende ?? '', tags: (a?.publication.hashtags ?? []).filter(t => !s.off.includes(t)) };
 }
 
 function captionPane(s: Seance): string {
@@ -381,35 +369,66 @@ function captionPane(s: Seance): string {
   return `<label class="rc-field"><span>Texte à l’écran</span><input class="field" data-rc-in="hook" value="${esc(c.hook)}" maxlength="80" data-no-i18n></label>
     <label class="rc-field"><span>Légende <em data-len>${all.length} caractères</em></span><textarea class="field" rows="5" data-rc-in="caption" data-no-i18n>${esc(c.text)}</textarea></label>
     <div class="rc-field"><span>Hashtags</span><div class="rc-tags">${tags.map((t, i) => `<button type="button" class="rc-tag${s.off.includes(t) ? '' : ' on'}" data-rc="tag" data-t="${esc(t)}" aria-pressed="${!s.off.includes(t)}" style="--i:${i}" data-no-i18n>${esc(t)}</button>`).join('')}</div></div>
-    <div class="rc-acts"><button type="button" class="btn btn-primary" data-rc="copy" data-what="all">${icon('copy')}Copier légende et hashtags</button></div>`;
+    <div class="rc-acts"><button type="button" class="btn rc-go" data-rc="copy" data-what="all">${icon('copy')}Copier légende et hashtags</button></div>`;
 }
 
-function publishPane(s: Seance): string {
+function calendarPane(s: Seance): string {
   const a = s.analysis; if (!a) return '<div class="rc-wait"><p>Le plan de publication arrive avec l’analyse.</p></div>';
   const fmt = (s.format || a.format_conseille) as FormatId, f = a.formats.find(x => x.id === fmt), c = captionOf(s);
+  const when = s.planned ?? whenOf(a.publication.quand) ?? { day: store.dayKey(new Date(Date.now() + 864e5)), time: '19:00' };
   const step = (ic: string, t: string, d: string) => `<li><i>${icon(ic)}</i><span><b>${esc(t)}</b><small data-no-i18n>${esc(d)}</small></span></li>`;
-  return `<ol class="rc-plan-l">${step('film', FMT_LABEL[fmt], f?.plan || f?.detail || '')}${step('type', 'Texte à l’écran', c.hook)}${step('music', 'Son', a.publication.son)}${step('clock', 'Quand', [a.publication.quand, a.publication.quand_pourquoi].filter(Boolean).join(' · '))}${step('hash', 'Légende', `${c.text} ${c.tags.join(' ')}`.trim())}</ol>
+  return `<section class="rc-sched${s.planned ? ' done' : ''}" data-k="sched:${s.planned?.day ?? ''}">
+      <h2>Quand publier</h2><p class="rc-fine" data-no-i18n>${esc([a.publication.quand, a.publication.quand_pourquoi].filter(Boolean).join(' · '))}</p>
+      <div class="rc-sched-row"><label><span>Jour</span><input type="date" class="field" data-rc-in="day" value="${esc(when.day)}"></label><label><span>Heure</span><input type="time" class="field" data-rc-in="time" value="${esc(when.time)}"></label>
+        <button type="button" class="btn rc-go" data-rc="schedule">${icon('clock')}${s.planned ? 'Déplacer' : 'Planifier'}</button></div>
+      ${s.planned ? `<p class="rc-ok">${icon('check')}<span>Prévu ${esc(dayLabel(s.planned.day))} à ${esc(s.planned.time)}, dans les tâches du projet</span></p>` : ''}</section>
+    <h2>Le jour J</h2>
+    <ol class="rc-plan-l">${step('film', FMT_LABEL[fmt], f?.plan || f?.detail || '')}${step('type', 'Texte à l’écran', c.hook)}${step('music', 'Son', a.publication.son)}${step('hash', 'Légende', `${c.text} ${c.tags.join(' ')}`.trim())}</ol>
     <div class="rc-export"><label class="rc-check"><input type="checkbox" data-rc-in="burn"${burn ? ' checked' : ''}><span>Écrire le texte sur l’image</span></label>
-      <div class="rc-acts"><button type="button" class="btn btn-primary" data-rc="export">${icon('download')}Image 9:16</button><button type="button" class="btn" data-rc="note">${icon('notes')}Enregistrer en note</button><button type="button" class="btn" data-rc="copy" data-what="plan">${icon('copy')}Copier le plan</button></div>
-      <p class="rc-hint">Rien n’est publié d’ici : tu publies depuis l’app TikTok.</p></div>`;
+      <div class="rc-acts"><button type="button" class="btn rc-go" data-rc="export">${icon('download')}Télécharger l’image 9:16</button><button type="button" class="btn" data-rc="copy" data-what="plan">${icon('copy')}Copier le plan</button><button type="button" class="btn" data-rc="note">${icon('notes')}Garder en note</button></div></div>`;
 }
 
 function benchHTML(s: Seance): string {
-  const tabs: [typeof tab, string][] = [['photo', 'Photo'], ['legende', 'Légende'], ['publier', 'Publier']];
+  const tabs: [typeof tab, string][] = [['photo', 'Photo'], ['legende', 'Légende'], ['calendrier', 'Calendrier']];
   return `<div class="rc-bench-h"><b>Établi</b><nav class="rc-tabs" role="tablist">${tabs.map(([k, l]) => `<button type="button" role="tab" data-rc="tab" data-t="${k}" aria-selected="${tab === k}" class="${tab === k ? 'on' : ''}">${l}</button>`).join('')}<i class="rc-tab-ind" aria-hidden="true"></i></nav></div>
-    <div class="rc-pane" data-pane="${tab}">${tab === 'photo' ? photoPane(s) : tab === 'legende' ? captionPane(s) : publishPane(s)}</div>`;
+    <div class="rc-pane" data-pane="${tab}">${tab === 'photo' ? photoPane(s) : tab === 'legende' ? captionPane(s) : calendarPane(s)}</div>`;
+}
+
+// ---------- Planification : une tâche datée dans le projet ----------
+const DAYS_FR = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'], DAYS_EN = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+const flat = (t: string): string => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+/** Jour et heure lus dans le « quand » de Praline (« vendredi vers 20 h », « Friday 8 pm ») ; null s'il n'y a ni jour ni heure. */
+function whenOf(text: string): { day: string; time: string } | null {
+  const t = flat(text);
+  let wd = DAYS_FR.findIndex(d => t.includes(d)); if (wd < 0) wd = DAYS_EN.findIndex(d => t.includes(d));
+  const m = t.match(/\b(\d{1,2})\s*(?:h|:)\s*(\d{2})?/) ?? t.match(/\b(\d{1,2})\s*(am|pm)\b/);
+  if (wd < 0 && !m) return null;
+  let h = m ? Number(m[1]) : 19; const min = m && /^\d{2}$/.test(m[2] ?? '') ? Number(m[2]) : 0;
+  if (m?.[2] === 'pm' && h < 12) h += 12;
+  const now = new Date(), d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), Math.min(23, h), Math.min(59, min));
+  if (wd >= 0) d.setDate(d.getDate() + ((wd - d.getDay() + 7) % 7));
+  if (d <= now) d.setDate(d.getDate() + (wd >= 0 ? 7 : 1));
+  return { day: store.dayKey(d), time: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` };
+}
+const dayLabel = (day: string): string => new Date(`${day}T12:00`).toLocaleDateString(i18n.lang() === 'fr' ? 'fr-FR' : 'en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
+
+async function schedule(day: string, time: string): Promise<void> {
+  const s = cur, p = proj, a = s?.analysis; if (!s || !p || !a || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return;
+  const r = recoOf(s, shownPhoto(s)?.id ?? ''), fmt = (s.format || a.format_conseille) as FormatId;
+  const done = await todo.add(`Publier sur TikTok : ${r?.titre ?? titleOf(s)} (${FMT_LABEL[fmt].toLowerCase()}) à ${time || '19:00'} @${day}`, p.id);
+  if (!done) return;
+  s.planned = { day, time: time || '19:00' }; save(s, true); paint();
+  toast(`Publication prévue ${dayLabel(day)} à ${s.planned.time}`);
 }
 
 // ---------- Peinture et mouvement ----------
 function shell(): string {
   return `<section class="rc-fil" aria-label="Fil avec ${NAME}">
-      <header class="rc-head"><button type="button" class="rc-title" data-rc="seances" aria-haspopup="menu"><span data-no-i18n></span>${icon('chevron')}</button><span class="rc-state"></span>
-        <button type="button" class="icon-btn" data-rc="new" title="Nouvelle séance" aria-label="Nouvelle séance">${icon('plus')}</button></header>
+      <header class="rc-head"><button type="button" class="rc-title" data-rc="seances" aria-haspopup="menu" title="Séances"><span data-no-i18n></span>${icon('chevron')}</button><span class="rc-state"></span></header>
       <div class="rc-feed" data-fx-feed></div>
-      <form class="rc-comp"><div class="rc-strip"></div><textarea rows="1" aria-label="Message à ${NAME}" placeholder="Pour quoi ? Ex. lancement de la collection d’hiver · ou pose une question"></textarea>
-        <div class="rc-comp-bar"><button type="button" class="icon-btn" data-rc="pick" title="Joindre des photos" aria-label="Joindre des photos">${icon('image')}</button>
-          <span class="rc-comp-h">${MAX} photos au plus · ↵ pour envoyer</span>
-          <button type="submit" class="rc-send" aria-label="Envoyer">${icon('arrowUp')}</button></div>
+      <form class="rc-comp"><div class="rc-strip"></div><div class="rc-comp-row"><textarea rows="1" aria-label="Message à ${NAME}" placeholder="Glisse des photos, ou pose une question"></textarea>
+        <button type="button" class="rc-attach" data-rc="pick" title="Joindre des photos" aria-label="Joindre des photos">${icon('image')}</button>
+        <button type="submit" class="rc-send" aria-label="Envoyer">${icon('arrowUp')}</button></div>
         <input type="file" accept="image/*,.heic,.heif" multiple hidden data-rc-file></form>
     </section>
     <aside class="rc-bench" aria-label="Établi"></aside>
@@ -421,13 +440,12 @@ function paint(): void {
   const feed = r.querySelector<HTMLElement>('.rc-feed'), bench = r.querySelector<HTMLElement>('.rc-bench'); if (!feed || !bench) return;
   const t = r.querySelector('.rc-title span'); if (t) t.textContent = titleOf(s);
   const st = r.querySelector('.rc-state'), b = busy.get(s.id);
-  if (st) st.innerHTML = b ? '<span class="rc-pill work">au travail</span>' : s.analysis ? `<span class="rc-pill">${s.photos.length} photo${s.photos.length > 1 ? 's' : ''} classée${s.photos.length > 1 ? 's' : ''}</span>` : '';
+  if (st) st.innerHTML = b ? '<span class="rc-pill work">Au travail</span>' : s.planned ? '<span class="rc-pill done">Prévu</span>' : s.analysis ? '<span class="rc-pill mine">À toi</span>' : '';
   const stick = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 80;
   feed.innerHTML = feedHTML(s);
   bench.innerHTML = benchHTML(s);
   paintStrip();
-  r.classList.toggle('rc-has', s.photos.length > 0);
-  enterNew(r); rollNumbers(r); placeInd(r, '.rc-tabs', '.rc-tab-ind'); placeInd(r, '.rc-seg', '.rc-seg-ind');
+  enterNew(r); rollNumbers(r); placeInd(r, '.rc-tabs', '.rc-tab-ind');
   if (stick || b) feed.scrollTop = feed.scrollHeight;
 }
 function paintStrip(): void {
@@ -449,13 +467,12 @@ function enterNew(r: HTMLElement): void {
     if (live()) el.classList.add('rc-in');
   }
 }
-/** Chiffres, barres et anneau roulent depuis la dernière valeur montrée pour la même clé. */
+/** Chiffres et barres roulent depuis la dernière valeur montrée pour la même clé. */
 function rollNumbers(r: HTMLElement): void {
   const go = live(), ms = 720, ease = (x: number) => 1 - Math.pow(1 - x, 3);
-  const C = 2 * Math.PI * 26;
   requestAnimationFrame(() => {
     for (const el of r.querySelectorAll<HTMLElement>('[data-count]')) {
-      const key = el.dataset.count ?? '', to = Number(el.dataset.to ?? 0), from = shown.get(key) ?? (key.startsWith('rk:') ? to : 0);
+      const key = el.dataset.count ?? '', to = Number(el.dataset.to ?? 0), from = shown.get(key) ?? 0;
       shown.set(key, to);
       if (!go || from === to) { el.textContent = String(to); continue; }
       const t0 = performance.now();
@@ -463,33 +480,22 @@ function rollNumbers(r: HTMLElement): void {
       requestAnimationFrame(step);
     }
     for (const el of r.querySelectorAll<HTMLElement>('[data-bar]')) el.style.scale = `${Number(el.dataset.to ?? 0) / 100} 1`;
-    for (const el of r.querySelectorAll<SVGCircleElement>('[data-ring]')) { const v = Number(el.dataset.to ?? 0); el.style.strokeDashoffset = String(C * (1 - v / 100)); shown.set('ring', v); }
   });
 }
-/** Indicateur glissant d'un groupe de boutons (onglets, formats) : se place sous le bouton choisi. */
+/** Indicateur glissant des onglets de l'Établi : part de l'onglet précédent et se pose sous le nouveau. */
+const indAt = new Map<string, [number, number]>();
 function placeInd(r: HTMLElement, group: string, ind: string): void {
   const g = r.querySelector<HTMLElement>(group), i = g?.querySelector<HTMLElement>(ind), on = g?.querySelector<HTMLElement>('.on'); if (!g || !i || !on) return;
-  const set = (): void => { i.style.width = `${on.offsetWidth}px`; i.style.translate = `${on.offsetLeft}px 0`; };
-  const last = (r as HTMLElement & { _ind?: Record<string, [number, number]> })._ind ??= {};
-  const was = last[group];
+  const was = indAt.get(group);
   if (was && live()) { i.style.transition = 'none'; i.style.width = `${was[1]}px`; i.style.translate = `${was[0]}px 0`; void i.offsetWidth; i.style.transition = ''; }
-  set(); last[group] = [on.offsetLeft, on.offsetWidth];
-}
-const railRects = (): Map<string, DOMRect> => new Map([...(root?.querySelectorAll<HTMLElement>('[data-rail]') ?? [])].map(e => [e.dataset.rail ?? '', e.getBoundingClientRect()]));
-function flipRail(before: Map<string, DOMRect>): void {
-  if (!live()) return;
-  for (const e of root?.querySelectorAll<HTMLElement>('[data-rail]') ?? []) {
-    const a = before.get(e.dataset.rail ?? ''); if (!a) continue;
-    const b = e.getBoundingClientRect(), x = a.left - b.left, y = a.top - b.top;
-    if (Math.abs(x) + Math.abs(y) < 1) continue;
-    e.animate([{ translate: `${x}px ${y}px` }, { translate: '0 0' }], { duration: 520, easing: 'cubic-bezier(.3,1.25,.5,1)' });
-  }
+  i.style.width = `${on.offsetWidth}px`; i.style.translate = `${on.offsetLeft}px 0`;
+  indAt.set(group, [on.offsetLeft, on.offsetWidth]);
 }
 /** Des vignettes du champ vers les mêmes photos dans le fil : elles glissent d'un endroit à l'autre. */
 function flyTo(rects: Map<string, DOMRect>): void {
   if (!live() || !root) return;
   for (const [id, a] of rects) {
-    const e = root.querySelector<HTMLElement>(`.rc-msg.me:last-of-type [data-mph="${id}"], [data-mph="${id}"]`); if (!e) continue;
+    const e = root.querySelector<HTMLElement>(`[data-mph="${id}"]`); if (!e) continue;
     const b = e.getBoundingClientRect(); if (!b.width) continue;
     e.animate([{ translate: `${a.left - b.left}px ${a.top - b.top}px`, scale: `${a.width / b.width}`, opacity: .9 }, { translate: '0 0', scale: '1', opacity: 1 }],
       { duration: 560, easing: 'cubic-bezier(.3,1.2,.5,1)', fill: 'backwards' });
@@ -572,7 +578,7 @@ async function copy(what: string, btn: HTMLElement): Promise<void> {
 
 /** Image 9:16 (1080 × 1920) recadrée comme dans l'aperçu, avec le texte à l'écran si demandé. */
 async function exportImage(): Promise<void> {
-  const s = cur, ph = s?.photos.find(x => x.id === s.pick); if (!s || !ph) return;
+  const s = cur, ph = s ? shownPhoto(s) : null; if (!s || !ph) return;
   const img = new Image(); img.src = srcOf(ph); await img.decode();
   const W = 1080, H = 1920, c = document.createElement('canvas'); c.width = W; c.height = H;
   const g = c.getContext('2d'); if (!g) return;
@@ -595,7 +601,7 @@ async function exportImage(): Promise<void> {
 
 async function saveNote(): Promise<void> {
   const s = cur, p = proj, a = s?.analysis; if (!s || !p || !a) return;
-  const c = captionOf(s), fmt = (s.format || a.format_conseille) as FormatId, f = a.formats.find(x => x.id === fmt), r = recoOf(s, s.pick);
+  const c = captionOf(s), fmt = (s.format || a.format_conseille) as FormatId, f = a.formats.find(x => x.id === fmt), r = recoOf(s, shownPhoto(s)?.id ?? '');
   const body = [`Recos de ${NAME} pour « ${titleOf(s)} ».`, '', `## Photo retenue`, `**${r?.titre ?? ''}** · ${r?.note ?? 0}/100 — ${r?.pourquoi ?? ''}`, '',
     `## Format : ${FMT_LABEL[fmt]}`, f?.plan ?? '', '', `## Texte à l’écran`, c.hook, '', `## Légende`, c.text, '', c.tags.join(' '), '',
     `## Son`, a.publication.son, '', `## Quand`, `${a.publication.quand}${a.publication.quand_pourquoi ? ` — ${a.publication.quand_pourquoi}` : ''}`, '',
@@ -638,7 +644,7 @@ async function remove(): Promise<void> {
 
 // Recadrage : la photo suit le pointeur dans le cadre 9:16 (object-position), le point retenu est celui de la séance.
 function reframe(e: PointerEvent, phone: HTMLElement): void {
-  const s = cur, ph = s?.photos.find(x => x.id === s.pick), img = phone.querySelector<HTMLImageElement>('img'); if (!s || !ph || !img) return;
+  const s = cur, ph = s ? shownPhoto(s) : null, img = phone.querySelector<HTMLImageElement>('img'); if (!s || !ph || !img) return;
   e.preventDefault();
   const fw = phone.clientWidth, fh = phone.clientHeight, k = Math.max(fw / ph.w, fh / ph.h), ow = ph.w * k - fw, oh = ph.h * k - fh;
   const start = { ...(s.crop[ph.id] ?? recoOf(s, ph.id)?.cadrage ?? { x: .5, y: .45 }) }, x0 = e.clientX, y0 = e.clientY;
@@ -659,9 +665,13 @@ function bind(r: HTMLElement): void {
     else if (act === 'unpend') { const id = b.dataset.id; const el = r.querySelector<HTMLElement>(`[data-pend="${id}"]`); const drop = (): void => { pending = pending.filter(x => x.id !== id); motion.flip(r.querySelectorAll('[data-pend]'), paintStrip); }; if (el && live()) el.animate([{ scale: '1', opacity: 1 }, { scale: '.4', opacity: 0 }], { duration: 160, easing: 'cubic-bezier(.4,0,1,1)' }).finished.then(drop, drop); else drop(); }
     else if (act === 'show' && b.dataset.id) show(b.dataset.id);
     else if (act === 'format' && b.dataset.f) setFormat(b.dataset.f as FormatId);
-    else if (act === 'tab' && b.dataset.t) { const t = b.dataset.t as typeof tab; if (t === tab) return; const dir = ['photo', 'legende', 'publier'].indexOf(t) - ['photo', 'legende', 'publier'].indexOf(tab); tab = t; paint(); motion.slide(r.querySelector('.rc-pane'), dir); }
-    else if (act === 'zones') { zones = !zones; r.querySelector('.rc-phone')?.classList.toggle('zones', zones); b.classList.toggle('on', zones); b.setAttribute('aria-pressed', String(zones)); }
-    else if (act === 'recenter' && s) { const id = s.pick, c = recoOf(s, id)?.cadrage ?? { x: .5, y: .45 }; s.crop[id] = c; save(s); const img = r.querySelector<HTMLImageElement>('.rc-phone img'); if (img) { img.style.transition = 'object-position 420ms cubic-bezier(.2,.8,.2,1)'; img.style.objectPosition = `${c.x * 100}% ${c.y * 100}%`; setTimeout(() => { img.style.transition = ''; }, 450); } }
+    else if (act === 'tab' && b.dataset.t) { const order = ['photo', 'legende', 'calendrier'], t = b.dataset.t as typeof tab; if (t === tab) return; const dir = order.indexOf(t) - order.indexOf(tab); tab = t; paint(); motion.slide(r.querySelector('.rc-pane'), dir); }
+    else if (act === 'schedule' && s?.analysis) {
+      // Depuis l'onglet Calendrier : le jour et l'heure choisis ; depuis la photo : ceux que Praline conseille (sinon on ouvre le Calendrier).
+      const day = r.querySelector<HTMLInputElement>('[data-rc-in="day"]')?.value, time = r.querySelector<HTMLInputElement>('[data-rc-in="time"]')?.value;
+      if (day) void schedule(day, time ?? '');
+      else { const w = s.planned ? null : whenOf(s.analysis.publication.quand); if (w) void schedule(w.day, w.time); else { tab = 'calendrier'; paint(); motion.slide(r.querySelector('.rc-pane'), 1); } }
+    }
     else if (act === 'tag' && s && b.dataset.t) { const t = b.dataset.t; s.off = s.off.includes(t) ? s.off.filter(x => x !== t) : [...s.off, t]; save(s); b.classList.toggle('on'); b.setAttribute('aria-pressed', String(!s.off.includes(t))); updateLen(); if (live()) b.animate([{ scale: '.9' }, { scale: '1' }], { duration: 260, easing: 'cubic-bezier(.3,1.25,.5,1)' }); }
     else if (act === 'copy' && b.dataset.what) void copy(b.dataset.what, b);
     else if (act === 'export') void exportImage().catch(x => toast(errMsg(x)));
@@ -681,9 +691,9 @@ function bind(r: HTMLElement): void {
     const t = target(e) as HTMLInputElement | HTMLTextAreaElement, s = cur;
     if (t.matches('.rc-comp textarea')) { t.style.height = ''; t.style.height = `${Math.min(160, t.scrollHeight)}px`; return; }
     if (!s) return;
-    const k = t.dataset.rcIn;
-    if (k === 'hook') { s.hook[s.pick] = t.value; save(s); }
-    else if (k === 'caption') { s.caption[s.pick] = t.value; save(s); updateLen(); }
+    const k = t.dataset.rcIn, id = shownPhoto(s)?.id ?? s.pick;
+    if (k === 'hook') { s.hook[id] = t.value; save(s); }
+    else if (k === 'caption') { s.caption[id] = t.value; save(s); updateLen(); }
   });
   r.addEventListener('change', e => {
     const t = target(e) as HTMLInputElement;
@@ -691,6 +701,12 @@ function bind(r: HTMLElement): void {
     else if (t.dataset.rcIn === 'burn') burn = t.checked;
   });
   r.addEventListener('pointerdown', e => { const ph = target(e).closest<HTMLElement>('[data-phone]'); if (ph && !ph.classList.contains('empty') && e.button === 0) reframe(e, ph); });
+  // Double-clic sur l'aperçu : retour au cadrage conseillé par Praline.
+  r.addEventListener('dblclick', e => {
+    const phone = target(e).closest<HTMLElement>('[data-phone]'), s = cur, ph = s ? shownPhoto(s) : null, img = phone?.querySelector<HTMLImageElement>('img'); if (!phone || !s || !ph || !img) return;
+    const c = recoOf(s, ph.id)?.cadrage ?? { x: .5, y: .45 }; s.crop[ph.id] = c; save(s);
+    img.style.transition = 'object-position 420ms cubic-bezier(.2,.8,.2,1)'; img.style.objectPosition = `${c.x * 100}% ${c.y * 100}%`; setTimeout(() => { img.style.transition = ''; }, 450);
+  });
   // Petite inclinaison des vignettes sous le pointeur (mouvement complet seulement).
   r.addEventListener('pointermove', e => {
     if (!full()) return;

@@ -443,7 +443,9 @@ function serverBadge(p: Project): string {
 }
 
 function detailHTML(p: Project, tab: string): string {
-  return `<div class="pj-head" style="--c:var(--c-${p.hue})"><div class="pj-title"><button type="button" class="pj-icbtn" data-pj="icon" title="Changer l’icône et la couleur" aria-label="Changer l’icône et la couleur du projet">${projIcons.tile(p, 'pi-lg')}</button><h1>${esc(p.name)}</h1></div>
+  // Projet social : en-tête d'une ligne (icône, nom, compte, onglets, actions) pour laisser la hauteur aux recos, comme la maquette.
+  const slim = p.kind === 'social';
+  return `<div class="pj-head${slim ? ' pj-head-slim' : ''}" style="--c:var(--c-${p.hue})"><div class="pj-title"><button type="button" class="pj-icbtn" data-pj="icon" title="Changer l’icône et la couleur" aria-label="Changer l’icône et la couleur du projet">${projIcons.tile(p, 'pi-lg')}</button><h1>${esc(p.name)}</h1>${slim && p.tiktok ? `<span class="pj-handle" data-no-i18n>TikTok · ${esc(p.tiktok)}</span>` : ''}</div>
       <div class="pj-bar"><div class="pj-links" data-k="${esc(`${model.formatRepos(p.stack)}|${p.site ?? ''}|${p.linear ?? ''}`)}">${p.stack.map(r => `<a class="lv-chip pj-chip-repo" href="https://github.com/${esc(r.name)}" target="_blank" rel="noopener" title="${esc(`${model.ROLES[r.role].label} · ${r.name}`)}">${model.roleTag(r.role, 'sm')}${esc(r.name.split('/')[1] ?? r.name)}</a>`).join('')}${p.linear ? `<span class="lv-chip">${icon('linear')}${esc(p.linear)}</span>` : ''}${p.site ? `<a class="lv-chip" href="${esc(p.site)}" target="_blank" rel="noopener">${icon('link')}${esc(p.site.replace(/^https:\/\//, ''))}</a>` : ''}<span class="lv-chip">#${esc(p.tag)}</span>${serverBadge(p)}</div><div class="pj-acts"><button class="btn btn-ghost pj-note" data-pj="edit">${icon('notes')}Note du projet</button><button class="btn btn-ghost pj-note" data-pj="claude" title="Conversation bornée à ce projet : Claude ne voit que ses données">${icon('sparkle')}Claude</button></div></div>
       <nav class="lv-tabs pj-tabs">${tabsHTML(p, tab)}</nav></div>
     <div class="pj-body" data-tab="${tab}">${tabBody(p, tab)}</div>`;
