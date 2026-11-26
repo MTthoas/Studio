@@ -888,7 +888,7 @@ function listHTML(list: Session[]): string {
     ${recent.length ? `<h3 class="ss-h">Terminés récemment${recent.length > 1 ? `<button class="link-btn ss-h-act" data-ag="hide-runs">Retirer les terminés</button>` : ''}</h3><div class="ag-runs">${recent.map(runCard).join('')}</div>` : ''}
     ${trees.length ? `<h3 class="ss-h" title="Travail isolé de ton dossier, rangé par étape">Copies des agents${!remote && trees.some(treeIdle) ? `<button class="link-btn ss-h-act" data-ag="clean-trees" title="Supprimer plusieurs copies d’un coup">Faire le ménage</button>` : ''}</h3><div class="ag-groups">${familyHTML}${groups}</div>` : ''}
     <h3 class="ss-h" title="Tout ce que Claude Code a fait dans ce projet">Sessions <span>${list.length}</span>${canClean ? `<button class="link-btn ss-h-act" data-ag="clean" title="Supprimer plusieurs conversations terminées d’un coup">Faire le ménage</button>` : ''}</h3>
-    ${list.length ? `<p class="ss-sum">${usage.fmt(tot.output)} tokens écrits · ${usage.fmt(tot.input)} lus · ${usage.fmt(tot.cacheRead)} relus du cache</p>` : ''}
+    ${list.length ? `<p class="ss-sum">${usage.fmt(tot.output)} tokens écrits · ${usage.fmt(tot.input)} lus</p>` : ''}
     <div class="ss-list">${list.map(s => {
       const top = Object.entries(s.tools).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `${k} ${v}`).join(' · ');
       const st = sessionStage(s), tag = st && st !== 'idle' && st !== 'work' ? stageBadge(st) : '';
@@ -1036,7 +1036,7 @@ function topHTML(s: Detail, root: string | null, open: boolean): string {
     ${tree ? `<div class="ag-trees ss-tree">${treeRow(tree, [s], true)}</div>` : remote ? '' : s.worktree ? (treesRead ? `<p class="ss-meta">${icon('history')}Copie isolée supprimée : réponds pour reprendre, Studio la recrée (sur sa branche si elle existe encore, sinon depuis la branche principale).</p>` : '') : `<div class="ss-actions"><button class="btn" data-pj="review-working">${icon('sparkle')}Revue des changements en cours</button><button class="btn" data-pj="vscode">${icon('code')}Ouvrir dans VS Code</button></div>`}
     ${subsHTML(s.id)}
     <details class="ss-more"${open ? ' open' : ''}><summary>${icon('chevron')}Détails<span>${usage.fmt(s.tokens.output)} tokens écrits · ${acts} action${acts > 1 ? 's' : ''}${s.files.length ? ` · ${s.files.length} fichier${s.files.length > 1 ? 's' : ''} modifié${s.files.length > 1 ? 's' : ''}` : ''}</span></summary>
-      <div class="ss-totals"><div><strong>${usage.fmt(s.tokens.output)}</strong><span>tokens écrits</span></div><div><strong>${usage.fmt(s.tokens.input + s.tokens.cacheWrite)}</strong><span>tokens lus</span></div><div><strong>${usage.fmt(s.tokens.cacheRead)}</strong><span>relus du cache</span></div><div><strong>${acts}</strong><span>actions</span></div></div>
+      <div class="ss-totals"><div><strong>${usage.fmt(s.tokens.output)}</strong><span>tokens écrits</span></div><div><strong>${usage.fmt(s.tokens.input + s.tokens.cacheWrite)}</strong><span>tokens lus</span></div><div><strong>${acts}</strong><span>actions</span></div></div>
       ${s.files.length ? `<h3 class="ss-h">Fichiers modifiés <span>${s.files.length}</span></h3><div class="ss-files">${s.files.map(f => `<code>${esc(short(f, root))}</code>`).join('')}</div>` : ''}</details>`;
 }
 
