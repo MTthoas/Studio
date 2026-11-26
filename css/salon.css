@@ -53,6 +53,11 @@
 .sl-more:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-soft); }
 .sl-row-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sl-row time { flex: none; font-size: var(--t-1); color: var(--text-3); }
+/* Conversation OpenAI Codex (lue sur ce Mac, reprise hors de Studio) */
+.sl-tag { flex: none; padding: 0 5px; border-radius: 4px; background: color-mix(in srgb, var(--c-green) 14%, transparent); color: color-mix(in srgb, var(--c-green) 70%, var(--text)); font-size: 10px; font-weight: 600; line-height: 16px; letter-spacing: .02em; }
+.sl-codex { display: flex; align-items: center; gap: 8px; margin: 0 14px 12px; padding: 10px 12px; border: 1px dashed var(--border-2); border-radius: 14px; color: var(--text-2); font-size: var(--t-1); }
+.sl-codex[hidden] { display: none; }
+.sl-codex code { font-size: .95em; }
 .sl-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--border-2); }
 .sl-dot.work { background: var(--c-amber); animation: sl-live 1.8s var(--mo-in-out) infinite; }
 @keyframes sl-live { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--c-amber) 55%, transparent); } 70%, 100% { box-shadow: 0 0 0 5px transparent; } }

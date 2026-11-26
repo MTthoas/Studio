@@ -35,6 +35,23 @@
       sess(`5d0e${i}a7c-1f2b-4c3d-9e8f-0a1b2c3d4e5${i}`, { title: t, firstPrompt: t, lastPrompt: t, started: at(d * 86400 + 3600), updated: at(d * 86400), active: at(d * 86400), live: false, prompts: 2 })),
   ];
   const find = (id) => sessions.find((s) => s.id === id);
+  // Conversations Codex (OpenAI, ~/.codex/sessions) : champ `codex` de `project sessions`, une par sous-projet.
+  const codex = [
+    sess('codex:019a2f4e-7c1d-7b20-9e3a-5f6d8c0b1a24', { engine: 'codex', sub: 'atelier-lumiere/apps/api', origin: 'CLI', cwd: `${home}/apps/api`, models: ['gpt-5-codex'], title: '', firstPrompt: 'Ajoute une pagination par curseur à GET /commandes.', lastPrompt: 'Ajoute aussi le total dans l’en-tête X-Total.',
+      started: at(2 * 3600), updated: at(40 * 60), active: at(40 * 60), live: false, prompts: 3, tools: { Bash: 7, Edit: 4 }, files: [`${home}/apps/api/src/commandes.ts`], lines: { add: 52, del: 11 } }),
+    sess('codex:019a2b11-3e8f-7a42-b1c0-9d2e4f6a8b37', { engine: 'codex', sub: 'atelier-lumiere/apps/web', origin: 'VS Code', cwd: `${home}/apps/web`, models: ['gpt-5-codex'], title: '', firstPrompt: 'Le bouton « Payer » saute au chargement, corrige le décalage.', lastPrompt: 'Le bouton « Payer » saute au chargement, corrige le décalage.',
+      started: at(26 * 3600), updated: at(25 * 3600), active: at(25 * 3600), live: false, prompts: 1, tools: { Bash: 3, Edit: 2 }, files: [`${home}/apps/web/src/paiement.css`], lines: { add: 6, del: 4 } }),
+    sess('codex:0199f0aa-5b2c-7d61-8e4f-1a3b5c7d9e02', { engine: 'codex', sub: 'atelier-lumiere/apps/web', origin: 'App', cwd: `${home}/apps/web`, models: ['gpt-5'], title: '', firstPrompt: 'Propose trois variantes de la carte produit.', lastPrompt: 'Garde la deuxième.',
+      started: at(50 * 3600), updated: at(48 * 3600), active: at(48 * 3600), live: false, prompts: 2, tools: { Bash: 1, Write: 1 }, files: [`${home}/apps/web/src/carte.ts`], lines: { add: 88, del: 0 } }),
+  ];
+  const codexActions = (s) => [
+    { at: s.started, kind: 'prompt', text: s.firstPrompt },
+    { at: s.started, kind: 'tool:Bash', text: 'rg -n "commandes" src' },
+    { at: s.started, kind: 'tool:Edit', text: `${s.cwd}/src/commandes.ts` },
+    { at: s.updated, kind: 'text', text: 'Pagination ajoutée : `?apres=<curseur>&limite=50`, le curseur est l’id de la dernière commande renvoyée.' },
+    { at: s.updated, kind: 'prompt', text: s.lastPrompt },
+    { at: s.updated, kind: 'text', text: 'C’est fait : `X-Total` contient le nombre total de commandes du filtre.' },
+  ];
 
   // ---------- Sous-agents de la conversation en cours ----------
   const root = `${home}/.claude/worktrees/${WT}`;
@@ -146,8 +163,11 @@
   const none = { containers: [], images: [] };
   if (type === 'project') {
     if (action === 'info') return { path: home, name: 'atelier-lumiere', git: true, branch: 'main', ahead: 0, behind: 0, changes: 3, remote: 'demo/atelier-lumiere', home: '~/projets', homeSet: true };
-    if (action === 'sessions') return { found: true, sessions, quota: null };
+    if (action === 'sessions') return { found: true, sessions, codex, quota: null };
+    if (action === 'codexOpen') return { ok: true };
     if (action === 'session') {
+      const c = codex.find((x) => x.id === msg.session);
+      if (c) return { ...c, actions: codexActions(c), subagents: [] };
       const s = find(msg.session);
       if (!s) return { ok: false, message: 'Session introuvable.' };
       return { ...s, actions: s.id === S_LIVE ? actions : quick(s), subagents: s.id === S_LIVE ? subs : [] };

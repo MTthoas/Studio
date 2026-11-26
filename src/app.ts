@@ -1529,7 +1529,7 @@ async function start() {
   noteai.init({
     editor: () => (ed && $('.nai') && !ed.note.deletedAt && !store.isLocked(ed.note) ? { note: ed.note, ta: ed.ta } : null),
     replace: (s, e, t) => { if (ed?.ta) replaceRange(ed.ta, s, e, t); },
-    flush, openNote: id => void openNote(id),
+    flush, openNote: id => void openNote(id), refreshNote,
   });
   hub.init({
     openNote, setView, renderMain, flush, flushAll, refreshNote, capture: quickCapture, crumb,

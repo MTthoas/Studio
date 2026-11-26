@@ -150,7 +150,7 @@ const drafts = {
 let root: HTMLElement | null = null, p: Project | null = null, timer: ReturnType<typeof setTimeout> | undefined;
 let listing = false, busy = false, refreshing = false, moreOpen = false, shown = '', quotaHooked = false;
 /** Filtre et recherche de la liste des fils (gardés d'un projet à l'autre, le temps de la session). */
-type Filt = 'all' | 'work' | 'mine' | 'done' | 'arch';
+type Filt = 'all' | 'work' | 'mine' | 'done' | 'codex' | 'arch';
 let filt: Filt = 'all', query = '';
 /** Dernière lecture de chaque source (ms) : chacune a son rythme, aucune n'attend l'autre. */
 let last = { sessions: 0, trees: 0, detail: 0, board: 0 };
@@ -189,7 +189,8 @@ function curId(th = threads()): string {
 async function loadSessions(pid: string): Promise<void> {
   const r = await bridge.call('project', 'sessions', { project: pid }, 20000);
   if (pid !== S.pid || !r.ok) return;
-  S.sessions = r.found ? (r.sessions as Session[] | undefined) ?? [] : [];
+  // Conversations Codex (OpenAI) : à part dans la réponse (`codex`), seul le Salon les montre.
+  S.sessions = [...(r.found ? (r.sessions as Session[] | undefined) ?? [] : []), ...((r.codex as Session[] | undefined) ?? [])];
   // Première ouverture : l'existant compte comme lu, sinon « À toi » serait rempli d'anciennes conversations.
   if (firstUse) { for (const x of S.sessions) if (!x.live) seen[x.id] = ms(x.active || x.updated); keepSeen(); firstUse = false; }
   S.loaded = true;
@@ -262,8 +263,10 @@ function start(): void {
 /** Famille du modèle en un mot : « opus », « sonnet », « haiku » ; sinon le nom court. */
 const family = (m: string | undefined): string => m ? (/(opus|sonnet|haiku)/i.exec(m)?.[1]?.toLowerCase() ?? modelName(m)) : '';
 interface Crew { main: Who; me: Who; subs: Map<string, Who>; byBase: Map<string, string[]>; raw: SubAgent[] }
-function crewOf(subs: SubAgent[], models: string[]): Crew {
-  const main: Who = { ...persona('principal'), id: 'main', base: 'Moka', model: family(models[models.length - 1]) };
+function crewOf(subs: SubAgent[], models: string[], codex = false): Crew {
+  // Un fil Codex n'a pas d'équipe Studio : l'agent s'appelle Codex et garde le nom de son modèle (gpt-5-codex…).
+  const main: Who = codex ? { ...persona('principal'), name: 'Codex', role: 'OpenAI', id: 'main', base: 'Codex', model: models[models.length - 1] ?? '' }
+    : { ...persona('principal'), id: 'main', base: 'Moka', model: family(models[models.length - 1]) };
   const me: Who = { name: 'Toi', role: '', hue: 'gray', id: '', base: 'Toi', me: true };
   const by = new Map<string, Who>(), count = new Map<string, number>(), byBase = new Map<string, string[]>();
   // Plusieurs agents du même rôle : « Filou », « Filou 2 », dans l'ordre où ils sont partis.
@@ -532,20 +535,22 @@ function blocksOf(t: Thread, d: Detail | undefined, crew: Crew): { blocks: Block
 // ---------- Pièces de la page ----------
 /** Un fil au travail n'est jamais caché, même archivé. */
 const isArch = (t: Thread): boolean => t.group !== 'work' && archived.isArchived(S.pid, t.id);
+/** Conversation OpenAI Codex : lue sur ce Mac, reprise dans le Terminal ou l'app Codex (pas de réponse depuis Studio). */
+const isCodex = (t: Thread | undefined): boolean => t?.s.engine === 'codex';
 const OLD_DAYS = 7;
 const oldOnes = (th: Thread[]): Thread[] => th.filter(t => t.group === 'recent' && !isArch(t) && Date.now() - t.act > OLD_DAYS * 864e5);
 const FILTS: [Filt, string, (t: Thread) => boolean][] = [
   ['all', 'Tous', t => !isArch(t)], ['work', 'En cours', t => t.group === 'work'], ['mine', 'À toi', t => t.group === 'mine' && !isArch(t)],
-  ['done', 'Terminés', t => t.group === 'recent' && !isArch(t)], ['arch', 'Archivés', isArch],
+  ['done', 'Terminés', t => t.group === 'recent' && !isArch(t)], ['codex', 'Codex', t => isCodex(t) && !isArch(t)], ['arch', 'Archivés', isArch],
 ];
-const matches = (t: Thread, q: string): boolean => !q || fold([nameOf(t.s), t.s.firstPrompt ?? '', t.s.lastPrompt, t.s.branch, t.s.worktree].join(' ')).includes(q);
+const matches = (t: Thread, q: string): boolean => !q || fold([nameOf(t.s), t.s.firstPrompt ?? '', t.s.lastPrompt, t.s.branch, t.s.worktree, isCodex(t) ? `codex ${t.s.sub ?? ''}` : ''].join(' ')).includes(q);
 function filtHTML(th: Thread[]): string {
   return FILTS.map(([k, l, f]) => { const n = th.filter(f).length; return k !== 'all' && k !== filt && !n ? '' : `<button type="button" class="sl-chip${k === filt ? ' on' : ''}" data-sl="filt" data-f="${k}" aria-pressed="${k === filt}">${l}${k === 'all' ? '' : `<span>${n}</span>`}</button>`; }).join('');
 }
 function listHTML(th: Thread[], id: string): string {
   if (!S.loaded && !th.length) return '<p class="sl-empty-s"><span class="spin"></span>Lecture des fils…</p>';
   const arch = filt === 'arch';
-  const row = (t: Thread): string => `<div class="sl-row${t.id === id ? ' cur' : ''}" data-id="${esc(t.id)}"><button type="button" class="sl-pick" data-sl="pick" data-id="${esc(t.id)}"${t.id === id ? ' aria-current="true"' : ''} title="${esc(nameOf(t.s))}"><i class="sl-dot ${t.group}" aria-hidden="true"></i><span class="sl-row-t">${esc(nameOf(t.s))}</span><time>${esc(rel(t.act))}</time></button>${t.group === 'work' || t.id.startsWith('run:') ? '' : arch
+  const row = (t: Thread): string => `<div class="sl-row${t.id === id ? ' cur' : ''}" data-id="${esc(t.id)}"><button type="button" class="sl-pick" data-sl="pick" data-id="${esc(t.id)}"${t.id === id ? ' aria-current="true"' : ''} title="${esc(nameOf(t.s))}"><i class="sl-dot ${t.group}" aria-hidden="true"></i><span class="sl-row-t">${esc(nameOf(t.s))}</span>${isCodex(t) ? `<span class="sl-tag" title="${esc(`Codex · ${t.s.sub ?? ''}`)}">Codex</span>` : ''}<time>${esc(rel(t.act))}</time></button>${t.group === 'work' || t.id.startsWith('run:') ? '' : arch
     ? `<button type="button" class="sl-x" data-sl="unarch" data-id="${esc(t.id)}" title="Remettre dans la liste" aria-label="Remettre dans la liste">${icon('restore')}</button>`
     : `<button type="button" class="sl-x" data-sl="arch" data-id="${esc(t.id)}" title="Archiver (rien n’est effacé)" aria-label="Archiver ce fil">${icon('inbox')}</button>`}</div>`;
   const grp = (title: string, list: Thread[], extra = ''): string => list.length ? `<section class="sl-grp"><h4>${title}<span>${list.length}</span></h4>${list.map(row).join('')}${extra}</section>` : '';
@@ -554,6 +559,8 @@ function listHTML(th: Thread[], id: string): string {
   const foot = arch ? (shownTh.length > 1 ? `<div class="sl-foot"><button type="button" class="sl-more" data-sl="unarch-all">Tout remettre dans la liste</button></div>` : '')
     : `<div class="sl-foot">${old && !q ? `<button type="button" class="sl-more" data-sl="tidy" title="Les fils terminés depuis plus de ${OLD_DAYS} jours passent dans « Archivés »">${icon('inbox')}<span>Archiver les fils de plus de ${OLD_DAYS} jours (${old})</span></button>` : ''}<button type="button" class="sl-more" data-sl="clean" title="Choisir des conversations terminées à supprimer pour de bon">${icon('trash')}<span>Supprimer des fils…</span></button></div>`;
   if (!shownTh.length) return `<p class="sl-empty-s">${q ? 'Aucun fil ne correspond.' : arch ? 'Aucun fil archivé.' : 'Aucun fil pour l’instant.'}</p>${q || arch ? '' : foot}`;
+  // Codex : un groupe par sous-projet (dépôt ou sous-dossier où le fil a tourné), comme dans l'app Codex.
+  if (filt === 'codex' && !q) { const subs = [...new Set(shownTh.map(t => t.s.sub || 'Projet'))]; return subs.map(n => grp(esc(n), shownTh.filter(t => (t.s.sub || 'Projet') === n))).join('') + foot; }
   // Recherche ou filtre : une liste à plat, du plus récent au plus ancien.
   if (q || filt !== 'all') return grp(q ? 'Résultats' : FILTS.find(x => x[0] === filt)?.[1] ?? '', shownTh) + foot;
   const rec = shownTh.filter(t => t.group === 'recent');
@@ -572,6 +579,7 @@ function headHTML(t: Thread, crew: Crew, ask: boolean, n: number): string {
   const [label, c] = MOOD[moodOf(t, ask)], min = Math.max(0, Math.round(((t.group === 'work' ? Date.now() : ms(t.s.updated)) - ms(t.s.started)) / 6e4));
   const run = S.runs.find(r => live(r) && (r.session === t.id || `run:${r.run}` === t.id));
   const faces = [crew.main, ...crew.subs.values()].slice(0, 5).map(w => face(w)).join('');
+  if (isCodex(t)) return `<h2>${esc(nameOf(t.s))}</h2><span class="sl-pill" style="--c:var(--c-${c})">${label}</span><span class="sl-meta">Codex${t.s.sub ? ` · ${esc(t.s.sub)}` : ''}${t.s.origin ? ` · ${esc(t.s.origin)}` : ''}${min ? ` · ${min} min` : ''}</span><button type="button" class="btn" data-sl="codex" data-app="terminal" data-id="${esc(t.id)}" title="Ouvre le Terminal dans le dossier du fil et lance codex resume">${icon('terminal')}<span>Reprendre dans le Terminal</span></button><button type="button" class="btn btn-ghost" data-sl="codex" data-app="app" data-id="${esc(t.id)}" title="Ouvrir l’app Codex">${icon('share')}<span>App Codex</span></button>`;
   return `<h2>${esc(nameOf(t.s))}</h2><span class="sl-pill" style="--c:var(--c-${c})">${label}</span><span class="sl-meta">${n} agent${n > 1 ? 's' : ''}${min ? ` · ${min} min` : ''}</span>${run ? `<button type="button" class="btn btn-ghost" data-sl="stop" data-run="${esc(run.run)}" title="Arrêter l’équipe">${icon('stop')}<span>Arrêter</span></button>` : ''}<button type="button" class="btn btn-ghost sl-nowbtn" data-sl="now" aria-pressed="false" title="Afficher ou masquer l’équipe"><span class="sl-stack">${faces}</span><span>Équipe</span></button>${t.id.startsWith('run:') ? '' : `<button type="button" class="btn" data-sl="tech" data-id="${esc(t.id)}" title="Voir les étapes dans l’onglet Claude Code">${icon('terminal')}<span>Vue technique</span></button>`}`;
 }
 // ---------- Consommation de tokens du fil ----------
@@ -620,6 +628,8 @@ function nowHTML(t: Thread, d: Detail | undefined, crew: Crew, ask: boolean): st
     const l = s.live ? (s.last?.kind.startsWith('tool:') ? doing(s.last.kind, s.last.text) || 'réfléchit' : 'réfléchit') : s.files?.length ? `${s.files.length} fichier${s.files.length > 1 ? 's' : ''} touché${s.files.length > 1 ? 's' : ''}` : '';
     return mem(w, s.live ? 'travaille' : 'a fini', s.live ? 'on' : '', l, s.live ? 'work' : 'sleep');
   })].join('');
+  // Codex : les réglages de sous-agents sont ceux des agents Studio (Claude Code), sans effet sur un fil Codex.
+  if (isCodex(t)) return `<h4>Équipe</h4>${rows}`;
   return `<h4>Équipe</h4>${rows}<button type="button" class="btn btn-ghost sl-set" data-sl="team" title="${esc(subagents.HINT)}">${icon('gear')}<span>${esc(subagents.label(S.pid))}</span></button>`;
 }
 // ---------- Vue Technique de la colonne (même colonne que « En ce moment », autre lecture des mêmes données) ----------
@@ -793,7 +803,7 @@ function paint(): void {
   paintIfChanged(need('[data-sl-filt]', root), filtHTML(th));
   const nb = need('[data-sl-n]', root), nt = String(th.filter(t => !isArch(t)).length); if (nb.textContent !== nt) nb.textContent = nt;
   let ask = false, crew: Crew | null = null, blocks: Block[];
-  if (cur) { crew = crewOf(d?.subagents ?? [], d?.models ?? cur.s.models); const r = blocksOf(cur, d, crew); blocks = r.blocks; ask = r.ask; }
+  if (cur) { crew = crewOf(d?.subagents ?? [], d?.models ?? cur.s.models, isCodex(cur)); const r = blocksOf(cur, d, crew); blocks = r.blocks; ask = r.ask; }
   else if (opening?.pid === p.id) { const c0 = crewOf([], []); blocks = [{ key: `me|p|${opening.at}`, html: msgHTML(c0.me, opening.at, plain(opening.text) + picsNote(opening.pics), { cls: 'sending', tag: 'envoi…' }) }, { key: 'working', html: typing(c0, undefined) }]; }
   else blocks = [{ key: 'empty', html: emptyHTML(p.name, !th.length) }];
   // Un défilement doux vers le bas encore en route compte comme « en bas » : un bloc arrivé entre-temps (carte de livraison) le suit.
@@ -828,6 +838,8 @@ function paint(): void {
   const pb = need<HTMLElement>('[data-sl-prof]', root), ph2 = prof && cur && crew ? profHTML(cur, d, crew, ask) : '';
   if (!ph2) { if (prof) closeProf(); } else { const first = pb.hidden; if (paintIfChanged(pb, ph2) || first) { pb.hidden = false; placeProf(pb); } }
   root.classList.toggle('sl-solo', !cur && opening?.pid !== p.id);
+  // Fil Codex : pas de champ (Studio ne parle qu'à Claude Code), une ligne qui dit où le reprendre.
+  const cx = isCodex(cur); need<HTMLFormElement>('.sl-comp', root).hidden = cx; need('[data-sl-codex]', root).hidden = !cx;
   // Le champ : seul son habillage change, jamais le texte.
   const isNew = !cur, ph = isNew ? 'Dis à l’équipe ce que tu veux faire…' : `Écris à ${crew?.main.name ?? 'Moka'}…`;
   if (ta.placeholder !== tr(ph)) ta.placeholder = ph;
@@ -1003,6 +1015,7 @@ function bind(r: HTMLElement): void {
     else if (act === 'clean') cleanUp(p);
     else if (act === 'limits') { t.setAttribute('disabled', ''); void quota.limits('enable').then(paint); }
     else if (act === 'tech') openTech(t.dataset.id ?? '');
+    else if (act === 'codex') { t.setAttribute('disabled', ''); void bridge.call('project', 'codexOpen', { project: pid, session: t.dataset.id ?? '', app: t.dataset.app ?? 'terminal' }, 15000).then(x => { t.removeAttribute('disabled'); if (!x.ok) toast(x.message ?? 'Reprise impossible.'); }); }
     else if (act === 'reply') need('textarea', r).focus();
     else if (act === 'now') toggleTeam(r);
     else if (act === 'stop') void bridge.call('agent', 'stop', { run: t.dataset.run ?? '' }, 10000).then(x => { toast(x.ok ? 'Équipe arrêtée' : x.message ?? 'Arrêt impossible.'); void refresh(); });
@@ -1078,7 +1091,7 @@ export function mount(box: HTMLElement, proj: Project, o: { openTech: (session: 
   box.innerHTML = `<aside class="sl-side" aria-label="Fils du projet"><div class="sl-side-h"><b>Fils <span class="sl-n" data-sl-n></span></b><button type="button" class="btn" data-sl="new" title="Nouveau fil (⌥N)">${icon('plus')}<span>Nouveau fil</span></button></div><label class="sl-q">${icon('search')}<input type="search" data-sl-q placeholder="Chercher un fil…" aria-label="Chercher un fil" value="${esc(query)}"><kbd aria-hidden="true">/</kbd></label><div class="sl-filt" data-sl-filt role="toolbar" aria-label="Filtrer les fils"></div><div class="sl-list" data-sl-list></div></aside>
     <section class="sl-center"><header class="sl-head" data-sl-head></header><div class="sl-feed" data-sl-feed role="log" aria-live="polite" aria-label="Discussion"></div><button type="button" class="sl-down" data-sl="down" data-sl-down hidden>Nouveaux messages ${icon('chevron')}</button>
       <form class="sl-comp" autocomplete="off"><div class="sl-drop" aria-hidden="true">${icon('upload')}<span>Dépose tes images ici</span></div><textarea rows="1" aria-label="Ton message" placeholder="Dis à l’équipe ce que tu veux faire…"></textarea>${attach.stripHTML()}
-        <div class="sl-comp-row"><label class="sl-mode" data-sl-mode hidden><select name="mode" aria-label="Mode"><option value="edit">Modifier</option><option value="read">Analyser</option></select></label><select name="model" aria-label="Modèle" title="Modèle de l’agent principal. Auto : le plus économe qui suffit au message">${models(tuneFor('').model)}</select><select name="effort" aria-label="Niveau d’effort" title="Plus l’effort est élevé, plus l’agent réfléchit, et plus il consomme">${EFFORTS.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('')}</select><span class="sl-auto" data-sl-auto hidden></span><span class="sl-hint" data-sl-hint></span><span class="sl-keys" aria-hidden="true"><span><kbd>↵</kbd> <span>envoyer</span></span><span><kbd>⇧</kbd><kbd>↵</kbd> <span>nouvelle ligne</span></span></span>${attach.buttonHTML()}<button type="submit" class="btn btn-primary sl-send" data-sl-send><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg><span>Envoyer</span></button></div></form></section>
+        <div class="sl-comp-row"><label class="sl-mode" data-sl-mode hidden><select name="mode" aria-label="Mode"><option value="edit">Modifier</option><option value="read">Analyser</option></select></label><select name="model" aria-label="Modèle" title="Modèle de l’agent principal. Auto : le plus économe qui suffit au message">${models(tuneFor('').model)}</select><select name="effort" aria-label="Niveau d’effort" title="Plus l’effort est élevé, plus l’agent réfléchit, et plus il consomme">${EFFORTS.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('')}</select><span class="sl-auto" data-sl-auto hidden></span><span class="sl-hint" data-sl-hint></span><span class="sl-keys" aria-hidden="true"><span><kbd>↵</kbd> <span>envoyer</span></span><span><kbd>⇧</kbd><kbd>↵</kbd> <span>nouvelle ligne</span></span></span>${attach.buttonHTML()}<button type="submit" class="btn btn-primary sl-send" data-sl-send><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg><span>Envoyer</span></button></div></form><p class="sl-codex" data-sl-codex hidden>${icon('terminal')}<span>Conversation Codex : reprends-la dans le Terminal ou dans l’app Codex.</span></p></section>
     <aside class="sl-now" data-sl-now aria-label="En ce moment"></aside><div class="sl-prof" data-sl-prof role="dialog" aria-label="Fiche de l’agent" hidden></div>`;
   box.classList.add('sl-box', 'sl-solo');
   let off = false; try { off = localStorage.getItem(TEAM_OFF) === '1'; } catch { /* défaut */ }

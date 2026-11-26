@@ -31,7 +31,9 @@ import { t as tr } from '../../ui/i18n.ts';
 import type { Project } from './model.ts';
 
 interface Tokens { input: number; output: number; cacheRead: number; cacheWrite: number }
-export interface Session { id: string; title: string; /** Titre écrit par Claude Code lui-même, s'il y en a un. */ aiTitle?: string; firstPrompt?: string; branch: string; worktree: string; started: string; updated: string; /** Dernier vrai échange (absent avec une app Mac ancienne). */ active?: string; live: boolean; models: string[]; prompts: number; lastPrompt: string; tokens: Tokens; tools: Record<string, number>; files: string[]; /** Lignes ajoutées et retirées sur la session (absent avec une app Mac ancienne). */ lines?: { add: number; del: number } }
+export interface Session { id: string; title: string; /** Titre écrit par Claude Code lui-même, s'il y en a un. */ aiTitle?: string; firstPrompt?: string; branch: string; worktree: string; started: string; updated: string; /** Dernier vrai échange (absent avec une app Mac ancienne). */ active?: string; live: boolean; models: string[]; prompts: number; lastPrompt: string; tokens: Tokens; tools: Record<string, number>; files: string[]; /** Lignes ajoutées et retirées sur la session (absent avec une app Mac ancienne). */ lines?: { add: number; del: number };
+  /** Conversation OpenAI Codex (CodexSessions.swift, id `codex:<uuid>`) : `sub` = sous-projet (dépôt/sous-dossier), `origin` = CLI, App, VS Code. Montrée par le Salon seulement. */
+  engine?: 'codex'; sub?: string; origin?: string; cwd?: string }
 interface Quota { status?: string; resetsAt?: number; rateLimitType?: string; isUsingOverage?: boolean }
 /** `add`/`del` : lignes ajoutées et retirées par une écriture (nombre, ou texte pour les agents sur serveur). */
 /** `file`, `old`, `new` : sur une écriture (Edit, Write…), le chemin et les extraits avant/après ; `to`, `body` : sur une délégation
