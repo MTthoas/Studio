@@ -119,7 +119,12 @@
   };
 
   // Fils des autres conversations : un échange court.
-  const quick = (s) => [
+  // `globalThis.__fakeAsk = 1` : l'agent finit sur des questions à choix (blocs studio-question, choices.ts).
+  const ASK = 'J’ai deux façons de stocker les codes promo, et ça change la suite.\n\n```studio-question Où ranger les codes promo ?\n- Table Postgres — modifiables depuis l’admin\n- Fichier de config — plus simple, redéploiement à chaque code\n```\n\n```studio-question Cumulables avec les soldes ?\n- Oui\n- Non\n- Seulement au-delà de 50 €\n```';
+  const quick = (s) => globalThis.__fakeAsk ? [
+    { at: s.started, kind: 'prompt', text: s.firstPrompt },
+    { at: s.updated, kind: 'text', text: ASK },
+  ] : [
     { at: s.started, kind: 'prompt', text: s.firstPrompt },
     { at: s.updated, kind: 'text', text: `C’est fait : les changements sont dans la copie, prêts à être relus.\n\n![Panier avec le code promo](${home}/.git/studio-images/captures/demo/panier.png)\n![Panier sur iPhone](${home}/.git/studio-images/captures/demo/panier-etroit.png)` },
   ];

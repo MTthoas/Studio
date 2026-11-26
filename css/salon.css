@@ -214,6 +214,20 @@ button.sl-av:focus-visible, .sl-who:focus-visible, .sl-to:focus-visible, .sl-mem
 .sl-quick { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
 .sl-quick .btn { padding: 0 9px; border: 1px solid var(--border-2); color: var(--text-2); font-weight: 400; }
 .sl-quick .btn:hover { color: var(--text); border-color: color-mix(in srgb, var(--c-orange) 45%, var(--border-2)); }
+
+/* Questions à choix de l'agent (choices.ts) : cliquables dans le message qui attend, figées ailleurs. */
+.sl-ask-qs { display: grid; gap: 10px; margin-top: 8px; }
+.sl-ask-q { margin: 0; padding: 0; border: 0; min-width: 0; }
+.sl-ask-q legend { padding: 0; margin-bottom: 6px; font-size: var(--t-2); font-weight: 600; color: var(--text); }
+.sl-ask-opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.sl-ch { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; max-width: 100%; padding: 6px 11px; border-radius: 10px; border: 1px solid var(--border-2); background: var(--bg); color: var(--text); font: inherit; font-size: var(--t-2); text-align: left; cursor: pointer; transition: border-color var(--mo-d1), background var(--mo-d1); }
+.sl-ch b { font-weight: 500; }
+.sl-ch small { font-size: var(--t-1); color: var(--text-3); }
+.sl-ch:hover { border-color: color-mix(in srgb, var(--c-orange) 50%, var(--border-2)); }
+.sl-ch[aria-pressed="true"] { border-color: var(--c-orange); background: color-mix(in srgb, var(--c-orange) 12%, var(--bg)); }
+.sl-ask-go { justify-self: start; height: 28px; }
+.sl-msg:not(.ask) .sl-ch { cursor: default; opacity: .65; pointer-events: none; }
+.sl-msg:not(.ask) .sl-ask-go { display: none; }
 .sl-quick + .btn { margin-left: 0; }
 
 /* Résultat : la copie de l'agent (à publier, PR ouverte, fusionnée). */

@@ -19,6 +19,7 @@ import { fold } from '../../lib/fuzzy.ts';
 import * as saved from './drafts.ts';
 import * as subagents from './subagents.ts';
 import * as attach from './attach.ts';
+import * as choices from './choices.ts';
 import { AUTO, pickFor, label as autoLabel } from './autopick.ts';
 import { exchanges } from './team.ts';
 import * as flux from './flux.ts';
@@ -310,7 +311,10 @@ const hm = (at: number): string => {
 };
 const oneLine = (s: string, n = 90): string => { const t = s.replace(/[#>*`_]+/g, ' ').replace(/\s+/g, ' ').trim(); return t.length > n ? `${t.slice(0, n - 1)}…` : t; };
 /** Le dernier paragraphe de l'agent contient une question : il attend une réponse. */
-const asks = (t: string): boolean => (t.trim().split(/\n{2,}/).pop() ?? '').includes('?');
+const asks = (t: string): boolean => {
+  const q = choices.parse(t); // des questions à choix (blocs studio-question) valent une question
+  return q.questions.length > 0 || (q.text.trim().split(/\n{2,}/).pop() ?? '').includes('?');
+};
 const TESTS = /\b(npm (run )?test|npm run (typecheck|e2e)|vitest|jest|pytest|go test|cargo test|swift test|xcodebuild test|phpunit|rspec)\b/;
 const VERB: Record<string, string> = { Read: 'lit', Grep: 'cherche dans', Glob: 'cherche', Edit: 'modifie', MultiEdit: 'modifie', Write: 'écrit', NotebookEdit: 'modifie', Bash: 'lance une commande', Agent: 'confie une tâche', Task: 'confie une tâche', WebSearch: 'cherche sur le web', WebFetch: 'lit une page' };
 /** Ce que fait un agent, en clair : « lit app.ts » (jamais la commande ni le chemin complet). */
@@ -367,8 +371,8 @@ const bubble = (x: string, i: number): string => `<div class="sl-bub md" style="
 /** Un message d'agent en bulles courtes, une par paragraphe. Un pavé ne montre que son début (et sa question finale,
  *  s'il en pose une) : le reste se déplie sous « Lire la suite ». */
 function talk(t: string): string {
-  const { text, shots } = captures(t), pics = shots.length ? `<div class="sl-shots">${attach.galleryHTML(shots)}</div>` : '';
-  return bubbles(text) + pics;
+  const q = choices.parse(t), { text, shots } = captures(q.text), pics = shots.length ? `<div class="sl-shots">${attach.galleryHTML(shots)}</div>` : '';
+  return bubbles(text) + choices.html(q.questions) + pics;
 }
 /** Captures d'écran citées par un agent (`![légende](/…/.git/studio-images/…)`, voir `AgentImages.captureNote` côté Mac) :
  *  retirées du texte et montrées en vignettes sous le message, toujours visibles (jamais sous « Lire la suite »). */
@@ -534,7 +538,7 @@ function blocksOf(t: Thread, d: Detail | undefined, crew: Crew): { blocks: Block
   if (ask && !work) {
     let i = blocks.length - 1; while (i >= 0 && !blocks[i]?.key.startsWith('ai|')) i--;
     const b = blocks[i];
-    if (b) blocks[i] = { key: b.key, html: b.html.replace('class="sl-msg', 'class="sl-msg ask cf-live').replace('cf cf-idle', 'cf cf-ask').replace('</div></article>', `<div class="sl-ask"><span>${icon('sparkle')}${esc(crew.main.name)} attend ta réponse</span><span class="sl-quick">${QUICK.map(q => `<button type="button" class="btn btn-ghost" data-sl="quick" data-text="${esc(q)}">${esc(q)}</button>`).join('')}</span><button class="btn" data-sl="reply">Répondre…</button></div></div></article>`) };
+    if (b) blocks[i] = { key: b.key, html: b.html.replace('class="sl-msg', 'class="sl-msg ask cf-live').replace('cf cf-idle', 'cf cf-ask').replace('</div></article>', `<div class="sl-ask"><span>${icon('sparkle')}${esc(crew.main.name)} attend ta réponse</span>${b.html.includes('class="sl-ask-qs') ? '' : `<span class="sl-quick">${QUICK.map(q => `<button type="button" class="btn btn-ghost" data-sl="quick" data-text="${esc(q)}">${esc(q)}</button>`).join('')}</span>`}<button class="btn" data-sl="reply">${b.html.includes('class="sl-ask-qs') ? 'Autre réponse…' : 'Répondre…'}</button></div></div></article>`) };
   }
   const queued = S.queued.filter(x => x.session === id);
   for (const q of queued)
@@ -1031,6 +1035,12 @@ function bind(r: HTMLElement): void {
     }
     if (act === 'team') { closeProf(); void subagents.edit(pid).then(ok => { if (ok && root?.isConnected) paint(); }); return; }
     if (act === 'quick') { void send(t.dataset.text ?? ''); return; }
+    // Questions à choix de l'agent : seulement dans son dernier message, quand il attend la réponse.
+    if (act === 'choice' || act === 'choices') {
+      if (!t.closest('.sl-msg.ask')) return;
+      const text = act === 'choice' ? choices.pick(t) : choices.answers(t); if (text) void send(text);
+      return;
+    }
     if (act === 'suggest') {
       // Jamais par-dessus ce qui est déjà tapé : la suggestion ne remplit qu'un champ vide.
       const ta = need<HTMLTextAreaElement>('textarea', r), m = sel('mode'); if (ta.value.trim()) { ta.focus(); return; }
