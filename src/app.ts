@@ -266,6 +266,8 @@ async function pickZone(k: Zone): Promise<void> {
 function renderSidebar() {
   const idx = store.index(), v = ui.view;
   const count: Record<string, number> = { planner: planner.pending(), tasks: todo.openCount(), linear: notifs.unreadCount(), github: github.unseenCount(), ephemeral: idx.live.filter(n => n.expiresAt).length };
+  // Une note de l'arborescence ouverte prend la surbrillance : la vue de liste (« Notes ») ne la partage pas.
+  const tree = treeHTML(idx.live), inTree = tree.includes(' side-tree sel');
   const item = (type: string, sel = v.type === type) => `<button class="side-item${sel ? ' sel' : ''}" data-view="${type}" style="--ic:var(--${SIDE_HUE[type] === 'accent' ? 'accent' : `c-${SIDE_HUE[type] ?? 'gray'}`})">${icon(VIEWS[type]?.icon ?? 'notes')}<span>${VIEWS[type]?.label ?? type}</span>${count[type] ? sideCount(type, count[type]) : ''}</button>`;
   const tags = [...idx.tags].filter(([t]) => !t.startsWith('projet/')).sort((a, b) => a[0].localeCompare(b[0], 'fr'));
   // Le quotidien reste à l'écran ; le reste se range sous « Plus » (déplié d'office quand la vue ouverte s'y trouve).
@@ -311,7 +313,7 @@ function renderSidebar() {
   const body = z === 'write' ? head(voice.available() ? `<button class="icon-btn" data-act="voice" title="Note vocale" aria-label="Note vocale">${icon('mic')}</button>` : '')
       + `<div class="side-scroll">
       ${newRow('new', 'Nouvelle note', keys(SC.newNote))}
-      <div class="side-group">${item('all')}${treeHTML(idx.live)}${item('journal')}${count.ephemeral || v.type === 'ephemeral' ? item('ephemeral') : ''}</div>
+      <div class="side-group">${item('all', v.type === 'all' && !inTree)}${tree}${item('journal')}${count.ephemeral || v.type === 'ephemeral' ? item('ephemeral') : ''}</div>
       ${tags.length ? sideFold('tags', 'tags', ui.tagsOpen, 'Tags', '', `<div class="side-group">${tags.map(([t, c]) => `<button class="side-item${v.type === 'tag' && v.tag === t ? ' sel' : ''}" data-tag="${esc(t)}"><i class="tag-dot" style="--c:var(--c-${hue(t)})"></i><span>${esc(t)}</span>${sideCount('tag:' + t, c)}</button>`).join('')}</div>`) : ''}
     </div>`
     : z === 'pilot' ? head()
