@@ -103,6 +103,13 @@ final class ClaudeCode {
     private static func json(_ d: Data) -> [String: Any]? {
         (try? JSONSerialization.jsonObject(with: d)) as? [String: Any]
     }
+    /// Sortie stream-json : une ligne JSON par évènement ; la dernière de type « result » est la réponse.
+    private static func lastResult(_ d: Data) -> [String: Any]? {
+        for line in d.split(separator: 0x0A).reversed() {
+            if let j = json(Data(line)), j["type"] as? String == "result" { return j }
+        }
+        return nil
+    }
 
     // MARK: Actions
 
@@ -139,26 +146,70 @@ final class ClaudeCode {
     /// Réponse structurée imposée quand l'automatisation a des outils : appels d'outils ou compte rendu final.
     private static let toolSchema = #"{"type":"object","additionalProperties":false,"properties":{"actions":{"type":"array","maxItems":12,"items":{"type":"object","additionalProperties":false,"properties":{"outil":{"type":"string"},"entree":{"type":"object"}},"required":["outil","entree"]}},"reponse":{"type":"string"}},"required":["actions","reponse"]}"#
 
+    /// Photos jointes à une demande (recos photo d'un projet social) : au plus 8, 5 Mo chacune, JPEG, PNG, WebP ou GIF
+    /// vérifiés par leurs octets magiques. Elles partent dans le message lui-même (entrée stream-json), jamais sur le disque,
+    /// et Claude Code reste sans aucun outil. nil : liste invalide ; [] : pas d'image.
+    private static func imageBlocks(_ body: [String: Any]) -> [[String: Any]]? {
+        guard let list = body["images"] as? [[String: Any]], !list.isEmpty else { return [] }
+        guard list.count <= 8 else { return nil }
+        var out: [[String: Any]] = []
+        for item in list {
+            guard let type = item["type"] as? String, let b64 = item["data"] as? String, b64.utf8.count <= 7_000_000,
+                  let data = Data(base64Encoded: b64), !data.isEmpty, data.count <= 5_000_000 else { return nil }
+            let b = [UInt8](data.prefix(12))
+            let ok: Bool
+            switch type {
+            case "image/jpeg": ok = b.count >= 3 && b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF
+            case "image/png": ok = b.count >= 4 && b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4E && b[3] == 0x47
+            case "image/gif": ok = b.count >= 4 && b[0] == 0x47 && b[1] == 0x49 && b[2] == 0x46 && b[3] == 0x38
+            case "image/webp": ok = b.count >= 12 && b[0] == 0x52 && b[1] == 0x49 && b[2] == 0x46 && b[3] == 0x46 && b[8] == 0x57 && b[9] == 0x45 && b[10] == 0x42 && b[11] == 0x50
+            default: ok = false
+            }
+            guard ok else { return nil }
+            out.append(["type": "image", "source": ["type": "base64", "media_type": type, "data": b64]])
+        }
+        return out
+    }
+    /// Schéma de réponse fourni par la page (recos photo) : un objet JSON valide, 20 Ko au plus.
+    private static func customSchema(_ body: [String: Any]) -> String? {
+        guard let s = body["schema"] as? String, !s.isEmpty, s.utf8.count <= 20_000,
+              let o = try? JSONSerialization.jsonObject(with: Data(s.utf8)), o is [String: Any] else { return nil }
+        return s
+    }
+
     func run(_ body: [String: Any], done: @escaping ([String: Any]) -> Void) {
         let runId = String((body["run"] as? String ?? UUID().uuidString).prefix(64))
         let system = body["system"] as? String ?? "", prompt = body["prompt"] as? String ?? ""
         let model = body["model"] as? String ?? "", effort = body["effort"] as? String ?? ""
         let structured = body["tools"] as? Bool ?? false
         guard !prompt.isEmpty, prompt.utf8.count <= 2_000_000, system.utf8.count <= 200_000 else { return done(["ok": false, "message": "Demande vide ou trop longue."]) }
+        guard let images = Self.imageBlocks(body) else { return done(["ok": false, "message": "Photos refusées : 8 au plus, 5 Mo chacune, en JPEG, PNG, WebP ou GIF."]) }
+        if body["schema"] != nil && Self.customSchema(body) == nil { return done(["ok": false, "message": "Schéma de réponse invalide."]) }
         lock.lock(); let busy = running.count >= maxRuns; lock.unlock()
         if busy { return done(["ok": false, "message": "Claude Code est déjà occupé par deux demandes ; réessaie dans un instant."]) }
-        var args = ["-p", "--output-format", "json", "--tools", "", "--no-session-persistence", "--strict-mcp-config",
+        // Avec des photos, le message part en stream-json (blocs image + texte) et la réponse revient en flux : seule la
+        // dernière ligne « result » compte, elle porte les mêmes champs que la sortie json.
+        let streamed = !images.isEmpty
+        var args = ["-p", "--output-format", streamed ? "stream-json" : "json", "--tools", "", "--no-session-persistence", "--strict-mcp-config",
                     "--setting-sources", "", "--disable-slash-commands", "--system-prompt", system]
+        if streamed { args += ["--input-format", "stream-json", "--verbose"] }
         if !model.isEmpty && Self.valid(model, Self.modelRe) { args += ["--model", model] }
         if Self.efforts.contains(effort) { args += ["--effort", effort] }
-        if structured { args += ["--json-schema", Self.toolSchema] }
+        if structured { args += ["--json-schema", Self.toolSchema] } else if let schema = Self.customSchema(body) { args += ["--json-schema", schema] }
+        var input = Data(prompt.utf8)
+        if streamed {
+            let line: [String: Any] = ["type": "user", "message": ["role": "user", "content": images + [["type": "text", "text": prompt]]]]
+            guard let d = try? JSONSerialization.data(withJSONObject: line) else { return done(["ok": false, "message": "Photos illisibles."]) }
+            input = d + Data("\n".utf8)
+        }
         queue.async {
-            guard let r = self.exec(args, stdin: Data(prompt.utf8), timeout: 600, runId: runId) else {
+            guard let r = self.exec(args, stdin: input, timeout: 600, runId: runId, maxBytes: streamed ? 12_000_000 : 4_000_000) else {
                 return done(["ok": false, "message": "Claude Code est introuvable sur ce Mac."])
             }
             if r.cancelled { return done(["ok": false, "cancelled": true, "message": "Arrêté."]) }
             if r.timedOut { return done(["ok": false, "message": "Claude Code n'a pas répondu en 10 minutes."]) }
-            guard let j = Self.json(r.stdout) else { return done(["ok": false, "message": "Réponse illisible de Claude Code (code \(r.status))."]) }
+            let parsed = streamed ? Self.lastResult(r.stdout) : Self.json(r.stdout)
+            guard let j = parsed else { return done(["ok": false, "message": "Réponse illisible de Claude Code (code \(r.status))."]) }
             let isError = j["is_error"] as? Bool ?? false
             let text = j["result"] as? String ?? ""
             var out: [String: Any] = ["ok": !isError, "text": text, "usage": j["usage"] ?? [:],

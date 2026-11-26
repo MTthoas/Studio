@@ -7,13 +7,18 @@
 //                                                    parenthèses est facultatif, deviné du nom sinon)
 //   linear: Studio                                  (projet Linear, facultatif)
 //   site: https://studio.example.com                (site web du projet, facultatif)
+//   type: social                                    (projet de réseaux sociaux : onglet Recos photo ; code par défaut)
+//   tiktok: @compte                                 (compte TikTok du projet, facultatif ; fait un projet social)
+//   icône: camera                                   (icône du projet, voir src/ui/projicons.ts ; devinée du nom sinon)
+//   couleur: violet                                 (teinte de l'icône, voir HUES de kit.ts ; tirée du nom sinon)
 //   ```
 //
 // Une note ou une tâche appartient au projet si elle porte le tag #projet/<nom> (ou se trouve dans
 // une note qui le porte). Le dossier local du projet n'est jamais écrit dans les notes : il reste sur le Mac.
 import * as store from '../../core/store.ts';
 import { fold } from '../../lib/fuzzy.ts';
-import { hue, icon } from '../../ui/kit.ts';
+import { hue, icon, HUES } from '../../ui/kit.ts';
+import { ICONS, guessIcon } from '../../ui/projicons.ts';
 import type { Note } from '../../types.ts';
 
 export interface Project {
@@ -37,7 +42,21 @@ export interface Project {
   /** Compte publicitaire Meta du projet : « act_<numéro> ». */
   meta: string | null;
   hue: string;
+  /** Genre du projet : du code (dépôts, agents) ou des réseaux sociaux (recos photo, compte TikTok). */
+  kind: Kind;
+  /** Compte TikTok du projet, « @nom » (facultatif). */
+  tiktok: string | null;
+  /** Icône du projet (clé de ICONS, src/ui/projicons.ts) : choisie, ou devinée du nom. */
+  icon: string;
 }
+
+export type Kind = 'code' | 'social';
+/** Compte TikTok : « @nom » (le @ est ajouté s'il manque ; une adresse tiktok.com/@nom est acceptée). */
+export function tiktokHandle(v: string): string | null {
+  const m = v.trim().replace(/^https?:\/\/(www\.)?tiktok\.com\//i, '').replace(/[/?#].*$/, '').match(/^@?([a-z0-9._]{2,24})$/i);
+  return m?.[1] ? `@${m[1]}` : null;
+}
+const kindOf = (v: string): Kind | null => /^(social|sociaux|reseaux( sociaux)?|social media|media|tiktok|instagram|contenu)$/.test(fold(v)) ? 'social' : /^(code|dev|logiciel|app)$/.test(fold(v)) ? 'code' : null;
 
 /** Rôle d'un dépôt dans le projet : l'app, son site, son API… */
 export type Role = 'app' | 'site' | 'api' | 'mobile' | 'docs' | 'infra' | 'lib' | 'autre';
@@ -108,6 +127,7 @@ export function parse(n: Note): Project | null {
   const body = store.getBody(n); if (!body || !body.includes('```projet')) return null;
   const m = body.match(BLOCK_RE); if (!m) return null;
   let name = n.title.trim(), stack: Repo[] = [], linear: string | null = null, site: string | null = null, shopify: string | null = null, meta: string | null = null;
+  let kind: Kind | null = null, tiktok: string | null = null, ic: string | null = null, tint: string | null = null;
   for (const line of (m[1] ?? '').split('\n')) {
     const kv = line.match(/^\s*([\p{L}]+)\s*:\s*(.*)$/u); if (!kv) continue;
     const k = fold(kv[1] ?? ''), v = (kv[2] ?? '').trim();
@@ -117,10 +137,15 @@ export function parse(n: Note): Project | null {
     else if (k === 'site' || k === 'url' || k === 'web') site = /^https:\/\/[^\s]+$/i.test(v) ? v : null;
     else if (k === 'shopify' || k === 'boutique') shopify = shopDomain(v);
     else if (k === 'meta' || k === 'pub' || k === 'ads') meta = adAccount(v);
+    else if (k === 'type' || k === 'genre') kind = kindOf(v);
+    else if (k === 'tiktok') tiktok = tiktokHandle(v);
+    else if (k === 'icone' || k === 'icon') ic = ICONS[fold(v)] ? fold(v) : null;
+    else if (k === 'couleur' || k === 'color' || k === 'teinte') tint = (HUES as readonly string[]).includes(fold(v)) ? fold(v) : null;
   }
   name = name || 'Projet';
-  const slug = slugify(name);
-  return { id: n.id, note: n, name, slug, tag: `projet/${slug}`, repos: stack.map(r => r.name), stack, linear, site, shopify, meta, hue: hue(slug) };
+  const slug = slugify(name), k = kind ?? (tiktok ? 'social' : 'code');
+  return { id: n.id, note: n, name, slug, tag: `projet/${slug}`, repos: stack.map(r => r.name), stack, linear, site, shopify, meta, hue: tint ?? hue(slug),
+    kind: k, tiktok, icon: ic ?? guessIcon(name, k) };
 }
 
 let cache: { idx: object; list: Project[]; ofNote: Map<string, Project | null> } | null = null;
@@ -213,10 +238,12 @@ export async function setContext(n: Note, on: boolean): Promise<void> {
   await store.saveNote(n);
 }
 
+export type Field = 'dépôts' | 'linear' | 'site' | 'shopify' | 'meta' | 'type' | 'tiktok' | 'icône' | 'couleur';
+const FIELD_RE: Partial<Record<Field, RegExp>> = { 'dépôts': /^(\s*)d[ée]p[oô]ts?\s*:.*$/m, 'icône': /^(\s*)(?:ic[oô]ne|icon)\s*:.*$/mi, couleur: /^(\s*)(?:couleur|color|teinte)\s*:.*$/mi };
 /** Écrit (ou remplace) un champ du bloc ```projet de la note du projet. */
-export async function setField(p: Project, key: 'dépôts' | 'linear' | 'site' | 'shopify' | 'meta', value: string): Promise<void> {
+export async function setField(p: Project, key: Field, value: string): Promise<void> {
   const body = store.getBody(p.note); if (body == null) throw new Error('Déverrouille la note du projet.');
-  const re = key === 'dépôts' ? /^(\s*)d[ée]p[oô]ts?\s*:.*$/m : new RegExp(`^(\\s*)${key}\\s*:.*$`, 'm');
+  const re = FIELD_RE[key] ?? new RegExp(`^(\\s*)${key}\\s*:.*$`, 'm');
   if (/[\r\n]/.test(value)) throw new Error('Valeur invalide.');
   const line = `${key}: ${value}`;
   const next = re.test(body) ? body.replace(re, (_, sp: string) => sp + line) : body.replace(/^(```projet[ \t]*\n[\s\S]*?)^```/m, (_, head: string) => `${head}${line}\n\`\`\``);
@@ -228,10 +255,14 @@ export async function setField(p: Project, key: 'dépôts' | 'linear' | 'site' |
 /** Remplace la liste des dépôts du projet (ordre, rôles). */
 export const setRepos = (p: Project, list: Repo[]): Promise<void> => setField(p, 'dépôts', formatRepos(list));
 
-export async function createProject({ name, repos, linear, site, description }: { name: string; repos: Repo[]; linear: string | null; site?: string | null; description?: string }): Promise<Project> {
+export async function createProject({ name, repos, linear, site, description, kind = 'code', tiktok, icon: ic, tint }: { name: string; repos: Repo[]; linear: string | null; site?: string | null; description?: string; kind?: Kind; tiktok?: string | null; icon?: string | null; tint?: string | null }): Promise<Project> {
   const clean = repos.filter((r, i) => REPO_RE.test(r.name) && repos.findIndex(x => x.name.toLowerCase() === r.name.toLowerCase()) === i);
-  const block = ['```projet', `nom: ${name.trim()}`, ...(clean.length ? [`dépôts: ${formatRepos(clean)}`] : []), ...(linear ? [`linear: ${linear}`] : []), ...(site && /^https:\/\//.test(site) ? [`site: ${site}`] : []), '```'].join('\n');
-  const n = await store.createNote({ title: name.trim(), body: `${description?.trim() || 'Ce que ce projet doit accomplir, ses liens utiles, ses décisions.'}\n\n${block}\n` });
+  const handle = tiktok ? tiktokHandle(tiktok) : null;
+  const block = ['```projet', `nom: ${name.trim()}`, ...(kind === 'social' ? ['type: social'] : []), ...(handle ? [`tiktok: ${handle}`] : []),
+    ...(ic && ICONS[ic] ? [`icône: ${ic}`] : []), ...(tint && (HUES as readonly string[]).includes(tint) ? [`couleur: ${tint}`] : []),
+    ...(clean.length ? [`dépôts: ${formatRepos(clean)}`] : []), ...(linear ? [`linear: ${linear}`] : []), ...(site && /^https:\/\//.test(site) ? [`site: ${site}`] : []), '```'].join('\n');
+  const fallback = kind === 'social' ? 'Ce que ce compte raconte, son public, son ton, ce qui marche.' : 'Ce que ce projet doit accomplir, ses liens utiles, ses décisions.';
+  const n = await store.createNote({ title: name.trim(), body: `${description?.trim() || fallback}\n\n${block}\n` });
   const p = parse(n);
   if (!p) throw new Error('Projet invalide.');
   return p;

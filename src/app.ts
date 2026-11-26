@@ -32,6 +32,7 @@ import * as savedCommands from './features/commands.ts';
 import * as projectsPage from './features/projects/page.ts';
 import * as salon from './features/projects/salon.ts';
 import * as projectsModel from './features/projects/model.ts';
+import * as projIcons from './ui/projicons.ts';
 import * as agentItems from './features/projects/items.ts';
 import * as agentGuard from './features/projects/guard.ts';
 import { registerBuiltins } from './plugins/builtin.ts';
@@ -278,14 +279,14 @@ function renderSidebar() {
   // Il ne disparaît plus quand un projet est ouvert (la liste sautait de 30 px) ; ses fils se lisent sous le projet.
   if (v.type === 'projets' && v.project && v.project !== salonLast) { salonLast = v.project; try { localStorage.setItem(SALON_LAST, v.project); } catch { /* plein */ } }
   const salonPid = salonOn ? (projectsModel.byId(salonLast)?.id ?? projectsModel.projects()[0]?.id ?? '') : '';
-  const salonP = projectsModel.byId(salonPid), salonTab = v.type === 'projets' && v.project === salonPid && (v.tab ?? projectsPage.defaultTab()) === 'salon';
+  const salonP = projectsModel.byId(salonPid), salonTab = v.type === 'projets' && v.project === salonPid && (v.tab ?? projectsPage.defaultTab(salonP)) === 'salon';
   // Le fil retenu par le Salon ne compte que s'il est listé (au travail ou en PR) : sinon c'est la ligne « Salon » qui est choisie.
   const salonTalks = salonP ? projectsPage.sideSessions(salonPid) : [], salonLive = salonTalks.filter(s => s.live).length;
   const salonPick = salonTab ? salon.chosenThread(salonPid) : '', salonPicked = !!salonPick && salonTalks.some(s => s.id === salonPick);
   const salonTop = salonP ? `<button class="side-item side-salon-top${salonTab && !salonPicked ? ' sel' : ''}" data-pj-open="${esc(salonPid)}" data-pj-tab="salon" style="--ic:var(--c-violet)" title="Salon de ${esc(salonP.name)}">${icon('sparkle')}<span>Salon</span><small class="side-ctx"><i class="tag-dot" style="--c:var(--c-${salonP.hue})"></i><b>${esc(salonP.name)}</b></small>${salonLive ? sideCount('salon:' + salonPid, salonLive) : ''}</button>` : '';
   const kids = (rows: string) => rows ? `<div class="side-kids">${rows}</div>` : '';
   const projRows = projectsModel.projects().slice(0, 8).map(p => {
-      const open = v.type === 'projets' && v.project === p.id, tab = v.tab ?? projectsPage.defaultTab();
+      const open = v.type === 'projets' && v.project === p.id, tab = v.tab ?? projectsPage.defaultTab(p);
       // Sous chaque projet, ouvert ou non : ses fils du Salon (récents, au travail, en PR), pastille d'état en tête ; un clic ouvre le fil.
       // Ils ne disparaissent plus quand on change de projet ou qu'on quitte le Salon (25 nov. 2026).
       if (salonOn) projectsPage.preloadSessions(p);
@@ -293,7 +294,7 @@ function renderSidebar() {
       const pick = open && tab === 'salon' ? salon.chosenThread(p.id) : '';
       // Sous « Serveur » : les serveurs du projet, celui qui est affiché en surbrillance.
       const servers = open ? projectsPage.sideServers(p.id) : [], serving = tab === 'server' && servers.some(s => s.sel);
-      return `<button class="side-item side-sub${open && tab === projectsPage.defaultTab() && tab !== 'salon' ? ' sel' : ''}${open ? ' open' : ''}" data-pj-open="${esc(p.id)}"><i class="side-av" style="--c:var(--c-${p.hue})">${esc((p.name.trim()[0] ?? '·').toUpperCase())}</i><span>${esc(p.name)}</span>${working && p.id !== salonPid ? sideCount('pj:' + p.id, working) : ''}<i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`
+      return `<button class="side-item side-sub${open && tab === projectsPage.defaultTab(p) && tab !== 'salon' ? ' sel' : ''}${open ? ' open' : ''}" data-pj-open="${esc(p.id)}">${projIcons.tile(p)}<span>${esc(p.name)}</span>${working && p.id !== salonPid ? sideCount('pj:' + p.id, working) : ''}<i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`
         // Les autres onglets (Claude Code compris) restent dans la barre d'onglets de la fiche : ici, seulement les fils, l'onglet ouvert et les serveurs.
         // Rangés dans `.side-kids`, qui trace l'arborescence (trait vertical, coude par ligne : css/rail.css).
         + kids((salonOn ? talks.map(s => `<button class="side-item side-sub2 side-talk${s.id === pick ? ' sel' : ''}${!s.live && s.stage ? ` ${s.stage.cls}` : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="salon" data-pj-session="${esc(s.id)}" data-pj-salon="1" title="${esc(s.title)}${s.live ? ' · en cours' : s.stage ? ` · ${esc(s.stage.label)}` : ''}"><i class="ss-live${s.live ? ' on' : s.stage ? ` ${s.stage.cls}` : ''}"></i><span>${esc(s.title)}</span>${!s.live && s.stage?.cls === 'st-review' ? `<em class="side-stage">${esc(s.stage.label)}</em>` : ''}<i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('') : '')

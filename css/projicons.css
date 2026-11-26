@@ -1,0 +1,114 @@
+/* Icônes des projets (src/ui/projicons.ts), préfixe pi-. Une tuile teintée de la couleur du projet (--c), le dessin au trait dedans.
+   Mouvement : la partie `.pi-m` de chaque icône joue un geste bref, une seule fois, au survol de la tuile ou de la ligne qui la
+   porte, et quand on vient de la choisir (`.pi-hop`). Aucune boucle. Durées sur les jetons --mo-* : coupées avec data-motion. */
+.pi { --pi: 20px; flex: none; display: inline-grid; place-items: center; width: var(--pi); height: var(--pi); border-radius: calc(var(--pi) * .3);
+  background: color-mix(in srgb, var(--c, var(--c-gray)) 15%, transparent); color: color-mix(in srgb, var(--c, var(--c-gray)) 80%, var(--text));
+  font-style: normal; transition: background-color var(--mo-d2) var(--mo-out), scale var(--mo-d3) var(--mo-spring); }
+:root[data-theme="dark"] .pi { background: color-mix(in srgb, var(--c, var(--c-gray)) 20%, transparent); color: color-mix(in srgb, var(--c, var(--c-gray)) 88%, var(--text)); }
+.pi > svg { width: 72%; height: 72%; overflow: visible; display: block; }
+.pi .pi-m, .pi > svg { transform-box: fill-box; transform-origin: 50% 50%; }
+.pi-lg { --pi: 34px; }
+.pi-xl { --pi: 48px; }
+.pi-xl > svg, .pi-lg > svg { stroke-width: 1.5; }
+
+/* Déclencheurs : la tuile survolée, la ligne de la barre latérale, une carte ou un bouton qui la contient, ou `.pi-hop` (vient d’être choisie).
+   Un geste par icône : `.pi-m` seul, ou tout le dessin quand c’est l’objet entier qui bouge. */
+.pi { --pi-d: calc(var(--mo-d5) * 1.35); }
+@keyframes pi-tilt { 45% { rotate: 16deg; } }
+@keyframes pi-type { from { clip-path: inset(0 100% 0 0); } to { clip-path: inset(0 0 0 0); } }
+@keyframes pi-lift { 40% { translate: 0 -2.2px; } 70% { translate: 0 -1.6px; } }
+@keyframes pi-flick { 0%, 100% { scale: 1 1; } 30% { scale: 1 1.35; } 60% { scale: 1 .8; } }
+@keyframes pi-focus { 0% { scale: 1; } 35% { scale: .72; } 70% { scale: 1.08; } 100% { scale: 1; } }
+@keyframes pi-nudge { 40% { translate: 1.6px 0; scale: 1.12; } }
+@keyframes pi-wave { 0% { opacity: 0; translate: -2px 0; } 100% { opacity: 1; translate: 0 0; } }
+@keyframes pi-up { 40% { translate: 0 -1.8px; } }
+@keyframes pi-spin3 { 0% { scale: 1 1; } 50% { scale: .15 1; } 100% { scale: 1 1; } }
+@keyframes pi-page { 0% { scale: 1 1; } 50% { scale: -.2 1; } 100% { scale: 1 1; } }
+@keyframes pi-write { 30% { rotate: -14deg; translate: -1px 0; } 65% { rotate: 6deg; } }
+@keyframes pi-pop { 0% { scale: .2; opacity: 0; } 70% { scale: 1.15; opacity: 1; } 100% { scale: 1; } }
+@keyframes pi-bounce { 30% { translate: 0 -2px; } 60% { translate: 0 .5px; } }
+@keyframes pi-ring { 40% { scale: 1.14; } }
+@keyframes pi-sway { 35% { rotate: -9deg; } 70% { rotate: 4deg; } }
+@keyframes pi-steam { 0% { translate: 0 1.5px; opacity: 0; } 50% { opacity: 1; } 100% { translate: 0 -1.5px; opacity: 1; } }
+@keyframes pi-beat { 20% { scale: 1.18; } 40% { scale: .96; } 60% { scale: 1.1; } }
+@keyframes pi-grow { from { scale: 1 0; } to { scale: 1 1; } }
+@keyframes pi-hover { 40% { translate: 0 -1.2px; rotate: -6deg; } }
+@keyframes pi-blink { 0%, 100% { opacity: 1; } 30% { opacity: .15; } 60% { opacity: 1; } 80% { opacity: .4; } }
+@keyframes pi-rise { from { translate: 0 3px; opacity: .2; } to { translate: 0 0; opacity: 1; } }
+@keyframes pi-door { 40% { scale: .55 1; } }
+@keyframes pi-turn { to { rotate: 72deg; } }
+@keyframes pi-flash { 0%, 100% { fill: transparent; } 40% { fill: currentColor; } }
+@keyframes pi-wink { 0%, 100% { scale: 1 1; } 45% { scale: 1 .1; } }
+
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-code .pi-m { animation: pi-tilt var(--pi-d) var(--mo-spring); }
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-window .pi-m { animation: pi-type var(--pi-d) var(--mo-out); }
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-rocket > svg { animation: pi-lift var(--pi-d) var(--mo-in-out); }
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-rocket .pi-m { transform-origin: 50% 0; animation: pi-flick calc(var(--pi-d) * .8) var(--mo-in-out) 2; }
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-camera .pi-m { animation: pi-focus var(--pi-d) var(--mo-spring); }
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-play .pi-m { animation: pi-nudge var(--pi-d) var(--mo-spring); }
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-megaphone .pi-m { animation: pi-wave var(--pi-d) var(--mo-out); }
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-megaphone > svg { animation: pi-tilt var(--pi-d) var(--mo-spring); transform-origin: 30% 60%; }
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-bag .pi-m { animation: pi-up var(--pi-d) var(--mo-spring); }
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-globe .pi-m { animation: pi-spin3 var(--pi-d) var(--mo-in-out); }
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-book .pi-m { transform-origin: 0 50%; animation: pi-page var(--pi-d) var(--mo-in-out); }
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-nib > svg { transform-origin: 50% 100%; animation: pi-write var(--pi-d) var(--mo-in-out); }
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-palette .pi-m { animation: pi-pop var(--pi-d) var(--mo-spring); }
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-music .pi-m { animation: pi-bounce calc(var(--pi-d) * .7) var(--mo-in-out) 2; }
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-mic .pi-m { transform-origin: 50% 0; animation: pi-ring var(--pi-d) var(--mo-spring); }
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-leaf > svg { transform-origin: 20% 90%; animation: pi-sway var(--pi-d) var(--mo-in-out); }
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-flame .pi-m { transform-origin: 50% 100%; animation: pi-flick calc(var(--pi-d) * .7) var(--mo-in-out) 2; }
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-cup .pi-m { animation: pi-steam var(--pi-d) var(--mo-out); }
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-heart > svg { animation: pi-beat var(--pi-d) var(--mo-in-out); }
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-chart .pi-m { transform-origin: 50% 100%; animation: pi-grow var(--pi-d) var(--mo-spring); }
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-cube > svg { animation: pi-hover var(--pi-d) var(--mo-in-out); }
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-game .pi-m { animation: pi-blink var(--pi-d) linear; }
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-mountain .pi-m { animation: pi-rise var(--pi-d) var(--mo-spring); }
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-house .pi-m { transform-origin: 0 50%; animation: pi-door var(--pi-d) var(--mo-in-out); }
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-star > svg { animation: pi-turn var(--pi-d) var(--mo-spring); }
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-bolt .pi-m { animation: pi-flash var(--pi-d) var(--mo-in-out); }
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-cat .pi-m { animation: pi-wink calc(var(--pi-d) * .8) var(--mo-in-out); }
+:is(.pi:hover, :is(.side-item, .pj-card, .pi-pick button, .pj-icbtn):is(:hover, :focus-visible) > .pi, .pi-hop).pi-target .pi-m { animation: pi-pop var(--pi-d) var(--mo-spring); }
+.pi-hop { animation: pi-chosen var(--mo-d4) var(--mo-spring); }
+@keyframes pi-chosen { 0% { scale: .7; } 100% { scale: 1; } }
+
+/* ---------- Sélecteur d'icône et de couleur ---------- */
+.pi-pick { width: 292px; padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+.pi-pick-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.pi-pick-grid .pi { --pi: 30px; }
+.pi-pick-grid button { height: 40px; border-radius: 10px; display: grid; place-items: center; transition: background-color var(--mo-d1), scale var(--mo-d2) var(--mo-spring); }
+.pi-pick-grid button:hover { background: var(--hover); }
+.pi-pick-grid button:active { scale: var(--mo-press); }
+.pi-pick-grid button[aria-pressed="true"] { box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--c, var(--text)) 65%, transparent); }
+.pi-pick-hues { display: flex; gap: 6px; padding: 8px 2px 0; border-top: 1px solid var(--border); }
+.pi-pick-hues button { width: 22px; height: 22px; border-radius: 50%; background: var(--c); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12); transition: scale var(--mo-d2) var(--mo-spring), box-shadow var(--mo-d2); }
+.pi-pick-hues button:hover { scale: 1.12; }
+.pi-pick-hues button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--c); }
+.pi-pick-h { display: flex; align-items: center; gap: 10px; padding: 0 2px; }
+.pi-pick-h b { font-size: var(--t-2); font-weight: 600; flex: 1; }
+.pi-pick-h small { color: var(--text-3); font-size: var(--t-1); }
+
+/* ---------- Où les tuiles se posent ---------- */
+:root #sidebar .side-item > .pi { --pi: 18px; border-radius: 5px; }
+:root #sidebar .side-sub.open > .pi, :root #sidebar .side-sub.sel > .pi { background: var(--c); color: var(--bg); }
+.pj-icbtn { display: inline-grid; place-items: center; padding: 3px; margin: -3px 2px -3px -3px; border-radius: 12px; transition: background-color var(--mo-d1) var(--mo-out), scale var(--mo-d2) var(--mo-spring); }
+.pj-icbtn:hover { background: var(--hover); }
+.pj-icbtn:active { scale: var(--mo-press); }
+.pj-title .pi-lg { --pi: 30px; }
+.pj-card > .pi { margin-bottom: 2px; }
+
+/* ---------- Nouveau projet : genre, icône ---------- */
+.pj-kind { position: relative; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 3px; margin-bottom: 14px; border-radius: 10px; background: var(--btn); }
+.pj-kind label { position: relative; z-index: 1; }
+.pj-kind input { position: absolute; opacity: 0; pointer-events: none; }
+.pj-kind span { display: flex; align-items: center; justify-content: center; gap: 7px; height: 32px; border-radius: 8px; font-size: var(--t-2); font-weight: 500; color: var(--text-2); transition: color var(--mo-d2); cursor: default; }
+.pj-kind span .ic { width: 15px; height: 15px; }
+.pj-kind input:checked + span { color: var(--text); }
+.pj-kind input:focus-visible + span { box-shadow: 0 0 0 2px var(--accent-soft); }
+.pj-kind-ind { position: absolute; left: 0; top: 3px; bottom: 3px; width: 0; border-radius: 8px; background: var(--bg); box-shadow: 0 1px 3px rgba(0, 0, 0, .12), 0 0 0 1px var(--border);
+  transition: translate var(--mo-d4) var(--mo-spring), width var(--mo-d4) var(--mo-spring); }
+.pj-namerow { display: flex; align-items: center; gap: 10px; }
+.pj-namerow .field { flex: 1; min-width: 0; }
+.pj-namerow .pj-icbtn { margin: 0; }
+.pj-create .pj-social { display: none; }
+.pj-create.pj-is-social .pj-social { display: flex; animation: mo-item var(--mo-d3) var(--mo-out) backwards; }
+.pj-create.pj-is-social .pj-code { display: none; }

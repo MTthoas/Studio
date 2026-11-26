@@ -5,10 +5,11 @@ import type { Box } from '../types.ts';
 
 // Version 2 : ajoute « journal » (une fiche par jour : demandes faites à Claude Code, activité, résumé).
 // Version 3 : ajoute « chats » (conversations de la page Claude).
-const NAME = 'carnet', VERSION = 3;
-export type StoreName = 'notes' | 'versions' | 'journal' | 'chats';
-const STORES: StoreName[] = ['notes', 'versions', 'journal', 'chats'];
-const CLEAR: Record<StoreName, string[]> = { notes: ['id'], versions: ['id', 'noteId'], journal: ['id'], chats: ['id'] };
+// Version 4 : ajoute « recos » (séances de recos photo d'un projet social : photos réduites, analyse, choix).
+const NAME = 'carnet', VERSION = 4;
+export type StoreName = 'notes' | 'versions' | 'journal' | 'chats' | 'recos';
+const STORES: StoreName[] = ['notes', 'versions', 'journal', 'chats', 'recos'];
+const CLEAR: Record<StoreName, string[]> = { notes: ['id'], versions: ['id', 'noteId'], journal: ['id'], chats: ['id'], recos: ['id'] };
 
 /** Chiffrement appliqué aux enregistrements quand le coffre est ouvert. */
 export interface Cipher { seal(text: string): Promise<Box>; open(box: Box): Promise<string> }
@@ -31,6 +32,7 @@ function open(): Promise<IDBDatabase> {
       }
       if (!d.objectStoreNames.contains('journal')) d.createObjectStore('journal', { keyPath: 'id' });
       if (!d.objectStoreNames.contains('chats')) d.createObjectStore('chats', { keyPath: 'id' });
+      if (!d.objectStoreNames.contains('recos')) d.createObjectStore('recos', { keyPath: 'id' });
     };
     // Une autre fenêtre ouvre une version plus récente de la base : on lui laisse la place.
     r.onblocked = () => console.warn('Base locale : mise à jour en attente d’une autre fenêtre de Studio.');
