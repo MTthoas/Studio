@@ -547,6 +547,76 @@ export async function complete(system: string, user: string, { provider, light =
     : loopOpenAI(cfg, system, user, [], none, undefined, p === 'local');
 }
 
+// ---------- Demandes avec photos (recos photo d'un projet social) ----------
+/** Photo jointe : JPEG, PNG, WebP ou GIF, en base64 sans préfixe `data:`. */
+export interface Picture { type: string; data: string }
+export interface VisionReply<T> { text: string; data: T | null; provider: Provider }
+
+/** Le premier objet JSON d'un texte (bloc ```json, ou texte autour), null s'il n'y en a pas de lisible. */
+export function jsonIn<T>(text: string): T | null {
+  const t = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
+  for (const s of [t, t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1)]) { try { const o = JSON.parse(s) as unknown; if (o && typeof o === 'object') return o as T; } catch { /* suivant */ } }
+  return null;
+}
+
+/** Demande sans outil, avec des photos. `schema` (JSON Schema, objets fermés) : la réponse est un objet qui le suit, rendu dans
+ *  `data` ; sans schéma, du texte. Même fournisseur que le reste de Studio : Claude (clé API), Claude Code (app Mac : les photos
+ *  partent dans le message, Claude Code reste sans outil), OpenAI, ou un modèle local compatible qui sait lire les images. */
+export async function vision<T = unknown>({ system, prompt, images, schema, provider, signal }: { system: string; prompt: string; images: Picture[]; schema?: Record<string, unknown>; provider?: Provider | null; signal?: AbortSignal }): Promise<VisionReply<T>> {
+  const cfg = config(), p = provider || cfg.provider;
+  if (!ready(p)) throw new Error(`${PROVIDERS[p]} n’est pas configuré (Réglages → Intelligence artificielle).`);
+  if (images.length > 8) throw new Error('8 photos au plus par demande.');
+  const done = (text: string, data: T | null): VisionReply<T> => ({ text, data: data ?? (schema ? jsonIn<T>(text) : null), provider: p });
+
+  if (p === 'claudecode') {
+    if (!cc.onMac()) throw new Error('Claude Code s’utilise depuis l’app Studio pour Mac.');
+    const run = crypto.randomUUID(), stop = () => void native.call('claude', 'cancel', { run }, 5000);
+    signal?.addEventListener('abort', stop, { once: true });
+    try {
+      const r = await native.call('claude', 'run', { run, system, prompt, model: cfg.ccModel, effort: cfg.effort, images, ...(schema ? { schema: JSON.stringify(schema) } : {}) }, 620000) as unknown as CcReply & { structured?: unknown };
+      if (r.usage) usage.record('claudecode', r.models?.[0] ?? (cfg.ccModel || 'claude-code'), { input: r.usage.input_tokens, output: r.usage.output_tokens, cacheRead: r.usage.cache_read_input_tokens, cacheWrite: r.usage.cache_creation_input_tokens });
+      if (!r.ok) { if (r.message?.includes('pas connecté')) cc.last = { ...(cc.last ?? { installed: true }), loggedIn: false }; throw new Error(r.message ?? 'Erreur de Claude Code.'); }
+      return done((r.text ?? '').trim(), (r.structured as T | undefined) ?? null);
+    } finally { signal?.removeEventListener('abort', stop); }
+  }
+
+  if (p === 'anthropic') {
+    const key = vault.secret('anthropic'); if (!key) throw new Error('Clé Claude manquante (Réglages → Intelligence artificielle).');
+    const model = cfg.anthropicModel;
+    let fallback = !noFallback && /^claude-(opus-5|sonnet-5-5|fable-5)/.test(model);
+    const headers: Record<string, string> = { 'x-api-key': key, 'anthropic-version': '2026-10-21', 'anthropic-dangerous-direct-browser-access': 'true', ...(fallback ? { 'anthropic-beta': 'server-side-fallback-2026-07-01' } : {}) };
+    const content = [...images.map(i => ({ type: 'image', source: { type: 'base64', media_type: i.type, data: i.data } })), { type: 'text', text: prompt }];
+    const body: Record<string, unknown> = { model, max_tokens: 16000, system, messages: [{ role: 'user', content }], thinking: { type: 'adaptive' },
+      output_config: { effort: cfg.effort || 'medium', ...(schema ? { format: { type: 'json_schema', schema } } : {}) }, ...(fallback ? { fallbacks: 'default' } : {}) };
+    let r: AnthropicReply;
+    try { r = await post<AnthropicReply>('https://api.anthropic.com/v1/messages', headers, body, signal); }
+    catch (e) {
+      if (!(e instanceof NetworkError) || !fallback) throw e;
+      noFallback = true; fallback = false; delete headers['anthropic-beta']; delete body.fallbacks;
+      r = await post<AnthropicReply>('https://api.anthropic.com/v1/messages', headers, body, signal);
+    }
+    if (r.usage) usage.record('anthropic', r.model ?? model, { input: r.usage.input_tokens, output: r.usage.output_tokens, cacheRead: r.usage.cache_read_input_tokens, cacheWrite: r.usage.cache_creation_input_tokens });
+    if (r.stop_reason === 'refusal') throw new Error('Claude a décliné cette demande' + (r.stop_details?.explanation ? ` : ${r.stop_details.explanation}` : '.'));
+    if (r.stop_reason === 'max_tokens') throw new Error('Réponse tronquée : trop de photos ou de détails demandés à la fois.');
+    return done(r.content.flatMap(b => b.type === 'text' && typeof b.text === 'string' ? [b.text] : []).join('\n').trim(), null);
+  }
+
+  // OpenAI et modèles locaux compatibles : images en `image_url` (adresse data:). Le format imposé n'existe que chez OpenAI ;
+  // un modèle local reçoit le schéma dans la consigne et la réponse est relue par jsonIn.
+  const local = p === 'local', key = local ? vault.secret('local') : vault.secret('openai');
+  if (!local && !key) throw new Error('Clé OpenAI manquante (Réglages → Intelligence artificielle).');
+  const sys = schema && local ? `${system}\n\nRéponds uniquement par un objet JSON conforme à ce schéma, sans texte autour :\n${JSON.stringify(schema)}` : system;
+  const body: Record<string, unknown> = { model: local ? cfg.localModel : cfg.openaiModel,
+    messages: [{ role: 'system', content: sys }, { role: 'user', content: [{ type: 'text', text: prompt }, ...images.map(i => ({ type: 'image_url', image_url: { url: `data:${i.type};base64,${i.data}` } }))] }],
+    ...(schema && !local ? { response_format: { type: 'json_schema', json_schema: { name: 'reponse', strict: true, schema } } } : {}) };
+  const base = local ? cfg.localUrl.replace(/\/$/, '') : 'https://api.openai.com/v1';
+  const r = local && cfg.localVia ? await managedChat(cfg, body, signal) : await post<OpenAIReply>(base + '/chat/completions', key ? { Authorization: `Bearer ${key}` } : {}, body, signal);
+  if (r.usage) { const cached = r.usage.prompt_tokens_details?.cached_tokens ?? 0; usage.record(local ? 'local' : 'openai', r.model ?? String(body.model), { input: (r.usage.prompt_tokens ?? 0) - cached, output: r.usage.completion_tokens, cacheRead: cached }); }
+  const text = (r.choices?.[0]?.message?.content ?? '').trim();
+  if (!text) throw new Error(local ? 'Le modèle local n’a rien répondu : choisis un modèle qui lit les images (vision).' : 'Réponse vide du fournisseur.');
+  return done(text, null);
+}
+
 // ---------- Agents définis dans les notes ----------
 // ```agent
 // nom: Revue du lundi

@@ -58,6 +58,15 @@ const I: Record<string, string> = {
   back: '<path d="M14.5 5.5L8 12l6.5 6.5"/>',
   x: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  camera: '<path d="M4 9a2 2 0 012-2h2.1l1.5-2.2h4.8L15.9 7H18a2 2 0 012 2v8.5a2 2 0 01-2 2H6a2 2 0 01-2-2z"/><circle cx="12" cy="13" r="3.4"/>',
+  image: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.6"/><circle cx="9" cy="10" r="1.7"/><path d="M20.5 15.5l-4.8-4.6-8.7 8.6"/>',
+  crop: '<path d="M7 3.5V17h13.5M3.5 7H17v13.5"/>',
+  film: '<rect x="4.5" y="3.5" width="15" height="17" rx="2.4"/><path d="M8.5 3.5v17M15.5 3.5v17M4.5 8h4M4.5 12h4M4.5 16h4M15.5 8h4M15.5 12h4M15.5 16h4"/>',
+  frame: '<rect x="7" y="3" width="10" height="18" rx="2.4"/><path d="M10.5 18h3"/>',
+  clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  type: '<path d="M5.5 7V5h13v2M12 5v14M9.5 19h5"/>',
+  arrowUp: '<path d="M12 19V5M6 11l6-6 6 6"/>',
+  layers: '<path d="M12 4 3.5 8.5 12 13l8.5-4.5z"/><path d="M3.5 12.5 12 17l8.5-4.5M3.5 16.5 12 21l8.5-4.5"/>',
   github: '<path d="M9.5 20.5v-3c-3.5 1-4.5-1.5-5.5-2M14.5 20.5v-3.2c0-1 .1-1.6-.5-2.3 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 00-1.3-3.2 4.2 4.2 0 00-.1-3.2s-1-.3-3.4 1.3a11.8 11.8 0 00-6 0C6.3 2.3 5.3 2.6 5.3 2.6a4.2 4.2 0 00-.1 3.2A4.6 4.6 0 004 9c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2.3"/>',
   mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0013 0M12 18v3"/>',
   list: '<path d="M8.5 7h11M8.5 12h11M8.5 17h11"/><circle cx="4.5" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="17" r="1" fill="currentColor" stroke="none"/>',
@@ -191,6 +200,21 @@ export function menu(anchor: Element | { x: number; y: number }, items: MenuItem
   });
   m.tabIndex = -1; m.focus({ preventScroll: true });
   return layer;
+}
+
+/** Petit calque libre ancré sous un élément (sélecteur d'icône…) : même entrée et même fermeture qu'un menu
+ *  (clic dehors, Échap). `panel` est le contenu, déjà rendu ; l'appelant y branche ses écouteurs. */
+export function popover(anchor: Element, html: string, cls = ''): Layer & { panel: HTMLElement } {
+  if (topLayer()?.node.classList.contains('menu-backdrop')) closeTop();
+  const node = el(`<div class="menu-backdrop"><div class="menu ${cls}" role="dialog">${html}</div></div>`);
+  const layer = pushLayer(node), m = node.firstElementChild as HTMLElement;
+  const r = anchor.getBoundingClientRect(), w = m.offsetWidth, h = m.offsetHeight;
+  let y = r.bottom + 6; if (y + h > innerHeight - 8) y = Math.max(8, r.top - h - 6);
+  m.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + 'px'; m.style.top = y + 'px';
+  m.style.setProperty('--mo-ox', `${Math.round(r.left + r.width / 2 - Math.max(8, Math.min(r.left, innerWidth - w - 8)))}px`); m.style.setProperty('--mo-oy', y > r.top ? '0' : '100%');
+  node.addEventListener('mousedown', e => { if (e.target === node) { e.preventDefault(); layer.close(); } });
+  m.tabIndex = -1; m.focus({ preventScroll: true });
+  return Object.assign(layer, { panel: m });
 }
 
 export interface Modal { node: HTMLElement; body: HTMLElement; close: () => void }

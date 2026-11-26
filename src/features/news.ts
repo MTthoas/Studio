@@ -54,6 +54,17 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'social-recos-photo-20261127', date: '2026-11-27', icon: 'camera', hue: 'pink', mac: true,
+    title: 'Projets sociaux et recos photo',
+    lead: 'Un projet de réseaux sociaux reçoit des photos, les classe pour TikTok et prépare texte, légende et image 9:16.',
+    bits: [
+      ['camera', 'Classement', 'chaque photo est notée sur l’accroche, la lisibilité en 9:16, le sujet et l’originalité'],
+      ['frame', 'Aperçu 9:16', 'les zones cachées par les boutons et la légende s’affichent ; un glisser recadre la photo'],
+      ['type', 'Texte et légende', 'texte à l’écran, légende, hashtags et format conseillé, copiés en un clic'],
+      ['palette', 'Icônes de projet', 'vingt-six icônes animées et huit couleurs, au choix depuis l’en-tête du projet'],
+    ],
+    where: ['Projet', 'Recos photo'],
+    visual: { kind: 'flow', steps: [['Photos', 'blue', 'image'], ['Classement', 'amber', 'camera'], ['Image 9:16', 'green', 'frame']] } },
   { id: 'salon-captures-agents-20261125', date: '2026-11-25', icon: 'eye', hue: 'violet', mac: true,
     title: 'Captures des agents',
     lead: 'Les agents montrent chaque changement visible par des captures d’écran, affichées dans le Salon avant publication.',

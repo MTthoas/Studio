@@ -159,6 +159,8 @@ nom: Studio
 dépôts: MTthoas/Studio (app), MTthoas/studio-site (site), MTthoas/studio-api (api)
 linear: Studio
 site: https://studio.exemple.com
+icône: rocket
+couleur: violet
 ```
 ````
 
@@ -178,6 +180,12 @@ Une note ou une tâche y appartient avec le tag `#projet/studio` — posé par l
 | **Site** | Le site du projet : lancé **en local** depuis le Mac (adresse, pages vues, requêtes), **construit** (`build` et ses variantes `build:prod`…, notification à la fin), et vérifié **en ligne** (code, temps de réponse) |
 | **Mobile** | L'app mobile du projet (Expo, React Native, Flutter, Capacitor, Xcode, Gradle) : lancée sur un **simulateur iOS** ou un **émulateur Android** du Mac, avec l'**écran de l'appareil** en direct et ses réglages de test. L'onglet n'apparaît que si le projet a une app mobile |
 
+**Icône et couleur** : chaque projet a une icône dessinée (vingt-six au choix : code, app, fusée, appareil photo, vidéo, boutique, café, chat…) qui joue un petit geste au survol. Elle est devinée du nom du projet ; un clic sur l'icône, en tête de la page du projet, ouvre le choix de l'icône et de la couleur, écrits dans le bloc (`icône: camera`, `couleur: violet`).
+
+**Projets de réseaux sociaux** (`type: social`, et facultativement `tiktok: @compte`) : choisis « Réseaux sociaux » à la création. Ces projets n'ont ni dépôt ni dossier ; leurs onglets sont **Recos photo**, Salon, Tâches et Notes.
+
+- **Recos photo** (app Mac pour Claude Code ; Claude, OpenAI ou un modèle local qui lit les images ailleurs) : glisse jusqu'à 8 photos (ou ⌘V), dis pour quoi elles sont, et Praline, la stratège du projet, les classe pour TikTok. Chaque photo est notée de 0 à 100 sur quatre signaux (accroche dans la première seconde, lisibilité en 9:16, sujet clair, originalité), avec ses pièges (texte sous les boutons, sujet trop petit). Pour la photo choisie : un aperçu 9:16 avec les zones que cachent les boutons et la légende de TikTok (un glisser recadre la photo), le texte à l'écran, la légende et 3 à 5 hashtags, le genre de son à choisir, le moment de publication et un plan pour chaque format (vidéo faite des photos, carrousel, photo seule). On lui pose ensuite des questions dans le même fil. L'onglet **Publier** télécharge l'image 9:16 recadrée (texte écrit dessus ou non), copie le plan, ou l'enregistre en note du projet. Les notes sont des estimations relatives aux photos envoyées, jamais des prévisions de vues ; sans statistiques du compte, le moment de publication est un repère général. Rien n'est publié sur TikTok depuis Studio.
+- Les photos sont réduites à 1 280 px avant l'envoi et gardées avec leur séance dans la base locale (chiffrée avec le reste quand le coffre est ouvert). Avec Claude Code, elles partent dans le message lui-même : Claude Code reste sans aucun outil et ne lit aucun fichier.
 - Le **dossier local** est choisi dans le sélecteur de macOS et reste dans les réglages de l'app Mac : il n'est jamais écrit dans une note ni synchronisé. L'app n'en lit l'état Git qu'en lecture seule.
 - **Revue IA** : le diff est lu en local, montré, puis envoyé à l'IA branchée seulement après ton clic ; la revue peut être enregistrée comme note du projet.
 - **Sessions** : l'app Mac lit les journaux locaux de Claude Code (`~/.claude/projects/…`), en lecture seule ; rien ne quitte la machine.
@@ -417,6 +425,7 @@ src/                               TypeScript strict
     workspace.ts      Espace agents : les agents de tous les projets, liste à la Linear et grille de 1 à 8 vues
     models.ts         Modèles locaux : machines, modèles installés, catalogue (modelcatalog.ts), essai
     commerce/         Boutiques : page.ts (onglet et vue), shop*.ts (Shopify), ads.ts (Meta), marketing*.ts (modèle local), fence.ts (bloc de note)
+    social/           projets de réseaux sociaux : recos.ts (onglet Recos photo : classement, aperçu 9:16, légende, image à publier)
     tasks.ts          tâches, sous-tâches, échéances, tickets Linear
     board.ts          Kanban générique (glisser-déposer, clavier, tactile)
     voice.ts          notes vocales (transcription sur l'appareil)
@@ -431,7 +440,7 @@ src/                               TypeScript strict
     permissions.ts    réglages des autorisations des agents Claude Code (commandes, web, notes et tâches, PATH), gardés sur le Mac
     automations.ts, help.ts, onboarding.ts
   integrations/     services extérieurs, appelés directement depuis l'app
-    ai.ts             Claude, OpenAI, modèle local : boucle d'agent et outils
+    ai.ts             Claude, OpenAI, modèle local : boucle d'agent et outils ; `vision` pour les demandes avec photos
     noteseal.ts       notes liées à un agent Claude Code : scellées avant de partir vers le Mac
     scope.ts          périmètres de l'IA : ce que ses outils voient d'un projet (ou de Général)
     usage.ts          consommation de l'IA : tokens par mois, fournisseur et modèle
@@ -443,7 +452,8 @@ src/                               TypeScript strict
   lib/              outils sans état : markdown, calc, schema, graph, qr, fuzzy, diff, zip
   plugins/          registre d'extensions, plugins maison (GitHub, Linear) et optionnels (Spotify, n8n, Figma)
   ui/               kit.ts (icônes, menus, fenêtres), caret.ts (curseur), chart.ts (graphiques),
-                    sky.ts (ciel du fond), motion.ts (transitions et animations d'interface)
+                    sky.ts (ciel du fond), motion.ts (transitions et animations d'interface),
+                    projicons.ts (icônes des projets, animées, et leur sélecteur)
   sw/sw.ts          service worker (compilé avec les types « worker »)
 native/             apps Mac et iPhone (Swift) et leurs scripts de build
   Shared/

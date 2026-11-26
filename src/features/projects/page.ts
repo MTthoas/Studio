@@ -8,7 +8,7 @@ import * as registry from '../../plugins/registry.ts';
 import * as todo from '../tasks.ts';
 import * as model from './model.ts';
 import { esc, plain } from '../../lib/markdown.ts';
-import { $, icon, menu, modal, need, rel, target, toast, errMsg, confirmBox } from '../../ui/kit.ts';
+import { $, icon, menu, modal, need, rel, target, toast, errMsg, confirmBox, hue } from '../../ui/kit.ts';
 import { pickFrom } from './notepick.ts';
 import type { AppShell, Note } from '../../types.ts';
 import type { Project, Repo, Role } from './model.ts';
@@ -21,6 +21,8 @@ import * as mobile from './mobile.ts';
 import * as stack from './stack.ts';
 import * as docker from './docker.ts';
 import * as commerce from '../commerce/page.ts';
+import * as projIcons from '../../ui/projicons.ts';
+import * as recos from '../social/recos.ts';
 import * as infra from './infra.ts';
 import * as specs from './specs.ts';
 import * as chart from '../../ui/chart.ts';
@@ -92,8 +94,8 @@ function listHTML(): string {
     <button class="btn btn-primary" data-pj="new">${icon('plus')}Créer un projet</button></div>`;
   return `<div class="pj-grid">${all.map(p => {
     const t = todo.ofProject(p.id), notes = model.notesOf(p).length - 1;
-    return `<button class="pj-card" data-pj-open="${esc(p.id)}" style="--c:var(--c-${p.hue})"><span class="pj-dot"></span><strong>${esc(p.name)}</strong>
-      <span class="pj-sub">${p.stack.length ? `${icon('github')}${esc(p.stack[0]?.name ?? '')}` : 'Pas de dépôt'}${p.linear ? ` · ${icon('linear')}${esc(p.linear)}` : ''}</span>
+    return `<button class="pj-card" data-pj-open="${esc(p.id)}" style="--c:var(--c-${p.hue})">${projIcons.tile(p, 'pi-lg')}<strong>${esc(p.name)}</strong>
+      <span class="pj-sub">${p.kind === 'social' ? `${icon('camera')}${p.tiktok ? `<span data-no-i18n>TikTok · ${esc(p.tiktok)}</span>` : 'Réseaux sociaux'}` : p.stack.length ? `${icon('github')}${esc(p.stack[0]?.name ?? '')}` : 'Pas de dépôt'}${p.linear ? ` · ${icon('linear')}${esc(p.linear)}` : ''}</span>
       ${p.stack.length ? `<span class="pj-roles">${p.stack.map(r => model.roleTag(r.role, 'sm')).join('')}</span>` : ''}
       <span class="pj-stats"><b>${t.openCount}</b> tâche${t.openCount > 1 ? 's' : ''}${t.doing.length ? ` · ${t.doing.length} en cours` : ''} · <b>${notes}</b> note${notes > 1 ? 's' : ''}</span></button>`;
   }).join('')}<button class="pj-card pj-new" data-pj="new">${icon('plus')}<strong>Nouveau projet</strong></button></div>`;
@@ -190,23 +192,26 @@ const fold = (id: string, title: string, body: string, cls = '', meta = '') => `
 
 /** Sous-menus d'un projet (aussi affichés dans la barre latérale). */
 export const TABS: [string, string, string][] = [
-  ['salon', 'Salon', 'sparkle'], ['overview', 'Vue d’ensemble', 'home'], ['sessions', 'Claude Code', 'terminal'], ['tasks', 'Tâches', 'check'], ['notes', 'Notes', 'notes'],
+  ['recos', 'Recos photo', 'camera'], ['salon', 'Salon', 'sparkle'], ['overview', 'Vue d’ensemble', 'home'], ['sessions', 'Claude Code', 'terminal'], ['tasks', 'Tâches', 'check'], ['notes', 'Notes', 'notes'],
   ['code', 'Code', 'code'], ['archi', 'Architecture', 'graph'], ['api', 'API', 'plug'], ['data', 'Données', 'database'], ['tests', 'Tests', 'shield'],
   ['site', 'Site', 'link'], ['mobile', 'Mobile', 'phone'], ['docker', 'Docker', 'container'], ['env', 'Environnements', 'gear'],
   ['flux', 'Flux', 'pr'], ['server', 'Serveur', 'server'], ['boutique', 'Boutique', 'shop'],
 ];
 /** Familles de la barre d'onglets : l'ordre de TABS suit celui-ci. */
 const FAMILIES: [string, string[]][] = [
-  ['Piloter', ['salon', 'overview', 'sessions', 'tasks', 'notes']], ['Construire', ['code', 'archi', 'api', 'data', 'tests']],
+  ['Piloter', ['recos', 'salon', 'overview', 'sessions', 'tasks', 'notes']], ['Construire', ['code', 'archi', 'api', 'data', 'tests']],
   ['Faire tourner', ['site', 'mobile', 'docker', 'env']], ['Livrer', ['flux', 'server', 'boutique']],
 ];
 /** Les onglets montrés pour ce projet : « Boutique » seulement s'il a une boutique ou un compte publicitaire, « Mobile »
  *  seulement s'il a un dépôt de rôle mobile ou une app mobile dans son dossier (ou si on y est). */
+/** Un projet social (réseaux, compte TikTok) n'a ni dépôt ni serveur : seulement ses recos photo, son Salon, ses tâches, ses notes. */
+const SOCIAL_TABS = new Set(['recos', 'salon', 'tasks', 'notes', 'boutique']);
 export const tabsOf = (p: Project, tab = ''): [string, string, string][] => TABS.filter(t => t[0] === tab
-  || (t[0] === 'salon' ? claudeAvailable() : t[0] === 'boutique' ? commerce.available() && commerce.concerns(p) : t[0] === 'mobile' ? mobile.concerns(p) : true));
+  || ((p.kind !== 'social' || SOCIAL_TABS.has(t[0])) && (t[0] === 'recos' ? p.kind === 'social'
+    : t[0] === 'salon' ? claudeAvailable() : t[0] === 'boutique' ? commerce.available() && commerce.concerns(p) : t[0] === 'mobile' ? mobile.concerns(p) : true)));
 /** Onglet d'arrivée d'un projet : le Salon quand Claude Code est joignable, sinon la Vue d'ensemble (web pur : pas de Salon). */
-export const defaultTab = (): string => claudeAvailable() ? 'salon' : 'overview';
-const curTab = (): string => { const t = app.viewState().tab; return t && TABS.some(x => x[0] === t) && (t !== 'salon' || claudeAvailable()) ? t : defaultTab(); };
+export const defaultTab = (p?: Project | null): string => p?.kind === 'social' ? 'recos' : claudeAvailable() ? 'salon' : 'overview';
+const curTab = (p?: Project | null): string => { const t = app.viewState().tab; return t && TABS.some(x => x[0] === t) && (t !== 'salon' || claudeAvailable()) ? t : defaultTab(p); };
 const panelsHTML = (p: Project, tab: string) => registry.projectPanels(p, tab).map(x => section(x.id, x.title, x.icon, '<p class="nf-empty">Chargement…</p>', 'pj-panel')).join('');
 const card = (tab: string, title: string, body: string) => `<button class="pj-ov" data-pj-tab="${tab}"><span class="pj-ov-h">${esc(title)}${icon('chevronRight')}</span><span class="pj-ov-b" data-ov="${tab}">${body}</span></button>`;
 
@@ -224,6 +229,7 @@ function tabBody(p: Project, tab: string): string {
     ${section('branches', 'Branches locales', 'pr', native.available() ? '<p class="nf-empty">Chargement…</p>' : '<p class="hm-empty">Visibles dans l’app Mac.</p>')}${panelsHTML(p, 'code')}`;
   if (tab === 'flux') return '<div class="pj-flux"><p class="nf-empty">Chargement du flux…</p></div>';
   if (tab === 'salon') return '<div class="sl-box"></div>';
+  if (tab === 'recos') return '<div class="rc-box"></div>';
   if (tab === 'sessions') return '<div class="ss-box"></div>';
   if (tab === 'server') return '<div class="sv-box"><div class="pj-skel"></div></div>';
   if (tab === 'docker') return '<div class="dk-box"><p class="nf-empty">Lecture de Docker…</p></div>';
@@ -411,7 +417,7 @@ async function agentsStrip(root: HTMLElement, p: Project): Promise<void> {
 
 /** Onglets d'une seule rangée : les principaux, l'onglet ouvert, puis « Plus » (menu rangé par famille, voir `moreTabs`). */
 // Flux juste après le Salon (25 nov. 2026, « mets en avant Flux ») : les principaux dans cet ordre, l'onglet ouvert à la suite.
-const MAIN_TABS = ['salon', 'flux', 'sessions', 'tasks', 'notes', 'code'];
+const MAIN_TABS = ['recos', 'salon', 'flux', 'sessions', 'tasks', 'notes', 'code'];
 const rank = (k: string) => { const i = MAIN_TABS.indexOf(k); return i < 0 ? MAIN_TABS.length : i; };
 const tabsHTML = (p: Project, tab: string): string => {
   const have = tabsOf(p, tab), shown = have.filter(t => MAIN_TABS.includes(t[0]) || t[0] === tab).sort((x, y) => rank(x[0]) - rank(y[0]));
@@ -437,7 +443,7 @@ function serverBadge(p: Project): string {
 }
 
 function detailHTML(p: Project, tab: string): string {
-  return `<div class="pj-head" style="--c:var(--c-${p.hue})"><div class="pj-title"><span class="pj-dot"></span><h1>${esc(p.name)}</h1></div>
+  return `<div class="pj-head" style="--c:var(--c-${p.hue})"><div class="pj-title"><button type="button" class="pj-icbtn" data-pj="icon" title="Changer l’icône et la couleur" aria-label="Changer l’icône et la couleur du projet">${projIcons.tile(p, 'pi-lg')}</button><h1>${esc(p.name)}</h1></div>
       <div class="pj-bar"><div class="pj-links" data-k="${esc(`${model.formatRepos(p.stack)}|${p.site ?? ''}|${p.linear ?? ''}`)}">${p.stack.map(r => `<a class="lv-chip pj-chip-repo" href="https://github.com/${esc(r.name)}" target="_blank" rel="noopener" title="${esc(`${model.ROLES[r.role].label} · ${r.name}`)}">${model.roleTag(r.role, 'sm')}${esc(r.name.split('/')[1] ?? r.name)}</a>`).join('')}${p.linear ? `<span class="lv-chip">${icon('linear')}${esc(p.linear)}</span>` : ''}${p.site ? `<a class="lv-chip" href="${esc(p.site)}" target="_blank" rel="noopener">${icon('link')}${esc(p.site.replace(/^https:\/\//, ''))}</a>` : ''}<span class="lv-chip">#${esc(p.tag)}</span>${serverBadge(p)}</div><div class="pj-acts"><button class="btn btn-ghost pj-note" data-pj="edit">${icon('notes')}Note du projet</button><button class="btn btn-ghost pj-note" data-pj="claude" title="Conversation bornée à ce projet : Claude ne voit que ses données">${icon('sparkle')}Claude</button></div></div>
       <nav class="lv-tabs pj-tabs">${tabsHTML(p, tab)}</nav></div>
     <div class="pj-body" data-tab="${tab}">${tabBody(p, tab)}</div>`;
@@ -456,6 +462,7 @@ async function hydrate(root: HTMLElement, p: Project, tab: string): Promise<void
     const nav = $('.pj-tabs', root); if (nav?.isConnected) nav.innerHTML = tabsHTML(p, tab);
   });
   if (tab === 'flux') { const box = $('.pj-flux', root); if (box) { void flux.mount(box, p); chart.bindTips(root); } }
+  if (tab === 'recos') { const box = $('.rc-box', root); if (box) recos.mount(box, p, { openNote: id => app.openNote(id) }); }
   if (tab === 'salon') { const box = $('.sl-box', root); if (box) salon.mount(box, p, { openTech: id => { sessions.select(id || null, p.id); void go(p.id, 'sessions'); } }); }
   const f = await folderOf(p);
   fill(root, '.pj-folder-box', folderHTML(p, f));
@@ -610,16 +617,42 @@ function repoMenu(p: Project, anchor: Element, name: string): void {
 // ---------- Création ----------
 export async function createDialog(): Promise<void> {
   const m = modal({ title: 'Nouveau projet', cls: 'pj-create', html: `<form>
-    <label class="pj-field"><span>Nom</span><input class="field" name="name" placeholder="Ex. Studio" required autofocus></label>
-    <div class="pj-field"><span>Dépôts GitHub <em>facultatif · l’app, son site, son API…</em></span><div class="pj-newrepos"></div><datalist id="pj-repos"></datalist>
+    <div class="pj-kind" role="radiogroup" aria-label="Genre de projet"><label><input type="radio" name="kind" value="code" checked><span>${icon('code')}Code</span></label><label><input type="radio" name="kind" value="social"><span>${icon('camera')}Réseaux sociaux</span></label><i class="pj-kind-ind" aria-hidden="true"></i></div>
+    <div class="pj-field"><span>Nom</span><div class="pj-namerow"><button type="button" class="pj-icbtn" data-icon title="Choisir l’icône et la couleur" aria-label="Choisir l’icône et la couleur">${projIcons.tile({ icon: 'window', hue: 'blue' }, 'pi-lg')}</button><input class="field" name="name" placeholder="Ex. Studio" required autofocus aria-label="Nom du projet"></div></div>
+    <label class="pj-field pj-social"><span>Compte TikTok <em>facultatif</em></span><input class="field" name="tiktok" placeholder="@compte" autocomplete="off" spellcheck="false"></label>
+    <div class="pj-field pj-code"><span>Dépôts GitHub <em>facultatif · l’app, son site, son API…</em></span><div class="pj-newrepos"></div><datalist id="pj-repos"></datalist>
       <button type="button" class="link-btn pj-addrow" data-row>${icon('plus')}Un autre dépôt</button></div>
-    <label class="pj-field"><span>Projet Linear <em>facultatif</em></span><input class="field" name="linear" placeholder="Nom du projet dans Linear" list="pj-linear" autocomplete="off"><datalist id="pj-linear"></datalist></label>
+    <label class="pj-field pj-code"><span>Projet Linear <em>facultatif</em></span><input class="field" name="linear" placeholder="Nom du projet dans Linear" list="pj-linear" autocomplete="off"><datalist id="pj-linear"></datalist></label>
     <label class="pj-field"><span>En une phrase <em>facultatif</em></span><input class="field" name="desc" placeholder="Ce que ce projet doit accomplir"></label>
-    ${native.available() ? '<p class="modal-hint">Tu choisiras ensuite son dossier sur ce Mac.</p>' : ''}
+    ${native.available() ? '<p class="modal-hint pj-code">Tu choisiras ensuite son dossier sur ce Mac.</p>' : ''}
     <p class="lock-err" role="alert"></p>
     <div class="modal-actions"><button type="button" class="btn" data-x>Annuler</button><button class="btn btn-primary">Créer le projet</button></div></form>` });
   need('[data-x]', m.node).onclick = m.close;
   fillRepoList(m.node);
+  // Genre et icône : l'icône suit le nom tant qu'on ne l'a pas choisie ; le genre montre ses seuls champs.
+  const form = need<HTMLFormElement>('form', m.node), nameIn = need<HTMLInputElement>('input[name=name]', m.node), icBtn = need('[data-icon]', m.node);
+  let look: { icon: string; hue: string } | null = null;
+  const kindNow = (): model.Kind => (new FormData(form).get('kind') === 'social' ? 'social' : 'code');
+  let drawn = '';
+  const paintIcon = (hop = false): void => {
+    const name = nameIn.value.trim(), shown = look ?? { icon: projIcons.guessIcon(name, kindNow()), hue: hue(model.slugify(name || 'projet')) }, key = `${shown.icon}|${shown.hue}`;
+    if (key === drawn && !hop) return;
+    // L'icône change en cours de frappe (« Boutique » → sac) : elle saute, comme quand on la choisit.
+    icBtn.innerHTML = projIcons.tile(shown, `pi-lg${hop || drawn ? ' pi-hop' : ''}`); drawn = key;
+  };
+  const placeKind = (): void => {
+    const box = need('.pj-kind', m.node), on = box.querySelector<HTMLElement>('input:checked + span'), ind = box.querySelector<HTMLElement>('.pj-kind-ind');
+    // Le bouton est dans son <label> : sa position se lit par rapport au groupe, pas à son parent.
+    if (on && ind) { const a = box.getBoundingClientRect(), b = on.getBoundingClientRect(); ind.style.width = `${b.width}px`; ind.style.translate = `${b.left - a.left}px 0`; }
+    m.node.querySelector('.modal')?.classList.toggle('pj-is-social', kindNow() === 'social');
+  };
+  form.addEventListener('change', e => { if ((e.target as HTMLInputElement).name === 'kind') { placeKind(); paintIcon(true); } });
+  nameIn.addEventListener('input', () => paintIcon());
+  icBtn.addEventListener('click', () => {
+    const name = nameIn.value.trim();
+    projIcons.picker(icBtn, look ?? { icon: projIcons.guessIcon(name, kindNow()), hue: hue(model.slugify(name || 'projet')) }, next => { look = next; paintIcon(true); });
+  });
+  requestAnimationFrame(placeKind); paintIcon();
   const rows = need('.pj-newrepos', m.node);
   let n = 0;
   const addRow = (): void => {
@@ -641,9 +674,12 @@ export async function createDialog(): Promise<void> {
     if (bad) { need('.lock-err', m.node).textContent = `« ${bad.name} » : un dépôt s’écrit « propriétaire/nom ».`; return; }
     if (model.projects().some(p => p.slug === model.slugify(name))) { need('.lock-err', m.node).textContent = 'Un projet porte déjà ce nom.'; return; }
     try {
-      const p = await model.createProject({ name, repos, linear: val('linear') || null, description: val('desc') });
+      const kind = kindNow(), handle = val('tiktok');
+      if (kind === 'social' && handle && !model.tiktokHandle(handle)) { need('.lock-err', m.node).textContent = 'Un compte TikTok s’écrit « @nom » (lettres, chiffres, point, tiret bas).'; return; }
+      const p = await model.createProject({ name, repos: kind === 'social' ? [] : repos, linear: kind === 'social' ? null : val('linear') || null, description: val('desc'),
+        kind, tiktok: kind === 'social' ? handle || null : null, icon: look?.icon ?? null, tint: look?.hue ?? null });
       m.close();
-      if (native.available() && document.documentElement.dataset.native === 'mac') { const r = await native.call('project', 'home', { project: p.id, repos: p.stack }, 600000); if (r.ok) folders.delete(p.id); }
+      if (p.kind !== 'social' && native.available() && document.documentElement.dataset.native === 'mac') { const r = await native.call('project', 'home', { project: p.id, repos: p.stack }, 600000); if (r.ok) folders.delete(p.id); }
       await go(p.id);
       toast(`Projet « ${p.name} » créé`);
     } catch (x) { need('.lock-err', m.node).textContent = errMsg(x); }
@@ -683,11 +719,11 @@ export const openAgent = (pid: string, id: string): void => { sessions.select(id
 // ---------- Page ----------
 /** Fil d'Ariane : Projets › projet › onglet › conversation Claude Code › sous-agent, chaque niveau ramenant à sa page. */
 function trailHTML(): string {
-  const p = model.byId(app.viewState().project), tab = curTab();
+  const p = model.byId(app.viewState().project), tab = curTab(p);
   const up: [string, string] = ['Projets', 'data-pj-open=""'];
   if (!p) return app.crumb('Projets');
-  if (tab === defaultTab()) return app.crumb(p.name, [up]);
-  const home: [string, string] = [p.name, `data-pj-tab="${defaultTab()}"`], label = TABS.find(x => x[0] === tab)?.[1] ?? '';
+  if (tab === defaultTab(p)) return app.crumb(p.name, [up]);
+  const home: [string, string] = [p.name, `data-pj-tab="${defaultTab(p)}"`], label = TABS.find(x => x[0] === tab)?.[1] ?? '';
   const talk = tab === 'sessions' ? sessions.current(p.id) : null;
   if (!talk) return app.crumb(label, [up, home]);
   const tabUp: [string, string] = [label, 'data-pj-tab="sessions"'];
@@ -695,8 +731,8 @@ function trailHTML(): string {
 }
 
 export function mount(main: HTMLElement): void {
-  sessions.stop(); salon.stop();
-  const p = model.byId(app.viewState().project), tab = curTab();
+  sessions.stop(); salon.stop(); recos.stop();
+  const p = model.byId(app.viewState().project), tab = curTab(p);
   if (p) sessions.preload(p);
   main.innerHTML = `<header class="toolbar">${app.tbLeft()}${trailHTML()}<div class="tb-side tb-right">${p ? '' : `<button class="btn btn-ghost" data-pj="new">${icon('plus')}<span>Nouveau projet</span></button>`}</div></header>
     <div class="todo pj"><div class="todo-in pj-in">${p ? detailHTML(p, tab) : `<div class="td-head"><h1>Projets</h1><p class="td-sub">Un projet réunit son dossier, ses dépôts, ses PR, ses tickets, ses tâches et ses notes.</p></div><div class="pj-list">${listHTML()}</div>`}</div></div>`;
@@ -709,7 +745,7 @@ export function mount(main: HTMLElement): void {
     if (t.closest('[data-pj-open]')) void go(null);
     else if (p && t.closest('[data-pj-talk]')) sessions.openSub(null);
     else if (p && t.closest('[data-pj-tab="sessions"]')) sessions.open(null);
-    else if (p && t.closest('[data-pj-tab]')) void go(p.id, defaultTab());
+    else if (p && t.closest('[data-pj-tab]')) void go(p.id, defaultTab(p));
   });
   if (p) void hydrate(root, p, tab);
   root.addEventListener('submit', async e => {
@@ -736,7 +772,7 @@ export function mount(main: HTMLElement): void {
     const t = target(e), open = t.closest('[data-pj-open]');
     if (open) { await go(open.dataset.pjOpen || null); return; }
     const tb = t.closest('[data-pj-tab]');
-    if (tb && p) { await app.setView({ type: 'projets', project: p.id, tab: tb.dataset.pjTab ?? defaultTab() }); return; }
+    if (tb && p) { await app.setView({ type: 'projets', project: p.id, tab: tb.dataset.pjTab ?? defaultTab(p) }); return; }
     // Case d'une note : la sélection suit, la barre se met à jour sans redessiner la liste.
     const pk = t.closest('[data-pj-pick]') as HTMLInputElement | null;
     if (pk && p) {
@@ -823,6 +859,17 @@ export function mount(main: HTMLElement): void {
     }
     if (act === 'new-note') { const n = await store.createNote({ title: '', body: `\n\n#${p.tag}` }); app.openNote(n.id); }
     if (act === 'tabs-more') { moreTabs(p, tab, b); return; }
+    if (act === 'icon') {
+      projIcons.picker(b, { icon: p.icon, hue: p.hue }, next => {
+        // L'en-tête change tout de suite ; la note du projet (et donc la barre latérale) suit à l'enregistrement.
+        const t = b.querySelector('.pi'); if (t) t.outerHTML = projIcons.tile({ ...next }, 'pi-lg pi-hop');
+        void (async () => {
+          try { if (next.icon !== p.icon) await model.setField(p, 'icône', next.icon); if (next.hue !== p.hue) await model.setField(p, 'couleur', next.hue); app.renderSidebar(); }
+          catch (x) { toast(errMsg(x)); }
+        })();
+      });
+      return;
+    }
     if (act === 'folder-menu') { folderMenu(root, p, tab, b); return; }
     if (act === 'pick' || act === 'home' || act === 'vscode' || act === 'finder' || act === 'terminal' || act === 'repo-clone' || act === 'repo-pick') { await folderAct(root, p, tab, act, b.dataset.repo ?? '', !!b.dataset.choose, b); return; }
     if (act === 'link-repo' && b.dataset.repo) { const role = model.guessRole(b.dataset.repo, !p.stack.length); await model.setRepos(p, [...p.stack, { name: b.dataset.repo, role }]); toast(`${b.dataset.repo} associé au projet · ${model.ROLES[role].label}`); }
