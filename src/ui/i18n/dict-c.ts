@@ -1192,4 +1192,6 @@ export default {
   'Conversation Codex introuvable.': 'Codex conversation not found.',
   'L\'app Codex n\'est pas installée sur ce Mac.': 'The Codex app isn’t installed on this Mac.',
   'Conversation Codex': 'Codex conversation',
+  'Envoyer mes choix': 'Send my choices',
+  'Autre réponse…': 'Another answer…',
 } satisfies Record<string, string>;

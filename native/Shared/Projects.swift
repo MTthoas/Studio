@@ -194,6 +194,8 @@ final class ProjectFolders {
     private let memoLock = NSLock()
     /// Une seule création de copie mère à la fois (les agents d'un groupe partent l'un après l'autre, mais par sécurité).
     private let groupLock = NSLock()
+    /// Un seul remplissage du stock de dépendances à la fois (Dependencies.swift).
+    let depsLock = NSLock()
     private func forgetMemo(_ id: String) { memoLock.lock(); memo[id] = nil; misses[id] = nil; memoLock.unlock() }
     private func tilde(_ p: String) -> String { p.replacingOccurrences(of: NSHomeDirectory(), with: "~") }
     /// État de chaque dépôt sur ce Mac, pour la page du projet (aussi sans dépôt principal, dès qu'un dossier mère existe).
@@ -446,10 +448,12 @@ final class ProjectFolders {
         return FileManager.default.fileExists(atPath: wt, isDirectory: &isDir) && isDir.boolValue ? wt : nil
     }
     /// Les copies isolées n'apparaissent pas dans `git status` du dépôt (exclusion locale, jamais commitée).
-    func excludeWorktrees(_ dir: String) {
+    func excludeWorktrees(_ dir: String) { exclude(dir, line: ".claude/worktrees/") }
+    /// Ajoute un motif à .git/info/exclude (ignoré localement, partagé par toutes les copies du dépôt).
+    func exclude(_ dir: String, line: String) {
         guard let gitDir = git(["rev-parse", "--git-common-dir"], in: dir)?.trimmingCharacters(in: .whitespacesAndNewlines), !gitDir.isEmpty else { return }
         let base = gitDir.hasPrefix("/") ? gitDir : dir + "/" + gitDir
-        let file = base + "/info/exclude", line = ".claude/worktrees/"
+        let file = base + "/info/exclude"
         let cur = (try? String(contentsOfFile: file, encoding: .utf8)) ?? ""
         if cur.split(separator: "\n").contains(where: { $0.trimmingCharacters(in: .whitespaces) == line }) { return }
         try? FileManager.default.createDirectory(atPath: base + "/info", withIntermediateDirectories: true)
@@ -682,6 +686,7 @@ final class ProjectFolders {
         if base == "HEAD", let e = ensureFirstCommit(dir) { return (nil, "Copie isolée impossible : \(e)") }
         // --no-track : la branche de l'agent ne « suit » pas la branche principale (sinon elle paraîtrait déjà poussée).
         let r = gitRun(["worktree", "add", "-q", "--no-track", "-b", "worktree-" + name, wt, base], in: dir, timeout: 60)
+        if r.ok { linkDependencies(wt, repo: dir) }
         return r.ok ? (wt, "") : (nil, "Copie isolée impossible : \(Self.gitError(r.err))")
     }
 
@@ -706,6 +711,7 @@ final class ProjectFolders {
         excludeWorktrees(dir)
         let wt = dir + "/.claude/worktrees/" + name
         let r = gitRun(["worktree", "add", "-q", "--no-track", "-b", "worktree-" + name, wt, ref], in: dir, timeout: 60)
+        if r.ok { linkDependencies(wt, repo: dir) }
         return r.ok ? (wt, "") : (nil, "Copie isolée impossible : \(Self.gitError(r.err))")
     }
 
@@ -776,14 +782,15 @@ final class ProjectFolders {
         let baseName = base.hasPrefix("origin/") ? String(base.dropFirst(7)) : base
         if Self.validBranch(branch) && branch != baseName && branch != "main" && branch != "master" {
             if gitRun(["rev-parse", "-q", "--verify", "refs/heads/" + branch], in: dir).ok {
-                if gitRun(["worktree", "add", "-q", wt, branch], in: dir, timeout: 60).ok { return (branch, true, "") }
+                if gitRun(["worktree", "add", "-q", wt, branch], in: dir, timeout: 60).ok { linkDependencies(wt, repo: dir); return (branch, true, "") }
             } else if gitRun(["rev-parse", "-q", "--verify", "refs/remotes/origin/" + branch], in: dir).ok {
-                if gitRun(["worktree", "add", "-q", "--track", "-b", branch, wt, "origin/" + branch], in: dir, timeout: 60).ok { return (branch, true, "") }
+                if gitRun(["worktree", "add", "-q", "--track", "-b", branch, wt, "origin/" + branch], in: dir, timeout: 60).ok { linkDependencies(wt, repo: dir); return (branch, true, "") }
             }
         }
         var next = "worktree-" + name, n = 1
         while gitRun(["rev-parse", "-q", "--verify", "refs/heads/" + next], in: dir).ok { n += 1; next = "worktree-\(name)-\(n)" }
         let r = gitRun(["worktree", "add", "-q", "--no-track", "-b", next, wt, base], in: dir, timeout: 60)
+        if r.ok { linkDependencies(wt, repo: dir) }
         return r.ok ? (next, false, "") : (nil, false, "Copie isolée impossible : \(Self.gitError(r.err))")
     }
 

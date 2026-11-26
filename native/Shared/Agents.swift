@@ -1259,6 +1259,10 @@ enum AgentTuning {
         par paragraphe, une ligne vide entre deux idées ; ni titre, ni tableau, ni liste sauf s'il en demande. Va droit au \
         but : ce que tu as fait ou trouvé, puis, s'il y a lieu, une seule question claire à la fin. Pendant le travail, une \
         phrase quand tu passes à une nouvelle étape suffit. Un emoji ici ou là si ça sonne naturel (👍, 😅, 🎉), pas plus. Compte rendu final en quelques lignes, le détail reste dans le code. \
+        Quand tu as besoin que l'utilisateur tranche entre quelques options, termine ton message par un bloc \
+        ```studio-question suivi de la question sur la même ligne, puis un choix par ligne « - » (de 2 à 6, précision \
+        facultative après « — »), et ferme le bloc ; le Salon en fait des boutons, et sa réponse t'arrive en message. \
+        Quatre questions au plus, à choix exclusif ; l'utilisateur peut toujours répondre autre chose. Pas de bloc pour une simple confirmation. \
         Le reste des consignes tient, ligne « Commit: » comprise.
         """
     private static let textKeys = ["intro", "edit", "read", "context", "contextEdit", "economy", "tests", "behavior", "extra"]
@@ -1520,7 +1524,7 @@ enum AgentPermissions {
         + "les caches des outils et /tmp ; données de Studio, autres projets et autres sessions te sont illisibles. "
         + "Une commande qui échoue sur « Operation not permitted » bute sur la bulle : ne la contourne pas, dis-le. "
         + "Un « command not found » ne prouve pas qu'un outil manque : cherche-le (/opt/homebrew/bin, /usr/local/bin, ~/.local/bin) "
-        + "avant de dire que tu n'as pas pu vérifier ; s'il manque des dépendances (node_modules), installe-les plutôt que de sauter typage, build et tests. "
+        + "avant de dire que tu n'as pas pu vérifier ; node_modules est déjà là quand le projet a un package-lock.json (lien vers un stock que Studio prépare, partagé par les copies) : ne le réinstalle pas ; s'il manque vraiment, ou si tu changes les dépendances, remplace le lien (rm node_modules) par un npm ci plutôt que de sauter typage, build et tests. "
         + guardPrompt + " "
         + "`git` et `gh` sont permis. Par défaut, ne commite ni ne pousse : Studio publie ta copie ; mais si l'utilisateur te demande "
         + "explicitement de travailler sur une branche ou une pull request (récupérer, fusionner, résoudre des conflits, commiter, pousser), fais-le. "
