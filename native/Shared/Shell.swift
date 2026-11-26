@@ -139,6 +139,18 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
         DispatchQueue.main.async { self.web?.evaluateJavaScript("window.carnet && window.carnet.reply && window.carnet.reply(\(json))", completionHandler: nil) }
     }
 
+    #if os(macOS)
+    /// Où chercher les conversations Codex d'un projet : dossiers de ses dépôts, dossier mère, dépôts GitHub.
+    static func codexScope(_ pid: String, _ dir: String) -> CodexSessions.Scope {
+        let folders = ProjectFolders.shared, repos = folders.repos(pid)
+        let others = repos.dropFirst().compactMap { folders.repoPath(pid, $0.name) }
+        let roots = ([dir] + others).map { ($0 as NSString).standardizingPath }
+        var names = Set(repos.map { $0.name.lowercased() })
+        if let r = folders.remote(dir) { names.insert(r.lowercased()) }
+        return CodexSessions.Scope(roots: Array(NSOrderedSet(array: roots)) as? [String] ?? roots, home: folders.home(pid).map { ($0 as NSString).standardizingPath }, repos: names)
+    }
+    #endif
+
     private func project(_ action: String, id: Int, body: [String: Any]) {
         #if os(macOS)
         let folders = ProjectFolders.shared
@@ -220,9 +232,26 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
             }
         case "sessions":
             guard let dir = folders.path(pid) else { answer(["id": id, "ok": true, "sessions": [], "found": false]); return }
-            ClaudeSessions.shared.list(project: dir) { var r = $0; r["id"] = id; self.answer(r) }
+            // Conversations Codex (OpenAI) à part, dans `codex` : seul le Salon les montre (les autres vues lancent Claude Code).
+            ClaudeSessions.shared.list(project: dir) { claude in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let scope = Self.codexScope(pid, dir)
+                    CodexSessions.shared.list(scope) { codex in
+                        var r = claude; r["id"] = id
+                        if codex["found"] as? Bool == true { r["codex"] = codex["sessions"] ?? [] }
+                        self.answer(r)
+                    }
+                }
+            }
         case "session":
             guard let dir = folders.path(pid) else { answer(["id": id, "ok": false, "message": "Choisis d'abord le dossier du projet."]); return }
+            let sid = body["session"] as? String ?? ""
+            if sid.hasPrefix(CodexSessions.prefix) {
+                DispatchQueue.global(qos: .userInitiated).async {
+                    CodexSessions.shared.detail(Self.codexScope(pid, dir), session: sid) { var r = $0; r["id"] = id; self.answer(r) }
+                }
+                return
+            }
             ClaudeSessions.shared.detail(project: dir, session: body["session"] as? String ?? "") { var r = $0; r["id"] = id; self.answer(r) }
         case "subagent":
             guard let dir = folders.path(pid) else { answer(["id": id, "ok": false, "message": "Choisis d'abord le dossier du projet."]); return }
@@ -234,6 +263,14 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
             let since = body["since"] as? String ?? ""
             guard since.count == 10 else { answer(["id": id, "ok": false, "message": "Date invalide."]); return }
             ClaudeSessions.shared.journal(projects: list, since: since) { var r = $0; r["id"] = id; self.answer(r) }
+        case "codexOpen":
+            // Reprend une conversation Codex : Terminal (`codex resume`) ou app Codex.
+            guard let dir = folders.path(pid) else { answer(["id": id, "ok": false, "message": "Choisis d'abord le dossier du projet."]); return }
+            let sid = body["session"] as? String ?? "", app = body["app"] as? String ?? "terminal"
+            DispatchQueue.global(qos: .userInitiated).async {
+                let scope = Self.codexScope(pid, dir)
+                DispatchQueue.main.async { var r = CodexSessions.shared.open(scope, session: sid, app: app, fallback: dir); r["id"] = id; self.answer(r) }
+            }
         case "deleteSession":
             // Supprime une conversation : son journal part dans la corbeille, et ses agents terminés sont oubliés.
             let sid = body["session"] as? String ?? ""

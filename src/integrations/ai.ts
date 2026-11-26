@@ -166,7 +166,12 @@ function noteTools(ctx: RunContext, scope: sc.Scope): Tool[] {
   const picked = new Set(ctx.notes ?? []);
   // L'IA ne lit jamais une note que l'utilisateur n'a pas sélectionnée (une note chiffrée seulement si elle est déverrouillée).
   const visible = (n: Note) => picked.has(n.id) && linkable(n) && sc.noteIn(scope, n);
-  const find = (t: string) => { const n = store.findByTitle(t || ''); return n && visible(n) ? n : null; };
+  // Par titre, parmi les notes visibles d'abord : deux notes peuvent porter le même titre (« Media » d'un autre projet).
+  const find = (t: string) => {
+    const k = fold(t.trim()); if (!k) return null;
+    const n = store.index().live.find(x => visible(x) && fold(x.title.trim()) === k) ?? store.findByTitle(t);
+    return n && visible(n) ? n : null;
+  };
   const own = scope.project?.tag;
   return [
     { name: 'chercher_notes', description: 'Cherche dans les notes que l’utilisateur a sélectionnées pour toi (titre et contenu) ; les autres te sont inaccessibles. Renvoie jusqu’à 8 notes avec un extrait.',
@@ -216,6 +221,18 @@ function noteTools(ctx: RunContext, scope: sc.Scope): Tool[] {
       schema: { type: 'object', properties: { titre: { type: 'string' }, texte: { type: 'string', description: 'Markdown à ajouter' } }, required: ['titre', 'texte'] },
       describe: i => `Ajouter du texte à « ${str(i.titre)} »`, preview: i => str(i.texte),
       run: async i => { const n = find(str(i.titre)); if (!n) throw new Error(`Note introuvable, privée ou non sélectionnée par l’utilisateur :${str(i.titre)}`); await appendTo(n, str(i.texte)); ctx.onWrite?.(n); return 'Texte ajouté.'; } },
+    { name: 'remplacer_note', write: true, description: 'Remplace tout le contenu d’une note existante par une nouvelle version (mettre à jour, réécrire, réorganiser). Donne la note entière, pas seulement les changements. L’ancienne version reste dans l’historique de la note. Demande l’accord de l’utilisateur.',
+      schema: { type: 'object', properties: { titre: { type: 'string' }, contenu: { type: 'string', description: 'Nouveau contenu complet, en Markdown' } }, required: ['titre', 'contenu'] },
+      describe: i => `Remplacer le contenu de « ${str(i.titre)} »`, preview: i => str(i.contenu),
+      run: async i => {
+        const n = find(str(i.titre)); if (!n) throw new Error(`Note introuvable, privée ou non sélectionnée par l’utilisateur :${str(i.titre)}`);
+        const text = str(i.contenu).trim(); if (!text) throw new Error('Contenu vide : la note n’a pas été modifiée.');
+        // Le projet de la note ne change pas : ses tags #projet/… sont gardés, jamais ceux qu'aurait écrits le modèle.
+        const tags = (store.getBody(n) ?? '').match(/(^|\s)#projet\/[\p{L}\d][\p{L}\d_-]*/gu)?.map(t => t.trim()) ?? [];
+        const body = tags.length ? `${stripProjectTags(text).trim()}\n\n${[...new Set(tags)].join(' ')}` : text;
+        store.touch(n); store.setBody(n, body + '\n'); n.updated = Date.now(); await store.saveNote(n); ctx.onWrite?.(n);
+        return 'Note remplacée (l’ancienne version est dans l’historique).';
+      } },
   ];
 }
 
