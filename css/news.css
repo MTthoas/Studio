@@ -1,42 +1,47 @@
 /* ---------- Nouveautés et mise à jour prête (features/news.ts) ----------
-   Une fiche à la fois : en-tête, phrase, puis un bento sur six colonnes (illustration du sujet sur papier en
-   grain, une tuile par point). Tout est neutre : filets fins, ni dégradé ni halo ; la teinte --nw-hue ne fait
-   que nuancer le papier, et seule une pastille d'état porte une couleur. */
-.modal.nw { width: min(940px, 100%); height: min(660px, calc(100dvh - 40px)); padding: 0; overflow: hidden; display: flex; }
-.modal.nw.nw-solo { width: min(860px, 100%); height: min(600px, calc(100dvh - 40px)); }
-.nw .modal-body { display: flex; width: 100%; min-height: 0; }
-.nw-text { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.nw-stage { flex: 1; min-height: 0; overflow-y: auto; }
-.nw-art { display: flex; flex-direction: column; min-height: 100%; padding: 32px 32px 12px; animation: nw-in .18s ease-out; }
-@keyframes nw-in { from { opacity: 0; } }
-.nw-meta { margin: 0 0 10px; color: var(--text-3); font-size: var(--t-1); font-weight: 500; }
-.nw-meta i, .nw-where i { font-style: normal; margin: 0 6px; }
-.nw-head h3 { margin: 0 0 12px; font-size: var(--t-5); font-weight: 600; line-height: 1.25; letter-spacing: -.01em; }
-.nw-lead { margin: 0 0 20px; max-width: 64ch; color: var(--text-2); font-size: var(--t-3); line-height: 1.55; }
-.nw-art code { background: var(--code); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
+   Une fiche est un bento sur douze colonnes : en-tête (date, titre, phrase), illustration du sujet, une tuile par
+   point, « Où le trouver ». La page montre la dernière fiche en entier, puis les précédentes en mosaïque de cartes.
+   Tout est neutre : filets fins, ni dégradé ni halo ; la teinte --nw-hue ne fait que nuancer le fond d'une
+   illustration, et seule une pastille d'état porte une couleur. Le mouvement suit un geste : entrée d'une fiche,
+   survol d'une carte (elle se soulève, son schéma se déroule), appui. */
 
-/* Bento : l'illustration tient la moitié gauche sur deux rangées, deux tuiles à sa droite, puis une rangée de tuiles égales. */
-.nw-bento { flex: 1; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); grid-auto-rows: minmax(104px, auto); gap: 10px; }
-.nw-tile, .nw-fig { margin: 0; min-width: 0; border: 1px solid var(--border); border-radius: 12px; animation: nw-up .26s cubic-bezier(.2, .7, .2, 1) backwards; }
-.nw-tile { grid-column: span 3; padding: 14px 16px 15px; background: var(--surface); }
-.nw-tile.nw-tall { grid-row: span 2; }
-.nw-tile.nw-s2 { grid-column: span 2; }
-.nw-tile.nw-s6 { grid-column: span 6; }
-.nw-bento > :nth-child(2) { animation-delay: .04s; }
-.nw-bento > :nth-child(3) { animation-delay: .08s; }
-.nw-bento > :nth-child(4) { animation-delay: .12s; }
-.nw-bento > :nth-child(5) { animation-delay: .16s; }
-.nw-bento > :nth-child(6) { animation-delay: .2s; }
-@keyframes nw-up { from { opacity: 0; transform: translateY(6px); } }
-.nw-tile h4 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; font-size: var(--t-2); font-weight: 600; line-height: 1.3; }
-.nw-tile h4 .ic { flex: none; width: 15px; height: 15px; color: var(--text-3); }
-.nw-tile p { margin: 0; color: var(--text-2); font-size: var(--t-2); line-height: 1.5; }
-/* Tuile « Où le trouver » : le fil de menus, puis le raccourci en bas. */
-.nw-here { display: flex; flex-direction: column; align-items: flex-start; height: 100%; }
-.nw-here .btn { margin-top: auto; }
-.nw-here .nw-where { margin-bottom: 10px; }
+/* ---- Bento d'une fiche ---- */
+.nw-bento { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-rows: minmax(124px, auto); gap: 10px; }
+.nw-tile { position: relative; grid-column: span var(--w, 12); min-width: 0; margin: 0; padding: 18px 20px 19px; border: 1px solid var(--border); border-radius: 14px; background: var(--surface);
+  transition: border-color var(--mo-d2); animation: nw-up var(--mo-d4) var(--mo-out) backwards; animation-delay: calc(var(--i, 0) * 45ms); }
+.nw-tile:hover { border-color: var(--border-2); }
+@keyframes nw-up { from { opacity: 0; translate: 0 var(--mo-dy); } }
+.nw-bento code, .nw-card code { background: var(--code); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; font-size: .92em; }
+
+/* En-tête : l'icône de la fonction et la date en haut, le titre et la phrase posés en bas. */
+.nw-hd { grid-column: 1 / span 7; grid-row: 1 / span 2; display: flex; flex-direction: column; justify-content: space-between; gap: 32px; padding: 22px 26px 26px; }
+.nw-meta { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--text-3); font-size: var(--t-1); font-weight: 500; }
+.nw-ico { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid var(--border); border-radius: 9px; color: var(--text-2); }
+.nw-ico .ic { width: 16px; height: 16px; }
+.nw-hd .nw-ico { margin-right: 4px; }
+.nw-tag { display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border: 1px solid var(--border-2); border-radius: 999px; color: var(--text-2); font-size: var(--t-1); font-weight: 500; }
+.nw-tag.nw-fresh { border-color: transparent; background: var(--accent-soft); color: var(--accent-text); }
+.nw-hd h2 { margin: 0 0 10px; font-size: var(--t-6); font-weight: 600; letter-spacing: -.02em; line-height: 1.15; text-wrap: balance; }
+.nw-lead { margin: 0; max-width: 54ch; color: var(--text-2); font-size: var(--t-4); line-height: 1.5; text-wrap: pretty; }
+
+/* Tuile d'un point : la marque en haut (icône, ou touches à taper), le texte posé en bas. */
+.nw-bit { display: flex; flex-direction: column; align-items: flex-start; }
+.nw-bit > .nw-ico, .nw-keys { margin-bottom: auto; }
+.nw-keys { display: flex; gap: 6px; }
+.nw-keys kbd { display: inline-grid; place-items: center; min-width: 32px; height: 32px; padding: 0 9px; border: 1px solid var(--border-2); border-bottom-width: 2px; border-radius: 8px; background: var(--surface-2); color: var(--text); font: 500 var(--t-3)/1 var(--mono); }
+.nw-bit h4 { margin: 18px 0 4px; font-size: var(--t-3); font-weight: 600; letter-spacing: -.01em; line-height: 1.3; }
+.nw-bit p { margin: 0; color: var(--text-2); font-size: var(--t-2); line-height: 1.5; text-wrap: pretty; }
+.nw-bit .nw-list { margin-top: 6px; align-self: stretch; }
+/* « Où le trouver » : le fil de menus, puis le raccourci vers la fonction. */
+.nw-here { display: flex; flex-direction: column; align-items: flex-start; }
+.nw-here > .nw-ico { margin-bottom: auto; }
+.nw-here h4 { margin: 18px 0 6px; color: var(--text-3); font-size: var(--t-1); font-weight: 500; }
+.nw-where { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 0; font-size: var(--t-3); line-height: 1.3; }
 .nw-where b { font-weight: 500; color: var(--text-2); }
-.nw-where b:last-child { color: var(--text); }
+.nw-where b:last-of-type { color: var(--text); font-weight: 600; }
+.nw-where .ic { width: 13px; height: 13px; color: var(--text-3); }
+.nw-here .btn { margin-top: 14px; transition: background .12s, gap var(--mo-d2) var(--mo-out); }
+.nw-here .btn:hover { gap: 9px; }
 .nw-link { margin: 12px 0 0; font-size: var(--t-2); }
 .nw-link a { color: var(--text); font-weight: 500; text-decoration: underline; text-decoration-color: var(--border-2); text-underline-offset: 3px; }
 
@@ -47,58 +52,150 @@
 .nw-list .nw-more { color: var(--text-3); font-size: var(--t-1); }
 .up .nw-list { margin-top: 12px; }
 
-/* Liste par date : remplace la fiche tant qu'elle est ouverte. */
-.nw-index { flex: 1; min-height: 0; overflow-y: auto; padding: 28px 28px 12px; display: flex; flex-direction: column; gap: 1px; }
-.nw-group { margin: 14px 10px 4px; color: var(--text-3); font-size: var(--t-1); font-weight: 500; }
-.nw-group:first-child { margin-top: 0; }
-.nw-item { flex: none; display: flex; align-items: center; gap: 9px; min-height: 30px; padding: 4px 10px; border-radius: var(--r); color: var(--text-2); font-weight: 500; }
-.nw-item span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.nw-item:hover { background: var(--hover); color: var(--text); }
-.nw-item[aria-current] { background: var(--active); color: var(--text); }
-.nw-new { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
-.nw-foot { display: flex; align-items: center; gap: 8px; padding: 12px 20px 14px 32px; }
-.nw-foot [data-nw="all"] { margin-left: -10px; }
-.nw-count { flex: 1; color: var(--text-3); font-size: var(--t-1); font-variant-numeric: tabular-nums; }
-
-/* Illustration : papier grenu, puis la scène tirée du schéma de la nouveauté. */
-.nw-fig { --nw-hue: var(--c-gray); grid-column: span 3; grid-row: span 2; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; padding: 18px; min-height: 218px;
-  background: color-mix(in srgb, var(--nw-hue) 4%, var(--surface-2)); }
+/* ---- Illustration : le schéma de la nouveauté ---- */
+.nw-fig { --nw-hue: var(--c-gray); grid-column: 8 / span 5; grid-row: 1 / span var(--rows, 2); overflow: hidden; display: grid; place-items: center; padding: 24px; background: color-mix(in srgb, var(--nw-hue) 5%, var(--surface-2)); }
 .nw-svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .nw-paper { fill: color-mix(in srgb, var(--nw-hue) 10%, var(--text)); opacity: .1; }
-.nw-sc { position: relative; min-width: 0; max-width: 100%; margin: 0; padding: 0; list-style: none; font-size: var(--t-3); --nw-line: color-mix(in srgb, var(--text) 30%, transparent); }
+.nw-sc { position: relative; min-width: 0; max-width: 100%; margin: 0; padding: 0; list-style: none; font-size: var(--t-3); --nw-line: color-mix(in srgb, var(--text) 26%, transparent); }
 .nw-sc ul { margin: 0; padding: 0; list-style: none; }
 .nw-sc .ic { flex: none; width: 16px; height: 16px; color: var(--text-3); }
-.nw-node { display: inline-flex; align-items: center; gap: 9px; max-width: 100%; padding: 9px 15px 9px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text-2); }
+.nw-node { display: inline-flex; align-items: center; gap: 9px; min-width: 0; max-width: 100%; padding: 9px 15px 9px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text-2); transition: border-color var(--mo-d2), color var(--mo-d2); }
 .nw-node b, .nw-bar span, .nw-sc-panel li span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nw-node b { font-weight: 500; }
-/* Parcours : un escalier, chaque étape reliée à la précédente par un coude ; la dernière ressort. */
-.nw-sc-flow { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
-.nw-sc-flow li { position: relative; margin-left: calc(var(--k) * 36px); }
-.nw-sc-flow li + li::before { content: ''; position: absolute; left: -18px; top: -12px; width: 18px; height: calc(50% + 12px); border: solid var(--nw-line); border-width: 0 0 1px 1px; border-bottom-left-radius: 8px; }
+/* Grande illustration (bento) : le schéma prend de la place. */
+.nw-fig .nw-sc { font-size: var(--t-4); }
+.nw-fig .nw-sc .ic { width: 18px; height: 18px; }
+.nw-fig .nw-node { gap: 11px; padding: 12px 20px 12px 15px; border-radius: 12px; }
+.nw-fig .nw-sc-flow { gap: 14px; }
+.nw-fig .nw-sc-flow li { gap: 14px; }
+.nw-fig .nw-sc-flow li + li::before, .nw-fig .nw-sc-flow li + li::after { height: calc(100% - 6px); }
+.nw-fig .nw-sc-panel { width: min(100%, 380px); font-size: var(--t-3); }
+.nw-fig .nw-sc-panel li { padding: 13px 14px; }
+.nw-fig .nw-bar { padding: 10px 14px; }
+.nw-fig .nw-hub { width: 56px; height: 56px; border-radius: 14px; }
+.nw-fig .nw-sc .nw-hub .ic { width: 24px; height: 24px; }
+/* Parcours : un rail numéroté. Au survol, le trait se remplit d'une étape à la suivante. */
+.nw-sc-flow { display: flex; flex-direction: column; gap: 10px; }
+.nw-sc-flow li { position: relative; display: flex; align-items: center; gap: 12px; min-width: 0; animation: nw-step var(--mo-d4) var(--mo-out) backwards; animation-delay: calc(var(--k) * 70ms + 140ms); }
+@keyframes nw-step { from { opacity: 0; translate: -6px 0; } }
+.nw-pt { position: relative; z-index: 1; flex: none; display: grid; place-items: center; width: 20px; height: 20px; border: 1px solid var(--nw-line); border-radius: 50%; color: var(--text-3); font: 500 var(--t-1)/1 var(--font); font-variant-numeric: tabular-nums;
+  transition: border-color var(--mo-d2), color var(--mo-d2), background var(--mo-d2); transition-delay: calc(var(--k) * 90ms); }
+.nw-sc-flow li + li::before, .nw-sc-flow li + li::after { content: ''; position: absolute; left: 9.5px; bottom: calc(50% + 10px); width: 1px; height: calc(100% - 10px); background: var(--nw-line); }
+.nw-sc-flow li + li::after { background: var(--text); transform: scaleY(0); transform-origin: top; transition: transform var(--mo-d3) var(--mo-in-out); transition-delay: calc((var(--k) - 1) * 90ms); }
+.nw-sc-flow li:last-child .nw-pt { border-color: var(--text); background: var(--text); color: var(--surface); }
 .nw-sc-flow li:last-child .nw-node { border-color: var(--nw-line); color: var(--text); }
 .nw-sc-flow li:last-child .ic { color: var(--text); }
-/* Éléments : l'icône de la fonction, reliée d'un trait au groupe de ce qu'elle réunit. */
+.nw-hot:hover .nw-sc-flow li + li::after { transform: scaleY(1); }
+.nw-hot:hover .nw-pt { border-color: var(--text); color: var(--text); }
+.nw-hot:hover .nw-sc-flow li:last-child .nw-pt { color: var(--surface); }
+/* Éléments : l'icône de la fonction, reliée d'un trait au groupe de ce qu'elle réunit. Au survol, ils se soulèvent tour à tour. */
 .nw-sc-hub { display: flex; flex-direction: column; align-items: center; }
-.nw-hub { display: grid; place-items: center; width: 46px; height: 46px; border: 1px solid var(--nw-line); border-radius: 10px; background: var(--surface); }
+.nw-hub { display: grid; place-items: center; width: 46px; height: 46px; border: 1px solid var(--nw-line); border-radius: 12px; background: var(--surface); }
 .nw-sc .nw-hub .ic { width: 20px; height: 20px; color: var(--text); }
 .nw-sc-hub ul { position: relative; display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 16px; padding: 12px; border: 1px dashed var(--nw-line); border-radius: 14px; }
 .nw-sc-hub ul::before { content: ''; position: absolute; left: 50%; top: -17px; height: 16px; border-left: 1px solid var(--nw-line); }
-/* Panneau d'exemple : une barre de titre, puis ses lignes ; l'état en point de couleur. */
+.nw-sc-hub li { min-width: 0; transition: translate var(--mo-d3) var(--mo-out); transition-delay: calc(var(--k) * 45ms); }
+.nw-hot:hover .nw-sc-hub li { translate: 0 -2px; }
+.nw-hot:hover .nw-sc-hub .nw-node { border-color: var(--nw-line); color: var(--text); }
+/* Panneau d'exemple : une barre de titre, puis ses lignes ; l'état en point de couleur. Au survol, les lignes s'éclairent tour à tour. */
 .nw-sc-panel { width: min(100%, 340px); font-size: var(--t-2); border: 1px solid var(--border); border-radius: 10px; background: var(--surface); overflow: hidden; }
 .nw-bar { display: flex; align-items: center; gap: 8px; margin: 0; padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--text-3); font-size: var(--t-1); font-weight: 500; }
-.nw-sc-panel li { display: flex; align-items: center; gap: 9px; padding: 10px 12px; }
+.nw-sc-panel li { display: flex; align-items: center; gap: 9px; padding: 10px 12px; transition: background var(--mo-d2); transition-delay: calc(var(--k) * 60ms); }
 .nw-sc-panel li + li { border-top: 1px solid var(--border); }
 .nw-sc-panel li b { flex: none; font-weight: 500; }
 .nw-sc-panel li span { flex: 1; color: var(--text-3); font-size: var(--t-1); text-align: right; }
 .nw-sc-panel li i { flex: none; width: 6px; height: 6px; border-radius: 50%; }
+.nw-hot:hover .nw-sc-panel li { background: var(--hover); }
 
-@media (prefers-reduced-motion: reduce) { .nw-art, .nw-tile, .nw-fig { animation: none; } }
-/* Fenêtre étroite : une colonne, l'illustration en tête. */
+/* ---- Fenêtre d'une fiche ---- */
+.modal.nw { width: min(1060px, 100%); height: min(730px, calc(100dvh - 40px)); padding: 0; overflow: hidden; display: flex; }
+.modal.nw.nw-solo { width: min(940px, 100%); height: min(560px, calc(100dvh - 40px)); }
+.nw .modal-body { display: flex; width: 100%; min-height: 0; }
+.nw-text { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.nw-stage { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 14px 0; container-type: inline-size; }
+/* La fenêtre garde sa hauteur d'une fiche à l'autre (les boutons ne bougent pas) : les trois premières rangées se partagent la place, les suivantes prennent celle de leur texte. */
+.nw-art { height: 100%; }
+.nw-art .nw-bento { height: 100%; grid-template-rows: repeat(3, minmax(min-content, 1fr)); grid-auto-rows: auto; }
+.nw-art .nw-tile { min-height: 124px; }
+.nw-foot { display: flex; align-items: center; gap: 8px; padding: 12px 14px; }
+.nw-count { flex: 1; padding: 0 8px; color: var(--text-3); font-size: var(--t-1); font-variant-numeric: tabular-nums; }
+
+/* ---- Page ---- */
+.nwp-in { max-width: 1120px; margin: 0 auto; padding: 48px 40px 72px; container-type: inline-size; }
+.nwp-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px 24px; flex-wrap: wrap; margin-bottom: 26px; }
+.nwp-find { display: flex; align-items: center; gap: 8px; width: 260px; height: 32px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--text-3); transition: border-color var(--mo-d2), color var(--mo-d2), width var(--mo-d4) var(--mo-out); }
+.nwp-find:hover { border-color: var(--border-2); }
+.nwp-find:focus-within { width: 320px; border-color: var(--border-2); color: var(--text-2); }
+.nwp-find .ic { flex: none; width: 14px; height: 14px; }
+.nwp-find input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: 0; background: none; color: var(--text); font: 400 var(--t-2) var(--font); }
+.nwp-find input::placeholder { color: var(--text-3); }
+.nwp-wk { position: sticky; top: 0; z-index: 2; display: flex; align-items: baseline; gap: 8px; margin: 34px 0 6px; padding: 10px 2px; background: var(--bg); font-size: var(--t-2); font-weight: 600; }
+.nwp-wk span { color: var(--text-3); font-weight: 400; font-variant-numeric: tabular-nums; }
+.nwp-week:first-child .nwp-wk { margin-top: 0; }
+.nwp-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 10px; }
+.nwp-none { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 72px 20px; color: var(--text-3); text-align: center; }
+.nwp-none .ic { width: 22px; height: 22px; }
+.nwp-none p { margin: 0; color: var(--text-2); font-size: var(--t-3); }
+
+/* Carte : le schéma en tête, puis la date, le titre et la phrase ; une carte large les pose côte à côte. Toute la carte ouvre la fiche. */
+.nw-card { --nw-hue: var(--c-gray); position: relative; grid-column: span var(--w, 4); display: flex; flex-direction: column; min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 14px; background: var(--surface);
+  transition: border-color var(--mo-d2), translate var(--mo-d3) var(--mo-out), scale var(--mo-d1); animation: nw-up var(--mo-d4) var(--mo-out) backwards; animation-delay: calc(var(--i, 0) * 30ms); }
+.nw-card:hover { border-color: var(--border-2); translate: 0 -2px; }
+.nw-card:active { scale: var(--mo-press-row); }
+.nw-card:has(button:focus-visible) { border-color: var(--text-3); box-shadow: 0 0 0 3px var(--accent-soft); }
+.nw-card-tx { flex: 1; display: flex; flex-direction: column; gap: 7px; min-width: 0; padding: 16px 18px 18px; }
+.nw-card h3 { margin: 2px 0 0; font-size: var(--t-3); font-weight: 600; letter-spacing: -.01em; line-height: 1.3; }
+.nw-card h3 button { font: inherit; letter-spacing: inherit; color: inherit; text-align: left; outline: 0; }
+.nw-card h3 button::after { content: ''; position: absolute; inset: 0; }
+.nw-card-l { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; margin: 0; color: var(--text-2); font-size: var(--t-2); line-height: 1.5; }
+.nw-card-fig { order: -1; display: grid; place-items: center; min-width: 0; min-height: 168px; padding: 16px 18px; border-bottom: 1px solid var(--border); background: color-mix(in srgb, var(--nw-hue) 4%, var(--surface-2)); }
+.nw-card-fig .nw-sc { font-size: var(--t-1); }
+.nw-card-fig .nw-sc .ic { width: 13px; height: 13px; }
+.nw-card-fig .nw-node { gap: 7px; padding: 5px 10px 5px 8px; border-radius: 8px; }
+.nw-card-fig .nw-sc-flow { gap: 7px; }
+.nw-card-fig .nw-sc-flow li { gap: 9px; animation: none; }
+.nw-card-fig .nw-pt { width: 16px; height: 16px; font-size: 0; }
+.nw-card-fig .nw-sc-flow li + li::before, .nw-card-fig .nw-sc-flow li + li::after { left: 7.5px; bottom: calc(50% + 8px); height: calc(100% - 9px); }
+.nw-card-fig .nw-hub { width: 34px; height: 34px; border-radius: 10px; }
+.nw-card-fig .nw-sc .nw-hub .ic { width: 15px; height: 15px; }
+.nw-card-fig .nw-sc-hub ul { gap: 6px; margin-top: 12px; padding: 8px; border-radius: 12px; }
+.nw-card-fig .nw-sc-hub ul::before { top: -13px; height: 12px; }
+.nw-card-fig .nw-sc-panel { width: min(100%, 280px); font-size: var(--t-1); }
+.nw-card-fig .nw-bar { padding: 6px 10px; }
+.nw-card-fig .nw-sc-panel li { padding: 6px 10px; }
+.nw-card.nw-wide { flex-direction: row; }
+.nw-wide .nw-card-tx { gap: 8px; padding: 22px 24px 22px; }
+.nw-wide .nw-meta { margin-bottom: 14px; }
+.nw-card-k { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; margin: auto 0 0; padding: 22px 0 0; list-style: none; color: var(--text-2); font-size: var(--t-1); font-weight: 500; }
+.nw-card-k li { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.nw-card-k .ic { flex: none; width: 14px; height: 14px; color: var(--text-3); }
+.nw-card-k span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nw-wide h3 { font-size: var(--t-5); letter-spacing: -.015em; line-height: 1.2; }
+.nw-wide .nw-card-l { font-size: var(--t-3); }
+.nw-wide .nw-card-fig { order: 0; flex: none; width: 44%; border-bottom: 0; border-left: 1px solid var(--border); }
+
+@media (prefers-reduced-motion: reduce) {
+  .nw-tile, .nw-card, .nw-sc-flow li { animation: none; }
+  .nw-card:hover, .nw-hot:hover .nw-sc-hub li { translate: none; }
+}
+/* Zone étroite (fenêtre réduite, barre latérale ouverte, téléphone) : le bento passe sur une colonne, la mosaïque sur deux puis une. */
+@container (max-width: 780px) {
+  .nw-bento { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: auto; }
+  .nw-bento > .nw-tile { grid-column: span 1; grid-row: auto; }
+  .nw-bento > .nw-hd, .nw-bento > .nw-fig, .nw-bento > .nw-here, .nw-bento > .nw-bit:only-of-type { grid-column: 1 / -1; }
+  .nw-hd { gap: 22px; padding: 18px 20px 20px; }
+  .nw-card { grid-column: span 6; }
+  .nw-card.nw-wide { flex-direction: column; grid-column: 1 / -1; }
+  .nw-wide .nw-card-fig { order: -1; width: auto; border-left: 0; border-bottom: 1px solid var(--border); }
+  .nw-wide .nw-meta { margin-bottom: 0; }
+  .nw-card-k { display: none; }
+}
+@container (max-width: 520px) {
+  .nw-bento { grid-template-columns: minmax(0, 1fr); }
+  .nw-card, .nw-card.nw-wide { grid-column: 1 / -1; }
+}
 @media (max-width: 680px) {
-  .modal.nw, .modal.nw.nw-solo { height: min(680px, calc(100dvh - 40px)); }
-  .nw-art { padding: 22px 16px 10px; }
-  .nw-bento { grid-template-columns: minmax(0, 1fr); grid-auto-rows: auto; }
-  .nw-bento > * { grid-column: auto !important; grid-row: auto !important; }
-  .nw-fig { min-height: 0; padding: 16px; }
-  .nw-foot { padding-left: 16px; }
+  .nwp-in { padding: 28px 16px 48px; }
+  .nwp-find, .nwp-find:focus-within { width: 100%; }
+  .nw-stage { padding: 10px 10px 0; }
 }
