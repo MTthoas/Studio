@@ -54,6 +54,17 @@ interface Item {
 
 // Les plus récentes d'abord.
 const NEWS: Item[] = [
+  { id: 'salon-plein-ecran-20261128', date: '2026-11-28', icon: 'sparkle', hue: 'violet', mac: true,
+    title: 'Salon plein écran',
+    lead: 'Le Salon occupe tout l’écran : le projet se choisit en tête de la liste des fils, rangés par urgence.',
+    bits: [
+      ['list', 'Fils par urgence', 'ceux qui attendent une réponse d’abord, puis au travail, prêts à publier, terminés'],
+      ['frame', 'Vue Design', 'les captures des agents en grand, et l’aperçu du site local en trois largeurs'],
+      ['keyboard', 'Champ', '`@` écrit à un agent, `[[` lie une note, `/` lance une commande ou insère un skill'],
+      ['cpu', 'Choix du modèle', 'un modèle par niveau de tâche ; une interface complexe part sur le modèle requis'],
+    ],
+    where: ['Salon'],
+    visual: { kind: 'flow', steps: [['Consigne', 'blue', 'compose'], ['Équipe', 'amber', 'bot'], ['Design', 'violet', 'frame'], ['Publication', 'green', 'upload']] } },
   { id: 'social-recos-photo-20261127', date: '2026-11-27', icon: 'camera', hue: 'pink', mac: true,
     title: 'Projets sociaux et recos photo',
     lead: 'Un projet de réseaux sociaux reçoit des photos, les classe pour TikTok et prépare texte, légende et image 9:16.',

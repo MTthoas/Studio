@@ -7,6 +7,7 @@
 import * as ai from '../../integrations/ai.ts';
 import * as saved from './drafts.ts';
 import { pick } from './autoteam.ts';
+import { routes, uiModel, uiTask } from './autopick.ts';
 import { esc } from '../../lib/markdown.ts';
 import { icon, menu, modal, need, $$ } from '../../ui/kit.ts';
 import type { Member, Team } from './drafts.ts';
@@ -16,6 +17,9 @@ export const PRESETS: [label: string, m: Member][] = [
   ['Explorateur', { name: 'explorateur', model: 'haiku', access: 'read',
     description: 'Recherche dans le code, sans rien modifier : où et comment une chose est faite. Pour toute exploration large.',
     prompt: 'Tu explores le dépôt pour l’agent principal. Cherche avec Grep et Glob avant de lire, et ne lis que les passages utiles. Rends une réponse courte : les fichiers et lignes concernés (chemin:ligne), ce que fait le code, les pièges repérés. Ne propose pas de modification si on ne te le demande pas.' }],
+  ['Designer', { name: 'designer', model: 'opus', access: 'all',
+    description: 'Conçoit et réalise les interfaces complexes : mise en page, composants, états, responsive, mouvement, accessibilité. À appeler pour tout écran nouveau ou refondu.',
+    prompt: 'Tu réalises l’interface que l’agent principal te décrit. Avant d’écrire, lis les styles et composants du dépôt (couleurs, échelle typographique, espacements, mouvement) et réutilise-les : n’invente ni couleur ni composant qui existe déjà. Traite chaque état : vide, chargement, erreur, survol, focus clavier, fenêtre étroite. Respecte prefers-reduced-motion et un contraste lisible. Vérifie le rendu par une capture d’écran quand le dépôt le permet, et cite-la. Rends : les fichiers touchés (chemin:ligne), les états couverts, les captures, ce qui reste à trancher.' }],
   ['Relecteur', { name: 'relecteur', model: '', access: 'read',
     description: 'Relit les changements une fois le travail fini : bugs, cas oubliés, régressions, conventions du dépôt.',
     prompt: 'Tu relis le travail de l’agent principal d’un œil neuf. Lis les fichiers modifiés qu’il t’indique et ce dont ils dépendent. Rends une liste courte, du plus grave au moins grave : le problème, où (chemin:ligne), la correction proposée. Ne signale que ce dont tu es sûr ; s’il n’y a rien à redire, dis-le en une ligne.' }],
@@ -54,11 +58,17 @@ export function body(pid: string, prompt = '', mode = 'edit'): Record<string, un
     for (const role of pick(prompt, mode)) {
       const preset = PRESETS.find(([, m]) => m.name === role)?.[1];
       if (!preset || t.members.length >= saved.TEAM_SIZE || t.members.some(m => m.name === preset.name)) continue;
-      t.members.push({ ...preset, auto: true }); created.push(preset.name);
+      // Le modèle d'un spécialiste créé d'office suit le routage de l'orchestrateur (fenêtre « Auto » du Salon) : niveau
+      // léger pour explorer, niveau interface pour le designer, niveau courant pour rédiger ; les autres gardent celui de l'agent.
+      const r = routes(), model = role === 'explorateur' ? r.light : role === 'designer' ? r.ui : role === 'redacteur' ? r.standard : preset.model;
+      t.members.push({ ...preset, model, auto: true }); created.push(preset.name);
     }
     if (created.length) saved.setTeam(pid, t);
   }
-  return { on: true, max: t.max, model: t.model, members: t.members.map(({ auto: _auto, ...m }) => m) };
+  // Modèle requis : pour une interface complexe, le designer ne part jamais sur un petit modèle, même si l'équipe en règle un.
+  const weak = (m: string): boolean => !m || m === 'haiku' || (m === routes().light && m !== uiModel());
+  const ui = !!prompt.trim() && mode !== 'read' && uiTask(prompt) === 2;
+  return { on: true, max: t.max, model: t.model, members: t.members.map(({ auto: _auto, ...m }) => ui && m.name === 'designer' && weak(m.model) ? { ...m, model: uiModel() } : m) };
 }
 
 const cardHTML = (m: Member): string => `<div class="sa-card" data-m${m.auto ? ' data-auto' : ''}>

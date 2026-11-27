@@ -13,20 +13,28 @@
 import * as bridge from '../../integrations/remote.ts';
 import * as quota from '../../integrations/quota.ts';
 import * as usage from '../../integrations/usage.ts';
-import { syncFeed, nameOf, live, copyStage, copyAct, answerHTML, modelName, modelOptions, EFFORTS, cleanUp, sideMenu } from './sessions.ts';
+import { syncFeed, nameOf, live, copyStage, copyAct, answerHTML, modelName, modelOptions, EFFORTS, cleanUp, sideMenu, machineOptions, keepMachine } from './sessions.ts';
+import * as infra from './infra.ts';
 import * as archived from './archive.ts';
 import { fold } from '../../lib/fuzzy.ts';
 import * as saved from './drafts.ts';
 import * as subagents from './subagents.ts';
 import * as attach from './attach.ts';
 import * as choices from './choices.ts';
-import { AUTO, pickFor, label as autoLabel } from './autopick.ts';
+import { AUTO, pickFor, label as autoLabel, TIERS, routes, setRoute } from './autopick.ts';
 import { exchanges } from './team.ts';
 import * as flux from './flux.ts';
 import * as catface from '../../ui/catface.ts';
+import * as projIcons from '../../ui/projicons.ts';
+import * as compose from './compose.ts';
+import * as design from './design.ts';
+import * as store from '../../core/store.ts';
+import * as model from './model.ts';
+import * as noteseal from '../../integrations/noteseal.ts';
+import * as ai from '../../integrations/ai.ts';
 import { startAgent, reply } from '../workspace.ts';
 import { esc } from '../../lib/markdown.ts';
-import { icon, need, rel, toast, target, paintIfChanged, modal } from '../../ui/kit.ts';
+import { icon, need, rel, toast, target, paintIfChanged, modal, popover } from '../../ui/kit.ts';
 import type { Block, Session, Action, AgentRun, Queued, Worktree, SubAgent } from './sessions.ts';
 import type { BoardMsg } from './team.ts';
 import type { Project } from './model.ts';
@@ -37,6 +45,7 @@ export interface Persona { name: string; role: string; hue: string }
 const FIXED: [RegExp, Persona][] = [
   [/^(|principal|agent principal|main|claude|moka|maya)$/, { name: 'Moka', role: 'cheffe d’équipe', hue: 'orange' }],
   [/explor/, { name: 'Filou', role: 'explorateur', hue: 'teal' }],
+  [/design|maquett|\bui\b|\bux\b/, { name: 'Mochi', role: 'designer', hue: 'blue' }],
   [/relec|review/, { name: 'Réglisse', role: 'relecteur', hue: 'violet' }],
   [/test|qualite|\bqa\b/, { name: 'Griffe', role: 'testeur', hue: 'pink' }],
   [/integr/, { name: 'Sacha', role: 'intégrateur', hue: 'indigo' }],
@@ -169,7 +178,9 @@ let filt: Filt = 'all', query = '';
 /** Dernière lecture de chaque source (ms) : chacune a son rythme, aucune n'attend l'autre. */
 let last = { sessions: 0, trees: 0, detail: 0, board: 0 };
 const fetching = new Set<string>();
-let openTech: (session: string) => void = () => undefined;
+let openTech: (session: string) => void = () => undefined, openNote: (id: string) => void = () => undefined, openSkills: () => void = () => undefined;
+/** Vue du centre : la discussion, ou « Design » (captures des agents et aperçu du site, design.ts). Gardée d'un fil à l'autre. */
+let view: 'chat' | 'design' = 'chat';
 /** Fiche ouverte : 'main' (l'agent principal) ou l'id d'un sous-agent ; '' = aucune. */
 let prof = '', profAt: { box: DOMRect; side: DOMRect | null } | null = null;
 
@@ -331,8 +342,10 @@ const mention = (w: Who): string => w.id && !w.me
 const withTo = (html: string, to: Who | null): string => !to ? html : /<p[\s>]/.test(html) ? html.replace(/<p(\s[^>]*)?>/, m => `${m}${mention(to)} `) : `<p>${mention(to)}</p>${html}`;
 /** Texte brut comparable : casse et espaces normalisés. */
 const norm = (t: string): string => t.replace(/\s+/g, ' ').trim().toLowerCase();
+/** Gestes d'un message, montrés au survol ou au focus : copier, citer dans le champ, garder en note du projet (agents seulement). */
+const actsHTML = (me: boolean): string => `<span class="sl-acts" role="toolbar" aria-label="Actions du message"><button type="button" data-sl="copy" title="Copier" aria-label="Copier le message">${icon('copy')}</button><button type="button" data-sl="quote" title="Citer dans ma réponse" aria-label="Citer dans ma réponse">${icon('share')}</button>${me ? '' : `<button type="button" data-sl="keep" title="Garder en note du projet" aria-label="Garder en note du projet">${icon('notes')}</button>`}</span>`;
 function msgHTML(w: Who, at: number, body: string, o: { cls?: string; tag?: string; mood?: catface.Mood } = {}): string {
-  return `<article class="sl-msg${w.me ? ' me' : ''}${o.cls ? ` ${o.cls}` : ''}">${avatar(w, false, o.mood)}<div class="sl-bd"><header>${nameBtn(w)}${w.role ? `<span class="sl-role">${esc(w.role)}</span>` : ''}${w.model ? `<em class="sl-model" title="Modèle">${esc(w.model)}</em>` : ''}${o.tag ? `<em class="sl-tag">${o.tag}</em>` : ''}<time>${esc(at ? hm(at) : '')}</time></header>${body}</div></article>`;
+  return `<article class="sl-msg${w.me ? ' me' : ''}${o.cls ? ` ${o.cls}` : ''}">${avatar(w, false, o.mood)}<div class="sl-bd">${o.cls === 'sending' ? '' : actsHTML(!!w.me)}<header>${nameBtn(w)}${w.role ? `<span class="sl-role">${esc(w.role)}</span>` : ''}${w.model ? `<em class="sl-model" title="Modèle">${esc(w.model)}</em>` : ''}${o.tag ? `<em class="sl-tag">${o.tag}</em>` : ''}<time>${esc(at ? hm(at) : '')}</time></header>${body}</div></article>`;
 }
 const noteHTML = (html: string, at: number, brief = ''): string => brief
   ? `<details class="sl-note"><summary><span>${html}</span><time>${esc(hm(at))}</time>${icon('chevron')}</summary><div class="sl-brief">${esc(brief)}</div></details>`
@@ -485,7 +498,8 @@ function resultHTML(t: Thread, d: Detail): string {
   const title = w.subject || (t.s.firstPrompt ? oneLine(t.s.firstPrompt, 80) : '') || 'Le travail de l’équipe';
   const meta = [n ? `${n} fichier${n > 1 ? 's' : ''}` : '', lines && (lines.add || lines.del) ? `+${lines.add} −${lines.del}` : '', w.branch].filter(Boolean).map(esc).join(' · ');
   const a = esc(w.name);
-  if (st === 'review') return `<div class="sl-card res"><span class="sl-pill" style="--c:var(--c-green)">prêt à publier</span><div class="sl-card-t"><b>${esc(title)}</b>${meta ? `<small>${meta}</small>` : ''}</div><div class="sl-card-a"><button class="btn" data-sl="review" data-wt="${a}">Relire</button><button class="btn btn-primary" data-sl="publish" data-wt="${a}">${icon('upload')}Publier la PR</button></div></div>`;
+  const all = d.files ?? t.s.files, fl = all.length ? `<details class="sl-files"><summary>${icon('chevron')}<span>Fichiers</span></summary><div>${all.slice(0, 14).map(f => `<code title="${esc(f)}">${esc(shortPath(f))}</code>`).join('')}${all.length > 14 ? `<small>+${all.length - 14}</small>` : ''}</div></details>` : '';
+  if (st === 'review') return `<div class="sl-card res"><span class="sl-pill" style="--c:var(--c-green)">prêt à publier</span><div class="sl-card-t"><b>${esc(title)}</b>${meta ? `<small>${meta}</small>` : ''}${fl}</div><div class="sl-card-a"><button class="btn" data-sl="review" data-wt="${a}">Relire</button><button class="btn btn-primary" data-sl="publish" data-wt="${a}">${icon('upload')}Publier la PR</button></div></div>`;
   if (st === 'pr') return `<div class="sl-card res"><span class="sl-pill" style="--c:var(--c-blue)">PR ouverte</span><div class="sl-card-t"><b>${esc(title)}</b><small>En attente de fusion${meta ? ` · ${meta}` : ''}</small></div><div class="sl-card-a"><button class="btn" data-sl="pr" data-wt="${a}">${icon('pr')}Voir la PR</button></div></div>`;
   // Fusionné : la carte suit la livraison en direct (vérifications sur la branche principale, release), voir `flux.deliveryHTML`.
   if (st === 'merged') {
@@ -499,9 +513,25 @@ function resultHTML(t: Thread, d: Detail): string {
 /** « Moka écrit… » avec trois points qui sautillent ; les sous-agents au travail sont nommés. */
 function typing(crew: Crew, d: Detail | undefined): string {
   const on = (d?.subagents ?? []).filter(s => s.live).map(s => crew.subs.get(s.id)?.name).filter((x): x is string => !!x);
-  const who = on.length ? `${on.length > 1 ? `${on.slice(0, -1).join(', ')} et ${on[on.length - 1]}` : on[0]} ${on.length > 1 ? 'travaillent' : 'travaille'}` : `${crew.main.name} écrit`;
+  const who = on.length ? `${on.length > 1 ? `${on.slice(0, -1).join(', ')} et ${on[on.length - 1]}` : on[0]} ${on.length > 1 ? 'travaillent' : 'travaille'}` : '';
   const cats = (d?.subagents ?? []).filter(s => s.live).map(s => crew.subs.get(s.id)).filter((x): x is Who => !!x).slice(0, 3);
-  return `<div class="sl-typing cf-live"><span class="sl-stack">${(cats.length ? cats : [crew.main]).map(w => avatar(w, false, 'work')).join('')}</span><span class="sl-dots" aria-hidden="true"><i></i><i></i><i></i></span><small>${esc(who)}…</small></div>`;
+  // Seul l'agent principal travaille : ce qu'il fait à l'instant (« modifie app.ts »), dans son propre nœud de texte pour la traduction.
+  const acts = d?.actions ?? [], lastA = acts[acts.length - 1], now = lastA?.kind.startsWith('tool:') ? doing(lastA.kind, lastA.text) : '';
+  const line = who ? `${esc(who)}…` : `${esc(crew.main.name)} <span>${esc(now || 'écrit')}</span>…`;
+  return `<div class="sl-typing cf-live"><span class="sl-stack">${(cats.length ? cats : [crew.main]).map(w => avatar(w, false, 'work')).join('')}</span><span class="sl-dots" aria-hidden="true"><i></i><i></i><i></i></span><small>${line}</small></div>`;
+}
+/** Plan de l'équipe, dans le fil : une ligne par sous-agent (ce qu'on lui a confié, ce qu'il fait, combien de temps), une
+ *  jauge de ce qui est fini. Remplace la colonne de droite, masquée par défaut ; un clic ouvre la fiche de l'agent.
+ *  Pas de chrono pour un agent au travail : le bloc serait redessiné à chaque seconde (voir `syncFeed`). */
+function planHTML(t: Thread, d: Detail, crew: Crew): string {
+  const subs = [...(d.subagents ?? [])].sort((a, b) => ms(a.started) - ms(b.started)); if (!subs.length) return '';
+  const done = subs.filter(x => !x.live).length;
+  const rows = subs.map(x => {
+    const w = crew.subs.get(x.id); if (!w) return '';
+    const act = x.live ? (x.last?.kind.startsWith('tool:') ? doing(x.last.kind, x.last.text) : '') || 'réfléchit' : x.files?.length ? `${x.files.length} fichier${x.files.length > 1 ? 's' : ''} touché${x.files.length > 1 ? 's' : ''}` : 'a fini';
+    return `<button type="button" class="sl-step${x.live ? ' on' : ''}" data-sl="who" data-who="${esc(x.id)}" title="Voir la fiche de ${esc(w.name)}"><i class="sl-step-i" aria-hidden="true">${x.live ? '<i class="spin"></i>' : icon('check')}</i><span class="sl-step-b"><span class="sl-step-t">${esc(oneLine(x.title || x.prompt || w.role, 90))}</span><small>${esc(act)}</small></span><span class="sl-step-w">${face(w, x.live ? 'work' : 'done', 'mini')}<span>${esc(w.name)}</span></span>${x.live ? '' : `<time>${esc(subTook(x))}</time>`}</button>`;
+  }).join('');
+  return `<section class="sl-plan${t.group === 'work' && done < subs.length ? ' on' : ''}" aria-label="Plan de l’équipe"><header><b>Plan de l’équipe</b><span>${done} / ${subs.length}</span></header><i class="sl-prog" aria-hidden="true"><i style="width:${Math.round(done / subs.length * 100)}%"></i></i>${rows}</section>`;
 }
 /** Messages partis d'ici que le Mac n'a pas encore rendus (`known` : textes déjà présents dans la conversation). */
 function pending(id: string, known: { text: string; at?: string }[], crew: Crew): Block[] {
@@ -540,6 +570,8 @@ function blocksOf(t: Thread, d: Detail | undefined, crew: Crew): { blocks: Block
     const b = blocks[i];
     if (b) blocks[i] = { key: b.key, html: b.html.replace('class="sl-msg', 'class="sl-msg ask cf-live').replace('cf cf-idle', 'cf cf-ask').replace('</div></article>', `<div class="sl-ask"><span>${icon('sparkle')}${esc(crew.main.name)} attend ta réponse</span>${b.html.includes('class="sl-ask-qs') ? '' : `<span class="sl-quick">${QUICK.map(q => `<button type="button" class="btn btn-ghost" data-sl="quick" data-text="${esc(q)}">${esc(q)}</button>`).join('')}</span>`}<button class="btn" data-sl="reply">${b.html.includes('class="sl-ask-qs') ? 'Autre réponse…' : 'Répondre…'}</button></div></div></article>`) };
   }
+  const plan = planHTML(t, d, crew);
+  if (plan) blocks.push({ key: 'plan', html: plan });
   const queued = S.queued.filter(x => x.session === id);
   for (const q of queued)
     blocks.push({ key: `q|${q.id}`, html: msgHTML(crew.me, ms(q.at), plain(q.text) + attach.galleryHTML(q.images), { cls: 'queued', tag: `${icon('history')}en attente` }) });
@@ -549,6 +581,81 @@ function blocksOf(t: Thread, d: Detail | undefined, crew: Crew): { blocks: Block
   if (res) blocks.push({ key: 'result', html: res });
   return { blocks, ask };
 }
+
+/** Captures d'écran citées dans le fil (réponses de l'agent principal, comptes rendus), la plus récente d'abord, avec leur auteur. */
+function shotsOf(d: Detail | undefined, crew: Crew | null): design.Shot[] {
+  if (!d || !crew) return [];
+  const out: design.Shot[] = [], had = new Set<string>();
+  const take = (text: string, at: number, who: string): void => { for (const path of captures(text).shots) if (!had.has(path)) { had.add(path); out.push({ path, at, who }); } };
+  for (const a of d.actions) if (a.kind !== 'prompt' && a.kind !== 'compact' && !a.kind.startsWith('tool:')) take(a.text, ms(a.at), crew.main.name);
+  for (const x of d.subagents ?? []) if (x.report) take(x.report, ms(x.updated), crew.subs.get(x.id)?.name ?? x.title);
+  return out.sort((a, b) => b.at - a.at);
+}
+
+// ---------- Champ : mentions, notes liées, commandes (compose.ts) ----------
+const noteTitle = (n: { title: string }): string => n.title.trim() || 'Sans titre';
+/** Skills : des notes portant `#skill` (savoir-faire réutilisable : marche à suivre, conventions, liste de contrôle). On les
+ *  écrit et on les range comme n'importe quelle note ; « / » dans le champ en insère un, son contenu part scellé avec le
+ *  message. Ceux du projet d'abord, puis ceux sans projet (valables partout). Ce ne sont pas les skills du dossier
+ *  `.claude/skills` : les agents de Studio sont lancés sans réglages ni commandes de l'utilisateur (Agents.swift). */
+export const SKILL_TAG = 'skill';
+function skills(): { id: string; title: string; mine: boolean }[] {
+  if (!p) return [];
+  const pid = p.id;
+  return store.index().live.filter(n => store.meta(n).tags.some(t => t.toLowerCase() === SKILL_TAG))
+    .map(n => ({ id: n.id, title: noteTitle(n), mine: model.projectOfNote(n)?.id === pid, other: !!model.projectOfNote(n) && model.projectOfNote(n)?.id !== pid }))
+    .filter(x => !x.other).sort((a, b) => Number(b.mine) - Number(a.mine) || a.title.localeCompare(b.title, 'fr'));
+}
+/** Notes citées `[[Titre]]` dans le message (notes du projet et skills) : leur contenu part scellé avec lui (noteseal.ts), jamais en clair. */
+function linkedNotes(text: string): string[] {
+  if (!p || !text.includes('[[')) return [];
+  const cited = new Set([...text.matchAll(/\[\[([^\]\n]+)\]\]/g)].map(m => (m[1] ?? '').trim().toLowerCase()));
+  const ids = [...model.notesOf(p).map(n => ({ id: n.id, title: noteTitle(n) })), ...skills()].filter(n => cited.has(n.title.toLowerCase())).map(n => n.id);
+  return [...new Set(ids)].slice(0, 6);
+}
+/** Crée un skill du projet (note `#skill`) avec une trame, et l'ouvre pour l'écrire. */
+function newSkill(): void {
+  if (!p) return;
+  void store.createNote({ title: 'Nouveau skill', body: `Quand l’utiliser :\n\nMarche à suivre :\n1. \n\nÀ vérifier avant de rendre :\n- \n\n#${SKILL_TAG} #${p.tag}` }).then(n => openNote(n.id), () => toast('Note impossible à créer.'));
+}
+/** Fenêtre « Auto » : le modèle de chaque niveau de l'orchestrateur (autopick.ts), réglable ; tout modèle de la liste convient. */
+function routesMenu(anchor: Element): void {
+  const r = routes(), opts = (cur: string): string => modelOptions(cur, false).replace(/<option value="auto"[^>]*>[^<]*<\/option>/, '').replace(/<option value=""[^>]*>[^<]*<\/option>/, '');
+  const lay = popover(anchor, `<div class="sl-route-h"><b>Choix automatique du modèle</b><small>L’orchestrateur range chaque consigne dans un niveau ; à toi de dire quel modèle sert chaque niveau.</small></div>${TIERS.map(([k, l, d]) => `<label class="sl-route-r"><span><b>${l}</b><small>${d}</small></span><select name="${k}" aria-label="${l}">${opts(r[k])}</select></label>`).join('')}`, 'sl-route');
+  lay.panel.addEventListener('change', e => { const x = e.target; if (x instanceof HTMLSelectElement) { setRoute(x.name as typeof TIERS[number][0], x.value); showAuto(); } });
+}
+/** Ce que propose le champ quand on tape « @ », « [[ » ou « / ». */
+const composeSource: compose.Source = {
+  agents: () => {
+    const th = threads(), cur = th.find(t => t.id === curId(th)), d = cur ? S.detail.get(cur.id) : undefined;
+    const crew = crewOf(d?.subagents ?? [], d?.models ?? cur?.s.models ?? []);
+    const here = [crew.main, ...crew.subs.values()].map(w => ({ label: w.name, hint: w.role, hue: w.hue, insert: `@${w.name} ` }));
+    // Spécialistes de l'équipe du projet pas encore dans le fil : les citer invite l'agent principal à leur confier la tâche.
+    const team = saved.team(S.pid).members.map(m => persona(m.name)).filter(x => !here.some(h => h.label === alias(x.name))).map(x => ({ label: alias(x.name), hint: x.role, hue: x.hue, insert: `@${alias(x.name)} ` }));
+    return [...here, ...team];
+  },
+  notes: () => p ? model.notesOf(p).slice(0, 40).map(n => ({ label: noteTitle(n), hint: n.id === p?.id ? 'note du projet' : rel(n.updated), icon: 'notes', insert: `[[${noteTitle(n)}]] ` })) : [],
+  commands: () => {
+    if (!root) return [];
+    const r = root, th = threads(), cur = th.find(t => t.id === curId(th)), act = (sel: string): (() => void) => () => r.querySelector<HTMLElement>(sel)?.click();
+    const has = (sel: string): boolean => !!r.querySelector(sel);
+    return [
+      { label: 'Nouveau fil', hint: '⌥N', icon: 'plus', run: act('[data-sl="new"]') },
+      view === 'chat' ? { label: 'Voir le design', hint: 'captures et aperçu du site', icon: 'frame', run: act('[data-sl="view"][data-v="design"]') } : { label: 'Revenir à la discussion', icon: 'sparkle', run: act('[data-sl="view"][data-v="chat"]') },
+      ...(cur ? [{ label: 'Afficher ou masquer l’équipe', icon: 'bot', run: act('[data-sl="now"]') }] : []),
+      ...(has('[data-sl="tech"]') ? [{ label: 'Vue technique', hint: 'les étapes, une par une', icon: 'terminal', run: act('[data-sl="tech"]') }] : []),
+      ...(has('[data-sl="stop"]') ? [{ label: 'Arrêter l’équipe', icon: 'stop', run: act('[data-sl="stop"]') }] : []),
+      ...(has('[data-sl="review"]') ? [{ label: 'Relire le travail', icon: 'eye', run: act('[data-sl="review"]') }] : []),
+      ...(has('[data-sl="publish"]') ? [{ label: 'Publier la PR', icon: 'upload', run: act('[data-sl="publish"]') }] : []),
+      { label: 'Outils du projet', hint: 'code, site, notes…', icon: 'more', run: act('[data-pj="tabs-more"]') },
+      { label: 'Choix automatique du modèle', hint: 'un modèle par niveau', icon: 'cpu', run: () => routesMenu(r.querySelector('.sl-comp select[name=model]') ?? r) },
+      // Skills : un savoir-faire écrit en note (#skill), joint au message d'un geste.
+      ...skills().map(k => ({ label: k.title, hint: 'skill', icon: 'bolt', insert: `[[${k.title}]] ` })),
+      { label: 'Nouveau skill', hint: 'une note #skill', icon: 'plus', run: newSkill },
+      { label: 'Gérer les skills', hint: 'les notes #skill', icon: 'bolt', run: () => openSkills() },
+    ];
+  },
+};
 
 // ---------- Pièces de la page ----------
 /** Un fil au travail n'est jamais caché, même archivé. */
@@ -565,12 +672,30 @@ const matches = (t: Thread, q: string): boolean => !q || fold([nameOf(t.s), t.s.
 function filtHTML(th: Thread[]): string {
   return FILTS.map(([k, l, f]) => { const n = th.filter(f).length; return k !== 'all' && k !== filt && !n ? '' : `<button type="button" class="sl-chip${k === filt ? ' on' : ''}" data-sl="filt" data-f="${k}" aria-pressed="${k === filt}">${l}${k === 'all' ? '' : `<span>${n}</span>`}</button>`; }).join('');
 }
+/** Rang d'un fil dans la liste, du plus pressant au moins pressant : il t'attend, il travaille, il est prêt à publier, il est fini. */
+type Lane = 'ask' | 'work' | 'ready' | 'done';
+function laneOf(t: Thread): Lane {
+  if (t.group === 'work') return 'work';
+  if (t.group === 'recent') return 'done';
+  const w = t.s.worktree ? S.trees.find(x => x.name === t.s.worktree) : undefined;
+  return w && copyStage(w) === 'review' ? 'ready' : 'ask';
+}
+/** Seconde ligne d'un fil : ce que l'agent fait à l'instant, ou ce qu'il attend de toi. Rien pour un fil fini. */
+function subLine(t: Thread, lane: Lane): string {
+  const d = S.detail.get(t.id);
+  if (lane === 'work') { const last = [...(d?.actions ?? [])].reverse().find(a => a.kind.startsWith('tool:') && doing(a.kind, a.text)); return last ? doing(last.kind, last.text) : 'au travail'; }
+  if (lane === 'ready') return 'prêt à publier';
+  if (lane !== 'ask') return '';
+  if (S.runs.some(r => (r.session === t.id || `run:${r.run}` === t.id) && r.status === 'error')) return 'arrêté sur une erreur';
+  const last = d?.actions[d.actions.length - 1];
+  return last && last.kind !== 'prompt' && !last.kind.startsWith('tool:') && asks(last.text) ? 'attend ta réponse' : 'nouveau message';
+}
 function listHTML(th: Thread[], id: string): string {
   if (!S.loaded && !th.length) return '<p class="sl-empty-s"><span class="spin"></span>Lecture des fils…</p>';
   const arch = filt === 'arch';
-  const row = (t: Thread): string => `<div class="sl-row${t.id === id ? ' cur' : ''}" data-id="${esc(t.id)}"><button type="button" class="sl-pick" data-sl="pick" data-id="${esc(t.id)}"${t.id === id ? ' aria-current="true"' : ''} title="${esc(nameOf(t.s))}"><i class="sl-dot ${t.group}" aria-hidden="true"></i><span class="sl-row-t">${esc(nameOf(t.s))}</span>${isCodex(t) ? `<span class="sl-tag" title="${esc(`Codex · ${t.s.sub ?? ''}`)}">Codex</span>` : ''}<time>${esc(rel(t.act))}</time></button>${t.group === 'work' || t.id.startsWith('run:') ? '' : arch
+  const row = (t: Thread): string => { const lane = laneOf(t), sub = subLine(t, lane); return `<div class="sl-row${t.id === id ? ' cur' : ''}${sub ? ' two' : ''}" data-id="${esc(t.id)}"><button type="button" class="sl-pick" data-sl="pick" data-id="${esc(t.id)}"${t.id === id ? ' aria-current="true"' : ''} title="${esc(nameOf(t.s))}"><i class="sl-dot ${lane}" aria-hidden="true"></i><span class="sl-row-b"><span class="sl-row-t">${esc(nameOf(t.s))}</span>${sub ? `<small class="sl-row-s">${esc(sub)}</small>` : ''}</span>${isCodex(t) ? `<span class="sl-tag" title="${esc(`Codex · ${t.s.sub ?? ''}`)}">Codex</span>` : ''}<time>${esc(rel(t.act))}</time></button>${t.group === 'work' || t.id.startsWith('run:') ? '' : arch
     ? `<button type="button" class="sl-x" data-sl="unarch" data-id="${esc(t.id)}" title="Remettre dans la liste" aria-label="Remettre dans la liste">${icon('restore')}</button>`
-    : `<button type="button" class="sl-x" data-sl="arch" data-id="${esc(t.id)}" title="Archiver (rien n’est effacé)" aria-label="Archiver ce fil">${icon('inbox')}</button>`}</div>`;
+    : `<button type="button" class="sl-x" data-sl="arch" data-id="${esc(t.id)}" title="Archiver (rien n’est effacé)" aria-label="Archiver ce fil">${icon('inbox')}</button>`}</div>`; };
   const grp = (title: string, list: Thread[], extra = ''): string => list.length ? `<section class="sl-grp"><h4>${title}<span>${list.length}</span></h4>${list.map(row).join('')}${extra}</section>` : '';
   const q = fold(query.trim()), f = FILTS.find(x => x[0] === filt)?.[2] ?? FILTS[0][2], shownTh = th.filter(t => f(t) && matches(t, q));
   const old = oldOnes(th).length;
@@ -581,9 +706,10 @@ function listHTML(th: Thread[], id: string): string {
   if (filt === 'codex' && !q) { const subs = [...new Set(shownTh.map(t => t.s.sub || 'Projet'))]; return subs.map(n => grp(esc(n), shownTh.filter(t => (t.s.sub || 'Projet') === n))).join('') + foot; }
   // Recherche ou filtre : une liste à plat, du plus récent au plus ancien.
   if (q || filt !== 'all') return grp(q ? 'Résultats' : FILTS.find(x => x[0] === filt)?.[1] ?? '', shownTh) + foot;
-  const rec = shownTh.filter(t => t.group === 'recent');
+  const lane = (l: Lane): Thread[] => shownTh.filter(t => laneOf(t) === l), rec = lane('done');
   const more = rec.length > MORE ? `<button type="button" class="sl-more" data-sl="more">${moreOpen ? 'Moins' : `${rec.length - MORE} de plus`}</button>` : '';
-  return grp('En cours', shownTh.filter(t => t.group === 'work')) + grp('À toi', shownTh.filter(t => t.group === 'mine')) + grp('Récentes', moreOpen ? rec : rec.slice(0, MORE), more) + foot;
+  // Par urgence (28 nov. 2026) : ce qui t'attend d'abord, puis ce qui travaille, ce qui est prêt, ce qui est fini.
+  return grp('À toi', lane('ask')) + grp('En cours', lane('work')) + grp('Prêts à publier', lane('ready')) + grp('Terminés', moreOpen ? rec : rec.slice(0, MORE), more) + foot;
 }
 type Mood = 'work' | 'ask' | 'ready' | 'done';
 const MOOD: Record<Mood, [string, string]> = { work: ['au travail', 'amber'], ask: ['attend ta réponse', 'orange'], ready: ['prêt à publier', 'green'], done: ['terminé', 'gray'] };
@@ -593,12 +719,19 @@ function moodOf(t: Thread, ask: boolean): Mood {
   const w = t.s.worktree ? S.trees.find(x => x.name === t.s.worktree) : undefined;
   return w && copyStage(w) === 'review' ? 'ready' : 'done';
 }
-function headHTML(t: Thread, crew: Crew, ask: boolean, n: number): string {
-  const [label, c] = MOOD[moodOf(t, ask)], min = Math.max(0, Math.round(((t.group === 'work' ? Date.now() : ms(t.s.updated)) - ms(t.s.started)) / 6e4));
+/** Bascule Discussion | Design, et « Outils » du projet (menu de la fiche projet, `data-pj`). */
+const viewHTML = (shots: number): string => `<span class="sl-seg" role="group" aria-label="Vue"><button type="button" data-sl="view" data-v="chat" aria-pressed="${view === 'chat'}">Discussion</button><button type="button" data-sl="view" data-v="design" aria-pressed="${view === 'design'}" title="Captures des agents et aperçu du site">Design${shots ? `<span>${shots}</span>` : ''}</button></span>`;
+const toolsHTML = (): string => `<button type="button" class="btn btn-ghost sl-ic" data-pj="tabs-more" aria-haspopup="menu" title="Outils du projet" aria-label="Outils du projet">${icon('more')}</button>`;
+function headHTML(t: Thread | undefined, crew: Crew | null, ask: boolean, shots: number): string {
+  if (!t || !crew) return `<h2><span>Nouveau fil</span></h2><i class="sl-grow"></i>${viewHTML(shots)}${toolsHTML()}`;
+  // L'état se lit à la couleur du point (au travail, attend ta réponse, prêt à publier) ; son libellé est dans l'infobulle.
+  const mood = moodOf(t, ask), [label] = MOOD[mood], dot = `<i class="sl-dot ${mood === 'done' ? '' : mood}" title="${label}"></i>`;
   const run = S.runs.find(r => live(r) && (r.session === t.id || `run:${r.run}` === t.id));
   const faces = [crew.main, ...crew.subs.values()].slice(0, 5).map(w => face(w)).join('');
-  if (isCodex(t)) return `<h2>${esc(nameOf(t.s))}</h2><span class="sl-pill" style="--c:var(--c-${c})">${label}</span><span class="sl-meta">Codex${t.s.sub ? ` · ${esc(t.s.sub)}` : ''}${t.s.origin ? ` · ${esc(t.s.origin)}` : ''}${min ? ` · ${min} min` : ''}</span><button type="button" class="btn" data-sl="codex" data-app="terminal" data-id="${esc(t.id)}" title="Ouvre le Terminal dans le dossier du fil et lance codex resume">${icon('terminal')}<span>Reprendre dans le Terminal</span></button><button type="button" class="btn btn-ghost" data-sl="codex" data-app="app" data-id="${esc(t.id)}" title="Ouvrir l’app Codex">${icon('share')}<span>App Codex</span></button>`;
-  return `<h2>${esc(nameOf(t.s))}</h2><span class="sl-pill" style="--c:var(--c-${c})">${label}</span><span class="sl-meta">${n} agent${n > 1 ? 's' : ''}${min ? ` · ${min} min` : ''}</span>${run ? `<button type="button" class="btn btn-ghost" data-sl="stop" data-run="${esc(run.run)}" title="Arrêter l’équipe">${icon('stop')}<span>Arrêter</span></button>` : ''}<button type="button" class="btn btn-ghost sl-nowbtn" data-sl="now" aria-pressed="false" title="Afficher ou masquer l’équipe"><span class="sl-stack">${faces}</span><span>Équipe</span></button>${t.id.startsWith('run:') ? '' : `<button type="button" class="btn" data-sl="tech" data-id="${esc(t.id)}" title="Voir les étapes dans l’onglet Claude Code">${icon('terminal')}<span>Vue technique</span></button>`}`;
+  const far = S.runs.find(r => (r.session === t.id || `run:${r.run}` === t.id) && r.machine === 'server');
+  const title = `<h2 title="${esc(nameOf(t.s))}">${dot}<span>${esc(nameOf(t.s))}</span></h2>${far ? `<span class="sl-srv" title="Ce fil travaille sur un serveur du projet">${icon('server')}<span>${esc(far.host || 'serveur')}</span></span>` : ''}`;
+  if (isCodex(t)) return `${title}<i class="sl-grow"></i><button type="button" class="btn" data-sl="codex" data-app="terminal" data-id="${esc(t.id)}" title="Ouvre le Terminal dans le dossier du fil et lance codex resume">${icon('terminal')}<span>Reprendre dans le Terminal</span></button><button type="button" class="btn btn-ghost" data-sl="codex" data-app="app" data-id="${esc(t.id)}" title="Ouvrir l’app Codex">${icon('share')}<span>App Codex</span></button>${toolsHTML()}`;
+  return `${title}<i class="sl-grow"></i>${run ? `<button type="button" class="btn btn-ghost" data-sl="stop" data-run="${esc(run.run)}" title="Arrêter l’équipe">${icon('stop')}<span>Arrêter</span></button>` : ''}${viewHTML(shots)}<button type="button" class="btn btn-ghost sl-nowbtn" data-sl="now" aria-pressed="false" title="Afficher ou masquer l’équipe" aria-label="Afficher ou masquer l’équipe"><span class="sl-stack">${faces}</span></button>${t.id.startsWith('run:') ? '' : `<button type="button" class="btn btn-ghost sl-ic" data-sl="tech" data-id="${esc(t.id)}" title="Vue technique : les étapes, une par une" aria-label="Vue technique">${icon('terminal')}</button>`}${toolsHTML()}`;
 }
 // ---------- Consommation de tokens du fil ----------
 // Le journal de la session ne compte que l'agent principal ; chaque sous-agent a le sien (`tok`, app Mac récente,
@@ -720,7 +853,7 @@ const skelHTML = (k: 'team' | 'tech'): string => k === 'team'
   : `<div class="sl-skel" aria-busy="true" aria-label="Chargement">${[64, 88, 46].map((w, i) => `<i style="width:${w}%;--i:${i}"></i>`).join('')}</div>`;
 /** Colonne de droite : Équipe en haut, Technique dessous (30 % de la hauteur, défile seule). */
 /** Colonne de droite : Équipe, Technique, puis la consommation en pied, toujours visible (chaque section défile seule). */
-const colHTML = (team: string, tech: string, cons = ''): string => `<section class="sl-team" aria-label="Équipe">${team}</section><section class="sl-tech" aria-label="Technique"><h4>Technique</h4>${tech}</section>${cons}`;
+const colHTML = (team: string, tech: string): string => `<section class="sl-team" aria-label="Équipe">${team}</section><section class="sl-tech" aria-label="Technique"><h4>Technique</h4>${tech}</section>`;
 // Seul le chrono tourne, une fois par seconde : et seulement colonne visible, fenêtre au premier plan, agent au travail.
 let techTimer: ReturnType<typeof setInterval> | undefined;
 function tickClocks(): void {
@@ -853,13 +986,21 @@ function paint(): void {
   else if (changed && end) { feed.scrollTo({ top: feed.scrollHeight, behavior: calm() ? 'auto' : 'smooth' }); glideEnd = performance.now() + 700; }
   else if (fresh && !end) need('[data-sl-down]', root).hidden = false;
   if (switched) need('[data-sl-down]', root).hidden = true;
+  // Captures citées dans le fil (messages de l'agent principal et comptes rendus) : la matière de la vue Design.
+  const shots = shotsOf(d, crew);
   const head = need('[data-sl-head]', root);
-  paintIfChanged(head, cur && crew ? headHTML(cur, crew, ask, 1 + (d?.subagents?.length ?? 0)) : '');
+  paintIfChanged(head, headHTML(cur, crew, ask, shots.length));
   head.querySelector('[data-sl="now"]')?.setAttribute('aria-pressed', String(teamShown(root)));
+  // Un filet court sous la barre tant que l'équipe travaille ; la vue Design remplace la discussion sans la démonter.
+  need('[data-sl-live]', root).classList.toggle('on', cur?.group === 'work');
+  need('.sl-center', root).classList.toggle('sl-v-design', view === 'design');
+  const dz = need<HTMLElement>('[data-sl-design]', root); dz.hidden = view !== 'design';
+  if (view === 'design') design.paint(dz, p, shots, () => { if (root?.isConnected) paint(); });
+  paintIfChanged(need('[data-sl-cons]', root), cur && crew ? consHTML(cur, d, crew) : '');
   // Colonne de droite : Équipe puis Technique. Squelette tant que le fil démarre ; quand le vrai contenu
   // remplace le squelette, il entre une fois en fondu (pas à chaque mise à jour).
   const col = need<HTMLElement>('[data-sl-now]', root), skel = !(cur && crew), wasSkel = col.dataset.skel === '1';
-  const colH = cur && crew ? colHTML(nowHTML(cur, d, crew, ask), techHTML(cur, d, crew), consHTML(cur, d, crew)) : opening?.pid === p.id ? colHTML(skelHTML('team'), skelHTML('tech')) : '';
+  const colH = cur && crew ? colHTML(nowHTML(cur, d, crew, ask), techHTML(cur, d, crew)) : opening?.pid === p.id ? colHTML(skelHTML('team'), skelHTML('tech')) : '';
   if (paintIfChanged(col, colH) && wasSkel && !skel && !calm()) { col.classList.remove('sl-reveal'); void col.offsetWidth; col.classList.add('sl-reveal'); }
   col.dataset.skel = skel ? '1' : '';
   if (cur && crew) tickClocks();
@@ -874,6 +1015,15 @@ function paint(): void {
   const isNew = !cur, ph = isNew ? 'Dis à l’équipe ce que tu veux faire…' : `Écris à ${crew?.main.name ?? alias('Moka')}…`;
   if (ta.placeholder !== tr(ph)) ta.placeholder = ph;
   need('[data-sl-mode]', root).hidden = !isNew;
+  // Où travailler : proposé pour un nouveau fil quand le projet a un serveur (les mêmes choix que l'onglet Claude Code).
+  const mc = sel('machine');
+  if (mc) {
+    const html = machineOptions(p);
+    if (mc.dataset.h !== html) { mc.innerHTML = html; mc.dataset.h = html; }
+    mc.hidden = !isNew || !infra.knownServers(p.id).length;
+    const form = need<HTMLFormElement>('.sl-comp', root), far = !mc.hidden && mc.value.startsWith('server');
+    if (form.classList.contains('on-server') !== far) { form.classList.toggle('on-server', far); attach.sync(form); }
+  }
   showAuto(); ready();
   const hint = need('[data-sl-hint]', root), ht = !isNew && cur?.group === 'work' ? 'Ton message part en attente : l’agent le lit à la fin de son tour.' : '';
   if (hint.textContent !== tr(ht)) hint.textContent = ht;
@@ -928,6 +1078,10 @@ async function send(quick = ''): Promise<void> {
   const ta = need<HTMLTextAreaElement>('textarea', root), text = quick || ta.value.trim() || (n ? attach.DEFAULT_PROMPT : ''); if (!text) return;
   const id = curId(), btn = need<HTMLButtonElement>('[data-sl-send]', root), pid = p.id, key = `${pid}/${id}`;
   if (id.startsWith('run:')) { toast('L’équipe démarre : réessaie dans un instant.'); return; }
+  // Notes citées `[[Titre]]` : leur contenu part scellé, la consigne n'en garde que les titres (comme l'onglet Claude Code).
+  const noteIds = quick ? [] : linkedNotes(text), built = noteIds.length ? await noteseal.seal(text, noteIds) : null;
+  if (built?.refused.length) toast(ai.notesAllowed() ? `Non jointe${built.refused.length > 1 ? 's' : ''} (verrouillée, privée ou trop longue) : ${built.refused.join(', ')}` : `Notes fermées à l’IA (Réglages → IA) : non jointes, ${built.refused.join(', ')}`);
+  const sent = built?.sealed ? built.text : text, sealed = built?.sealed;
   // Seule la création d'un fil bloque l'envoi suivant ; dans un fil existant, on peut enchaîner les messages.
   if (!id) { busy = true; btn.disabled = true; }
   // Le champ est vidé tout de suite : pendant l'attente, l'utilisateur peut changer de fil sans que rien ne soit écrasé.
@@ -938,23 +1092,25 @@ async function send(quick = ''): Promise<void> {
   // Réponse d'un clic : trop courte pour juger, « Auto » n'est pas résolu et la conversation garde son modèle.
   const c = picked(), tune = { ...(quick && c.model === AUTO ? { model: '', effort: c.effort } : resolved(text, !!id)), voice: 'chat' as const };
   // Le message s'affiche aussitôt dans le fil (« envoi… »), sans attendre que le Mac l'ait écrit dans la conversation.
-  const mine: { text: string; at: number; sent?: boolean; pics?: number } = { text, at: Date.now(), ...(n ? { pics: n } : {}) };
+  const mine: { text: string; at: number; sent?: boolean; pics?: number } = { text: sent, at: Date.now(), ...(n ? { pics: n } : {}) };
   if (id) { pend.set(id, [...(pend.get(id) ?? []), mine]); woke.set(id, mine.at); }
   else opening = { pid, ...mine };
   paint(); hurry();
   let ok = false;
   try {
     if (!id) {
-      const r = await startAgent(p, text, need<HTMLSelectElement>('[name=mode]', root).value === 'read' ? 'read' : 'edit', undefined, images, tune);
+      const mc = sel('machine'), far = !!mc && !mc.hidden && mc.value.startsWith('server'), sid = far ? mc.value.split(':')[1] ?? '' : '';
+      const r = await startAgent(p, sent, need<HTMLSelectElement>('[name=mode]', root).value === 'read' ? 'read' : 'edit', undefined, images, tune, sealed, far ? { machine: 'server', ...(sid ? { server: sid } : {}) } : undefined);
       if (!r.ok) toast(r.message);
       else if (!r.images) toast(attach.OLD_APP);
       else {
+        if (!r.sealed) toast('Notes non jointes : mets à jour l’app Mac pour lier des notes à un fil.');
         ok = true; const nid = r.session || (r.run ? `run:${r.run}` : '');
         choose(pid, nid); pend.set(nid, [{ ...mine, sent: true }]); woke.set(nid, mine.at); if (r.session) saved.setSession(r.session, c);
         // Toujours sur ce projet et sur « nouveau fil » : le fil créé prend la place sans fondu ni rejouer le message.
         if (shown === key) shown = `${pid}/${nid}`;
       }
-    } else { ok = await reply({ project: pid, session: id }, text, false, images, tune); if (ok) mine.sent = true; }
+    } else { ok = await reply({ project: pid, session: id }, sent, false, images, tune, sealed); if (ok) mine.sent = true; }
   } finally {
     if (!id) { busy = false; btn.disabled = false; opening = null; }
     if (pics) { if (ok) attach.release(pics); else { attach.putBack(pics); ready(); } }
@@ -998,7 +1154,7 @@ const narrow = (): boolean => matchMedia('(max-width: 1099px)').matches;
 const teamShown = (r: HTMLElement): boolean => narrow() ? r.classList.contains('sl-now-open') : !r.classList.contains('sl-now-off');
 function toggleTeam(r: HTMLElement): void {
   if (narrow()) r.classList.toggle('sl-now-open');
-  else { const off = r.classList.toggle('sl-now-off'); try { localStorage.setItem(TEAM_OFF, off ? '1' : ''); } catch { /* plein */ } }
+  else { const off = r.classList.toggle('sl-now-off'); try { localStorage.setItem(TEAM_OFF, off ? '1' : '0'); } catch { /* plein */ } }
   paint();
 }
 
@@ -1009,6 +1165,12 @@ function bind(r: HTMLElement): void {
     if (prof && !el.closest('[data-sl-prof], [data-sl="who"]')) closeProf();
     if (r.classList.contains('sl-now-open') && !el.closest('[data-sl-now], [data-sl="now"], [data-sl-prof]')) { r.classList.remove('sl-now-open'); paint(); }
     if (p && flux.onDeliveryClick(e, () => void go(p?.id ?? '', 'flux'))) return;
+    // Vue Design : captures, largeur de l'aperçu ; « Demander une capture » écrit la demande dans le champ.
+    const dz = el.closest<HTMLElement>('[data-sl-design]');
+    if (dz && p) {
+      const d0 = S.detail.get(curId()), c0 = d0 ? crewOf(d0.subagents ?? [], d0.models ?? []) : null;
+      if (design.click(e, dz, shotsOf(d0, c0), text => { view = 'chat'; const ta = need<HTMLTextAreaElement>('textarea', r); if (!ta.value.trim()) ta.value = text; paint(); grow(ta); ta.focus(); ready(); showAuto(); })) { paint(); return; }
+    }
     if (!t || !p) return;
     const act = t.dataset.sl, pid = p.id;
     if (act === 'who') {
@@ -1019,6 +1181,23 @@ function bind(r: HTMLElement): void {
       return;
     }
     if (act === 'unprof') { closeProf(); return; }
+    if (act === 'routes') { routesMenu(t); return; }
+    if (act === 'view') { view = t.dataset.v === 'design' ? 'design' : 'chat'; paint(); if (view === 'chat') need('textarea', r).focus(); return; }
+    if (act === 'copy' || act === 'quote' || act === 'keep') {
+      // Le texte du message tel qu'il est lu, sans l'en-tête ni les gestes ; les blocs repliés sont compris.
+      const bd = t.closest('.sl-msg')?.querySelector('.sl-bd'); if (!bd) return;
+      const text = [...bd.querySelectorAll<HTMLElement>(':scope > .sl-bub, :scope > .sl-plain, :scope > .sl-fold .sl-bub, :scope > .sl-fold > .md')].map(x => x.innerText.trim()).filter(Boolean).join('\n\n');
+      if (!text) return;
+      if (act === 'copy') { void navigator.clipboard?.writeText(text).then(() => toast('Message copié'), () => toast('Copie impossible.')); return; }
+      if (act === 'quote') {
+        const ta = need<HTMLTextAreaElement>('textarea', r), q = `${oneLine(text, 240).replace(/^/, '> ')}\n\n`;
+        ta.value = q + ta.value.replace(/^(> .*\n\n)+/, ''); grow(ta); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); drafts.set(shown, ta.value); ready(); showAuto(); return;
+      }
+      // Garder en note : une note du projet (son tag), ouverte d'un clic depuis le message de confirmation.
+      const title = oneLine(text.split('\n')[0] ?? '', 60) || 'Note du Salon', tag = p.tag;
+      void store.createNote({ title, body: `${text}\n\n#${tag}` }).then(n => toast(`Gardé en note dans ${p?.name ?? 'le projet'}`, { label: 'Ouvrir', run: () => openNote(n.id) }), () => toast('Note impossible à créer.'));
+      return;
+    }
     if (act === 'rename') { const base = t.dataset.base ?? ''; closeProf(); if (base) renameAgent(base); return; }
     if (act === 'down') { const f = need('[data-sl-feed]', r); f.scrollTo({ top: f.scrollHeight, behavior: calm() ? 'auto' : 'smooth' }); t.hidden = true; return; }
     if (act === 'mention') {
@@ -1097,11 +1276,18 @@ function bind(r: HTMLElement): void {
   r.addEventListener('change', e => {
     const t = target(e); if (!(t instanceof HTMLSelectElement) || !t.closest('.sl-comp')) return;
     if (t.name === 'model' || t.name === 'effort') { const id = curId(); if (id && !id.startsWith('run:')) saved.setSession(id, picked()); else saved.setDefaults(picked()); }
+    if (t.name === 'machine' && p) { keepMachine(p.id, t.value); paint(); }
     showAuto();
   });
   r.addEventListener('keydown', e => {
     if (e.key === 'Escape' && (prof || r.classList.contains('sl-now-open'))) { e.preventDefault(); closeProf(); r.classList.remove('sl-now-open'); paint(); return; }
     if (target(e) instanceof HTMLTextAreaElement && e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); void send(); }
+    // ↑ dans un champ vide : reprend le dernier message envoyé dans ce fil, pour le corriger ou le renvoyer.
+    const ta0 = target(e);
+    if (ta0 instanceof HTMLTextAreaElement && e.key === 'ArrowUp' && !ta0.value && !e.altKey) {
+      const mineLast = [...(S.detail.get(curId())?.actions ?? [])].reverse().find(a => a.kind === 'prompt')?.text;
+      if (mineLast) { e.preventDefault(); ta0.value = mineLast; grow(ta0); ta0.setSelectionRange(mineLast.length, mineLast.length); drafts.set(shown, mineLast); ready(); showAuto(); }
+    }
     const q = target(e);
     if (q instanceof HTMLInputElement && q.matches('[data-sl-q]')) {
       if (e.key === 'Escape' && q.value) { e.preventDefault(); e.stopPropagation(); q.value = ''; query = ''; paint(); }
@@ -1114,6 +1300,7 @@ function bind(r: HTMLElement): void {
     if (!r.isConnected || !p || e.metaKey || e.ctrlKey) return;
     const el = e.target as HTMLElement | null, typing = !!el?.closest('input, textarea, select, [contenteditable]');
     if (e.key === '/' && !typing && !e.altKey) { e.preventDefault(); r.querySelector<HTMLInputElement>('[data-sl-q]')?.focus(); return; }
+    if (view === 'design' && !typing && !e.altKey) { const d0 = S.detail.get(curId()), c0 = d0 ? crewOf(d0.subagents ?? [], d0.models ?? []) : null; if (design.key(e, shotsOf(d0, c0))) { e.preventDefault(); paint(); return; } }
     if (!e.altKey) return;
     if (e.code === 'KeyN') { e.preventDefault(); choose(p.id, ''); paint(); need('textarea', r).focus(); return; }
     if (typing || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
@@ -1137,23 +1324,32 @@ export function openThread(pid: string, session: string): void {
 }
 
 /** Monte le Salon du projet `proj` dans `box`. `o.openTech` ouvre une conversation dans l'onglet Claude Code. */
-export function mount(box: HTMLElement, proj: Project, o: { openTech: (session: string) => void }): void {
+/** `o.bar` : boutons de la barre d'outils de l'app (afficher ou masquer la barre latérale), posés avant le titre du fil ;
+ *  `o.openNote` ouvre une note (message gardé en note). Le Salon prend tout le contenu : sa liste de fils fait office de
+ *  barre latérale (`body.lounge`, css/salon.css), avec le projet en tête (`data-pj="proj-menu"`, menu de page.ts). Pas de fil
+ *  d'Ariane en haut (refusé le 28 nov. 2026) : la barre ne porte que le titre du fil, et la tuile du projet liste repliée. */
+export function mount(box: HTMLElement, proj: Project, o: { openTech: (session: string) => void; bar?: string; openNote?: (id: string) => void; openSkills?: () => void }): void {
   stop();
   if (S.pid !== proj.id) reset(proj.id);
-  p = proj; root = box; openTech = o.openTech; shown = '';
-  box.innerHTML = `<aside class="sl-side" aria-label="Fils du projet"><div class="sl-side-h"><b>Fils <span class="sl-n" data-sl-n></span></b><button type="button" class="btn" data-sl="new" title="Nouveau fil (⌥N)">${icon('plus')}<span>Nouveau fil</span></button></div><label class="sl-q">${icon('search')}<input type="search" data-sl-q placeholder="Chercher un fil…" aria-label="Chercher un fil" value="${esc(query)}"><kbd aria-hidden="true">/</kbd></label><div class="sl-filt" data-sl-filt role="toolbar" aria-label="Filtrer les fils"></div><div class="sl-list" data-sl-list></div></aside>
-    <section class="sl-center"><header class="sl-head" data-sl-head></header><div class="sl-feed" data-sl-feed role="log" aria-live="polite" aria-label="Discussion"></div><button type="button" class="sl-down" data-sl="down" data-sl-down hidden>Nouveaux messages ${icon('chevron')}</button>
+  p = proj; root = box; openTech = o.openTech; openNote = o.openNote ?? (() => undefined); openSkills = o.openSkills ?? (() => undefined); shown = '';
+  // Serveurs du projet : lus une fois par montage (sur ce Mac), pour proposer « Où travailler » à un nouveau fil.
+  if (bridge.local() && !infra.knownServers(proj.id).length) void infra.list(proj).then(() => { if (root === box && box.isConnected) paint(); }).catch(() => undefined);
+  box.innerHTML = `<aside class="sl-side" aria-label="Fils du projet"><div class="sl-side-h"><button type="button" class="sl-proj" data-pj="proj-menu" aria-haspopup="menu" title="Changer de projet">${projIcons.tile(proj)}<span>${esc(proj.name)}</span>${icon('chevron')}</button><span class="sl-n" data-sl-n title="Fils du projet"></span></div><button type="button" class="sl-add" data-sl="new" title="Nouveau fil (⌥N)"><i aria-hidden="true">${icon('plus')}</i><span>Nouveau fil</span></button><label class="sl-q">${icon('search')}<input type="search" data-sl-q placeholder="Chercher un fil…" aria-label="Chercher un fil" value="${esc(query)}"><kbd aria-hidden="true">/</kbd></label><div class="sl-filt" data-sl-filt role="toolbar" aria-label="Filtrer les fils"></div><div class="sl-list" data-sl-list></div><div class="sl-side-cons" data-sl-cons></div></aside>
+    <section class="sl-center"><header class="sl-top">${o.bar ?? ''}<button type="button" class="sl-proj sl-proj-mini" data-pj="proj-menu" aria-haspopup="menu" title="Changer de projet" aria-label="Changer de projet">${projIcons.tile(proj)}</button><div class="sl-head" data-sl-head></div></header><i class="sl-live" data-sl-live aria-hidden="true"></i><div class="sl-design" data-sl-design hidden></div><div class="sl-feed" data-sl-feed role="log" aria-live="polite" aria-label="Discussion"></div><button type="button" class="sl-down" data-sl="down" data-sl-down hidden>Nouveaux messages ${icon('chevron')}</button>
       <form class="sl-comp" autocomplete="off"><div class="sl-drop" aria-hidden="true">${icon('upload')}<span>Dépose tes images ici</span></div><textarea rows="1" aria-label="Ton message" placeholder="Dis à l’équipe ce que tu veux faire…"></textarea>${attach.stripHTML()}
-        <div class="sl-comp-row"><label class="sl-mode" data-sl-mode hidden><select name="mode" aria-label="Mode"><option value="edit">Modifier</option><option value="read">Analyser</option></select></label><select name="model" aria-label="Modèle" title="Modèle de l’agent principal. Auto : le plus économe qui suffit au message">${models(tuneFor('').model)}</select><select name="effort" aria-label="Niveau d’effort" title="Plus l’effort est élevé, plus l’agent réfléchit, et plus il consomme">${EFFORTS.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('')}</select><span class="sl-auto" data-sl-auto hidden></span><span class="sl-hint" data-sl-hint></span><span class="sl-keys" aria-hidden="true"><span><kbd>↵</kbd> <span>envoyer</span></span><span><kbd>⇧</kbd><kbd>↵</kbd> <span>nouvelle ligne</span></span></span>${attach.buttonHTML()}<button type="submit" class="btn btn-primary sl-send" data-sl-send><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg><span>Envoyer</span></button></div></form><p class="sl-codex" data-sl-codex hidden>${icon('terminal')}<span>Conversation Codex : reprends-la dans le Terminal ou dans l’app Codex.</span></p></section>
+        <div class="sl-comp-row"><label class="sl-mode" data-sl-mode hidden><select name="mode" aria-label="Mode"><option value="edit">Modifier</option><option value="read">Analyser</option></select></label><select name="machine" class="sl-machine" aria-label="Où travailler" title="Où l’équipe travaille : sur ce Mac, ou sur un serveur du projet, dans une copie isolée du dépôt distant" hidden></select><select name="model" aria-label="Modèle" title="Modèle de l’agent principal. Auto : le plus économe qui suffit au message">${models(tuneFor('').model)}</select><select name="effort" aria-label="Niveau d’effort" title="Plus l’effort est élevé, plus l’agent réfléchit, et plus il consomme">${EFFORTS.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('')}</select><button type="button" class="sl-auto" data-sl="routes" data-sl-auto hidden></button><span class="sl-hint" data-sl-hint></span><span class="sl-keys" aria-hidden="true"><span><kbd>↵</kbd> <span>envoyer</span></span><span><kbd>@</kbd> <span>agent</span></span><span><kbd>[[</kbd> <span>note</span></span><span><kbd>/</kbd> <span>commande</span></span></span>${attach.buttonHTML()}<button type="submit" class="btn btn-primary sl-send" data-sl-send><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg><span>Envoyer</span></button></div></form><p class="sl-codex" data-sl-codex hidden>${icon('terminal')}<span>Conversation Codex : reprends-la dans le Terminal ou dans l’app Codex.</span></p></section>
     <aside class="sl-now" data-sl-now aria-label="En ce moment"></aside><div class="sl-prof" data-sl-prof role="dialog" aria-label="Fiche de l’agent" hidden></div>`;
   box.classList.add('sl-box', 'sl-solo');
-  let off = false; try { off = localStorage.getItem(TEAM_OFF) === '1'; } catch { /* défaut */ }
+  // Colonne Équipe masquée tant qu'on ne l'a pas demandée (28 nov. 2026) : le plan de l'équipe est dans le fil. '' = ancien « affichée ».
+  let off = true; try { const v = localStorage.getItem(TEAM_OFF); off = v === null || v === '1'; } catch { /* défaut */ }
   box.classList.toggle('sl-now-off', off); box.classList.remove('sl-now-open'); prof = ''; profAt = null;
   if (!box.dataset.slBound) {
     box.dataset.slBound = '1'; bind(box);
     box.addEventListener('toggle', e => { const el = e.target; if (el instanceof HTMLDetailsElement && el.matches('[data-sl-use]')) useOpen = el.open; }, true);
   }
   attach.bind(box); // coller, déposer ou choisir des images : par fil (`data-at-key`, posé par paint)
+  const ta = need<HTMLTextAreaElement>('textarea', box);
+  compose.bind(need('.sl-comp', box), ta, composeSource, () => { grow(ta); drafts.set(shown, ta.value); ready(); showAuto(); });
   // La jauge se met à jour seule ; l'abonnement n'est pris qu'une fois (il repeint le Salon monté à ce moment-là).
   if (!quotaHooked) { quotaHooked = true; quota.onChange(() => { if (root?.isConnected) paint(); }); archived.onChange(() => { if (root?.isConnected) paint(); }); }
   catface.init();

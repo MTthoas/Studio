@@ -20,6 +20,8 @@
 :root #rail .rail-logo { flex: none; width: 36px; height: 36px; padding: 0; justify-content: center; margin-bottom: 2px; }
 :root #rail .rail-logo .logo { width: 22px; height: 22px; }
 :root #rail .rail-zones { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+/* Écrire et Salon d'abord (les deux mondes de l'app), Accueil et Plus un cran plus bas (28 nov. 2026). */
+:root #rail .rail-rest { margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--border); }
 :root #rail .rail-foot { margin-top: auto; display: flex; flex-direction: column; gap: 2px; }
 :root #rail .rail-btn { position: relative; width: 36px; height: 36px; display: grid; place-items: center; border-radius: 9px; color: var(--text-3); transition: background-color var(--mo-d2, .12s) var(--mo-out, ease), color var(--mo-d2, .12s) var(--mo-out, ease), scale var(--mo-d4, .2s) var(--mo-spring, ease); }
 :root #rail .rail-btn .ic { width: 18px; height: 18px; }

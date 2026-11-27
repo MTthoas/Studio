@@ -509,11 +509,11 @@ function keepDraft(f: HTMLFormElement): void {
 /** Dernière machine choisie par projet (`mac`, `server`, `server:<id>`), reprise à chaque nouveau formulaire. */
 const MACHINE_KEY = 'studio.cc.machine';
 function lastMachine(pid: string): string { try { return (JSON.parse(localStorage.getItem(MACHINE_KEY) ?? '{}') as Record<string, string>)[pid] ?? 'mac'; } catch { return 'mac'; } }
-function keepMachine(pid: string, v: string): void {
+export function keepMachine(pid: string, v: string): void {
   try { const all = JSON.parse(localStorage.getItem(MACHINE_KEY) ?? '{}') as Record<string, string>; all[pid] = v; localStorage.setItem(MACHINE_KEY, JSON.stringify(all)); } catch { /* stockage plein ou refusé : le choix ne sera pas repris */ }
 }
 const machineValue = (s: infra.ServerItem): string => s.id ? `server:${s.id}` : 'server';
-function machineOptions(p: Project): string {
+export function machineOptions(p: Project): string {
   const list = infra.knownServers(p.id), want = lastMachine(p.id), sel = list.some(s => machineValue(s) === want) ? want : 'mac';
   return `<option value="mac"${sel === 'mac' ? ' selected' : ''}>Sur le Mac</option>`
     + list.map(s => `<option value="${esc(machineValue(s))}"${machineValue(s) === sel ? ' selected' : ''}>Sur ${esc(s.name || s.dest || s.host)}</option>`).join('');

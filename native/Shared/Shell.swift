@@ -522,7 +522,11 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
 
     /// Sites qu'un cadre de la page peut afficher (frame-src de index.html) : leur navigation reste dans le cadre.
     private static func framable(_ url: URL) -> Bool {
-        guard url.scheme?.lowercased() == "https", let host = url.host?.lowercased() else { return false }
+        let scheme = url.scheme?.lowercased()
+        guard let host = url.host?.lowercased() else { return false }
+        // Site local du projet (vue Design du Salon, design.ts) : servi par ce Mac, joignable de cette machine seulement.
+        if scheme == "http" { return host == "localhost" || host == "127.0.0.1" }
+        guard scheme == "https" else { return false }
         return host == "figma.com" || host.hasSuffix(".figma.com")
     }
 
