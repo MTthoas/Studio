@@ -73,7 +73,7 @@ button, input, textarea, select { font: inherit; color: inherit; }
 button { background: none; border: 0; padding: 0; cursor: default; text-align: left; -webkit-user-select: none; user-select: none; }
 :focus { outline: none; }
 :focus-visible { outline: 2px solid color-mix(in srgb, var(--text) 35%, transparent); outline-offset: 1px; }
-textarea:focus-visible, .title:focus-visible, .pal-input input:focus-visible, .menu:focus-visible, .capture textarea:focus-visible, .ask textarea:focus-visible, .w-capture input:focus-visible { outline: none; }
+textarea:focus-visible, .title:focus-visible, .pal-input input:focus-visible, .menu:focus-visible, .capture textarea:focus-visible, .modal.ask textarea:focus-visible, .w-capture input:focus-visible { outline: none; }
 ::selection { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 [hidden] { display: none !important; }
 .ic { width: 16px; height: 16px; flex: none; }
@@ -405,7 +405,7 @@ select.field { appearance: auto; padding-right: 6px; }
 
 .backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 20px; background: rgba(0, 0, 0, .28); animation: fade .1s; }
 :root[data-theme="dark"] .backdrop { background: rgba(0, 0, 0, .55); }
-.backdrop:has(.palette), .backdrop:has(.capture), .backdrop:has(.ask) { place-items: start center; padding-top: min(14vh, 120px); }
+.backdrop:has(.palette), .backdrop:has(.capture), .backdrop:has(.modal.ask) { place-items: start center; padding-top: min(14vh, 120px); }
 @keyframes fade { from { opacity: 0; } }
 .modal { width: min(440px, 100%); max-height: calc(100dvh - 40px); overflow: auto; border-radius: 12px; background: var(--surface); box-shadow: var(--shadow); padding: 20px; animation: pop .12s ease-out; }
 .modal.small { width: min(380px, 100%); }
@@ -417,8 +417,8 @@ select.field { appearance: auto; padding-right: 6px; }
 .modal-hint .ic { width: 14px; height: 14px; display: inline-block; vertical-align: -2px; margin-right: 6px; }
 .modal-hint code, .cx-sec code { background: var(--code); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; }
 
-.palette, .capture, .ask { width: min(640px, 100%); padding: 0; overflow: hidden; display: flex; flex-direction: column; }
-.palette .modal-body, .capture .modal-body, .ask .modal-body { display: flex; flex-direction: column; min-height: 0; }
+.palette, .capture, .modal.ask { width: min(640px, 100%); padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.palette .modal-body, .capture .modal-body, .modal.ask .modal-body { display: flex; flex-direction: column; min-height: 0; }
 .pal-input { display: flex; align-items: center; gap: 10px; padding: 0 16px; height: 50px; border-bottom: 1px solid var(--border); flex: none; }
 .pal-input .ic { width: 17px; height: 17px; color: var(--text-3); }
 .pal-input input { flex: 1; border: 0; background: none; font-size: var(--t-3); height: 100%; min-width: 0; }
@@ -610,10 +610,10 @@ body.focus .note-head { padding-top: 6vh; }
 .run-out p { margin: 4px 0; }
 
 /* Demander à l'IA, approbation */
-.ask .cap-head { display: flex; align-items: center; gap: 8px; }
-.ask .cap-head span { flex: 1; }
+.modal.ask .cap-head { display: flex; align-items: center; gap: 8px; }
+.modal.ask .cap-head span { flex: 1; }
 .ask-prov { border: 1px solid var(--border-2); border-radius: 5px; background: var(--bg); padding: 2px 6px; font-size: var(--t-1); }
-.ask textarea { width: 100%; border: 0; background: none; resize: none; font-size: var(--t-3); line-height: 1.5; padding: 10px 18px; }
+.modal.ask textarea { width: 100%; border: 0; background: none; resize: none; font-size: var(--t-3); line-height: 1.5; padding: 10px 18px; }
 .ask-opts { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--t-1); color: var(--text-2); padding: 0 18px 10px; }
 .ask-opts label { display: inline-flex; gap: 6px; align-items: center; }
 .ask-opts input { margin: 0; }
@@ -626,7 +626,7 @@ body.focus .note-head { padding-top: 6vh; }
 .ask-pick-list label[hidden] { display: none; }
 .ask-steps { padding: 0 18px; }
 .ask-out { max-height: 46vh; overflow: auto; padding: 12px 18px; font-size: var(--t-2); border-top: 1px solid var(--border); }
-.ask .cap-foot { flex-wrap: wrap; }
+.modal.ask .cap-foot { flex-wrap: wrap; }
 .ask-status { font-size: var(--t-1); color: var(--text-3); display: inline-flex; align-items: center; }
 .ask-actions { display: flex; gap: 6px; }
 .approve { width: min(520px, 100%); }
@@ -813,7 +813,7 @@ button.w-row:hover, label.w-row:hover, .w-agent:hover { background: var(--hover)
   .history .modal-body { grid-template-columns: 1fr; grid-template-rows: 160px minmax(0, 1fr); }
   .help-grid { grid-template-columns: 1fr; }
   .pal-foot span:nth-child(n+3), .cap-hints { display: none; }
-  .body, .md, .pal-input input, .capture textarea, .field, .lock-card input, .ask textarea, .w-capture input, .ask-prov { font-size: 16px; }
+  .body, .md, .pal-input input, .capture textarea, .field, .lock-card input, .modal.ask textarea, .w-capture input, .ask-prov { font-size: 16px; }
   .home-in { padding: 28px 18px 48px; }
   .todo-in { padding: 28px 18px 48px; }
   .td-src { display: none; }

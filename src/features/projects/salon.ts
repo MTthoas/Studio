@@ -494,8 +494,9 @@ function itemsOf(d: Detail, crew: Crew, board: BoardMsg[]): { items: Item[]; ask
   return { items: out, ask: lastText >= 0 && lastText === d.actions.length - 1 && asks(d.actions[lastText]?.text ?? '') };
 }
 
-/** Carte « résultat » d'après l'état de la copie de l'agent : à publier, PR ouverte, fusionné. */
-function resultHTML(t: Thread, d: Detail): string {
+/** Carte « résultat » d'après l'état de la copie de l'agent : à publier, PR ouverte, fusionné.
+ *  L'agent attend une réponse (`ask`) : son travail n'est pas fini, on ne propose pas encore de publier. */
+function resultHTML(t: Thread, d: Detail, ask: boolean): string {
   const wt = d.worktree || t.s.worktree, w = wt ? S.trees.find(x => x.name === wt) : undefined;
   if (!w || t.group === 'work') return '';
   const st = copyStage(w), n = (d.files ?? t.s.files).length, lines = d.lines ?? t.s.lines;
@@ -503,6 +504,7 @@ function resultHTML(t: Thread, d: Detail): string {
   const meta = [n ? `${n} fichier${n > 1 ? 's' : ''}` : '', lines && (lines.add || lines.del) ? `+${lines.add} −${lines.del}` : '', w.branch].filter(Boolean).map(esc).join(' · ');
   const a = esc(w.name);
   const all = d.files ?? t.s.files, fl = all.length ? `<details class="sl-files"><summary>${icon('chevron')}<span>Fichiers</span></summary><div>${all.slice(0, 14).map(f => `<code title="${esc(f)}">${esc(shortPath(f))}</code>`).join('')}${all.length > 14 ? `<small>+${all.length - 14}</small>` : ''}</div></details>` : '';
+  if (st === 'review' && ask) return '';
   if (st === 'review') return `<div class="sl-card res"><span class="sl-pill" style="--c:var(--c-green)">prêt à publier</span><div class="sl-card-t"><b>${esc(title)}</b>${meta ? `<small>${meta}</small>` : ''}${fl}</div><div class="sl-card-a"><button class="btn" data-sl="review" data-wt="${a}">Relire</button><button class="btn btn-primary" data-sl="publish" data-wt="${a}">${icon('upload')}Publier la PR</button></div></div>`;
   if (st === 'pr') return `<div class="sl-card res"><span class="sl-pill" style="--c:var(--c-blue)">PR ouverte</span><div class="sl-card-t"><b>${esc(title)}</b><small>En attente de fusion${meta ? ` · ${meta}` : ''}</small></div><div class="sl-card-a"><button class="btn" data-sl="pr" data-wt="${a}">${icon('pr')}Voir la PR</button></div></div>`;
   // Fusionné : la carte suit la livraison en direct (vérifications sur la branche principale, release), voir `flux.deliveryHTML`.
@@ -583,7 +585,7 @@ function blocksOf(t: Thread, d: Detail | undefined, crew: Crew): { blocks: Block
     blocks.push({ key: `q|${q.id}`, html: msgHTML(crew.me, ms(q.at), plain(q.text) + attach.galleryHTML(q.images), { cls: 'queued', tag: `${icon('history')}en attente` }) });
   blocks.push(...pending(id, [...d.actions.filter(a => a.kind === 'prompt').slice(-5), ...queued], crew));
   if (work) blocks.push({ key: 'working', html: typing(crew, d) });
-  const res = resultHTML(t, d);
+  const res = resultHTML(t, d, ask);
   if (res) blocks.push({ key: 'result', html: res });
   return { blocks, ask };
 }
@@ -684,7 +686,12 @@ function laneOf(t: Thread): Lane {
   if (t.group === 'work') return 'work';
   if (t.group === 'recent') return 'done';
   const w = t.s.worktree ? S.trees.find(x => x.name === t.s.worktree) : undefined;
-  return w && copyStage(w) === 'review' ? 'ready' : 'ask';
+  return w && copyStage(w) === 'review' && !waits(t) ? 'ready' : 'ask';
+}
+/** La dernière réponse de l'agent pose une question : le fil attend l'utilisateur, même si sa copie a déjà des changements. */
+function waits(t: Thread): boolean {
+  const d = S.detail.get(t.id), last = d?.actions[d.actions.length - 1];
+  return !!last && last.kind !== 'prompt' && !last.kind.startsWith('tool:') && asks(last.text);
 }
 /** Seconde ligne d'un fil : ce que l'agent fait à l'instant, ou ce qu'il attend de toi. Rien pour un fil fini. */
 function subLine(t: Thread, lane: Lane): string {
@@ -693,8 +700,7 @@ function subLine(t: Thread, lane: Lane): string {
   if (lane === 'ready') return 'prêt à publier';
   if (lane !== 'ask') return '';
   if (S.runs.some(r => (r.session === t.id || `run:${r.run}` === t.id) && r.status === 'error')) return 'arrêté sur une erreur';
-  const last = d?.actions[d.actions.length - 1];
-  return last && last.kind !== 'prompt' && !last.kind.startsWith('tool:') && asks(last.text) ? 'attend ta réponse' : 'nouveau message';
+  return waits(t) ? 'attend ta réponse' : 'nouveau message';
 }
 function listHTML(th: Thread[], id: string): string {
   if (!S.loaded && !th.length) return '<p class="sl-empty-s"><span class="spin"></span>Lecture des fils…</p>';

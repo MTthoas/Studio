@@ -50,7 +50,7 @@
 /* Fenêtre : monte avec un ressort bref pendant que le fond s'assombrit. */
 :root .backdrop { animation: mo-fade var(--mo-d3) var(--mo-out) backwards; }
 :root .modal { animation: mo-modal var(--mo-d4) var(--mo-spring) backwards; }
-:root .backdrop:has(.palette, .capture, .ask) .modal { transform-origin: 50% 0; animation-name: mo-pal; }
+:root .backdrop:has(.palette, .capture, .modal.ask) .modal { transform-origin: 50% 0; animation-name: mo-pal; }
 @keyframes mo-fade { from { opacity: 0; } }
 @keyframes mo-modal { from { opacity: 0; scale: .97; translate: 0 calc(var(--mo-dy) * 1.5); } }
 @keyframes mo-pal { from { opacity: 0; scale: .985; translate: 0 calc(var(--mo-dy) * -1); } }
