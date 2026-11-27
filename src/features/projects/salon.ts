@@ -963,6 +963,8 @@ let glideEnd = 0;
 function paint(): void {
   if (!root || !p) return;
   const th = threads(), id = curId(th), cur = th.find(t => t.id === id), d = id ? S.detail.get(id) : undefined;
+  // Choix automatique : on s'y tient (en mémoire seulement), sinon la vue saute vers chaque fil qui se met à bouger.
+  if (id && S.loaded && !chosen.has(p.id)) chosen.set(p.id, id);
   const feed = need('[data-sl-feed]', root), ta = need<HTMLTextAreaElement>('textarea', root), key = `${p.id}/${id}`; pin(feed);
   // Un fil lu n'est plus « à toi » (sauf s'il y a une copie à publier, voir `threads`).
   if (cur && cur.group !== 'work' && (seen[cur.id] ?? 0) < cur.act) { seen[cur.id] = cur.act; keepSeen(); }
