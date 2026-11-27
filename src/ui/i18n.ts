@@ -7,6 +7,7 @@ import dictA from './i18n/dict-a.ts';
 import dictB from './i18n/dict-b.ts';
 import dictC from './i18n/dict-c.ts';
 import dictD from './i18n/dict-d.ts';
+import dictE from './i18n/dict-e.ts';
 
 export type Lang = 'en' | 'fr';
 const KEY = 'studio.lang';
@@ -40,7 +41,7 @@ const norm = (s: string) => s.replace(/\s+/g, ' ').trim();
 const escRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 function load(): void {
-  for (const d of [dictA, dictB, dictC, dictD] as Record<string, string>[]) {
+  for (const d of [dictA, dictB, dictC, dictD, dictE] as Record<string, string>[]) {
     for (const [fr, en] of Object.entries(d)) {
       const k = norm(fr);
       if (!/\{\d\}/.test(k)) { exact.set(k, en); continue; }

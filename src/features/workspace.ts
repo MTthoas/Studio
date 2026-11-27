@@ -17,6 +17,7 @@ import * as bridge from '../integrations/remote.ts';
 import * as projects from './projects/model.ts';
 import * as subagents from './projects/subagents.ts';
 import * as attach from './projects/attach.ts';
+import type { Sealed } from '../integrations/noteseal.ts';
 import * as echo from './projects/echo.ts';
 import { feedBlocks, syncFeed, toEnd, nameOf, live, STATUS, modelName, agentCount, COUNT_HINT, newGroup, copyStrip, copyAct, COPY_ACTS, groupOfCopy, copyStage } from './projects/sessions.ts';
 import { exchanges, exchangeBlocks, teamHTML, settled } from './projects/team.ts';
@@ -604,18 +605,20 @@ async function launch(f: HTMLFormElement, i: number): Promise<void> {
  *  ou le défaut) et `voice: 'chat'` (l'agent répond court, comme dans une discussion : `AgentTuning.chat`, Agents.swift). */
 export interface Tune { model: string; effort: string; voice?: 'chat' }
 const tuneOf = (t?: Tune): Record<string, string> => ({ ...(t?.model ? { model: t.model } : {}), ...(t?.effort ? { effort: t.effort } : {}), ...(t?.voice ? { voice: t.voice } : {}) });
-export async function startAgent(p: Project, prompt: string, mode = 'edit', group?: { group: string; slot: number; of: number }, images: attach.Payload[] = [], tune?: Tune): Promise<{ ok: true; session: string; run: string; images: boolean } | { ok: false; message: string }> {
-  const body: Record<string, unknown> = { project: p.id, prompt, mode, repos: p.stack, ...group, ...tuneOf(tune) };
+/** `sealed` : notes liées à la consigne, chiffrées par noteseal.ts (le Mac ne les déchiffre qu'au lancement de Claude). */
+export async function startAgent(p: Project, prompt: string, mode = 'edit', group?: { group: string; slot: number; of: number }, images: attach.Payload[] = [], tune?: Tune, sealed?: Sealed, where?: { machine: string; server?: string }): Promise<{ ok: true; session: string; run: string; images: boolean; sealed: boolean } | { ok: false; message: string }> {
+  // `where` : la machine du nouvel agent (un serveur du projet), comme le formulaire de l'onglet Claude Code ; absent = ce Mac.
+  const body: Record<string, unknown> = { project: p.id, prompt, mode, repos: p.stack, ...group, ...tuneOf(tune), ...(sealed ? { sealed, sealedV: 1 } : {}), ...(where ? { machine: where.machine, ...(where.server ? { server: where.server } : {}) } : {}) };
   // L'équipe du projet part avec la consigne ; avec « auto », les spécialistes utiles y sont d'abord ajoutés.
   const sub = subagents.body(p.id, prompt, mode); if (sub) body.subagents = sub;
   subagents.lastCreated().forEach(n => made.add(n));
   if (images.length) body.images = images;
   const r = await bridge.call('agent', 'start', body, images.length ? 120000 : 60000);
-  return r.ok ? { ok: true, session: typeof r.session === 'string' ? r.session : '', run: typeof r.run === 'string' ? r.run : '', images: attach.confirmed(r, images.length) } : { ok: false, message: r.message ?? 'Lancement impossible.' };
+  return r.ok ? { ok: true, session: typeof r.session === 'string' ? r.session : '', run: typeof r.run === 'string' ? r.run : '', images: attach.confirmed(r, images.length), sealed: !sealed || r.sealed === true } : { ok: false, message: r.message ?? 'Lancement impossible.' };
 }
-export async function reply(x: Pane, prompt: string, interrupt = false, images: attach.Payload[] = [], tune?: Tune): Promise<boolean> {
+export async function reply(x: Pane, prompt: string, interrupt = false, images: attach.Payload[] = [], tune?: Tune, sealed?: Sealed): Promise<boolean> {
   const p = proj(x.project); if (!p || !x.session || x.sub) return false; // un sous-agent ne reçoit pas de réponse : il répond à l'agent principal
-  const body: Record<string, unknown> = { project: p.id, session: x.session, prompt, repos: p.stack, ...(interrupt ? { interrupt: true } : {}), ...tuneOf(tune) };
+  const body: Record<string, unknown> = { project: p.id, session: x.session, prompt, repos: p.stack, ...(interrupt ? { interrupt: true } : {}), ...tuneOf(tune), ...(sealed ? { sealed, sealedV: 1 } : {}) };
   const sub = subagents.body(p.id, prompt, 'edit'); if (sub) body.subagents = sub;
   subagents.lastCreated().forEach(n => made.add(n));
   if (images.length) body.images = images;

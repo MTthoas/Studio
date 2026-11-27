@@ -3,8 +3,10 @@
 // la règle tient en quelques lignes pour pouvoir être corrigée à la lecture. Quand la consigne est courte ou d'un
 // seul tenant, on ne crée rien : Claude se débrouille seul et chaque spécialiste coûte des tokens.
 
+import { uiTask } from './autopick.ts';
+
 /** Noms des modèles de spécialistes (clés de `PRESETS`, en minuscules sans accent). */
-export type Role = 'explorateur' | 'relecteur' | 'testeur' | 'redacteur' | 'integrateur';
+export type Role = 'explorateur' | 'designer' | 'relecteur' | 'testeur' | 'redacteur' | 'integrateur';
 
 /** Retire les accents et met en minuscules : « Rédige la doc » et « redige la doc » se valent. */
 const plain = (s: string): string => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/’/g, "'").toLowerCase();
@@ -26,13 +28,15 @@ function parts(text: string): number {
 /** Spécialistes utiles pour cette consigne, dans l'ordre où ils interviennent. `mode` : 'edit' (Modifier) ou 'read' (Analyser). */
 export function pick(prompt: string, mode: string): Role[] {
   const text = prompt.trim();
-  if (text.length < SHORT && !TESTS.test(plain(text))) return [];
+  const edit = mode !== 'read', ui = edit && uiTask(text) === 2;
+  if (text.length < SHORT && !TESTS.test(plain(text)) && !ui) return [];
   const t = plain(text), n = parts(text), out: Role[] = [];
-  const edit = mode !== 'read';
   // Un seul tenant et pas de mot-clé : rien. Une consigne de 90 caractères sur un seul geste n'a pas besoin d'équipe.
   const wide = WIDE.test(t) || text.length >= LONG;
   if (wide || n >= 2) out.push('explorateur');
-  if (edit && (n >= 2 || text.length >= LONG)) out.push('relecteur');
+  // Interface complexe : un designer, sur le modèle requis (`uiModel()` d'autopick.ts), puis un regard neuf sur le résultat.
+  if (ui) out.push('designer');
+  if (edit && (n >= 2 || text.length >= LONG || ui)) out.push('relecteur');
   if (edit && TESTS.test(t)) out.push('testeur');
   if (edit && DOCS.test(t)) out.push('redacteur');
   if (edit && n >= 3) out.push('integrateur');

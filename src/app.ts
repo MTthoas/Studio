@@ -231,7 +231,7 @@ document.addEventListener('pointerdown', e => { // dès l'appui : le clic ne sui
 type Zone = 'home' | 'write' | 'pilot' | 'more' | 'none';
 const ZONES: Record<Zone, { label: string; icon: string; side: boolean }> = {
   home: { label: 'Accueil', icon: 'home', side: false }, write: { label: 'Écrire', icon: 'notes', side: true },
-  pilot: { label: 'Piloter', icon: 'sparkle', side: true }, more: { label: 'Plus', icon: 'more', side: true }, none: { label: '', icon: '', side: false },
+  pilot: { label: 'Salon', icon: 'sparkle', side: true }, more: { label: 'Plus', icon: 'more', side: true }, none: { label: '', icon: '', side: false },
 };
 const ZONE_OF: Record<string, Zone> = { home: 'home', settings: 'none', all: 'write', tag: 'write', journal: 'write', ephemeral: 'write', inbox: 'write', today: 'write', projets: 'pilot', planner: 'pilot', workspace: 'pilot', claude: 'pilot', agents: 'pilot', tasks: 'pilot' };
 const zoneOf = (type: string): Zone => ZONE_OF[type] ?? 'more';
@@ -244,7 +244,8 @@ function renderRail(z: Zone, dots: Partial<Record<Zone, number>>) {
   paintIfChanged(need('#rail'), `
     <button class="ws rail-logo" data-act="workspace" aria-label="Menu Studio" title="Studio">${logo()}</button>
     <button class="rail-btn" data-act="palette" title="Rechercher (${keys(SC.palette)})" aria-label="Rechercher">${icon('search')}</button>
-    <div class="rail-zones">${btn('home')}${btn('write')}${btn('pilot')}${btn('more')}</div>
+    <div class="rail-zones">${btn('write')}${btn('pilot')}</div>
+    <div class="rail-zones rail-rest">${btn('home')}${btn('more')}</div>
     <div class="rail-foot">
       ${update.ready() ? `<button class="rail-btn rail-update" data-open-conn="maj" title="La nouvelle version est téléchargée : elle s’installe à la relance, ou quand tu quittes Studio" aria-label="Relancer pour mettre à jour">${icon('refresh')}<i class="rail-dot"></i></button>`
         : update.available() ? `<button class="rail-btn rail-update" data-open-conn="maj" title="Une nouvelle version de Studio est disponible" aria-label="Mise à jour disponible">${icon('download')}<i class="rail-dot"></i></button>` : ''}
@@ -492,6 +493,7 @@ function renderMain() {
   const main = need('#main');
   const keep = ed && ed.note.id === ui.id && ed.ta ? { s: ed.ta.selectionStart, e: ed.ta.selectionEnd, top: ed.ta.scrollTop, ptop: ed.read?.scrollTop ?? null, focus: document.activeElement === ed.ta } : null;
   closeAc(); graph?.destroy(); graph = null; ed = null;
+  document.body.classList.remove('lounge'); // posé par la fiche projet quand le Salon prend tout l'écran (projects/page.ts)
   if (ui.view.type === 'commerce' && !commerce.available()) ui.view = { type: 'home' }; // extension éteinte depuis la dernière fois
   if (ui.view.type === 'graph') return mountGraph(main);
   if (ui.view.type === 'home') return home.mount(main);

@@ -252,12 +252,18 @@ La disposition et ce que montre chaque vue sont gardés sur l'appareil.
 
 #### Salon
 
-Le **Salon** est le premier onglet d'un projet (app Mac) : les conversations Claude Code du projet, présentées comme une discussion de groupe plutôt que comme un fil technique.
+Le **Salon** est la face d'un projet (app Mac) et occupe tout l'écran : les conversations Claude Code du projet, présentées comme une discussion de groupe plutôt que comme un fil technique. La liste des fils tient lieu de barre latérale, avec le projet en tête (un clic pour en changer) ; il n'y a plus de rangée d'onglets, les autres vues du projet sont sous **Outils** (« … »).
 
 - **Des prénoms** : l'agent principal s'appelle Moka, l'explorateur Filou, le relecteur Réglisse, le testeur Griffe… Chaque message porte son auteur, son rôle, l'heure, et « @Prénom » quand il s'adresse à quelqu'un.
 - **Ce qu'un humain dirait** : qui confie quoi à qui, les comptes rendus (repliés), la question qui t'attend, et à la fin la carte du résultat avec **Publier la PR**. Les outils, fichiers lus et commandes restent derrière **Vue technique**.
 - **Un salon par projet**, et les agents ne se parlent qu'au sein d'une même consigne : rien ne passe d'un projet à l'autre.
-- **Vue d'ensemble** reste disponible dans « Plus ▾ ».
+- **Fils par urgence** : ceux qui t'attendent, puis ceux au travail (avec l'action en cours), ceux prêts à publier, les terminés.
+- **Plan de l'équipe** dans le fil : une ligne par sous-agent, ce qu'il fait, ce qui est fini. La colonne Équipe se rouvre d'un clic sur les chats.
+- **Vue Design** : les captures d'écran des agents en grand (← → pour passer de l'une à l'autre) et l'aperçu du site local du projet, à la largeur d'un ordinateur, d'une tablette ou d'un téléphone.
+- **Le champ** : `@` écrit à un agent, `[[` lie une note du projet (son contenu part chiffré avec le message), `/` lance une commande ; ↑ dans un champ vide reprend le dernier message. Au survol d'un message : copier, citer, garder en note du projet.
+- **Skills** : une note portant `#skill` est un savoir-faire réutilisable (marche à suivre, conventions). `/` puis son titre le joint au message ; « Nouveau skill » et « Gérer les skills » sont dans le même menu. Les skills du dossier `.claude/skills` de Claude Code ne sont pas chargés : les agents de Studio démarrent sans les réglages de l'utilisateur.
+- **Serveurs** : quand le projet a un serveur, un nouveau fil choisit où l'équipe travaille (ce Mac ou le serveur).
+- **Choix du modèle** : avec « Auto », l'orchestrateur range la consigne dans un niveau (léger, courant, profond, interface) et prend le modèle de ce niveau ; un clic sur la pastille « Auto » règle le modèle de chaque niveau (Claude, Fable, modèle local Ollama…). Une interface complexe part sur le modèle du niveau « Interface », et un spécialiste **designer** rejoint l'équipe.
 
 #### Planification
 

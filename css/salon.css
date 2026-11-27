@@ -432,3 +432,213 @@ button.sl-av:focus-visible, .sl-who:focus-visible, .sl-to:focus-visible, .sl-mem
 .sl-shots .at-gthumb { width: 220px; height: 138px; border-radius: 10px; }
 .sl-shots .at-gthumb img { object-fit: cover; object-position: top center; }
 @media (max-width: 520px) { .sl-shots .at-gthumb { width: calc(50% - 4px); height: auto; aspect-ratio: 16 / 10; } }
+
+/* ============ Salon plein écran (28 nov. 2026, « garde que la lounge, sur tout l'écran, le projet dans un fil d'Ariane ») ============
+   La fiche projet pose `body.lounge` (page.ts) : plus d'en-tête de projet ni d'onglets. La liste des fils devient la barre de
+   la zone (celle de l'app s'efface au-dessus de 900 px ; en dessous, le tiroir de l'app reste), la discussion est le panneau,
+   et sa barre (`.sl-top`) porte le bouton de la barre latérale, le projet (menu) et le fil ouvert. */
+.todo.pj.pj-lounge { padding: 0; overflow: hidden; min-height: 0; }
+.pj-lounge > .sl-box { flex: 1 0 0; min-width: 0; height: auto; min-height: 0; border: 0; border-radius: 0; background: none; overflow: visible; }
+:root body.lounge #main { background: none; border-color: transparent; overflow: visible; }
+.pj-lounge .sl-side { --bg-list: var(--frame); background: none; border-right: 0; padding: 0 8px 0 2px; overflow: hidden; transition: opacity var(--mo-d3), visibility 0s; }
+.pj-lounge .sl-center { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+.pj-lounge .sl-now { border: 1px solid var(--border); border-left: 0; border-radius: 0 10px 10px 0; }
+@media (min-width: 1100px) { .pj-lounge .sl-box:not(.sl-now-off, .sl-solo) .sl-center { border-radius: 10px 0 0 10px; } }
+@media (min-width: 901px) {
+  :root body.lounge.lounge #app { grid-template-columns: var(--rail-w) 0 0 minmax(0, 1fr); padding-left: 0; }
+  :root body.lounge #sidebar, :root body.lounge #list { visibility: hidden; opacity: 0; border: 0; }
+  /* Le bouton « barre latérale » de l'app replie ici la liste des fils : la discussion prend toute la largeur. */
+  body.lounge.no-side .sl-box { --sl-l: 0px; }
+  body.lounge.no-side .sl-side { visibility: hidden; opacity: 0; padding: 0; }
+  body.lounge.no-side .pj-lounge { padding-left: 8px; }
+}
+
+/* ---- Barre du fil : bouton de la barre latérale, titre du fil et son point d'état, vue, commandes. Pas de fil d'Ariane
+   (refusé le 28 nov. 2026) : le projet est en tête de la liste des fils ; liste repliée, sa tuile revient ici. ---- */
+.sl-top { display: flex; align-items: center; gap: 6px; flex: none; min-height: 48px; padding: 0 10px 0 8px; }
+.sl-top .tb-side { flex: none; }
+.sl-proj { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; height: 32px; padding: 0 8px; border-radius: 8px; font: 600 var(--t-3) var(--font); color: var(--text); text-align: left; transition: background var(--mo-d1), scale var(--mo-d2) var(--mo-out); }
+.sl-proj > span { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sl-proj:hover, .sl-proj[aria-expanded="true"] { background: var(--hover); }
+.sl-proj:active { scale: var(--mo-press-row); }
+.sl-proj:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-soft); }
+.sl-proj > .ic { width: 11px; height: 11px; flex: none; color: var(--text-2); }
+.sl-proj-mini { display: none; flex: none; width: 30px; height: 30px; padding: 0; justify-content: center; }
+@media (min-width: 901px) { body.lounge.no-side .sl-proj-mini { display: flex; } }
+.sl-top .sl-head { flex: 1; min-width: 0; min-height: 0; padding: 0 0 0 4px; border: 0; gap: 6px; }
+.sl-top .sl-head h2 { display: flex; align-items: center; gap: 9px; flex: 0 1 auto; min-width: 48px; font-size: var(--t-3); font-weight: 600; animation: sl-in var(--mo-d3) var(--mo-out); }
+.sl-top .sl-head h2 > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sl-grow { flex: 1 1 0; min-width: 0; }
+.sl-ic { width: 30px; height: 28px; padding: 0; flex: none; }
+.sl-top .sl-nowbtn { height: 28px; padding: 0 6px; flex: none; }
+/* Sélecteur à deux ou trois positions (vue du centre, onglets et largeurs de la vue Design) : un cadre fin, sans fond. */
+.sl-seg { display: inline-flex; flex: none; gap: 2px; }
+.sl-seg button { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 7px; font: 500 var(--t-1) var(--font); color: var(--text-2); box-shadow: inset 0 0 0 1px transparent; transition: color var(--mo-d2), box-shadow var(--mo-d2), scale var(--mo-d2) var(--mo-out); }
+.sl-seg button:hover { color: var(--text); }
+.sl-seg button:active { scale: var(--mo-press); }
+.sl-seg button[aria-pressed="true"] { color: var(--text); box-shadow: inset 0 0 0 1px var(--border-2); }
+.sl-seg button:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-soft); }
+.sl-seg button span { font-weight: 400; font-variant-numeric: tabular-nums; }
+.sl-seg .ic { width: 14px; height: 14px; }
+/* Filet sous la barre : un reflet le parcourt tant que l'équipe travaille. */
+.sl-live { display: block; flex: none; position: relative; height: 1px; overflow: hidden; background: var(--border); }
+.sl-live.on::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 22%; background: linear-gradient(90deg, transparent, var(--c-amber), transparent); animation: sl-sweep 1.6s var(--mo-in-out) infinite; }
+@keyframes sl-sweep { from { translate: -100% 0; } to { translate: 480% 0; } }
+
+/* ---- Liste des fils : titre, « Nouveau fil », lignes sur deux niveaux, consommation en pied ---- */
+.pj-lounge .sl-side-h { height: 48px; gap: 4px; padding: 0 8px 0 6px; }
+.pj-lounge .sl-side-h .sl-n { flex: none; margin: 0; font-size: var(--t-1); }
+.sl-add { display: flex; align-items: center; gap: 10px; flex: none; height: 34px; margin: 0 6px 8px; padding: 0 8px; border-radius: 8px; color: var(--text-2); font: 500 var(--t-2) var(--font); transition: background var(--mo-d2), color var(--mo-d2), scale var(--mo-d2) var(--mo-out); }
+.sl-add > i { flex: none; width: 20px; height: 20px; display: grid; place-items: center; border: 1px solid var(--border-2); border-radius: 6px; color: var(--text-3); }
+.sl-add .ic { width: 12px; height: 12px; }
+.sl-add:hover { background: var(--hover); color: var(--text); }
+.sl-add:hover > i { color: var(--text); border-color: var(--text-3); }
+.sl-add:active { scale: .98; }
+.sl-add:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-soft); }
+.sl-row.two { min-height: 46px; }
+.sl-row-b { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.sl-row-b .sl-row-t { flex: none; }
+.sl-row-s { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-1); line-height: 1.35; color: var(--text-3); }
+.sl-row:has(.sl-dot.work) .sl-row-s { color: color-mix(in srgb, var(--c-amber) 62%, var(--text-2)); }
+.sl-row:has(.sl-dot.ask) .sl-row-s { color: color-mix(in srgb, var(--c-orange) 70%, var(--text)); }
+.sl-dot.ask { background: var(--c-orange); }
+.sl-dot.ready { background: var(--c-green); }
+.sl-side-cons:empty { display: none; }
+.sl-side-cons .sl-cons { max-height: 38vh; padding: 10px 12px 12px 14px; background: none; }
+
+/* ---- Plan de l'équipe, dans le fil ---- */
+.sl-plan { flex: none; align-self: flex-start; width: min(100% - 40px, 72ch); margin-left: 40px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface, var(--bg)); overflow: hidden; }
+.sl-plan header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px 8px; }
+.sl-plan header b { font-size: var(--t-2); font-weight: 600; }
+.sl-plan header span { font-size: var(--t-1); color: var(--text-3); font-variant-numeric: tabular-nums; }
+.sl-prog { display: block; height: 2px; background: var(--border); }
+.sl-prog > i { display: block; height: 100%; background: var(--c-green); transition: width var(--mo-d5) var(--mo-out); }
+.sl-plan.on .sl-prog > i { background: var(--c-amber); }
+.sl-step { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 8px 12px; text-align: left; font: inherit; color: var(--text); transition: background var(--mo-d1), scale var(--mo-d2) var(--mo-out); }
+.sl-step:hover { background: var(--hover); }
+.sl-step:active { scale: var(--mo-press-row); }
+.sl-step:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--accent-soft); }
+.sl-step + .sl-step { border-top: 1px solid var(--border); }
+.sl-step-i { flex: none; width: 16px; height: 18px; display: grid; place-items: center; font-style: normal; color: var(--c-green); }
+.sl-step-i .ic { width: 13px; height: 13px; }
+.sl-step-i .spin { width: 11px; height: 11px; }
+.sl-step-b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.sl-step-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+.sl-step.on .sl-step-t { color: var(--text); }
+.sl-step small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-1); color: var(--text-3); }
+.sl-step.on small { color: color-mix(in srgb, var(--c-amber) 62%, var(--text-2)); }
+.sl-step-w { flex: none; display: inline-flex; align-items: center; font-size: var(--t-1); color: var(--text-2); }
+.sl-step time { flex: none; min-width: 3.2em; text-align: right; font-size: var(--t-1); color: var(--text-3); font-variant-numeric: tabular-nums; }
+.sl-new.sl-plan { animation: sl-card var(--mo-d5) var(--mo-spring) both; }
+
+/* ---- Gestes d'un message (copier, citer, garder en note) : au survol ou au focus ---- */
+.sl-bd { position: relative; }
+.sl-msg .sl-bd > .sl-acts { position: absolute; top: -8px; right: -6px; z-index: 1; display: inline-flex; gap: 1px; width: auto; margin: 0; padding: 2px; border: 1px solid var(--border-2); border-radius: 8px; background: var(--bg); box-shadow: 0 2px 8px rgb(0 0 0 / .14); opacity: 0; translate: 0 3px; pointer-events: none; transition: opacity var(--mo-d1), translate var(--mo-d2) var(--mo-out); }
+.sl-msg.me .sl-bd > .sl-acts { right: auto; left: -6px; }
+.sl-msg:hover .sl-bd > .sl-acts, .sl-msg:focus-within .sl-bd > .sl-acts { opacity: 1; translate: 0 0; pointer-events: auto; }
+.sl-acts button { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 6px; color: var(--text-3); transition: background var(--mo-d1), color var(--mo-d1), scale var(--mo-d2) var(--mo-out); }
+.sl-acts button:hover { background: var(--hover); color: var(--text); }
+.sl-acts button:active { scale: .9; }
+.sl-acts .ic { width: 13px; height: 13px; }
+@media (hover: none) { .sl-msg .sl-bd > .sl-acts { display: none; } }
+
+/* ---- Complétion du champ (compose.ts) : « @ » agent, « [[ » note, « / » commande ---- */
+.sl-ac { position: absolute; left: 8px; bottom: calc(100% + 6px); z-index: 6; width: min(340px, calc(100% - 16px)); padding: 4px; border-radius: 10px; background: var(--surface, var(--bg)); box-shadow: var(--shadow); transform-origin: bottom left; animation: sl-pop var(--mo-d3) var(--mo-spring) both; }
+.sl-ac[hidden] { display: none; }
+.sl-ac-h { padding: 4px 8px 2px; font-size: 11.5px; font-weight: 500; color: var(--text-3); }
+.sl-ac-i { display: flex; align-items: center; gap: 8px; width: 100%; height: 30px; padding: 0 8px; border-radius: 7px; font: var(--t-2) var(--font); color: var(--text); text-align: left; }
+.sl-ac-i.on, .sl-ac-i:hover { background: var(--active); }
+.sl-ac-i .ic { flex: none; width: 14px; height: 14px; color: var(--text-3); }
+.sl-ac-i > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sl-ac-i small { flex: none; font-size: var(--t-1); color: var(--text-3); }
+
+/* ---- Carte « prêt à publier » : fichiers dépliables ---- */
+.sl-files { margin-top: 3px; font-size: var(--t-1); }
+.sl-files summary { display: inline-flex; align-items: center; gap: 4px; list-style: none; cursor: pointer; color: var(--text-3); }
+.sl-files summary::-webkit-details-marker { display: none; }
+.sl-files summary:hover { color: var(--text); }
+.sl-files summary .ic { width: 11px; height: 11px; transform: rotate(-90deg); transition: transform var(--mo-d2) var(--mo-out); }
+.sl-files[open] summary .ic { transform: none; }
+.sl-files > div { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.sl-files code { padding: 1px 6px; border-radius: 5px; background: var(--hover); font-size: 11px; }
+
+/* ---- Vue Design (design.ts, `dz-`) : captures des agents, aperçu du site local ---- */
+.sl-center.sl-v-design :is(.sl-feed, .sl-down, .sl-comp, .sl-codex) { display: none; }
+.sl-design { flex: 1; min-height: 0; display: flex; flex-direction: column; animation: sl-fade var(--mo-d4) var(--mo-out); }
+.sl-design[hidden] { display: none; }
+.dz-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; padding: 12px 14px 0; }
+.dz-stage { flex: 1; min-height: 0; display: grid; place-items: center; padding: 14px; overflow: auto; }
+.dz-big { width: 100%; height: 100%; display: grid; place-items: center; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-list); cursor: zoom-in; transition: border-color var(--mo-d2), box-shadow var(--mo-d3) var(--mo-out); }
+.dz-big:hover { border-color: var(--border-2); box-shadow: 0 14px 36px -16px rgb(0 0 0 / .45); }
+.dz-big:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-soft); }
+.dz-big img { width: 100%; height: 100%; object-fit: contain; animation: sl-fade var(--mo-d4) var(--mo-out); }
+.dz-big .at-ph, .dz-thumb .at-ph { display: block; width: 100%; height: 100%; background: var(--hover); }
+.dz-big > span:not(.at-ph) { color: var(--text-3); font-size: var(--t-1); }
+.dz-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex: none; min-height: 28px; padding: 0 14px 10px; font-size: var(--t-1); color: var(--text-3); }
+.dz-cap { display: inline-flex; align-items: baseline; gap: 8px; min-width: 0; }
+.dz-cap b { font-size: var(--t-2); font-weight: 600; color: var(--text); }
+.dz-cap code { font-size: 11px; }
+.dz-nav { display: inline-flex; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
+.dz-strip { display: flex; gap: 8px; flex: none; padding: 0 14px 14px; overflow-x: auto; }
+.dz-thumb { flex: none; width: 96px; height: 60px; overflow: hidden; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-list); opacity: .55; transition: opacity var(--mo-d2), border-color var(--mo-d2), scale var(--mo-d2) var(--mo-out); }
+.dz-thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top center; }
+.dz-thumb:hover { opacity: 1; }
+.dz-thumb:active { scale: var(--mo-press); }
+.dz-thumb.on { opacity: 1; border-color: var(--text-2); }
+.dz-thumb:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--accent-soft); }
+.dz-empty { margin: auto; max-width: 42ch; padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; color: var(--text-2); }
+.dz-empty > .ic { width: 28px; height: 28px; color: var(--text-3); }
+.dz-empty h3 { margin: 4px 0 0; font-size: var(--t-4); font-weight: 600; color: var(--text); }
+.dz-empty p { margin: 0; line-height: 1.5; }
+.dz-empty .btn { margin-top: 8px; }
+.dz-live { place-items: stretch center; }
+.dz-device { width: 100%; max-width: 100%; height: 100%; overflow: hidden; border: 1px solid var(--border-2); border-radius: 12px; background: #fff; transition: width var(--mo-d5) var(--mo-out), border-radius var(--mo-d5) var(--mo-out); }
+.sl-design[data-size="tablet"] .dz-device { width: 820px; }
+.sl-design[data-size="phone"] .dz-device { width: 390px; border-radius: 28px; }
+.dz-frame { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
+
+:root[data-motion="off"] .sl-live.on::after { animation: none; }
+@media (prefers-reduced-motion: reduce) { .sl-live.on::after { animation: none; } .dz-device { transition: none; } }
+.sl-step-i .spin { margin: 0; border-top-color: var(--c-amber); }
+.sl-side-cons { flex: none; border-top: 1px solid var(--border); margin: 0 6px; }
+.sl-side-cons .sl-cons { border-top: 0; padding: 10px 8px 6px; }
+.sl-side-cons h4 { margin: 0 0 8px; font-size: 11.5px; font-weight: 500; color: var(--text-3); }
+
+/* ---- Messages pleine largeur, sans fond gris (28 nov. 2026, « pas de gris, les bulles prennent la largeur ») ----
+   Le texte d'un agent court sur toute la colonne, sans bulle ; le mien garde sa teinte d'accent, sur toute la largeur aussi. */
+.pj-lounge .sl-bd { flex: 1 1 auto; max-width: none; }
+.pj-lounge .sl-bub { width: auto; padding: 0; border-radius: 0; background: none; }
+.pj-lounge .sl-bub + .sl-bub, .pj-lounge .sl-bub + .sl-fold, .pj-lounge .sl-fold > .sl-bub + .sl-bub { margin-top: 8px; }
+.pj-lounge .sl-rest > summary { padding-left: 0; }
+.pj-lounge .sl-msg.me { flex-direction: row; }
+.pj-lounge .sl-msg.me header { justify-content: flex-start; }
+.pj-lounge .sl-msg.me .sl-bd > :not(header, .sl-acts) { width: auto; margin-left: 0; padding: 9px 12px; border-radius: 12px; }
+.pj-lounge .sl-msg.me .sl-bd > .sl-acts { left: auto; right: -6px; }
+.pj-lounge .sl-msg.cont .sl-bd > .sl-bub:first-of-type { border-radius: 0; }
+.pj-lounge .sl-dots { padding: 6px 0; background: none; }
+.pj-lounge .sl-brief { background: none; border: 1px solid var(--border); }
+.pj-lounge .sl-plan { width: auto; align-self: stretch; margin-left: 40px; background: none; }
+.pj-lounge .sl-msg.ask .sl-bd { flex: 1 1 auto; }
+
+/* ---- Où travailler (serveur du projet), routage des modèles (« Auto »), modèle affiché sans fond ---- */
+.sl-comp-row > select.sl-machine[hidden] { display: none; }
+.sl-srv { display: inline-flex; align-items: center; gap: 5px; flex: none; font-size: var(--t-1); color: var(--text-2); }
+.sl-srv .ic { width: 13px; height: 13px; }
+button.sl-auto { cursor: pointer; background: none; box-shadow: inset 0 0 0 1px var(--border-2); color: var(--text-2); transition: color var(--mo-d1), box-shadow var(--mo-d1), scale var(--mo-d2) var(--mo-out); }
+button.sl-auto:hover { color: var(--text); box-shadow: inset 0 0 0 1px var(--text-3); }
+button.sl-auto:active { scale: var(--mo-press); }
+.menu.sl-route { width: 340px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.sl-route-h { display: flex; flex-direction: column; gap: 2px; }
+.sl-route-h b { font-size: var(--t-2); font-weight: 600; }
+.sl-route-h small, .sl-route-r small { font-size: var(--t-1); color: var(--text-3); line-height: 1.4; }
+.sl-route-r { display: flex; align-items: center; gap: 10px; }
+.sl-route-r > span { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.sl-route-r b { font-weight: 500; }
+.sl-route-r select { flex: none; width: 132px; height: 28px; padding: 0 6px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--bg); color: var(--text); font: var(--t-1) var(--font); }
+.pj-lounge .sl-model { padding: 0; background: none; }
+
+.dz-nav [data-dz="prev"] .ic { transform: scaleX(-1); }
+.dz-big { position: relative; }
+.dz-big img { position: absolute; inset: 0; }
+
+.sl-ac { max-height: 286px; overflow-y: auto; }
