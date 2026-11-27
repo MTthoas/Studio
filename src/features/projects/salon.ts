@@ -934,7 +934,16 @@ const emptyHTML = (name: string, first: boolean): string => `<div class="sl-empt
 // ---------- Rendu ----------
 /** Mouvement coupé (réglage de l'app ou du système) : défilement direct. */
 const calm = (): boolean => document.documentElement.dataset.motion === 'off' || matchMedia('(prefers-reduced-motion: reduce)').matches;
-const grow = (ta: HTMLTextAreaElement): void => { ta.style.height = 'auto'; ta.style.height = `${Math.min(ta.scrollHeight + 2, 200)}px`; };
+const grow = (ta: HTMLTextAreaElement): void => { ta.style.height = 'auto'; ta.style.height = `${Math.min(ta.scrollHeight + 2, 200)}px`; pin(ta.closest('.sl-center')?.querySelector<HTMLElement>('[data-sl-feed]')); };
+/** Le fil lu jusqu'en bas y reste quand il rétrécit (champ qui grandit, pièces jointes, indice) : sans quoi le dernier message,
+ *  souvent la question qui attend, passe sous le champ. `bottomed` est tenu à jour au défilement. */
+const bottomed = new WeakMap<HTMLElement, boolean>();
+const watched = new WeakSet<HTMLElement>();
+const feedRO = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(es => { for (const e of es) { const f = e.target as HTMLElement; if (bottomed.get(f) !== false) f.scrollTop = f.scrollHeight; } });
+const pin = (f: HTMLElement | null | undefined): void => {
+  if (!f || watched.has(f)) return; watched.add(f); feedRO?.observe(f);
+  f.addEventListener('scroll', () => bottomed.set(f, f.scrollHeight - f.scrollTop - f.clientHeight < 60), { passive: true });
+};
 /** Le bouton d'envoi s'allume dès qu'il y a quelque chose à envoyer. */
 const ready = (): void => { const f = root?.querySelector('.sl-comp'); f?.classList.toggle('sl-ready', !!root?.querySelector('textarea')?.value.trim() || attach.count(f as Element) > 0); };
 /** Place de chaque fil dans la liste, avant qu'elle soit redessinée. */
@@ -954,7 +963,7 @@ let glideEnd = 0;
 function paint(): void {
   if (!root || !p) return;
   const th = threads(), id = curId(th), cur = th.find(t => t.id === id), d = id ? S.detail.get(id) : undefined;
-  const feed = need('[data-sl-feed]', root), ta = need<HTMLTextAreaElement>('textarea', root), key = `${p.id}/${id}`;
+  const feed = need('[data-sl-feed]', root), ta = need<HTMLTextAreaElement>('textarea', root), key = `${p.id}/${id}`; pin(feed);
   // Un fil lu n'est plus « à toi » (sauf s'il y a une copie à publier, voir `threads`).
   if (cur && cur.group !== 'work' && (seen[cur.id] ?? 0) < cur.act) { seen[cur.id] = cur.act; keepSeen(); }
   // Autre fil : le brouillon du précédent est gardé, celui-ci est repris, le fil repart du bas.

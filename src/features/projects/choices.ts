@@ -33,7 +33,7 @@ export function parse(t: string): { text: string; questions: Question[] } {
 export function html(qs: Question[]): string {
   if (!qs.length) return '';
   const multi = qs.length > 1;
-  return `<div class="sl-ask-qs${multi ? ' multi' : ''}">${qs.map((x, i) => `<fieldset class="sl-ask-q" data-q="${i}"><legend>${esc(x.q)}</legend><div class="sl-ask-opts">${x.options.map(o =>
+  return `<div class="sl-ask-qs${multi ? ' multi' : ''}">${qs.map((x, i) => `<fieldset class="sl-ask-q" data-q="${i}"><legend data-no-i18n>${esc(x.q)}</legend><div class="sl-ask-opts" data-no-i18n>${x.options.map(o =>
     `<button type="button" class="sl-ch" data-sl="choice" data-q="${i}" data-text="${esc(o.label)}" aria-pressed="false"${o.hint ? ` title="${esc(o.hint)}"` : ''}><b>${esc(o.label)}</b>${o.hint ? `<small>${esc(o.hint)}</small>` : ''}</button>`).join('')}</div></fieldset>`).join('')}${multi ? `<button type="button" class="btn btn-primary sl-ask-go" data-sl="choices" disabled>Envoyer mes choix</button>` : ''}</div>`;
 }
 

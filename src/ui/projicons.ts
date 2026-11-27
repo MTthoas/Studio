@@ -1,12 +1,9 @@
-// Icônes des projets : un pictogramme dessiné à la main sur une grille de 24, trait de 1,7, bouts ronds (même main que kit.ts),
-// posé sur une tuile teintée de la couleur du projet. Styles et mouvements dans css/projicons.css (préfixe pi-).
-//
-// Chaque icône a une partie mobile, `<g class="pi-m">`, qui joue un petit geste propre à l'icône (la fusée décolle, l'obturateur
-// s'ouvre, la vapeur monte…) au survol de la tuile ou de la ligne qui la porte, et une fois quand on la choisit (`.pi-hop`).
-// Le choix est écrit dans la note du projet (`icône:` et `couleur:` du bloc ```projet, voir model.ts) ; sans choix, `guessIcon`
-// la devine du nom du projet.
+// Projets : logo du dépôt ou pastille de couleur (`tile`) et sélecteur de couleur (`picker`) ; styles dans css/projicons.css (préfixe pi-).
+// Les pictogrammes dessinés ont été retirés de l'affichage le 28 nov. 2026 (« garde les pastilles »). `ICONS`/`guessIcon` restent
+// pour le champ `icône:` du bloc ```projet (model.ts), lu mais plus montré.
 import { esc } from '../lib/markdown.ts';
 import { popover, HUES } from './kit.ts';
+import { logoOf, onChange } from '../integrations/github/logo.ts';
 
 export interface Glyph { label: string; base: string; m: string; words?: RegExp }
 
@@ -40,11 +37,6 @@ export const ICONS: Record<string, Glyph> = {
 };
 export const ICON_ORDER = Object.keys(ICONS);
 
-const svg = (name: string): string => {
-  const g = ICONS[name] ?? ICONS.code!;
-  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${g.base}<g class="pi-m">${g.m}</g></svg>`;
-};
-
 const fold = (s: string): string => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 /** Icône devinée du nom d'un projet (mots-clés), sinon une icône de son genre : vidéo pour un projet social, code ou app pour le reste. */
 // Un projet social regarde d'abord les sujets de contenu (« Studio Photo » → appareil photo, pas une app).
@@ -56,41 +48,42 @@ export function guessIcon(name: string, kind: 'code' | 'social'): string {
   return kind === 'social' ? 'play' : 'window';
 }
 
-/** Tuile d'un projet : `size` en px (taille de la tuile, le dessin en prend 70 %), `cls` en plus (pi-lg, pi-hop…). */
-export function tile(p: { icon: string; hue: string; name?: string }, cls = '', size = 0): string {
-  const st = `--c:var(--c-${p.hue})${size ? `;--pi:${size}px` : ''}`;
-  return `<i class="pi pi-${esc(p.icon)}${cls ? ` ${cls}` : ''}" style="${st}"${p.name ? ` title="${esc(p.name)}"` : ''}>${svg(p.icon)}</i>`;
+/** Pastille d'un projet : le logo de son dépôt principal s'il en a un (src/integrations/github/logo.ts), sinon un carré arrondi de sa couleur ; `size` = taille de la case en px, `cls` en plus (pi-lg, pi-hop…). */
+export function tile(p: { icon: string; hue: string; name?: string; repos?: readonly string[] }, cls = '', size = 0): string {
+  const st = `--c:var(--c-${p.hue})${size ? `;--pi:${size}px` : ''}`, repo = p.repos?.[0], src = logoOf(repo);
+  return `<i class="pi${src ? ' pi-logo' : ''}${cls ? ` ${cls}` : ''}" style="${st}"${repo ? ` data-pi-repo="${esc(repo)}"` : ''}${p.name ? ` title="${esc(p.name)}"` : ' aria-hidden="true"'}>${src ? `<img src="${src}" alt="">` : ''}</i>`;
 }
-/** Tuile sans couleur propre : elle prend le --c du bouton qui la porte (sélecteur, où la couleur change sans tout redessiner). */
-export const glyph = (name: string): string => `<i class="pi pi-${esc(name)}">${svg(name)}</i>`;
+// Un logo arrive (ou disparaît) : les pastilles déjà affichées de ce dépôt changent sur place, sans redessiner la page.
+onChange(repo => {
+  const src = logoOf(repo);
+  document.querySelectorAll<HTMLElement>(`.pi[data-pi-repo="${CSS.escape(repo)}"]`).forEach(el => {
+    el.classList.toggle('pi-logo', !!src); el.innerHTML = src ? `<img src="${src}" alt="">` : '';
+  });
+});
 
 const HUE_LABEL: Record<string, string> = { blue: 'Bleu', green: 'Vert', amber: 'Ambre', violet: 'Violet', pink: 'Rose', teal: 'Sarcelle', orange: 'Orange', indigo: 'Indigo' };
 
-/** Sélecteur d'icône et de couleur, ancré sous `anchor`. `pick` reçoit chaque choix aussitôt (l'appelant l'enregistre) ;
- *  le sélecteur reste ouvert pour essayer d'autres icônes, Échap ou un clic dehors le ferment. */
+/** Sélecteur de couleur, ancré sous `anchor`. `pick` reçoit chaque choix aussitôt (l'appelant l'enregistre) ; l'icône est rendue
+ *  telle quelle. Le sélecteur reste ouvert pour comparer, Échap ou un clic dehors le ferment. */
 export function picker(anchor: Element, cur: { icon: string; hue: string }, pick: (next: { icon: string; hue: string }) => void): void {
   let now = { ...cur };
-  const grid = () => ICON_ORDER.map(k => `<button type="button" data-pi="${k}" aria-pressed="${k === now.icon}" title="${esc(ICONS[k]!.label)}" aria-label="${esc(ICONS[k]!.label)}" style="--c:var(--c-${now.hue})">${glyph(k)}</button>`).join('');
   const hues = () => HUES.map(h => `<button type="button" data-pi-hue="${h}" aria-pressed="${h === now.hue}" title="${HUE_LABEL[h] ?? h}" aria-label="${HUE_LABEL[h] ?? h}" style="--c:var(--c-${h})"></button>`).join('');
-  const head = () => `${tile(now, 'pi-lg')}<b>${esc(ICONS[now.icon]?.label ?? '')}</b><small>Icône du projet</small>`;
-  const pop = popover(anchor, `<div class="pi-pick-h">${head()}</div><div class="pi-pick-grid" role="group" aria-label="Icône">${grid()}</div><div class="pi-pick-hues" role="group" aria-label="Couleur">${hues()}</div>`, 'pi-pick');
+  const head = () => `${tile(now)}<b>${esc(HUE_LABEL[now.hue] ?? now.hue)}</b><small>Couleur du projet</small>`;
+  const pop = popover(anchor, `<div class="pi-pick-h">${head()}</div><div class="pi-pick-hues" role="group" aria-label="Couleur">${hues()}</div>`, 'pi-pick');
   const m = pop.panel;
-  const repaint = (hop: boolean): void => {
-    const h = m.querySelector('.pi-pick-h'); if (h) h.innerHTML = head();
-    if (hop) m.querySelector('.pi-pick-h .pi')?.classList.add('pi-hop');
-    m.querySelectorAll<HTMLElement>('[data-pi]').forEach(b => { b.setAttribute('aria-pressed', String(b.dataset.pi === now.icon)); b.style.setProperty('--c', `var(--c-${now.hue})`); });
-    m.querySelectorAll<HTMLElement>('[data-pi-hue]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.piHue === now.hue)));
-  };
   m.addEventListener('click', e => {
-    const b = (e.target as Element).closest<HTMLElement>('[data-pi], [data-pi-hue]'); if (!b) return;
-    now = b.dataset.pi ? { ...now, icon: b.dataset.pi } : { ...now, hue: b.dataset.piHue ?? now.hue };
-    repaint(true); pick(now);
+    const b = (e.target as Element).closest<HTMLElement>('[data-pi-hue]'); if (!b) return;
+    now = { ...now, hue: b.dataset.piHue ?? now.hue };
+    const h = m.querySelector('.pi-pick-h'); if (h) h.innerHTML = head();
+    m.querySelector('.pi-pick-h .pi')?.classList.add('pi-hop');
+    m.querySelectorAll<HTMLElement>('[data-pi-hue]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.piHue === now.hue)));
+    pick(now);
   });
   m.addEventListener('keydown', e => {
-    const btns = [...m.querySelectorAll<HTMLElement>('[data-pi]')], i = btns.indexOf(document.activeElement as HTMLElement);
-    const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowDown' ? 7 : e.key === 'ArrowUp' ? -7 : 0;
+    const btns = [...m.querySelectorAll<HTMLElement>('[data-pi-hue]')], i = btns.indexOf(document.activeElement as HTMLElement);
+    const step = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
     if (!step) return; e.preventDefault();
     btns[i < 0 ? 0 : (i + step + btns.length) % btns.length]?.focus();
   });
-  (m.querySelector<HTMLElement>('[aria-pressed="true"]') ?? m.querySelector<HTMLElement>('[data-pi]'))?.focus({ preventScroll: true });
+  (m.querySelector<HTMLElement>('[aria-pressed="true"]') ?? m.querySelector<HTMLElement>('[data-pi-hue]'))?.focus({ preventScroll: true });
 }

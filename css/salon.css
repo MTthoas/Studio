@@ -87,6 +87,8 @@
   .sl-box.sl-now-off .sl-now { padding-inline: 0; border-left-color: transparent; opacity: 0; visibility: hidden; }
 }
 .sl-feed { flex: 1; min-height: 0; overflow: auto; padding: 14px 16px 8px; display: flex; flex-direction: column; gap: 14px; }
+/* Un message ne rétrécit jamais pour tenir dans le fil (sinon `.sl-msg`, en overflow hidden, coupe sa fin : questions, boutons) : c'est le fil qui défile. */
+.sl-feed > * { flex-shrink: 0; }
 
 /* Message : avatar, prénom, rôle, heure, puis le texte. */
 .sl-av { flex: none; display: inline-grid; place-items: center; width: 30px; height: 30px; overflow: hidden; border-radius: 50%; font-style: normal; font-size: var(--t-1); font-weight: 600; background: color-mix(in srgb, var(--c, var(--c-gray)) 20%, var(--bg)); color: color-mix(in srgb, var(--c, var(--c-gray)) 70%, var(--text)); }
@@ -205,15 +207,15 @@ button.sl-av:focus-visible, .sl-who:focus-visible, .sl-to:focus-visible, .sl-mem
 .sl-wait { align-self: center; display: flex; align-items: center; gap: 8px; margin: 0; font-size: var(--t-2); color: var(--text-3); }
 
 /* « Attend ta réponse » : le dernier message de l'agent, mis en avant. */
-.sl-msg.ask .sl-bd { padding: 10px 12px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--c-orange) 45%, var(--border)); background: color-mix(in srgb, var(--c-orange) 8%, var(--bg)); }
-.sl-ask { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); font-size: var(--t-1); font-weight: 500; color: color-mix(in srgb, var(--c-orange) 70%, var(--text)); }
+.sl-msg.ask .sl-bd { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border-2); background: var(--bg); }
+.sl-ask { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border); font-size: var(--t-1); font-weight: 500; color: var(--text-2); }
 .sl-ask .ic { width: 13px; height: 13px; vertical-align: -2px; margin-right: 5px; }
 .sl-ask { flex-wrap: wrap; }
 .sl-ask .btn { height: 26px; }
 .sl-ask > .btn { margin-left: auto; }
 .sl-quick { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
 .sl-quick .btn { padding: 0 9px; border: 1px solid var(--border-2); color: var(--text-2); font-weight: 400; }
-.sl-quick .btn:hover { color: var(--text); border-color: color-mix(in srgb, var(--c-orange) 45%, var(--border-2)); }
+.sl-quick .btn:hover { color: var(--text); border-color: var(--text-3); background: var(--hover); }
 
 /* Questions à choix de l'agent (choices.ts) : cliquables dans le message qui attend, figées ailleurs. */
 .sl-ask-qs { display: grid; gap: 10px; margin-top: 8px; }
@@ -223,8 +225,8 @@ button.sl-av:focus-visible, .sl-who:focus-visible, .sl-to:focus-visible, .sl-mem
 .sl-ch { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; max-width: 100%; padding: 6px 11px; border-radius: 10px; border: 1px solid var(--border-2); background: var(--bg); color: var(--text); font: inherit; font-size: var(--t-2); text-align: left; cursor: pointer; transition: border-color var(--mo-d1), background var(--mo-d1); }
 .sl-ch b { font-weight: 500; }
 .sl-ch small { font-size: var(--t-1); color: var(--text-3); }
-.sl-ch:hover { border-color: color-mix(in srgb, var(--c-orange) 50%, var(--border-2)); }
-.sl-ch[aria-pressed="true"] { border-color: var(--c-orange); background: color-mix(in srgb, var(--c-orange) 12%, var(--bg)); }
+.sl-ch:hover { border-color: var(--text-3); background: var(--hover); }
+.sl-ch[aria-pressed="true"] { border-color: var(--text-2); background: var(--hover); }
 .sl-ask-go { justify-self: start; height: 28px; }
 .sl-msg:not(.ask) .sl-ch { cursor: default; opacity: .65; pointer-events: none; }
 .sl-msg:not(.ask) .sl-ask-go { display: none; }
