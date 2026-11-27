@@ -100,7 +100,7 @@ const SC = {
   workspace: 'mod+shift+a', sidebar: isMac ? 'ctrl+mod+s' : 'mod+alt+s', task: 'mod+enter', bold: 'mod+b', italic: 'mod+i',
 };
 const VIEWS: Record<string, { label: string; icon: string }> = {
-  home: { label: 'Accueil', icon: 'home' }, workspace: { label: 'Espace agents', icon: 'board' }, planner: { label: 'Planification', icon: 'today' }, models: { label: 'Modèles', icon: 'cpu' }, commerce: { label: 'Boutiques', icon: 'shop' }, claude: { label: 'Claude', icon: 'sparkle' }, agents: { label: 'Automatisations', icon: 'bot' }, help: { label: 'Aide', icon: 'help' }, projets: { label: 'Projets', icon: 'folder' }, settings: { label: 'Réglages', icon: 'gear' },
+  home: { label: 'Accueil', icon: 'home' }, workspace: { label: 'Espace agents', icon: 'board' }, planner: { label: 'Planification', icon: 'today' }, models: { label: 'Modèles', icon: 'cpu' }, commerce: { label: 'Boutiques', icon: 'shop' }, claude: { label: 'Claude', icon: 'sparkle' }, agents: { label: 'Automatisations', icon: 'bot' }, help: { label: 'Aide', icon: 'help' }, news: { label: 'Nouveautés', icon: 'bolt' }, projets: { label: 'Projets', icon: 'folder' }, settings: { label: 'Réglages', icon: 'gear' },
   today: { label: 'Aujourd’hui', icon: 'today' }, journal: { label: 'Journal', icon: 'journal' }, tasks: { label: 'Tâches', icon: 'check' }, linear: { label: 'Linear', icon: 'linear' }, github: { label: 'GitHub', icon: 'github' }, all: { label: 'Notes', icon: 'notes' },
   inbox: { label: 'Boîte de réception', icon: 'inbox' }, ephemeral: { label: 'Éphémères', icon: 'hourglass' },
   graph: { label: 'Graphe', icon: 'graph' }, trash: { label: 'Corbeille', icon: 'trash' },
@@ -109,9 +109,9 @@ const VIEWS: Record<string, { label: string; icon: string }> = {
  *  Accueil = accent de la marque, « Écrire » = ambre, « Piloter » = violet, le reste en gris. Le vert reste réservé à « au travail ». */
 const SIDE_HUE: Record<string, string> = { home: 'accent', all: 'amber', journal: 'amber', ephemeral: 'amber', inbox: 'amber', today: 'amber', workspace: 'violet', planner: 'violet', projets: 'violet', agents: 'violet', tasks: 'violet', claude: 'violet' };
 /** Catégories de « Plus » dans la barre latérale (les vues absentes sont sautées). Le Journal est sous « Écrire », les extensions allumées sous « Extensions ». */
-const MORE_CATS: [string, string[]][] = [['Écriture', ['ephemeral']], ['Outils', ['models', 'graph']], ['Connexions', ['linear', 'github']], ['Divers', ['trash', 'help']]];
+const MORE_CATS: [string, string[]][] = [['Écriture', ['ephemeral']], ['Outils', ['models', 'graph']], ['Connexions', ['linear', 'github']], ['Divers', ['trash', 'news', 'help']]];
 const titleOf = (n: Note) => n.title.trim() || 'Sans titre';
-const WIDE = new Set(['workspace', 'planner', 'models', 'commerce', 'graph', 'home', 'claude', 'settings', 'tasks', 'linear', 'github', 'agents', 'help', 'projets', 'journal']); // vues sans colonne de liste
+const WIDE = new Set(['workspace', 'planner', 'models', 'commerce', 'graph', 'home', 'claude', 'settings', 'tasks', 'linear', 'github', 'agents', 'help', 'news', 'projets', 'journal']); // vues sans colonne de liste
 
 function applyTheme() {
   const dark = ui.theme === 'dark' || (ui.theme === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
@@ -267,13 +267,13 @@ async function pickZone(k: Zone): Promise<void> {
 
 function renderSidebar() {
   const idx = store.index(), v = ui.view;
-  const count: Record<string, number> = { planner: planner.pending(), tasks: todo.openCount(), linear: notifs.unreadCount(), github: github.unseenCount(), ephemeral: idx.live.filter(n => n.expiresAt).length };
+  const count: Record<string, number> = { planner: planner.pending(), tasks: todo.openCount(), linear: notifs.unreadCount(), github: github.unseenCount(), ephemeral: idx.live.filter(n => n.expiresAt).length, news: news.pending() };
   // Une note de l'arborescence ouverte prend la surbrillance : la vue de liste (« Notes ») ne la partage pas.
   const tree = treeHTML(idx.live), inTree = tree.includes(' side-tree sel');
   const item = (type: string, sel = v.type === type) => `<button class="side-item${sel ? ' sel' : ''}" data-view="${type}" style="--ic:var(--${SIDE_HUE[type] === 'accent' ? 'accent' : `c-${SIDE_HUE[type] ?? 'gray'}`})">${icon(VIEWS[type]?.icon ?? 'notes')}<span>${VIEWS[type]?.label ?? type}</span>${count[type] ? sideCount(type, count[type]) : ''}</button>`;
   const tags = [...idx.tags].filter(([t]) => !t.startsWith('projet/')).sort((a, b) => a[0].localeCompare(b[0], 'fr'));
   // Le quotidien reste à l'écran ; le reste se range sous « Plus » (déplié d'office quand la vue ouverte s'y trouve).
-  const more = [...(count.ephemeral || v.type === 'ephemeral' ? ['ephemeral'] : []), ...(models.available() ? ['models'] : []), 'linear', 'github', 'graph', 'trash', 'help'];
+  const more = [...(count.ephemeral || v.type === 'ephemeral' ? ['ephemeral'] : []), ...(models.available() ? ['models'] : []), 'linear', 'github', 'graph', 'trash', 'news', 'help'];
   const moreCount = (count.linear ?? 0) + (count.github ?? 0);
   const salonOn = projectsPage.claudeAvailable();
   // « Salon » en tête de « Piloter », toujours à la même place : le Salon du dernier projet ouvert (sinon du premier), nommé à droite.
@@ -508,6 +508,7 @@ function renderMain() {
   if (ui.view.type === 'models') return models.mount(main);
   if (ui.view.type === 'commerce') return commerce.mountAll(main);
   if (ui.view.type === 'help') return help.mount(main);
+  if (ui.view.type === 'news') return news.mount(main, { setView, tbLeft, crumb, renderSidebar });
   if (ui.view.type === 'linear') return linearView.mount(main);
   if (ui.view.type === 'github') return githubPage.mount(main);
   const n = store.get(ui.id);
