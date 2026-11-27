@@ -29,6 +29,40 @@ export function paintIfChanged(node: Element, html: string): boolean {
   node.innerHTML = html; painted.set(node, { html, first: node.firstChild, count: node.childNodes.length });
   return true;
 }
+/** Aligne les enfants de `a` sur ceux de `b` en gardant les nœuds existants (clé : `data-who`, `data-k`) : un élément
+ *  inchangé n'est pas recréé, donc ses animations (pastille qui clignote, visage) ne repartent pas de zéro. */
+function morph(a: Element, b: Element): void {
+  const keyOf = (n: Node): string => n instanceof Element ? n.getAttribute('data-who') ?? n.getAttribute('data-k') ?? '' : '';
+  const same = (x: Node, y: Node): boolean => x.nodeType === y.nodeType && (x instanceof Element ? y instanceof Element && x.localName === y.localName && x.namespaceURI === y.namespaceURI && keyOf(x) === keyOf(y) : true);
+  const want = Array.from(b.childNodes);
+  let cur: ChildNode | null = a.firstChild;
+  for (const w of want) {
+    let hit: ChildNode | null = cur;
+    const k = keyOf(w);
+    if (k && !(hit && same(hit, w))) { hit = null; for (let n = cur; n; n = n.nextSibling) if (same(n, w)) { hit = n; break; } }
+    if (!hit || !same(hit, w)) { a.insertBefore(w.cloneNode(true), cur); continue; }
+    if (hit !== cur) a.insertBefore(hit, cur);
+    cur = hit.nextSibling;
+    if (w instanceof Element && hit instanceof Element) {
+      for (const at of Array.from(hit.attributes)) if (!w.hasAttribute(at.name)) hit.removeAttribute(at.name);
+      for (const at of Array.from(w.attributes)) if (hit.getAttribute(at.name) !== at.value) hit.setAttribute(at.name, at.value);
+      morph(hit, w);
+    } else if (hit.nodeValue !== w.nodeValue) hit.nodeValue = w.nodeValue;
+  }
+  while (cur) { const n = cur.nextSibling; cur.remove(); cur = n; }
+}
+/** Comme `paintIfChanged`, mais met le DOM à jour sur place au lieu de le remplacer : pour les zones qui changent
+ *  souvent et portent des animations ou un défilement (colonne Équipe du Salon). */
+export function morphIfChanged(node: Element, html: string): boolean {
+  const p = painted.get(node);
+  if (p && p.html === html && p.first === node.firstChild && p.count === node.childNodes.length) return false;
+  const t = document.createElement('template'); t.innerHTML = html;
+  const box = document.createElement(node.localName);
+  box.append(t.content);
+  morph(node, box);
+  painted.set(node, { html, first: node.firstChild, count: node.childNodes.length });
+  return true;
+}
 export const target = (e: Event): HTMLElement => (e.target instanceof Element ? e.target : document.body) as HTMLElement;
 
 const I: Record<string, string> = {
