@@ -1190,9 +1190,23 @@ function cleanMessage(raw: string, fallbackType: string): string {
   const detail = lines.slice(1).find(l => !COMMIT_RE.test(l));
   return detail ? `${subject}\n\n${detail.slice(0, 160)}` : subject;
 }
+type Diff = Awaited<ReturnType<typeof native.call>>;
+const readDiff = (p: Project, wt: string, scope: string): Promise<Diff> => native.call('project', 'diff', { project: p.id, scope, worktree: wt }, 30000);
+/** Fichiers dont le contenu ne part jamais chez un fournisseur d'IA (secrets probables). */
+const SECRET_FILE = /(^|\/)(\.env(\.[\w.-]+)?|\.npmrc|\.netrc|\.pypirc|id_[a-z0-9]+|[^/]*\.(pem|key|p12|pfx|keystore|jks|mobileprovision)|credentials[^/]*|secrets?\.[a-z]+|[^/]*\.local\.json)$/i;
+/** Diff prêt à envoyer à l'IA : sans les fichiers sensibles, jetons et clés masqués. */
+export function safePatch(patch: string): string {
+  return patch.split(/^(?=diff --git )/m).map(part => {
+    const file = /^diff --git a\/(\S+)/.exec(part)?.[1];
+    return file && SECRET_FILE.test(file) ? `diff --git a/${file} b/${file}\n(contenu masqué : fichier sensible)\n` : part;
+  }).join('')
+    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?(-----END [A-Z ]*PRIVATE KEY-----|$)/g, '[clé privée masquée]')
+    .replace(/\b(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_\w{20,}|sk-(?:ant-)?[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|xox[abposr]-[A-Za-z0-9-]{10,}|AIza[0-9A-Za-z_-]{35})\b/g, '[secret masqué]');
+}
 // La consigne du message de commit et la taille du diff envoyé se règlent dans Réglages → Consignes et contexte.
-async function suggestMessage(p: Project, wt: string, run: AgentRun | undefined, forceAI = false): Promise<{ draft: string; fromAgent: boolean; ai: Promise<string> | null; files: string[] }> {
-  const d = await native.call('project', 'diff', { project: p.id, scope: 'working', worktree: wt }, 30000);
+/** `working` : le diff de la copie déjà demandé (la fenêtre de publication le partage avec la description de la PR). */
+async function suggestMessage(p: Project, wt: string, run: AgentRun | undefined, forceAI = false, working?: Promise<Diff>): Promise<{ draft: string; fromAgent: boolean; ai: Promise<string> | null; files: string[] }> {
+  const d = await (working ?? readDiff(p, wt, 'working'));
   const stat = String(d.stat ?? ''), files = statFiles(stat), prompt = run?.prompt ?? wt.replace(/^studio-|-\d{4}-\d{4}$/g, '').replace(/-/g, ' ');
   // 1. le message écrit par l'agent (compte rendu le plus récent qui en contient un, sinon le fil de sa session) ;
   // 2. l'IA d'après le diff ; 3. en dernier recours, un résumé des fichiers modifiés. Jamais la consigne telle quelle.
@@ -1202,7 +1216,7 @@ async function suggestMessage(p: Project, wt: string, run: AgentRun | undefined,
   const fromAgent = runs.filter(r => r.worktree === wt && r.result).map(r => fresh(agentMessage(r.result))).find(Boolean) || fresh(await sessionMessage(p, wt));
   const draft = fromAgent || draftMessage(prompt, files);
   if ((fromAgent && !forceAI) || !d.ok || !ai.ready() || !String(d.patch ?? '').trim()) return { draft, fromAgent: !!fromAgent, ai: null, files };
-  const user = `Consigne donnée à l’agent : ${prompt}\n\n${run?.result ? `Compte rendu de l’agent :\n${run.result.slice(0, 1500)}\n\n` : ''}Commits récents du dépôt :\n${String(d.log ?? '').trim() || '(aucun)'}\n\nFichiers modifiés :\n${stat}\n\nDiff (extrait) :\n\`\`\`diff\n${String(d.patch).slice(0, tuning.num('ctx.diff'))}\n\`\`\``;
+  const user = `Consigne donnée à l’agent : ${prompt}\n\n${run?.result ? `Compte rendu de l’agent :\n${run.result.slice(0, 1500)}\n\n` : ''}Commits récents du dépôt :\n${String(d.log ?? '').trim() || '(aucun)'}\n\nFichiers modifiés :\n${stat}\n\nDiff (extrait) :\n\`\`\`diff\n${safePatch(String(d.patch).slice(0, tuning.num('ctx.diff')))}\n\`\`\``;
   return { draft, fromAgent: !!fromAgent, files, ai: ai.complete(tuning.text('small.commit'), user, { light: tuning.on('small.commits') }).then(t => cleanMessage(t, guessType(prompt, files))) };
 }
 
@@ -1222,15 +1236,25 @@ const compareURL = (repo: string, base: string, branch: string, title: string, b
 const prBody = (desc: string, related = '') => `${desc.trim()}${related ? `\n\n**Related:** ${related}` : ''}\n\n---\n🤖 Generated with [Claude Code](https://claude.com/claude-code) from Studio`;
 /** Description de PR toujours en anglais, sur tout le travail de la branche (déjà commité + en cours, toutes les demandes),
  *  pas seulement la dernière demande. Rédigée par l'IA d'après le diff ; sans IA, la liste des fichiers modifiés. */
-async function prDescription(p: Project, wt: string): Promise<string> {
-  const read = (scope: string) => native.call('project', 'diff', { project: p.id, scope, worktree: wt }, 30000);
-  const ds = (await Promise.all([read('branch'), read('working')])).filter(d => d.ok);
+interface PRContext { fallback: string; user: string | null }
+/** Ce qu'il faut pour rédiger la description, lu tout de suite (avant que la publication ne touche la copie). */
+async function prContext(p: Project, wt: string, working?: Promise<Diff>): Promise<PRContext> {
+  const ds = (await Promise.all([readDiff(p, wt, 'branch'), working ?? readDiff(p, wt, 'working')])).filter(d => d.ok);
   const stat = ds.map(d => String(d.stat ?? '').trim()).filter(Boolean).join('\n'), patch = ds.map(d => String(d.patch ?? '')).join('\n');
   const files = [...new Set(statFiles(stat).filter(f => !/^\[.*\]$/.test(f)))];
   const fallback = `## Changes\n\n${files.slice(0, 60).map(f => `- \`${f}\``).join('\n') || '- No file changes.'}${files.length > 60 ? `\n- …and ${files.length - 60} more files.` : ''}`;
-  if (!ai.ready() || !patch.trim()) return fallback;
+  if (!ai.ready() || !patch.trim()) return { fallback, user: null };
   const mine = runs.filter(r => r.worktree === wt);
-  const user = `Requests made on this branch (context only, possibly in another language; follow-ups like "continue" mean nothing):\n${mine.map(r => `- ${r.prompt.replace(/\s+/g, ' ').slice(0, 300)}`).join('\n') || '(none)'}\n\nReports written after each request (context only, translate what you use):\n${mine.filter(r => r.result).map(r => withoutCommitLine(r.result).slice(0, 1500)).join('\n\n---\n') || '(none)'}\n\nChanged files:\n${stat}\n\nDiff (excerpt):\n\`\`\`diff\n${patch.slice(0, tuning.num('ctx.diff'))}\n\`\`\``;
+  // Comptes rendus les plus récents d'abord, 4 000 caractères en tout : les anciens répètent souvent les suivants.
+  let room = 4000;
+  const reports = mine.filter(r => r.result).reverse().map(r => { const t = withoutCommitLine(r.result).slice(0, Math.min(1500, room)); room -= t.length; return t; }).filter(Boolean).reverse();
+  const user = `Requests made on this branch (context only, possibly in another language; follow-ups like "continue" mean nothing):\n${mine.map(r => `- ${r.prompt.replace(/\s+/g, ' ').slice(0, 300)}`).join('\n') || '(none)'}\n\nReports written after each request (context only, translate what you use):\n${reports.join('\n\n---\n') || '(none)'}\n\nChanged files:\n${stat}\n\nDiff (excerpt):\n\`\`\`diff\n${safePatch(patch.slice(0, tuning.num('ctx.diff')))}\n\`\`\``;
+  return { fallback, user };
+}
+/** Rédige la description (appel à l'IA seulement quand une PR sera vraiment ouverte). */
+async function writePR(c: PRContext): Promise<string> {
+  const { fallback, user } = c;
+  if (!user) return fallback;
   try {
     const t = await Promise.race([ai.complete(tuning.text('small.pr'), user, { light: tuning.on('small.commits') }), new Promise<string>(r => setTimeout(() => r(''), 120000))]);
     return t.replace(/^```\w*\n?|\n?```\s*$/g, '').trim() || fallback;
@@ -1238,9 +1262,13 @@ async function prDescription(p: Project, wt: string): Promise<string> {
 }
 
 /** Dépôt GitHub du dossier où travaillent les agents : son remote origin s'il fait partie du projet, sinon le principal. */
+const repoOf = new Map<string, string>();
 async function workRepo(p: Project): Promise<string | undefined> {
   if (p.repos.length > 1 && native.available()) {
-    try { const r = await native.call('project', 'info', { project: p.id }, 10000); const hit = model.repoNamed(p, typeof r.remote === 'string' ? r.remote : null); if (hit) return hit.name; } catch { /* le principal */ }
+    // Le remote ne change guère : lu une fois par projet (et par liste de dépôts), pas à chaque ouverture de fenêtre.
+    const key = `${p.id}|${p.repos.join(',')}`, known = repoOf.get(key);
+    if (known) return known;
+    try { const r = await native.call('project', 'info', { project: p.id }, 10000); const hit = model.repoNamed(p, typeof r.remote === 'string' ? r.remote : null); if (hit) { repoOf.set(key, hit.name); return hit.name; } } catch { /* le principal */ }
   }
   return p.repos[0];
 }
@@ -1294,7 +1322,7 @@ async function publish(p: Project, wt: string, root: HTMLElement | null): Promis
   const propose = async (forceAI = false) => {
     resug.hidden = true; drafting = true; ready(); sugSt.innerHTML = '<span class="spin"></span>Lecture des changements…';
     try {
-      const s = await suggestMessage(p, wt, run, forceAI);
+      const s = await suggestMessage(p, wt, run, forceAI, forceAI ? undefined : working);
       if (!m.node.isConnected) return;
       if (!editedMsg) { msg.value = s.draft; sync(); }
       if (!s.ai) {
@@ -1310,9 +1338,13 @@ async function publish(p: Project, wt: string, root: HTMLElement | null): Promis
     resug.hidden = !ai.ready();
   };
   resug.onclick = () => { editedMsg = false; void propose(true); };
+  // Un seul diff de la copie, partagé par le message de commit et la description de la PR.
+  const working = readDiff(p, wt, 'working');
   void propose();
-  // Rédigée dès l'ouverture (avant que la publication ne touche la copie), attendue seulement au moment d'ouvrir les PR.
-  const description = repo ? prDescription(p, wt) : Promise.resolve('');
+  // Diffs lus dès l'ouverture (avant que la publication ne touche la copie) ; l'IA n'écrit la description qu'au clic,
+  // et seulement si une PR est demandée : annuler ou pousser sans PR ne coûte aucun jeton.
+  const prCtx = repo ? prContext(p, wt, working) : null;
+  let description: Promise<string> | null = null;
   need('[data-x]', m.node).onclick = m.close;
 
   /** Suit la tâche de l'orchestrateur jusqu'à sa fin (elle continue côté Mac si la fenêtre est fermée). */
@@ -1334,6 +1366,7 @@ async function publish(p: Project, wt: string, root: HTMLElement | null): Promis
     const wanted = branchIn.value.trim();
     if (!/^[a-z0-9][a-z0-9._/-]{0,89}$/.test(wanted) || wanted.includes('..') || wanted.endsWith('/')) { st.innerHTML = '<p class="rv-status err">Nom de branche invalide : minuscules, chiffres, - _ . / (ex. feat/export-pdf).</p>'; branchIn.focus(); return; }
     go.disabled = true; st.innerHTML = '<p class="rv-status"><span class="spin"></span>Démarrage…</p>';
+    if (wantPR && prCtx) description ??= prCtx.then(writePR); // « Réessayer » ne la fait pas réécrire
     const started = await native.call('agent', 'publish', { project: p.id, worktree: wt, message, branch: wanted, author: await github.author() }, 30000);
     if (!started.ok) { st.innerHTML = `<p class="rv-status err">${esc(started.message ?? 'Échec.')}</p>`; go.disabled = false; return; }
     void refreshTrees(p).then(() => root ? paint(root, p) : undefined);
@@ -1353,7 +1386,7 @@ async function publish(p: Project, wt: string, root: HTMLElement | null): Promis
     const names = pushed.map(x => x.repo).filter(Boolean);
     if (!wantPR || !names.length) { m.close(); toast(`Branche ${pushed[0]!.branch} poussée${names.length > 1 ? ` dans ${names.join(', ')}` : ''}`); return; }
     st.insertAdjacentHTML('beforeend', `<p class="rv-status"><span class="spin"></span>Description de la PR (en anglais), puis ouverture de ${names.length > 1 ? `${names.length} pull requests` : 'la pull request'}…</p>`);
-    const desc = await description;
+    const desc = await (description ?? '');
     // Les PR de plusieurs dépôts se citent entre elles : elles se relisent et se fusionnent ensemble.
     const linked = (me: string) => names.length > 1 ? names.filter(n => n !== me).map(n => `${n}@${pushed.find(x => x.repo === n)?.branch ?? ''}`).join(', ') : '';
     const opened: { repo: string; number: number; url: string }[] = [], failed: string[] = [];
@@ -1402,7 +1435,7 @@ async function openPR(p: Project, w: Worktree): Promise<void> {
   const run = runs.find(r => r.worktree === w.name);
   const t = w.subject || runs.filter(r => r.worktree === w.name && r.result).map(r => agentMessage(r.result)).find(Boolean) || subjectFromBranch(w.branch) || draftMessage(run?.prompt ?? '', []);
   toast('Rédaction de la description de la PR (en anglais)…');
-  window.open(compareURL(repo, base, w.branch, t, prBody(await prDescription(p, w.name))), '_blank', 'noopener');
+  window.open(compareURL(repo, base, w.branch, t, prBody(await writePR(await prContext(p, w.name)))), '_blank', 'noopener');
 }
 
 // ---------- État des copies : le Mac (git) et GitHub (PR) ----------
@@ -1498,8 +1531,16 @@ export const COPY_ACTS = new Set(['push', 'sync', 'pr', 'mergechild', 'newbranch
  *  Rend `true` quand l'état de la copie a changé (à relire), `false` si rien n'a été fait ou si l'action suit seule son cours. */
 export async function copyAct(p: Project, act: string, wt: string, box: HTMLElement | null = null): Promise<boolean> {
   // Appel venu d'une autre vue : l'état des copies et des agents est celui d'un autre projet, ou trop ancien.
-  if (treesFor !== p.id || !box) { restoreTrees(p.id); await refreshTrees(p); }
-  if (cur?.p.id !== p.id) { const l = await bridge.call('agent', 'list', { project: p.id }, 10000); if (l.ok) runs = l.runs as AgentRun[]; }
+  // Les deux lectures partent ensemble. Pour publier, des copies déjà en mémoire suffisent à ouvrir la fenêtre
+  // (git status de toutes les copies peut prendre des secondes) : on les rafraîchit en arrière-plan.
+  const reads: Promise<unknown>[] = [];
+  if (treesFor !== p.id || !box) {
+    restoreTrees(p.id);
+    const rf = refreshTrees(p).catch(() => undefined);
+    if (act === 'push' && trees.length) void rf; else reads.push(rf);
+  }
+  if (cur?.p.id !== p.id) reads.push(bridge.call('agent', 'list', { project: p.id }, 10000).then(l => { if (l.ok) runs = l.runs as AgentRun[]; }));
+  await Promise.all(reads);
   if (act === 'review') { await review.review(p, 'working', wt); return false; }
   if (act === 'vscode') { const r = await native.call('project', 'open', { project: p.id, app: 'vscode', worktree: wt }, 15000); if (!r.ok) toast(r.message ?? 'Impossible d’ouvrir.'); return false; }
   if (act === 'push') { await publish(p, wt, box); return false; }
