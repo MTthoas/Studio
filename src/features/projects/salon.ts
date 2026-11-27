@@ -34,7 +34,7 @@ import * as noteseal from '../../integrations/noteseal.ts';
 import * as ai from '../../integrations/ai.ts';
 import { startAgent, reply } from '../workspace.ts';
 import { esc } from '../../lib/markdown.ts';
-import { icon, need, rel, toast, target, paintIfChanged, modal, popover } from '../../ui/kit.ts';
+import { icon, need, rel, toast, target, paintIfChanged, morphIfChanged, modal, popover } from '../../ui/kit.ts';
 import type { Block, Session, Action, AgentRun, Queued, Worktree, SubAgent } from './sessions.ts';
 import type { BoardMsg } from './team.ts';
 import type { Project } from './model.ts';
@@ -1024,7 +1024,7 @@ function paint(): void {
   // remplace le squelette, il entre une fois en fondu (pas à chaque mise à jour).
   const col = need<HTMLElement>('[data-sl-now]', root), skel = !(cur && crew), wasSkel = col.dataset.skel === '1';
   const colH = cur && crew ? colHTML(nowHTML(cur, d, crew, ask), techHTML(cur, d, crew)) : opening?.pid === p.id ? colHTML(skelHTML('team'), skelHTML('tech')) : '';
-  if (paintIfChanged(col, colH) && wasSkel && !skel && !calm()) { col.classList.remove('sl-reveal'); void col.offsetWidth; col.classList.add('sl-reveal'); }
+  if (morphIfChanged(col, colH) && wasSkel && !skel && !calm()) { col.classList.remove('sl-reveal'); void col.offsetWidth; col.classList.add('sl-reveal'); }
   col.dataset.skel = skel ? '1' : '';
   if (cur && crew) tickClocks();
   syncClock();
