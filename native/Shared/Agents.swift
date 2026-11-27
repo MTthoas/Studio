@@ -563,7 +563,7 @@ final class Agents {
         // Terminal sur ce Mac : chaque commande passe d'abord par le garde (AgentGuard), qui fait confirmer par
         // Touch ID ou mot de passe toute suppression et toute installation. Sans réglages possibles, pas de lancement.
         if !onServer && tools.contains("Bash") {
-            guard let guarded = AgentGuard.shared.settings(run: run.id, project: pid, roots: mode == "edit" ? [cwd] + extraDirs : []) else { return done(["ok": false, "message": "Le garde des commandes n’a pas pu être préparé : agent non lancé."]) }
+            guard let guarded = AgentGuard.shared.settings(run: run.id, project: pid, roots: mode == "edit" ? [cwd] + extraDirs : [], bubble: shell) else { return done(["ok": false, "message": "Le garde des commandes n’a pas pu être préparé : agent non lancé."]) }
             args += ["--settings", guarded]
         }
         let p = Process()
@@ -1276,7 +1276,10 @@ enum AgentTuning {
             ni formule d'accueil, d'approbation ou de politesse (« Bien sûr », « Parfait », « Excellente question »), ni \
             reformulation de la demande, ni gras décoratif, ni offre de service à la fin. Phrases simples, mots concrets, des \
             faits plutôt que des adjectifs ; si tu ne sais pas ou t'es trompé, dis-le sans détour. Un emoji de temps en temps \
-            quand il porte le ton, comme un humain : un par message au plus, jamais en puce, en titre ni dans un commit.
+            quand il porte le ton, comme un humain : un par message au plus, jamais en puce, en titre ni dans un commit. \
+            Ne travaille pas en silence : l'utilisateur ne voit que tes messages et n'a que « réfléchit… » sinon. Avant une \
+            série d'actions, dis en une phrase ce que tu vas faire ; dès que tu trouves quelque chose d'utile ou que tu \
+            changes de plan, dis-le aussitôt, sans attendre la fin. Quelques messages courts valent mieux qu'un seul long à la fin.
             """,
         // Agents qui modifient : pas de commit, conflits, et le message de commit qu'ils proposent (Studio relit la ligne « Commit: »).
         "edit": """

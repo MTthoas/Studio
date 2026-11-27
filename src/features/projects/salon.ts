@@ -200,7 +200,11 @@ function threads(): Thread[] {
   return [...S.sessions, ...fresh].map((s): Thread => {
     const mine = S.runs.filter(r => r.session === s.id || `run:${r.run}` === s.id), last = mine.reduce<AgentRun | undefined>((a, r) => !a || ms(r.started) > ms(a.started) ? r : a, undefined);
     const act = ms(s.active || s.updated), w = s.worktree ? S.trees.find(t => t.name === s.worktree) : undefined;
-    const group = working(s, mine) || awake(s.id) ? 'work' : last?.status === 'error' || (w && copyStage(w) === 'review') || (act > (seen[s.id] ?? 0) && Date.now() - act < 3 * 864e5) ? 'mine' : 'recent';
+    // Le dernier mot est une question : le tour est fini pour l'utilisateur, même si le processus met encore une
+    // minute à sortir (résultat, nettoyage). On ne la garde pas « au travail », elle est à lui tout de suite.
+    const dt = S.detail.get(s.id), tail = dt?.actions[dt.actions.length - 1];
+    const asking = !!tail && tail.kind !== 'prompt' && !tail.kind.startsWith('tool:') && asks(tail.text) && !awake(s.id) && !(dt?.subagents ?? []).some(x => x.live);
+    const group = asking ? 'mine' : working(s, mine) || awake(s.id) ? 'work' : last?.status === 'error' || (w && copyStage(w) === 'review') || (act > (seen[s.id] ?? 0) && Date.now() - act < 3 * 864e5) ? 'mine' : 'recent';
     return { id: s.id, s, group, act };
   }).sort((a, b) => b.act - a.act);
 }
@@ -517,7 +521,9 @@ function typing(crew: Crew, d: Detail | undefined): string {
   const cats = (d?.subagents ?? []).filter(s => s.live).map(s => crew.subs.get(s.id)).filter((x): x is Who => !!x).slice(0, 3);
   // Seul l'agent principal travaille : ce qu'il fait à l'instant (« modifie app.ts »), dans son propre nœud de texte pour la traduction.
   const acts = d?.actions ?? [], lastA = acts[acts.length - 1], now = lastA?.kind.startsWith('tool:') ? doing(lastA.kind, lastA.text) : '';
-  const line = who ? `${esc(who)}…` : `${esc(crew.main.name)} <span>${esc(now || 'écrit')}</span>…`;
+  // Combien d'actions depuis le dernier message de l'agent : le silence se voit comme du travail, pas comme un blocage.
+  let n = 0; for (let i = acts.length - 1; i >= 0 && acts[i].kind.startsWith('tool:'); i--) n++;
+  const line = who ? `${esc(who)}…` : `${esc(crew.main.name)} <span>${esc(now || 'écrit')}</span>${n > 2 ? ` <span>· ${n} actions</span>` : ''}…`;
   return `<div class="sl-typing cf-live"><span class="sl-stack">${(cats.length ? cats : [crew.main]).map(w => avatar(w, false, 'work')).join('')}</span><span class="sl-dots" aria-hidden="true"><i></i><i></i><i></i></span><small>${line}</small></div>`;
 }
 /** Plan de l'équipe, dans le fil : une ligne par sous-agent (ce qu'on lui a confié, ce qu'il fait, combien de temps), une

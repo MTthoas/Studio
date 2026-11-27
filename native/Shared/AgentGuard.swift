@@ -41,7 +41,7 @@ final class AgentGuard {
     private let queue = DispatchQueue(label: "studio.agents.guard")
     private var listener: NWListener?
     private var port: UInt16 = 0
-    private var tokens: [String: (run: String, project: String, roots: [String])] = [:]
+    private var tokens: [String: (run: String, project: String, roots: [String], bubble: Bool)] = [:]
     private var asks: [Ask] = []
 
     // MARK: Tri des commandes
@@ -95,6 +95,14 @@ final class AgentGuard {
         for (re, what) in deletes where re.firstMatch(in: command, range: r) != nil { return ("delete", what) }
         for (re, what) in installs where re.firstMatch(in: command, range: r) != nil { return ("install", what) }
         return nil
+    }
+
+    /// La commande contient-elle une suppression qui sort du Mac (branche distante, GitHub, DELETE, Docker, rsync) ?
+    private static let remote: Set<String> = ["supprimer une branche distante", "supprimer sur GitHub", "envoyer une suppression (DELETE)", "supprimer dans Docker", "supprimer des fichiers (rsync)", "effacer des données"]
+    static func leavesMachine(_ command: String) -> Bool {
+        let command = scanned(command)
+        let r = NSRange(command.startIndex..., in: command)
+        return deletes.contains { remote.contains($0.1) && $0.0.firstMatch(in: command, range: r) != nil }
     }
 
     // MARK: Texte qui n'est pas du code
@@ -248,7 +256,17 @@ final class AgentGuard {
     /// Opérande de `rm` : en clair, ou motif simple (`build/*`, `*.log`) dont le dossier est dans la copie.
     private static func operand(_ w: Word, dir: String, roots: [String]) -> Bool {
         guard !w.expands, !w.braces, !w.text.isEmpty else { return false }
-        guard let g = w.globAt else { return inside(resolve(w.text, from: dir), roots, strict: true) }
+        guard let g = w.globAt else {
+            // `rm lien` retire le lien, jamais sa cible (`node_modules` pointe vers un stock hors de la copie) :
+            // on résout le dossier parent, pas le dernier élément. Avec un `/` final, rm suivrait le lien : on résout tout.
+            let t = w.text
+            if !t.hasSuffix("/"), (t as NSString).lastPathComponent != "..", (t as NSString).lastPathComponent != "." {
+                let full = t.hasPrefix("/") ? t : (dir as NSString).appendingPathComponent(t)
+                let ns = URL(fileURLWithPath: full).standardizedFileURL.path as NSString
+                return inside(((real(ns.deletingLastPathComponent)) as NSString).appendingPathComponent(ns.lastPathComponent), roots, strict: true)
+            }
+            return inside(resolve(t, from: dir), roots, strict: true)
+        }
         let t = Array(w.text)
         let cut = t[..<g].lastIndex(of: "/").map { $0 + 1 } ?? 0
         let last = String(t[cut...])
@@ -319,11 +337,11 @@ final class AgentGuard {
     /// Réglages passés à Claude Code (`--settings`) pour un tour : le hook qui soumet chaque commande à ce garde.
     /// Sans serveur possible, le hook refuse toute commande : jamais de terminal sans garde.
     /// `roots` : les dossiers où l'agent supprime sans confirmation (sa copie, celles des autres dépôts) ; vide = partout.
-    func settings(run: String, project: String, roots: [String] = []) -> String? {
+    func settings(run: String, project: String, roots: [String] = [], bubble: Bool = false) -> String? {
         var command = "echo 'Studio : garde indisponible, commande refusée.' >&2; exit 2"
         if start() {
             let token = UUID().uuidString.replacingOccurrences(of: "-", with: "")
-            lock.lock(); tokens[token] = (run, project, roots.map(Self.real).filter { $0.count > 1 }); let p = port; lock.unlock()
+            lock.lock(); tokens[token] = (run, project, roots.map(Self.real).filter { $0.count > 1 }, bubble); let p = port; lock.unlock()
             command = "r=$(/usr/bin/curl -s -m 570 -X POST -H 'Content-Type: application/json' --data-binary @- http://127.0.0.1:\(p)/garde/\(token)) || r=; "
                 + "[ \"$r\" = ok ] && exit 0; echo \"${r:-Studio ne répond pas : commande refusée.}\" >&2; exit 2"
         }
@@ -455,6 +473,10 @@ final class AgentGuard {
         guard let command = (o["tool_input"] as? [String: Any])?["command"] as? String else { return send(c, "Commande illisible : refusée.") }
         guard let risk = Self.risk(command) else { return send(c, "ok") }
         if risk.kind == "delete", let cwd = o["cwd"] as? String, Self.local(command, cwd: cwd, roots: owner.roots) { return send(c, "ok") }
+        // Dans la bulle, macOS interdit déjà toute écriture hors de la copie : une suppression qui reste sur ce Mac
+        // (script, variable, find -exec, branche de son propre dépôt…) n'a rien à faire confirmer. On ne redemande que
+        // ce qui sort de la machine ou d'un dossier de travail (branche distante, GitHub, DELETE, Docker).
+        if risk.kind == "delete", owner.bubble, !owner.roots.isEmpty, !Self.leavesMachine(command) { return send(c, "ok") }
         guard waiting < Self.maxPerRun else { return send(c, "Trop de confirmations en attente pour cet agent : commande refusée.") }
 
         let ask = Ask(run: owner.run, project: owner.project, kind: risk.kind, what: risk.what, command: String(command.prefix(4000)),
