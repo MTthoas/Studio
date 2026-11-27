@@ -19,7 +19,7 @@ import * as subagents from './projects/subagents.ts';
 import * as attach from './projects/attach.ts';
 import type { Sealed } from '../integrations/noteseal.ts';
 import * as echo from './projects/echo.ts';
-import { feedBlocks, syncFeed, toEnd, nameOf, live, STATUS, modelName, agentCount, COUNT_HINT, newGroup, copyStrip, copyAct, COPY_ACTS, groupOfCopy, copyStage } from './projects/sessions.ts';
+import { feedBlocks, syncFeed, toEnd, nameOf, live, working, STATUS, modelName, agentCount, COUNT_HINT, newGroup, copyStrip, copyAct, COPY_ACTS, groupOfCopy, copyStage } from './projects/sessions.ts';
 import { exchanges, exchangeBlocks, teamHTML, settled } from './projects/team.ts';
 import type { BoardMsg } from './projects/team.ts';
 import type { AgentRun, Session, Action, Queued, Worktree, SubAgent } from './projects/sessions.ts';
@@ -95,7 +95,7 @@ function rows(): Row[] {
     for (const s of [...listed, ...fresh]) {
       const mine = runs.filter(r => r.session === s.id), last = mine.reduce<AgentRun | undefined>((a, r) => !a || ms(r.started) > ms(a.started) ? r : a, undefined);
       const act = ms(s.active || s.updated);
-      const status = mine.some(live) || s.live ? 'running' : last?.status === 'error' ? 'error' : act > (seen[s.id] ?? 0) && Date.now() - act < 3 * 864e5 ? 'review' : 'idle';
+      const status = working(s, mine) ? 'running' : last?.status === 'error' ? 'error' : act > (seen[s.id] ?? 0) && Date.now() - act < 3 * 864e5 ? 'review' : 'idle';
       out.push({ p, s, status, subs: details.get(`${p.id}/${s.id}`)?.subagents ?? [] });
     }
   }
