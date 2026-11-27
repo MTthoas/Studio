@@ -13,7 +13,7 @@
 import * as bridge from '../../integrations/remote.ts';
 import * as quota from '../../integrations/quota.ts';
 import * as usage from '../../integrations/usage.ts';
-import { syncFeed, nameOf, live, copyStage, copyAct, answerHTML, modelName, modelOptions, EFFORTS, cleanUp, sideMenu, machineOptions, keepMachine } from './sessions.ts';
+import { syncFeed, nameOf, live, working, copyStage, copyAct, answerHTML, modelName, modelOptions, EFFORTS, cleanUp, sideMenu, machineOptions, keepMachine } from './sessions.ts';
 import * as infra from './infra.ts';
 import * as archived from './archive.ts';
 import { fold } from '../../lib/fuzzy.ts';
@@ -200,7 +200,7 @@ function threads(): Thread[] {
   return [...S.sessions, ...fresh].map((s): Thread => {
     const mine = S.runs.filter(r => r.session === s.id || `run:${r.run}` === s.id), last = mine.reduce<AgentRun | undefined>((a, r) => !a || ms(r.started) > ms(a.started) ? r : a, undefined);
     const act = ms(s.active || s.updated), w = s.worktree ? S.trees.find(t => t.name === s.worktree) : undefined;
-    const group = mine.some(live) || s.live || awake(s.id) ? 'work' : last?.status === 'error' || (w && copyStage(w) === 'review') || (act > (seen[s.id] ?? 0) && Date.now() - act < 3 * 864e5) ? 'mine' : 'recent';
+    const group = working(s, mine) || awake(s.id) ? 'work' : last?.status === 'error' || (w && copyStage(w) === 'review') || (act > (seen[s.id] ?? 0) && Date.now() - act < 3 * 864e5) ? 'mine' : 'recent';
     return { id: s.id, s, group, act };
   }).sort((a, b) => b.act - a.act);
 }

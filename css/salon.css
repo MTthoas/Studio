@@ -120,7 +120,7 @@ button.sl-av:focus-visible, .sl-who:focus-visible, .sl-to:focus-visible, .sl-mem
 .sl-bd .md > :first-child { margin-top: 0; }
 .sl-bd .md > :last-child { margin-bottom: 0; }
 .sl-bd .md { overflow-wrap: anywhere; font-size: var(--t-2); }
-/* Conversation : un message d'agent = quelques bulles courtes ; les miens à droite, teintés de l'accent. */
+/* Conversation : un message d'agent = quelques bulles courtes ; les miens à droite, teintés d’indigo (l’orange de l’accent y était trop vif). */
 .sl-bub { width: fit-content; max-width: 100%; padding: 7px 11px; border-radius: 12px; background: var(--hover); }
 .sl-bub + .sl-bub, .sl-bub + .sl-fold, .sl-fold > .sl-bub + .sl-bub { margin-top: 4px; }
 .sl-bd > header + .sl-bub { border-top-left-radius: 4px; }
@@ -130,7 +130,7 @@ button.sl-av:focus-visible, .sl-who:focus-visible, .sl-to:focus-visible, .sl-mem
 .sl-msg.me > .sl-av { display: none; }
 .sl-msg.me header { justify-content: flex-end; }
 .sl-msg.me header .sl-who, .sl-msg.me header .sl-role { display: none; }
-.sl-msg.me .sl-bd > :not(header) { margin-left: auto; padding: 7px 11px; border-radius: 12px 4px 12px 12px; width: fit-content; background: color-mix(in srgb, var(--accent) 14%, var(--bg)); }
+.sl-msg.me .sl-bd > :not(header) { margin-left: auto; padding: 7px 11px; border-radius: 12px 4px 12px 12px; width: fit-content; background: color-mix(in srgb, var(--c-indigo) 16%, var(--bg)); }
 /* Suite d'un même auteur à moins de 5 min : ni avatar ni en-tête, bulles resserrées. */
 .sl-msg.cont { margin-top: -10px; }
 .sl-msg.cont header { display: none; }

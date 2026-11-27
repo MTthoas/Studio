@@ -70,6 +70,16 @@ const ms = (iso: string) => Date.parse(iso) || 0;
 const short = (path: string, root: string | null) => path.includes('/.claude/worktrees/') ? path.replace(/^.*\/\.claude\/worktrees\/[^/]+\//, '') : root && path.startsWith(root + '/') ? path.slice(root.length + 1) : path.replace(/^\/Users\/[^/]+/, '~');
 export const modelName = (m: string) => saved.isLocal(m) ? `${m.slice(saved.LOCAL_PREFIX.length)} (local)` : m.replace(/^claude-/, '').replace(/-(\d)-(\d)$/, ' $1.$2').replace(/-/g, ' ');
 export const live = (r: AgentRun) => r.status === 'running' || r.status === 'starting';
+/** Agent au travail sur une conversation. Les runs lancés par Studio font foi : `s.live` (journal modifié il y a moins de 45 s,
+ *  Sessions.swift) restait vrai jusqu'à 45 s après la fin d'un tour, d'où « Moka écrit… » et des messages mis en attente alors
+ *  que l'agent attendait. Le journal ne compte que s'il a bougé après la fin du dernier run (reprise dans le Terminal) ou sans run connu. */
+export function working(s: Session, runs: AgentRun[]): boolean {
+  const mine = runs.filter(r => r.session === s.id || `run:${r.run}` === s.id);
+  if (mine.some(live)) return true;
+  if (!s.live) return false;
+  const end = Math.max(0, ...mine.map(r => ms(r.finished || r.started)));
+  return !end || ms(s.updated) > end + 5000;
+}
 export const elapsed = (r: AgentRun) => { const s = Math.max(0, Math.round(((r.finished ? ms(r.finished) : Date.now()) - ms(r.started)) / 1000)); return s < 60 ? `${s} s` : s < 3600 ? `${Math.floor(s / 60)} min ${String(s % 60).padStart(2, '0')}` : `${Math.floor(s / 3600)} h ${String(Math.floor(s % 3600 / 60)).padStart(2, '0')}`; };
 export const STATUS: Record<string, [string, string]> = { starting: ['amber', 'Démarrage'], running: ['amber', 'En cours'], done: ['green', 'Terminé'], error: ['red', 'Erreur'], stopped: ['gray', 'Arrêté'] };
 const pill = (s: string) => { const [c, l] = STATUS[s] ?? ['gray', s]; return `<span class="ag-pill${s === 'running' || s === 'starting' ? ' live' : ''}" style="--c:var(--c-${c})">${l}</span>`; };
@@ -172,7 +182,7 @@ export function sideSessions(pid: string): { id: string; title: string; live: bo
   };
   // Barre latérale = les fils actifs seulement (26 nov. 2026, doublon avec le Salon) : agent au travail, copie à relire,
   // PR en attente, conversation ouverte. La liste complète, la recherche et le rangement sont dans le Salon.
-  return list.map(s => ({ id: s.id, title: s.id === sel && selTitle ? selTitle : nameOf(s), live: s.live || runs.some(r => r.session === s.id && live(r)), sel: s.id === sel, subs: subs(s.id), stage: sideStage(pid, s) }))
+  return list.map(s => ({ id: s.id, title: s.id === sel && selTitle ? selTitle : nameOf(s), live: working(s, runs), sel: s.id === sel, subs: subs(s.id), stage: sideStage(pid, s) }))
     .filter(s => s.live || s.sel || ((s.stage?.cls === 'st-pr' || s.stage?.cls === 'st-review') && !archived.isArchived(pid, s.id)));
 }
 /** État de la copie d'une conversation, pour teinter son point dans la barre latérale (seulement pour le projet dont les copies sont connues). */
