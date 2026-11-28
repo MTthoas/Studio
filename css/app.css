@@ -2645,3 +2645,8 @@ a.dk-port:hover { background: color-mix(in srgb, var(--c-blue) 14%, transparent)
 .tm-lines, .sk-log .st-log, .st-log { max-height: min(50dvh, 700px); }
 .tm-rows { max-height: min(40dvh, 520px); }
 @media (max-width: 560px) { .mb-scroll { max-height: 220px; } }
+
+/* Poignées de redimensionnement (ui/grip.ts) : pendant le geste, curseur figé, pas de sélection, les cadres ne prennent pas le pointeur. */
+body.grip-x, body.grip-x * { cursor: col-resize !important; user-select: none; -webkit-user-select: none; }
+body.grip-y, body.grip-y * { cursor: row-resize !important; user-select: none; -webkit-user-select: none; }
+body:is(.grip-x, .grip-y) iframe { pointer-events: none; }

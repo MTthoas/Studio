@@ -7,6 +7,14 @@
 /* Pleine hauteur : .todo (défilant) → .pj-in → .pj-body sont des colonnes qui s'étirent ; le Salon prend tout le reste. */
 .pj-body:has(> .sl-box) { display: flex; flex-direction: column; }
 @media (min-width: 720px) { .pj-body > .sl-box { flex: 1 0 0; height: auto; min-height: 480px; } }
+.sl-box { --sl-l: var(--sl-lw, 248px); }
+/* Poignée de la liste des fils (`sizes` de salon.ts, ui/grip.ts) : sur le bord droit de `.sl-side`. */
+.sl-sidegrip { position: absolute; z-index: 4; top: 0; bottom: 0; left: calc(var(--sl-l) - 4px); width: 8px; cursor: col-resize; outline: none; }
+.sl-sidegrip::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; border-radius: 1px; background: var(--border-2); opacity: 0; transition: opacity .12s; }
+.sl-sidegrip:hover::after, .sl-sidegrip:focus-visible::after, body.grip-x .sl-sidegrip:active::after { opacity: 1; }
+body.grip-x .sl-box { transition: none; }
+@media (max-width: 719px) { .sl-sidegrip { display: none; } }
+body.no-side .sl-sidegrip { display: none; }
 .sl-box.sl-solo { grid-template-columns: var(--sl-l, 248px) minmax(0, 1fr) 0px; }
 .sl-box.sl-solo .sl-now, .sl-now:empty { display: none; }
 
@@ -653,6 +661,28 @@ button.sl-pub-chip:hover { color: var(--text); background: var(--hover); }
 .sl-center.sl-v-design :is(.sl-feed, .sl-down, .sl-comp, .sl-codex) { display: none; }
 .sl-design { flex: 1; min-height: 0; display: flex; flex-direction: column; animation: sl-fade var(--mo-d4) var(--mo-out); }
 .sl-design[hidden] { display: none; }
+/* Côte à côte (`.sl-v-split`) : le fil à gauche, le design à droite ; sa largeur `--dz-w` (fraction) se règle à la poignée. */
+.sl-center.sl-v-split { --dz-col: clamp(260px, var(--dz-w, 36%), calc(100% - 340px)); display: grid; grid-template-columns: minmax(0, 1fr) var(--dz-col); grid-template-rows: auto auto minmax(0, 1fr) auto auto; }
+.sl-v-split > :is(.sl-top, .sl-live) { grid-column: 1 / -1; }
+.sl-v-split > .sl-feed { grid-column: 1; grid-row: 3; }
+.sl-v-split > .sl-comp { grid-column: 1; grid-row: 4; }
+.sl-v-split > .sl-codex { grid-column: 1; grid-row: 5; }
+.sl-v-split > .sl-design { grid-column: 2; grid-row: 3 / -1; min-width: 0; border-left: 1px solid var(--border); }
+.sl-v-split > .sl-down { left: calc((100% - var(--dz-col)) / 2); }
+.sl-v-split .dz-bar { flex-wrap: wrap; padding-inline: 12px; }
+.sl-v-split .dz-stage { padding: 12px; }
+.sl-dzgrip { grid-column: 2; grid-row: 3 / -1; justify-self: start; position: relative; z-index: 3; width: 9px; margin-left: -5px; cursor: col-resize; outline: none; }
+.sl-dzgrip[hidden] { display: none; }
+.sl-dzgrip::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 3px; border-radius: 2px; background: var(--border-2); opacity: 0; transition: opacity .12s; }
+.sl-dzgrip:hover::after, .sl-dzgrip:focus-visible::after, body.grip-x .sl-dzgrip::after { opacity: 1; }
+body.grip-x .dz-device { transition: none; }
+.sl-seg button.sl-seg-ic { padding: 0 7px; }
+/* Trop étroit pour deux colonnes : le design seul, comme la vue Design. */
+@media (max-width: 899px) {
+  .sl-center.sl-v-split { display: flex; }
+  .sl-v-split > :is(.sl-feed, .sl-down, .sl-comp, .sl-codex, .sl-dzgrip) { display: none; }
+  .sl-v-split > .sl-design { border-left: 0; }
+}
 .dz-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; padding: 12px 14px 0; }
 .dz-stage { flex: 1; min-height: 0; display: grid; place-items: center; padding: 14px; overflow: auto; }
 .dz-big { width: 100%; height: 100%; display: grid; place-items: center; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-list); cursor: zoom-in; transition: border-color var(--mo-d2), box-shadow var(--mo-d3) var(--mo-out); }
@@ -680,9 +710,13 @@ button.sl-pub-chip:hover { color: var(--text); background: var(--hover); }
 .dz-empty .btn { margin-top: 8px; }
 .dz-live { place-items: stretch center; }
 .dz-device { width: 100%; max-width: 100%; height: 100%; overflow: hidden; border: 1px solid var(--border-2); border-radius: 12px; background: #fff; transition: width var(--mo-d5) var(--mo-out), border-radius var(--mo-d5) var(--mo-out); }
-.sl-design[data-size="tablet"] .dz-device { width: 820px; }
-.sl-design[data-size="phone"] .dz-device { width: 390px; border-radius: 28px; }
 .dz-frame { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
+/* Tablette et téléphone : écran logique fixe (--dz-sw × --dz-sh, posé par fit() dans design.ts), réduit d'un bloc par --dz-k
+   pour tenir entier ; .dz-fit occupe la taille réduite pour que la scène le centre. */
+.dz-fit { width: 100%; height: 100%; display: grid; place-items: center; }
+.sl-design:is([data-size="tablet"], [data-size="phone"]) .dz-fit { display: block; width: calc(var(--dz-sw, 390px) * var(--dz-k, 1)); height: calc(var(--dz-sh, 844px) * var(--dz-k, 1)); }
+.sl-design:is([data-size="tablet"], [data-size="phone"]) .dz-device { width: var(--dz-sw, 390px); max-width: none; height: var(--dz-sh, 844px); transform: scale(var(--dz-k, 1)); transform-origin: 0 0; transition: none; }
+.sl-design[data-size="phone"] .dz-device { border-radius: calc(28px / var(--dz-k, 1)); }
 
 :root[data-motion="off"] .sl-live.on::after { animation: none; }
 @media (prefers-reduced-motion: reduce) { .sl-live.on::after { animation: none; } .dz-device { transition: none; } }

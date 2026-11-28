@@ -23,6 +23,9 @@ interface Live { url: string; label: string; status: string }
 let tab: Tab = 'shots', size: Size = 'desk', picked = '';
 /** Site local par projet : dernière réponse du Mac, heure de la lecture, lecture en cours. */
 const sites = new Map<string, { live: Live | null; at: number; busy: boolean }>();
+// Écran logique des appareils : le cadre garde cette taille (le site voit un vrai mobile) et rapetisse en entier pour tenir
+// dans la place laissée (terminal ouvert, design à côté) au lieu de perdre sa hauteur (28 nov. 2026).
+const SCREEN: Partial<Record<Size, [number, number]>> = { tablet: [820, 1180], phone: [390, 844] };
 const SIZES: [Size, string, string][] = [['desk', 'Ordinateur', 'devices'], ['tablet', 'Tablette', 'frame'], ['phone', 'Téléphone', 'phone']];
 /** Seule une adresse locale annoncée par le Mac est chargée dans le cadre. */
 const localURL = (u: unknown): string => (typeof u === 'string' && /^https?:\/\/(localhost|127\.0\.0\.1):\d{2,5}\/$/.test(u) ? u : '');
@@ -68,7 +71,7 @@ function liveHTML(p: Project): string {
   if (!l?.url || l.status !== 'running') return emptyHTML('play', l ? 'Le site démarre…' : 'Le site n’est pas lancé',
     l ? 'L’aperçu s’affiche dès que le serveur local répond.' : 'Lance le site du projet sur ce Mac : il s’affiche ici, à la largeur de ton choix.',
     l ? '' : `<button type="button" class="btn" data-pj-tab="site">${icon('play')}Lancer le site</button>`);
-  return `<div class="dz-stage dz-live"><div class="dz-device"><iframe class="dz-frame" src="${esc(l.url)}" title="Aperçu du site" sandbox="allow-scripts allow-same-origin allow-forms" referrerpolicy="no-referrer"></iframe></div></div>
+  return `<div class="dz-stage dz-live"><div class="dz-fit"><div class="dz-device"><iframe class="dz-frame" src="${esc(l.url)}" title="Aperçu du site" sandbox="allow-scripts allow-same-origin allow-forms" referrerpolicy="no-referrer"></iframe></div></div></div>
     <footer class="dz-foot"><span class="dz-cap"><b>${esc(l.label || 'Site local')}</b><code>${esc(l.url.replace(/^https?:\/\//, '').replace(/\/$/, ''))}</code></span><span class="dz-nav"><button type="button" class="icon-btn" data-dz="reload" title="Recharger l’aperçu" aria-label="Recharger l’aperçu">${icon('refresh')}</button><a class="icon-btn" href="${esc(l.url)}" target="_blank" rel="noopener" title="Ouvrir dans le navigateur" aria-label="Ouvrir dans le navigateur">${icon('share')}</a></span></footer>`;
 }
 
@@ -80,6 +83,23 @@ export function paint(box: HTMLElement, p: Project, shots: Shot[], again: () => 
   box.dataset.size = size;
   if (paintIfChanged(box, head + (tab === 'shots' ? shotsHTML(shots) : liveHTML(p)))) box.querySelector('.dz-thumb.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   attach.hydrate(box, p.id);
+  watch(box); fit(box);
+}
+
+/** Réduit l'appareil (taille logique `SCREEN`) pour qu'il tienne entier dans la scène, sans jamais l'agrandir. */
+function fit(box: HTMLElement): void {
+  const stage = box.querySelector<HTMLElement>('.dz-live'), dev = SCREEN[size]; if (!stage) return;
+  if (!dev) { stage.style.removeProperty('--dz-k'); return; }
+  const cs = getComputedStyle(stage), w = stage.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight), h = stage.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+  if (w <= 0 || h <= 0) return;
+  const k = Math.min(1, w / dev[0], h / dev[1]);
+  stage.style.setProperty('--dz-k', k.toFixed(4));
+  stage.style.setProperty('--dz-sw', `${dev[0]}px`); stage.style.setProperty('--dz-sh', `${dev[1]}px`);
+}
+const watched = new WeakSet<HTMLElement>();
+function watch(box: HTMLElement): void {
+  if (watched.has(box) || typeof ResizeObserver === 'undefined') return;
+  watched.add(box); new ResizeObserver(() => fit(box)).observe(box);
 }
 
 /** Clic dans la vue. Rend vrai si le geste est pris (le Salon repeint alors) ; `ask` écrit une demande dans le champ. */
@@ -96,7 +116,7 @@ export function click(e: Event, box: HTMLElement, shots: Shot[], ask: (text: str
     // La largeur change par attribut : le cadre garde sa page (un repeint le rechargerait).
     size = (b.dataset.v as Size | undefined) ?? 'desk'; box.dataset.size = size;
     box.querySelectorAll<HTMLElement>('[data-dz="size"]').forEach(x => x.setAttribute('aria-pressed', String(x.dataset.v === size)));
-    return false;
+    fit(box); return false;
   }
   else if (act === 'reload') { const f = box.querySelector<HTMLIFrameElement>('.dz-frame'); if (f) f.src = f.src; return false; }
   return true;
