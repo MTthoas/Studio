@@ -9,6 +9,8 @@
 //     28 nov. 2026, « la visu mobile et web à droite de la lounge ») : deux cadres du même site, écran d'ordinateur et
 //     téléphone, côte à côte ou l'un sous l'autre selon la place (`fitDuo`).
 //   - Code : l'activité des agents et le diff de la copie façon GitHub, relu à chaque écriture (codeview.ts).
+// La vue vit dans la colonne de droite du Salon (28 nov. 2026, maquette C) : son onglet Code n'y montre que le code
+// (`only` = 'code', sans barre), son onglet Aperçu les captures et le site (`only` = 'look').
 // Le Salon repeint toutes les secondes ou presque : `paint` ne réécrit que ce qui change (le cadre de l'aperçu n'est jamais
 // rechargé par un repeint ; la largeur se règle par un attribut, pas par le HTML).
 import * as native from '../../core/native.ts';
@@ -24,8 +26,8 @@ type Tab = 'shots' | 'live' | 'code';
 type Size = 'duo' | 'desk' | 'tablet' | 'phone';
 interface Live { url: string; label: string; status: string }
 
-// Onglet et largeur retenus d'une ouverture à l'autre. Tant que l'onglet n'a jamais été choisi, la vue montre le site s'il
-// tourne, sinon les captures s'il y en a (`shown`).
+// Onglet (Captures ou Aperçu du site) et largeur retenus d'une ouverture à l'autre. Tant que l'onglet n'a jamais été choisi,
+// la vue montre le site s'il tourne, sinon les captures s'il y en a (`shown`). 'code' gardé d'une version passée : ignoré.
 const TAB = 'studio.design.tab', SIZE = 'studio.design.size';
 const load = (k: string): string => { try { return localStorage.getItem(k) ?? ''; } catch { return ''; } };
 const keep = (k: string, v: string): void => { try { localStorage.setItem(k, v); } catch { /* stockage bloqué */ } };
@@ -92,19 +94,18 @@ function liveHTML(p: Project): string {
  *  l'état final (le serveur de fichiers de Studio n'a pas de rechargement à chaud ; un serveur de dev le fait déjà). */
 let lastWork = '';
 /** Dessine la vue dans `box` (rien n'est réécrit si rien n'a changé). `again` : redemander un rendu (état du site lu).
- *  `work` : `<fil>:<1 si l'équipe travaille, sinon 0>`. */
-export function paint(box: HTMLElement, p: Project, shots: Shot[], again: () => void = () => undefined, work = '', cv?: code.CodeIn): void {
+ *  `work` : `<fil>:<1 si l'équipe travaille, sinon 0>`. `only` : le code seul, ou les captures et le site. */
+export function paint(box: HTMLElement, p: Project, shots: Shot[], again: () => void = () => undefined, work = '', cv?: code.CodeIn, only: 'code' | 'look' = 'look'): void {
   const stopped = lastWork.endsWith(':1') && work === lastWork.slice(0, -1) + '0';
   lastWork = work;
   if (picked && !shots.some(s => s.path === picked)) picked = '';
   readSite(p, again);
   const l = pinned.get(p.id) ?? sites.get(p.id)?.live;
-  shown = tab ?? (l?.url && l.status === 'running' ? 'live' : shots.length ? 'shots' : cv ? 'code' : 'live');
-  if (shown === 'code' && !cv) shown = 'live';
-  const n = cv ? code.count(p, cv.wt) : -1;
-  const head = `<header class="dz-bar">${seg([['shots', `Captures${shots.length ? `<span>${shots.length}</span>` : ''}`], ['live', 'Aperçu du site'], ...(cv ? [['code', `Code${n > 0 ? `<span>${n}</span>` : ''}`] as [string, string]] : [])], shown, 'tab')}${shown === 'live' ? `<span class="sl-seg dz-sizes" role="group" aria-label="Largeur de l’aperçu">${SIZES.map(([v, l, ic]) => `<button type="button" data-dz="size" data-v="${v}" aria-pressed="${v === size}" title="${l}" aria-label="${l}">${icon(ic)}</button>`).join('')}</span>` : ''}</header>`;
+  const vt = tab === 'code' ? null : tab;
+  shown = only === 'code' ? 'code' : vt ?? (l?.url && l.status === 'running' ? 'live' : shots.length ? 'shots' : 'live');
+  const head = only === 'code' ? '' : `<header class="dz-bar">${seg([['shots', `Captures${shots.length ? `<span>${shots.length}</span>` : ''}`], ['live', 'Site']], shown, 'tab')}${shown === 'live' ? `<span class="sl-seg dz-sizes" role="group" aria-label="Largeur de l’aperçu">${SIZES.map(([v, l, ic]) => `<button type="button" data-dz="size" data-v="${v}" aria-pressed="${v === size}" title="${l}" aria-label="${l}">${icon(ic)}</button>`).join('')}</span>` : ''}</header>`;
   box.dataset.size = size;
-  if (paintIfChanged(box, head + (shown === 'shots' ? shotsHTML(shots) : shown === 'code' ? '<div class="cv" data-cv></div>' : liveHTML(p)))) box.querySelector('.dz-thumb.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  if (paintIfChanged(box, head + (shown === 'shots' ? shotsHTML(shots) : shown === 'code' ? (cv ? '<div class="cv" data-cv></div>' : '<div class="dz-empty"><span class="spin"></span><p>Lecture de la copie…</p></div>') : liveHTML(p)))) box.querySelector('.dz-thumb.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   const cvBox = box.querySelector<HTMLElement>('[data-cv]');
   if (cvBox && cv) code.paint(cvBox, p, cv, again);
   attach.hydrate(box, p.id);
@@ -155,7 +156,7 @@ export function click(e: Event, box: HTMLElement, shots: Shot[], ask: (text: str
   if (act?.startsWith('cv-')) return p ? code.click(b, box, p, wt) : false;
   // Une vignette de la bande choisit la capture : la visionneuse d'attach.ts (même clic) ne doit pas s'ouvrir.
   if (act === 'pick') { e.stopImmediatePropagation(); picked = b.dataset.path ?? ''; }
-  else if (act === 'tab') { show(b.dataset.v === 'live' || b.dataset.v === 'code' ? b.dataset.v : 'shots'); }
+  else if (act === 'tab') { show(b.dataset.v === 'live' ? 'live' : 'shots'); }
   else if (act === 'prev') picked = shots[Math.min(shots.length - 1, i + 1)]?.path ?? picked;
   else if (act === 'next') picked = shots[Math.max(0, i - 1)]?.path ?? picked;
   else if (act === 'ask') ask(tr('Montre-moi une capture d’écran de ce que tu as changé.'));
@@ -184,3 +185,6 @@ export function key(e: KeyboardEvent, shots: Shot[]): boolean {
   picked = shots[e.key === 'ArrowLeft' ? Math.min(shots.length - 1, i + 1) : Math.max(0, i - 1)]?.path ?? picked;
   return true;
 }
+
+/** Nombre de fichiers changés de la copie `wt` au dernier relevé (-1 : pas encore lu). */
+export const codeCount = (p: Project, wt: string): number => code.count(p, wt);

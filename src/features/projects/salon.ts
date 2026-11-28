@@ -182,15 +182,18 @@ let filt: Filt = 'all', query = '';
 let last = { sessions: 0, trees: 0, detail: 0, board: 0 };
 const fetching = new Set<string>();
 let openTech: (session: string) => void = () => undefined, openNote: (id: string) => void = () => undefined, openSkills: () => void = () => undefined;
-/** Vue du centre : la discussion, « Design » (captures des agents et aperçu du site, design.ts), ou les deux côte à côte
- *  (`split`, largeur du design réglable). Gardée d'un fil à l'autre, et d'une ouverture à l'autre (`VIEW`, choix au clic). */
-type View = 'chat' | 'design' | 'split';
-const VIEW = 'studio.salon.view';
-let view: View = ((): View => { try { const v = localStorage.getItem(VIEW); return v === 'design' || v === 'split' ? v : 'chat'; } catch { return 'chat'; } })();
-const keepView = (): void => { try { localStorage.setItem(VIEW, view); } catch { /* stockage bloqué */ } };
-/** Largeur du design côte à côte (fraction de la colonne du fil) et de la liste des fils (px) : réglées à la poignée, gardées. */
-const DZ_W = 'studio.salon.dzw', SIDE_W = 'studio.salon.sidew', DZ_DEF = 0.36, SIDE_DEF = 248;
-const clampDz = (f: number): number => Math.min(0.75, Math.max(0.2, f));
+/** Colonne de droite (28 nov. 2026, maquette C, « code doit être en dessous de Team ») : trois onglets, Team (l'équipe et sa
+ *  consommation), Code (activité et diff de la copie, codeview.ts) et Aperçu (captures et site local, design.ts). La discussion
+ *  garde toute la largeur. L'onglet est gardé d'un fil à l'autre et d'une ouverture à l'autre (`COL_TAB`) ; `wide` agrandit la
+ *  colonne par-dessus la discussion (clic sur un fichier, bouton de la barre ; Échap referme). */
+type ColTab = 'team' | 'code' | 'look';
+const COL_TAB = 'studio.salon.colTab';
+let colTab: ColTab = ((): ColTab => { try { const v = localStorage.getItem(COL_TAB); return v === 'code' || v === 'look' ? v : 'team'; } catch { return 'team'; } })();
+const keepTab = (): void => { try { localStorage.setItem(COL_TAB, colTab); } catch { /* stockage bloqué */ } };
+let wide = false;
+/** Largeur de la colonne de droite et de la liste des fils (px) : réglées à la poignée, gardées. */
+const COL_W = 'studio.salon.colw', SIDE_W = 'studio.salon.sidew', COL_DEF = 360, SIDE_DEF = 248;
+const clampCol = (px: number): number => Math.round(Math.min(720, Math.max(300, px)));
 const clampSide = (px: number): number => Math.round(Math.min(440, Math.max(180, px)));
 /** Fiche ouverte : 'main' (l'agent principal) ou l'id d'un sous-agent ; '' = aucune. */
 let prof = '', profAt: { box: DOMRect; side: DOMRect | null } | null = null;
@@ -669,8 +672,7 @@ const composeSource: compose.Source = {
     const has = (sel: string): boolean => !!r.querySelector(sel);
     return [
       { label: 'Nouveau fil', hint: '⌥N', icon: 'plus', run: act('[data-sl="new"]') },
-      ...(view !== 'split' ? [{ label: 'Design à côté de la discussion', icon: 'split', run: act('[data-sl="view"][data-v="split"]') }] : []),
-      view === 'chat' ? { label: 'Voir le design', hint: 'captures et aperçu du site', icon: 'frame', run: act('[data-sl="view"][data-v="design"]') } : { label: 'Revenir à la discussion', icon: 'sparkle', run: act('[data-sl="view"][data-v="chat"]') },
+      ...(has('[data-sl="ctab"]') ? [{ label: 'Voir le code de l’équipe', hint: 'diff en direct', icon: 'code', run: act('[data-sl="ctab"][data-v="code"]') }, { label: 'Aperçu du site', hint: 'captures et site local', icon: 'devices', run: act('[data-sl="ctab"][data-v="look"]') }] : []),
       ...(cur ? [{ label: 'Afficher ou masquer l’équipe', icon: 'bot', run: act('[data-sl="now"]') }] : []),
       ...(has('[data-sl="tech"]') ? [{ label: 'Vue technique', hint: 'les étapes, une par une', icon: 'terminal', run: act('[data-sl="tech"]') }] : []),
       ...(has('[data-sl="stop"]') ? [{ label: 'Arrêter l’équipe', icon: 'stop', run: act('[data-sl="stop"]') }] : []),
@@ -753,10 +755,9 @@ function moodOf(t: Thread, ask: boolean): Mood {
   return w && copyStage(w) === 'review' ? 'ready' : 'done';
 }
 /** Bascule Discussion | Design, et « Outils » du projet (menu de la fiche projet, `data-pj`). */
-const viewHTML = (shots: number): string => `<span class="sl-seg" role="group" aria-label="Vue"><button type="button" data-sl="view" data-v="chat" aria-pressed="${view === 'chat'}">Discussion</button><button type="button" data-sl="view" data-v="design" aria-pressed="${view === 'design'}" title="Captures des agents et aperçu du site">Design${shots ? `<span>${shots}</span>` : ''}</button><button type="button" class="sl-seg-ic" data-sl="view" data-v="split" aria-pressed="${view === 'split'}" title="Design à côté de la discussion" aria-label="Design à côté de la discussion">${icon('split')}</button></span>`;
 const toolsHTML = (): string => `<button type="button" class="btn btn-ghost sl-ic" data-pj="tabs-more" aria-haspopup="menu" title="Outils du projet" aria-label="Outils du projet">${icon('more')}</button>`;
-function headHTML(t: Thread | undefined, crew: Crew | null, ask: boolean, shots: number): string {
-  if (!t || !crew) return `<h2><span>Nouveau fil</span></h2><i class="sl-grow"></i>${viewHTML(shots)}${toolsHTML()}`;
+function headHTML(t: Thread | undefined, crew: Crew | null, ask: boolean): string {
+  if (!t || !crew) return `<h2><span>Nouveau fil</span></h2><i class="sl-grow"></i>${toolsHTML()}`;
   // L'état se lit à la couleur du point (au travail, attend ta réponse, prêt à publier) ; son libellé est dans l'infobulle.
   const mood = moodOf(t, ask), [label] = MOOD[mood], dot = `<i class="sl-dot ${mood === 'done' ? '' : mood}" title="${label}"></i>`;
   const run = S.runs.find(r => live(r) && (r.session === t.id || `run:${r.run}` === t.id));
@@ -764,7 +765,7 @@ function headHTML(t: Thread | undefined, crew: Crew | null, ask: boolean, shots:
   const far = S.runs.find(r => (r.session === t.id || `run:${r.run}` === t.id) && r.machine === 'server');
   const title = `<h2 title="${esc(nameOf(t.s))}">${dot}<span>${esc(nameOf(t.s))}</span></h2>${far ? `<span class="sl-srv" title="Ce fil travaille sur un serveur du projet">${icon('server')}<span>${esc(far.host || 'serveur')}</span></span>` : ''}`;
   if (isCodex(t)) return `${title}<i class="sl-grow"></i><button type="button" class="btn" data-sl="codex" data-app="terminal" data-id="${esc(t.id)}" title="Ouvre le Terminal dans le dossier du fil et lance codex resume">${icon('terminal')}<span>Reprendre dans le Terminal</span></button><button type="button" class="btn btn-ghost" data-sl="codex" data-app="app" data-id="${esc(t.id)}" title="Ouvrir l’app Codex">${icon('share')}<span>App Codex</span></button>${toolsHTML()}`;
-  return `${title}<i class="sl-grow"></i>${run ? `<button type="button" class="btn btn-ghost" data-sl="stop" data-run="${esc(run.run)}" title="Arrêter l’équipe">${icon('stop')}<span>Arrêter</span></button>` : ''}${viewHTML(shots)}<button type="button" class="btn btn-ghost sl-nowbtn" data-sl="now" aria-pressed="false" title="Afficher ou masquer l’équipe" aria-label="Afficher ou masquer l’équipe"><span class="sl-stack">${faces}</span></button>${t.id.startsWith('run:') ? '' : `<button type="button" class="btn btn-ghost sl-ic" data-sl="tech" data-id="${esc(t.id)}" title="Vue technique : les étapes, une par une" aria-label="Vue technique">${icon('terminal')}</button>`}${toolsHTML()}`;
+  return `${title}<i class="sl-grow"></i>${run ? `<button type="button" class="btn btn-ghost" data-sl="stop" data-run="${esc(run.run)}" title="Arrêter l’équipe">${icon('stop')}<span>Arrêter</span></button>` : ''}<button type="button" class="btn btn-ghost sl-nowbtn" data-sl="now" aria-pressed="false" title="Afficher ou masquer l’équipe" aria-label="Afficher ou masquer l’équipe"><span class="sl-stack">${faces}</span></button>${t.id.startsWith('run:') ? '' : `<button type="button" class="btn btn-ghost sl-ic" data-sl="tech" data-id="${esc(t.id)}" title="Vue technique : les étapes, une par une" aria-label="Vue technique">${icon('terminal')}</button>`}${toolsHTML()}`;
 }
 // ---------- Consommation de tokens du fil ----------
 // Le journal de la session ne compte que l'agent principal ; chaque sous-agent a le sien (`tok`, app Mac récente,
@@ -824,8 +825,8 @@ function nowHTML(t: Thread, d: Detail | undefined, crew: Crew, ask: boolean): st
     return mem(w, s.live ? 'travaille' : 'a fini', s.live ? 'on' : '', l, s.live ? 'work' : 'sleep');
   })].join('');
   // Codex : les réglages de sous-agents sont ceux des agents Studio (Claude Code), sans effet sur un fil Codex.
-  if (isCodex(t)) return `<h4>Équipe</h4>${rows}`;
-  return `<h4>Équipe</h4>${rows}<button type="button" class="btn btn-ghost sl-set" data-sl="team" title="${esc(subagents.HINT)}">${icon('gear')}<span>${esc(subagents.label(S.pid))}</span></button>`;
+  if (isCodex(t)) return `${rows}`;
+  return `${rows}<button type="button" class="btn btn-ghost sl-set" data-sl="team" title="${esc(subagents.HINT)}">${icon('gear')}<span>${esc(subagents.label(S.pid))}</span></button>`;
 }
 // ---------- Vue Technique de la colonne (même colonne que « En ce moment », autre lecture des mêmes données) ----------
 // Sobre et typographique, avec les styles `.lv-*` de css/pulse.css (suivi en direct de l'onglet Claude Code) : ce que
@@ -839,7 +840,6 @@ const shortPath = (f: string): string => f.trim().split('/').filter(Boolean).sli
 const targetOf = (kind: string, text: string): string => FILE_TOOL.test(kind.slice(5)) ? shortPath(text) : oneLine(kind === 'tool:Bash' ? noCd(text) : text, 120);
 /** Commande sans son « cd <dossier> && » ou « cd <dossier>; » de tête : l'agent la répète à chaque appel, elle masquait la vraie commande. */
 const noCd = (c: string): string => c.replace(/^\s*(?:cd\s+(?:"[^"]*"|'[^']*'|\S+)\s*(?:&&|;)\s*)+/, '') || c;
-const gain = (add: number, del: number): string => `<span class="st-lines"><b class="a">+${add.toLocaleString('fr-FR')}</b> <b class="d">−${del.toLocaleString('fr-FR')}</b></span>`;
 /** Chrono : le texte est posé par `tickClocks` (après chaque rendu, puis chaque seconde) ; `t1` = 0 tant que ça travaille. */
 const clockHTML = (t0: number, t1: number): string => t0 ? `<time class="lv-clock" data-t0="${t0}" data-t1="${t1}"${t1 ? '' : ' data-live'}></time>` : '';
 const clockText = (s: number): string => { const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = String(s % 60).padStart(2, '0'); return h ? `${h}:${String(m).padStart(2, '0')}:${x}` : `${m}:${x}`; };
@@ -883,10 +883,16 @@ function stripHTML(t: Thread, d: Detail, crew: Crew): string {
 const skelHTML = (k: 'team' | 'tech'): string => k === 'team'
   ? `<div class="sl-skel" aria-busy="true" aria-label="Chargement">${[72, 54].map((w, i) => `<div class="sl-skel-mem" style="--i:${i}"><i class="sl-skel-av"></i><div><i style="width:${w}%"></i><i style="width:${w - 18}%"></i></div></div>`).join('')}</div>`
   : `<div class="sl-skel" aria-busy="true" aria-label="Chargement">${[64, 88, 46].map((w, i) => `<i style="width:${w}%;--i:${i}"></i>`).join('')}</div>`;
-/** Colonne de droite : Équipe, un lien vers l'onglet Code du panneau de droite (l'activité technique et le diff y vivent depuis
- *  le 28 nov. 2026), puis la consommation en pied, toujours visible. */
-const colHTML = (team: string, link: string): string => `<section class="sl-team" aria-label="Équipe">${team}</section>${link}`;
-const codeLink = (d: Detail | undefined, on: boolean): string => `<button type="button" class="sl-codelink" data-sl="code" aria-pressed="${on}">${icon('code')}<span>Code et activité</span>${d?.lines && (d.lines.add || d.lines.del) ? gain(d.lines.add, d.lines.del) : ''}${icon('chevronRight')}</button>`;
+/** Onglet Team de la colonne de droite (Code et Aperçu sont peints par design.ts, dans [data-sl-design]). */
+const colHTML = (team: string): string => `<section class="sl-team" aria-label="Équipe">${team}</section>`;
+/** Onglets de la colonne de droite, avec l'équipe en pastilles (on garde « qui travaille » sous les yeux depuis Code ou Aperçu). */
+function tabsHTML(t: Thread, d: Detail | undefined, crew: Crew, shots: number): string {
+  const n = d?.worktree && p ? design.codeCount(p, d.worktree) : -1;
+  const tab = (v: ColTab, label: string, extra = ''): string => `<button type="button" role="tab" data-sl="ctab" data-v="${v}" aria-selected="${colTab === v}">${label}${extra}</button>`;
+  const work = t.group === 'work', faces = [crew.main, ...crew.subs.values()].slice(0, 4).map(w => face(w, work ? 'work' : 'idle')).join('');
+  const big = colTab !== 'team' ? `<button type="button" class="icon-btn sl-wide" data-sl="wide" aria-pressed="${wide}" title="${wide ? 'Réduire (Échap)' : 'Agrandir par-dessus la discussion'}" aria-label="${wide ? 'Réduire' : 'Agrandir'}">${icon(wide ? 'x' : 'focus')}</button>` : '';
+  return `<div class="sl-ctabs-row" role="tablist" aria-label="Colonne de droite">${tab('team', 'Team')}${tab('code', 'Code', n > 0 ? `<span>${n}</span>` : '')}${tab('look', 'Aperçu', shots ? `<span>${shots}</span>` : '')}</div><span class="sl-cfaces" aria-hidden="true">${colTab === 'team' ? '' : faces}</span>${big}`;
+}
 // Seul le chrono tourne, une fois par seconde : et seulement colonne visible, fenêtre au premier plan, agent au travail.
 let techTimer: ReturnType<typeof setInterval> | undefined;
 function tickClocks(): void {
@@ -1042,22 +1048,23 @@ function paint(): void {
   // Captures citées dans le fil (messages de l'agent principal et comptes rendus) : la matière de la vue Design.
   const shots = shotsOf(d, crew);
   const head = need('[data-sl-head]', root);
-  paintIfChanged(head, headHTML(cur, crew, ask, shots.length));
+  paintIfChanged(head, headHTML(cur, crew, ask));
   head.querySelector('[data-sl="now"]')?.setAttribute('aria-pressed', String(teamShown(root)));
   // Un filet court sous la barre tant que l'équipe travaille ; la vue Design remplace la discussion sans la démonter.
   need('[data-sl-live]', root).classList.toggle('on', cur?.group === 'work');
-  const center = need('.sl-center', root);
-  center.classList.toggle('sl-v-design', view === 'design'); center.classList.toggle('sl-v-split', view === 'split');
-  const dz = need<HTMLElement>('[data-sl-design]', root); dz.hidden = view === 'chat';
-  need('[data-sl-dzgrip]', root).hidden = view !== 'split';
-  if (view !== 'chat') design.paint(dz, p, shots, () => { if (root?.isConnected) paint(); }, `${cur?.id ?? ''}:${cur?.group === 'work' ? 1 : 0}`, cur && d && crew ? codeIn(cur, d, crew) : undefined);
   paintIfChanged(need('[data-sl-cons]', root), cur && crew ? consHTML(cur, d, crew) : '');
   // Colonne de droite : Équipe puis Technique. Squelette tant que le fil démarre ; quand le vrai contenu
   // remplace le squelette, il entre une fois en fondu (pas à chaque mise à jour).
-  const col = need<HTMLElement>('[data-sl-now]', root), skel = !(cur && crew), wasSkel = col.dataset.skel === '1';
-  const colH = cur && crew ? colHTML(nowHTML(cur, d, crew, ask), codeLink(d, view !== 'chat' && design.current() === 'code')) : opening?.pid === p.id ? colHTML(skelHTML('team'), '') : '';
+  // Onglets Code et Aperçu : la vue design.ts, dessinée seulement colonne visible (le cadre du site n'est jamais rechargé).
+  const col = need<HTMLElement>('[data-sl-team]', root), skel = !(cur && crew), wasSkel = col.dataset.skel === '1', ct = skel ? 'team' : colTab;
+  paintIfChanged(need('[data-sl-ctabs]', root), cur && crew ? tabsHTML(cur, d, crew, shots.length) : '');
+  const colH = cur && crew ? colHTML(nowHTML(cur, d, crew, ask)) : opening?.pid === p.id ? colHTML(skelHTML('team')) : '';
+  col.hidden = ct !== 'team';
   if (morphIfChanged(col, colH) && wasSkel && !skel && !calm()) { col.classList.remove('sl-reveal'); void col.offsetWidth; col.classList.add('sl-reveal'); }
   col.dataset.skel = skel ? '1' : '';
+  const dz = need<HTMLElement>('[data-sl-design]', root); dz.hidden = ct === 'team';
+  if (ct !== 'team' && teamShown(root)) design.paint(dz, p, shots, () => { if (root?.isConnected) paint(); }, `${cur?.id ?? ''}:${cur?.group === 'work' ? 1 : 0}`, cur && d && crew ? codeIn(cur, d, crew) : undefined, ct === 'code' ? 'code' : 'look');
+  root.classList.toggle('sl-wide', wide && ct !== 'team');
   if (cur && crew) tickClocks();
   syncClock();
   // La fiche ouverte suit l'état de l'agent ; elle se ferme si l'agent n'est plus dans le fil.
@@ -1207,7 +1214,14 @@ function renameAgent(base: string): void {
 /** Écran large : la colonne de droite se masque (réglage retenu). Écran étroit : elle s'ouvre par-dessus la discussion. */
 const narrow = (): boolean => matchMedia('(max-width: 1099px)').matches;
 const teamShown = (r: HTMLElement): boolean => narrow() ? r.classList.contains('sl-now-open') : !r.classList.contains('sl-now-off');
+/** Montre la colonne de droite si elle est masquée (choix gardé comme celui du bouton Équipe). */
+function showCol(r: HTMLElement): void {
+  if (teamShown(r)) return;
+  if (narrow()) r.classList.add('sl-now-open');
+  else { r.classList.remove('sl-now-off'); try { localStorage.setItem(TEAM_OFF, '0'); } catch { /* plein */ } }
+}
 function toggleTeam(r: HTMLElement): void {
+  wide = false;
   if (narrow()) r.classList.toggle('sl-now-open');
   else { const off = r.classList.toggle('sl-now-off'); try { localStorage.setItem(TEAM_OFF, off ? '1' : '0'); } catch { /* plein */ } }
   paint();
@@ -1223,8 +1237,10 @@ function bind(r: HTMLElement): void {
     // Vue Design : captures, largeur de l'aperçu ; « Demander une capture » écrit la demande dans le champ.
     const dz = el.closest<HTMLElement>('[data-sl-design]');
     if (dz && p) {
+      // Un fichier choisi dans l'arbre : le diff s'ouvre en grand, par-dessus la discussion.
+      if (el.closest('[data-dz="cv-go"]') && !wide) wide = true;
       const d0 = S.detail.get(curId()), c0 = d0 ? crewOf(d0.subagents ?? [], d0.models ?? []) : null;
-      if (design.click(e, dz, shotsOf(d0, c0), text => { if (view === 'design') view = 'chat'; const ta = need<HTMLTextAreaElement>('.sl-comp textarea', r); if (!ta.value.trim()) ta.value = text; paint(); grow(ta); ta.focus(); ready(); showAuto(); }, p, d0?.worktree || S.sessions.find(x => x.id === curId())?.worktree || '')) { paint(); return; }
+      if (design.click(e, dz, shotsOf(d0, c0), text => { const ta = need<HTMLTextAreaElement>('.sl-comp textarea', r); if (!ta.value.trim()) ta.value = text; paint(); grow(ta); ta.focus(); ready(); showAuto(); }, p, d0?.worktree || S.sessions.find(x => x.id === curId())?.worktree || '')) { paint(); return; }
     }
     if (!t || !p) return;
     const act = t.dataset.sl, pid = p.id;
@@ -1238,9 +1254,9 @@ function bind(r: HTMLElement): void {
     }
     if (act === 'unprof') { closeProf(); return; }
     if (act === 'routes') { routesMenu(t); return; }
-    // Lien de la colonne Équipe : l'onglet Code du panneau de droite (la discussion reste à côté).
-    if (act === 'code') { design.show('code'); if (view === 'chat') view = 'split'; keepView(); paint(); return; }
-    if (act === 'view') { const v = t.dataset.v; view = v === 'design' || v === 'split' ? v : 'chat'; keepView(); paint(); if (view !== 'design') need('.sl-comp textarea', r).focus(); return; }
+    // Onglets de la colonne de droite ; « agrandir » la pose par-dessus la discussion.
+    if (act === 'ctab') { const v = t.dataset.v; colTab = v === 'code' || v === 'look' ? v : 'team'; keepTab(); if (colTab === 'team') wide = false; showCol(r); paint(); return; }
+    if (act === 'wide') { wide = !wide; paint(); return; }
     if (act === 'copy' || act === 'quote' || act === 'keep') {
       // Le texte du message tel qu'il est lu, sans l'en-tête ni les gestes ; les blocs repliés sont compris.
       const bd = t.closest('.sl-msg')?.querySelector('.sl-bd'); if (!bd) return;
@@ -1361,7 +1377,8 @@ function bind(r: HTMLElement): void {
     if (!r.isConnected || !p || e.metaKey || e.ctrlKey) return;
     const el = e.target as HTMLElement | null, typing = !!el?.closest('input, textarea, select, [contenteditable]');
     if (e.key === '/' && !typing && !e.altKey) { e.preventDefault(); r.querySelector<HTMLInputElement>('[data-sl-q]')?.focus(); return; }
-    if (view !== 'chat' && !typing && !e.altKey) { const d0 = S.detail.get(curId()), c0 = d0 ? crewOf(d0.subagents ?? [], d0.models ?? []) : null; if (design.key(e, shotsOf(d0, c0))) { e.preventDefault(); paint(); return; } }
+    if (e.key === 'Escape' && wide && !typing) { e.preventDefault(); wide = false; paint(); return; }
+    if (colTab === 'look' && teamShown(r) && !typing && !e.altKey) { const d0 = S.detail.get(curId()), c0 = d0 ? crewOf(d0.subagents ?? [], d0.models ?? []) : null; if (design.key(e, shotsOf(d0, c0))) { e.preventDefault(); paint(); return; } }
     if (!e.altKey) return;
     if (e.code === 'KeyN') { e.preventDefault(); choose(p.id, ''); paint(); need('.sl-comp textarea', r).focus(); return; }
     if (typing || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
@@ -1403,26 +1420,26 @@ export async function prefill(pid: string, thread: string, text: string): Promis
   const ta = root?.isConnected && p?.id === pid ? root.querySelector<HTMLTextAreaElement>('.sl-comp textarea') : null;
   if (ta && shown === key) { ta.value = join(ta.value); drafts.set(key, ta.value); }
   else { if (ta && shown) drafts.set(shown, ta.value); drafts.set(key, join(drafts.get(key))); }
-  choose(pid, thread); if (view === 'design') view = 'chat';
+  choose(pid, thread);
   await go(pid, 'salon');
   if (!root?.isConnected || p?.id !== pid) return;
   paint();
   const box = root.querySelector<HTMLTextAreaElement>('.sl-comp textarea'); if (!box) return;
   grow(box); box.focus(); box.setSelectionRange(box.value.length, box.value.length); box.scrollTop = box.scrollHeight; ready(); showAuto();
 }
-/** Poignées du Salon (remontées avec lui) : largeur de la liste des fils (`--sl-lw` sur `.sl-box`) et du design côte à côte
- *  (`--dz-w` sur `.sl-center`, en fraction : le téléphone garde son tiers quand la fenêtre change). */
+/** Poignées du Salon (remontées avec lui) : largeur de la liste des fils (`--sl-lw` sur `.sl-box`) et de la colonne de
+ *  droite (`--sl-rw`, de 300 à 720 px). */
 function sizes(box: HTMLElement): void {
-  const center = need<HTMLElement>('.sl-center', box), side = need<HTMLElement>('.sl-side', box);
-  let dz = clampDz(grips.stored(DZ_W, DZ_DEF)), sw = clampSide(grips.stored(SIDE_W, SIDE_DEF));
-  const putDz = (): void => center.style.setProperty('--dz-w', `${(dz * 100).toFixed(2)}%`);
+  const side = need<HTMLElement>('.sl-side', box), now = need<HTMLElement>('[data-sl-now]', box);
+  let cw = clampCol(grips.stored(COL_W, COL_DEF)), sw = clampSide(grips.stored(SIDE_W, SIDE_DEF));
+  const putCol = (): void => box.style.setProperty('--sl-rw', `${cw}px`);
   const putSide = (): void => box.style.setProperty('--sl-lw', `${sw}px`);
-  putDz(); putSide();
-  grips.grip(need('[data-sl-dzgrip]', box), {
+  putCol(); putSide();
+  grips.grip(need('[data-sl-colgrip]', box), {
     axis: 'x', sign: -1,
-    get: () => dz * center.clientWidth,
-    set: px => { dz = clampDz(px / Math.max(1, center.clientWidth)); putDz(); },
-    done: () => grips.store(DZ_W, dz), reset: () => { dz = DZ_DEF; putDz(); },
+    get: () => now.getBoundingClientRect().width,
+    set: px => { cw = clampCol(px); putCol(); },
+    done: () => grips.store(COL_W, cw), reset: () => { cw = COL_DEF; putCol(); },
   });
   const sg = document.createElement('div');
   sg.className = 'sl-sidegrip'; sg.setAttribute('role', 'separator'); sg.setAttribute('aria-orientation', 'vertical'); sg.tabIndex = 0;
@@ -1438,7 +1455,7 @@ function sizes(box: HTMLElement): void {
 /** Montre `url` (un port local vu dans un terminal) dans la vue Design du Salon. Faux si l'adresse n'est pas locale. */
 export function showPreview(pid: string, url: string): boolean {
   if (!design.preview(pid, url)) return false;
-  if (view !== 'split') view = 'design';
+  colTab = 'look'; keepTab(); if (root?.isConnected) showCol(root);
   if (root?.isConnected && p?.id === pid) paint(); else void go(pid, 'salon');
   return true;
 }
@@ -1455,10 +1472,10 @@ export function mount(box: HTMLElement, proj: Project, o: { openTech: (session: 
   // Serveurs du projet : lus une fois par montage (sur ce Mac), pour proposer « Où travailler » à un nouveau fil.
   if (bridge.local() && !infra.knownServers(proj.id).length) void infra.list(proj).then(() => { if (root === box && box.isConnected) paint(); }).catch(() => undefined);
   box.innerHTML = `<aside class="sl-side" aria-label="Fils du projet"><div class="sl-side-h"><button type="button" class="sl-proj" data-pj="proj-menu" aria-haspopup="menu" title="Changer de projet">${projIcons.tile(proj)}<span>${esc(proj.name)}</span>${icon('chevron')}</button><span class="sl-n" data-sl-n title="Fils du projet"></span></div><button type="button" class="sl-add" data-sl="new" title="Nouveau fil (⌥N)"><i aria-hidden="true">${icon('plus')}</i><span>Nouveau fil</span></button><label class="sl-q">${icon('search')}<input type="search" data-sl-q placeholder="Chercher un fil…" aria-label="Chercher un fil" value="${esc(query)}"><kbd aria-hidden="true">/</kbd></label><div class="sl-filt" data-sl-filt role="toolbar" aria-label="Filtrer les fils"></div><div class="sl-list" data-sl-list></div><div class="sl-side-cons" data-sl-cons></div></aside>
-    <section class="sl-center"><header class="sl-top">${o.bar ?? ''}<button type="button" class="sl-proj sl-proj-mini" data-pj="proj-menu" aria-haspopup="menu" title="Changer de projet" aria-label="Changer de projet">${projIcons.tile(proj)}</button><div class="sl-head" data-sl-head></div></header><i class="sl-live" data-sl-live aria-hidden="true"></i><div class="sl-design" data-sl-design hidden></div><div class="sl-dzgrip" data-sl-dzgrip role="separator" aria-orientation="vertical" aria-label="Largeur du design" title="Glisser pour régler la largeur · double-clic : par défaut" tabindex="0" hidden></div><div class="sl-feed" data-sl-feed role="log" aria-live="polite" aria-label="Discussion"></div><button type="button" class="sl-down" data-sl="down" data-sl-down hidden>Nouveaux messages ${icon('chevron')}</button>
+    <section class="sl-center"><header class="sl-top">${o.bar ?? ''}<button type="button" class="sl-proj sl-proj-mini" data-pj="proj-menu" aria-haspopup="menu" title="Changer de projet" aria-label="Changer de projet">${projIcons.tile(proj)}</button><div class="sl-head" data-sl-head></div></header><i class="sl-live" data-sl-live aria-hidden="true"></i><div class="sl-feed" data-sl-feed role="log" aria-live="polite" aria-label="Discussion"></div><button type="button" class="sl-down" data-sl="down" data-sl-down hidden>Nouveaux messages ${icon('chevron')}</button>
       <form class="sl-comp" autocomplete="off"><div class="sl-drop" aria-hidden="true">${icon('upload')}<span>Dépose tes images ici</span></div><textarea rows="1" aria-label="Ton message" placeholder="Dis à l’équipe ce que tu veux faire…"></textarea>${attach.stripHTML()}
         <div class="sl-comp-row"><label class="sl-mode" data-sl-mode hidden><select name="mode" aria-label="Mode"><option value="edit">Modifier</option><option value="read">Analyser</option></select></label><select name="machine" class="sl-machine" aria-label="Où travailler" title="Où l’équipe travaille : sur ce Mac, ou sur un serveur du projet, dans une copie isolée du dépôt distant" hidden></select><select name="model" aria-label="Modèle" title="Modèle de l’agent principal. Auto : le plus économe qui suffit au message">${models(tuneFor('').model)}</select><select name="effort" aria-label="Niveau d’effort" title="Plus l’effort est élevé, plus l’agent réfléchit, et plus il consomme">${EFFORTS.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('')}</select><button type="button" class="sl-auto" data-sl="routes" data-sl-auto hidden></button><span class="sl-hint" data-sl-hint></span><span class="sl-keys" aria-hidden="true"><span><kbd>↵</kbd> <span>envoyer</span></span><span><kbd>@</kbd> <span>agent</span></span><span><kbd>[[</kbd> <span>note</span></span><span><kbd>/</kbd> <span>commande</span></span></span>${attach.buttonHTML()}<button type="submit" class="btn btn-primary sl-send" data-sl-send><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg><span>Envoyer</span></button></div></form><p class="sl-codex" data-sl-codex hidden>${icon('terminal')}<span>Conversation Codex : reprends-la dans le Terminal ou dans l’app Codex.</span></p></section>
-    <aside class="sl-now" data-sl-now aria-label="En ce moment"></aside><div class="sl-prof" data-sl-prof role="dialog" aria-label="Fiche de l’agent" hidden></div>`;
+    <aside class="sl-now" data-sl-now aria-label="En ce moment"><div class="sl-colgrip" data-sl-colgrip role="separator" aria-orientation="vertical" aria-label="Largeur de la colonne" title="Glisser pour régler la largeur · double-clic : par défaut" tabindex="0"></div><nav class="sl-ctabs" data-sl-ctabs></nav><div class="sl-cteam" data-sl-team></div><div class="sl-design" data-sl-design hidden></div></aside><div class="sl-prof" data-sl-prof role="dialog" aria-label="Fiche de l’agent" hidden></div>`;
   box.classList.add('sl-box', 'sl-solo');
   sizes(box);
   // Colonne Équipe masquée tant qu'on ne l'a pas demandée (28 nov. 2026) : le plan de l'équipe est dans le fil. '' = ancien « affichée ».

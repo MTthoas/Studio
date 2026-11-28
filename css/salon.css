@@ -1,13 +1,13 @@
 /* Salon d'un projet (src/features/projects/salon.ts), préfixe sl-. Importé par app.css. Uniquement les jetons de :root,
-   donc le thème sombre suit. Trois colonnes (fils · discussion · en ce moment) ; la droite se replie sous 1100 px
+   donc le thème sombre suit. Trois colonnes (fils · discussion · colonne à onglets Team/Code/Aperçu, `.sl-wide` l'étale sur la discussion) ; la droite se replie sous 1100 px
    (bouton « Équipe » : au large il masque la colonne, `sl-now-off`), une seule colonne sous 720 px. Mouvement : seulement
    à l'arrivée d'un message, d'une fiche ou du panneau, sur les jetons --mo-* de motion.css (donc coupé avec data-motion). */
 .pj-in:has(.sl-box) { max-width: none; }
-.sl-box { position: relative; display: grid; grid-template-columns: var(--sl-l, 248px) minmax(0, 1fr) 272px; transition: grid-template-columns var(--mo-d4) var(--mo-out); height: max(480px, calc(100dvh - 290px)); min-height: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); overflow: hidden; }
+.sl-box { position: relative; display: grid; grid-template-columns: var(--sl-l, 248px) minmax(0, 1fr) var(--sl-r); transition: grid-template-columns var(--mo-d4) var(--mo-out); height: max(480px, calc(100dvh - 290px)); min-height: 0; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); overflow: hidden; }
 /* Pleine hauteur : .todo (défilant) → .pj-in → .pj-body sont des colonnes qui s'étirent ; le Salon prend tout le reste. */
 .pj-body:has(> .sl-box) { display: flex; flex-direction: column; }
 @media (min-width: 720px) { .pj-body > .sl-box { flex: 1 0 0; height: auto; min-height: 480px; } }
-.sl-box { --sl-l: var(--sl-lw, 248px); }
+.sl-box { --sl-l: var(--sl-lw, 248px); --sl-r: var(--sl-rw, 360px); }
 /* Poignée de la liste des fils (`sizes` de salon.ts, ui/grip.ts) : sur le bord droit de `.sl-side`. */
 .sl-sidegrip { position: absolute; z-index: 4; top: 0; bottom: 0; left: calc(var(--sl-l) - 4px); width: 8px; cursor: col-resize; outline: none; }
 .sl-sidegrip::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 2px; border-radius: 1px; background: var(--border-2); opacity: 0; transition: opacity .12s; }
@@ -377,14 +377,34 @@ button.sl-pub-chip:hover { color: var(--text); background: var(--hover); }
 .sl-chip:active { scale: var(--mo-press); }
 .sl-chip[style] { border-color: color-mix(in srgb, var(--c) 35%, var(--border)); color: color-mix(in srgb, var(--c) 70%, var(--text)); }
 
-/* ---- Colonne de droite : Équipe (toute la hauteur), puis le lien vers l'onglet Code du panneau de droite, où vit
-   l'activité technique depuis le 28 nov. 2026 (styles .lv-* de pulse.css réutilisés là-bas). ---- */
+/* ---- Colonne de droite (salon.ts, maquette C du 28 nov. 2026) : onglets Team | Code | Aperçu, l'équipe en pastilles à
+   côté ; Code et Aperçu dessinés par design.ts dans `.sl-design`. Largeur à la poignée (`--sl-rw`, 300 à 720 px) ;
+   `.sl-wide` la pose par-dessus la discussion (toute la largeur après la liste des fils). ---- */
 .sl-team { flex: 1 1 auto; min-height: 0; overflow: hidden auto; padding: 12px 14px; }
-.sl-codelink { flex: none; display: flex; align-items: center; gap: 8px; margin: 0 10px 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text-2); font: var(--t-1) var(--font); text-align: left; cursor: pointer; }
-.sl-codelink:hover { color: var(--text); background: var(--hover); }
-.sl-codelink[aria-pressed="true"] { border-color: var(--border-2); color: var(--text); }
-.sl-codelink > span:not(.st-lines) { flex: 1; min-width: 0; }
-.sl-codelink .ic { width: 14px; height: 14px; flex: none; }
+.sl-cteam { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.sl-cteam[hidden] { display: none; }
+.sl-ctabs { flex: none; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 14px; border-bottom: 1px solid var(--border); }
+.sl-ctabs:empty { display: none; }
+.sl-ctabs-row { display: flex; gap: 14px; min-width: 0; }
+.sl-ctabs-row button { display: inline-flex; align-items: center; gap: 6px; padding: 11px 0 9px; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; color: var(--text-3); font: 500 var(--t-2) var(--font); white-space: nowrap; cursor: pointer; transition: color var(--mo-d2), border-color var(--mo-d2); }
+.sl-ctabs-row button:hover { color: var(--text); }
+.sl-ctabs-row button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+.sl-ctabs-row button:focus-visible { outline: 2px solid var(--accent-soft); outline-offset: 2px; border-radius: 4px; }
+.sl-ctabs-row button > span:not(.st-lines) { min-width: 16px; padding: 0 5px; border-radius: 8px; background: var(--hover); font: 600 10px/16px var(--mono); color: var(--text-2); text-align: center; }
+.sl-ctabs-row .st-lines { font-size: 10px; }
+.sl-cfaces { margin-left: auto; display: flex; }
+.sl-cfaces > .sl-av { width: 20px; height: 20px; margin-left: -6px; font-size: 9px; box-shadow: 0 0 0 2px var(--bg-list); }
+.sl-cfaces > .sl-av:first-child { margin-left: 0; }
+.sl-ctabs .sl-wide { flex: none; }
+.sl-cfaces:empty + .sl-wide { margin-left: auto; }
+.sl-colgrip { position: absolute; z-index: 3; top: 0; bottom: 0; left: 0; width: 7px; cursor: col-resize; outline: none; }
+.sl-colgrip::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 3px; border-radius: 2px; background: var(--border-2); opacity: 0; transition: opacity .12s; }
+.sl-colgrip:hover::after, .sl-colgrip:focus-visible::after, body.grip-x .sl-colgrip::after { opacity: 1; }
+.sl-now .dz-bar { flex-wrap: wrap; padding: 10px 12px 0; }
+.sl-now .dz-stage { padding: 12px; }
+.sl-now .dz-empty { padding-inline: 16px; }
+.sl-box.sl-wide .sl-now { position: absolute; z-index: 4; top: 0; bottom: 0; right: 0; left: var(--sl-l); border: 1px solid var(--border); border-radius: 10px; background: var(--bg); box-shadow: var(--shadow); animation: sl-pop var(--mo-d3) var(--mo-out) both; }
+.sl-box.sl-wide .sl-colgrip { display: none; }
 /* Squelette : lignes et avatars qui miroitent pendant que le fil démarre ; le vrai contenu entre ensuite une fois (sl-reveal). */
 .sl-skel { display: flex; flex-direction: column; gap: 10px; }
 .sl-skel i, .sl-skel-av { display: block; height: 9px; border-radius: 5px; background: linear-gradient(90deg, var(--active), var(--hover), var(--active)); background-size: 200% 100%; animation: skel 1.4s ease-in-out infinite; animation-delay: calc(var(--i, 0) * 120ms); }
@@ -403,7 +423,7 @@ button.sl-pub-chip:hover { color: var(--text); background: var(--hover); }
 .st-wait { margin: 0; color: var(--text-3); font-size: var(--t-1); }
 
 /* ---- En ce moment (droite) ---- */
-.sl-now { min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; border-left: 1px solid var(--border); background: var(--bg-list); transition: opacity var(--mo-d3), padding var(--mo-d4) var(--mo-out), visibility 0s; }
+.sl-now { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; border-left: 1px solid var(--border); background: var(--bg-list); transition: opacity var(--mo-d3), padding var(--mo-d4) var(--mo-out), visibility 0s; }
 .sl-now h4 { margin: 0 0 8px; font-size: var(--t-1); font-weight: 500; color: var(--text-3); }
 .sl-mem { width: calc(100% + 12px); margin: 0 -6px; display: flex; align-items: flex-start; gap: 10px; padding: 6px; border: 0; border-radius: 8px; background: none; color: var(--text); text-align: left; font: inherit; cursor: pointer; transition: background var(--mo-d2), scale var(--mo-d2) var(--mo-out); }
 .sl-mem:active { scale: var(--mo-press-row); }
@@ -490,8 +510,10 @@ button.sl-pub-chip:hover { color: var(--text); background: var(--hover); }
   .sl-box, .sl-box.sl-solo { grid-template-columns: var(--sl-l, 220px) minmax(0, 1fr); }
   .sl-meta, .sl-head [data-sl="stop"] span { display: none; }
   .sl-now { display: none; }
-  .sl-box.sl-now-open .sl-now { display: flex; position: absolute; z-index: 3; top: 48px; right: 8px; bottom: auto; height: 70%; width: min(300px, calc(100% - 16px)); border: 1px solid var(--border-2); border-radius: 10px; background: var(--bg); box-shadow: var(--shadow); animation: sl-pop var(--mo-d3) var(--mo-out) both; transform-origin: top right; }
+  .sl-box.sl-now-open .sl-now { display: flex; position: absolute; z-index: 3; top: 48px; right: 8px; bottom: auto; height: 78%; width: min(var(--sl-r), calc(100% - 16px)); border: 1px solid var(--border-2); border-radius: 10px; background: var(--bg); box-shadow: var(--shadow); animation: sl-pop var(--mo-d3) var(--mo-out) both; transform-origin: top right; }
   .sl-box.sl-now-open.sl-solo .sl-now, .sl-box.sl-now-open .sl-now:empty { display: none; }
+  .sl-colgrip { display: none; }
+  .sl-box.sl-now-open.sl-wide .sl-now { left: 8px; top: 8px; bottom: 8px; height: auto; width: auto; }
 }
 @media (max-width: 719px) {
   .sl-box, .sl-box.sl-solo { display: flex; flex-direction: column; height: auto; }
@@ -656,32 +678,10 @@ button.sl-pub-chip:hover { color: var(--text); background: var(--hover); }
 .sl-files > div { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .sl-files code { padding: 1px 6px; border-radius: 5px; background: var(--hover); font-size: 11px; }
 
-/* ---- Vue Design (design.ts, `dz-`) : captures des agents, aperçu du site local ---- */
-.sl-center.sl-v-design :is(.sl-feed, .sl-down, .sl-comp, .sl-codex) { display: none; }
+/* ---- Code et Aperçu de la colonne de droite (design.ts, `dz-`) : captures des agents, aperçu du site local, code ---- */
 .sl-design { flex: 1; min-height: 0; display: flex; flex-direction: column; animation: sl-fade var(--mo-d4) var(--mo-out); }
 .sl-design[hidden] { display: none; }
-/* Côte à côte (`.sl-v-split`) : le fil à gauche, le design à droite ; sa largeur `--dz-w` (fraction) se règle à la poignée. */
-.sl-center.sl-v-split { --dz-col: clamp(260px, var(--dz-w, 36%), calc(100% - 340px)); display: grid; grid-template-columns: minmax(0, 1fr) var(--dz-col); grid-template-rows: auto auto minmax(0, 1fr) auto auto; }
-.sl-v-split > :is(.sl-top, .sl-live) { grid-column: 1 / -1; }
-.sl-v-split > .sl-feed { grid-column: 1; grid-row: 3; }
-.sl-v-split > .sl-comp { grid-column: 1; grid-row: 4; }
-.sl-v-split > .sl-codex { grid-column: 1; grid-row: 5; }
-.sl-v-split > .sl-design { grid-column: 2; grid-row: 3 / -1; min-width: 0; border-left: 1px solid var(--border); }
-.sl-v-split > .sl-down { left: calc((100% - var(--dz-col)) / 2); }
-.sl-v-split .dz-bar { flex-wrap: wrap; padding-inline: 12px; }
-.sl-v-split .dz-stage { padding: 12px; }
-.sl-dzgrip { grid-column: 2; grid-row: 3 / -1; justify-self: start; position: relative; z-index: 3; width: 9px; margin-left: -5px; cursor: col-resize; outline: none; }
-.sl-dzgrip[hidden] { display: none; }
-.sl-dzgrip::after { content: ""; position: absolute; top: 0; bottom: 0; left: 3px; width: 3px; border-radius: 2px; background: var(--border-2); opacity: 0; transition: opacity .12s; }
-.sl-dzgrip:hover::after, .sl-dzgrip:focus-visible::after, body.grip-x .sl-dzgrip::after { opacity: 1; }
 body.grip-x .dz-device { transition: none; }
-.sl-seg button.sl-seg-ic { padding: 0 7px; }
-/* Trop étroit pour deux colonnes : le design seul, comme la vue Design. */
-@media (max-width: 899px) {
-  .sl-center.sl-v-split { display: flex; }
-  .sl-v-split > :is(.sl-feed, .sl-down, .sl-comp, .sl-codex, .sl-dzgrip) { display: none; }
-  .sl-v-split > .sl-design { border-left: 0; }
-}
 .dz-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none; padding: 12px 14px 0; }
 .dz-stage { flex: 1; min-height: 0; display: grid; place-items: center; padding: 14px; overflow: auto; }
 .dz-big { width: 100%; height: 100%; display: grid; place-items: center; overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-list); cursor: zoom-in; transition: border-color var(--mo-d2), box-shadow var(--mo-d3) var(--mo-out); }
