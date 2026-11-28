@@ -18,6 +18,7 @@ import { esc } from '../lib/markdown.ts';
 import { $, $$, el, icon, matches, menu, confirmBox, toast, topLayer, target, need, paintIfChanged } from '../ui/kit.ts';
 import type { MenuItem } from '../ui/kit.ts';
 import { t as tr } from '../ui/i18n.ts';
+import * as grips from '../ui/grip.ts';
 import type { ViewState } from '../types.ts';
 
 // ---------- Contrat A (natif) ----------
@@ -39,7 +40,7 @@ interface Tab {
 
 interface Ctx { setView(v: ViewState): Promise<void>; viewState(): ViewState; renderSidebar(): void; salonOn(): boolean }
 
-const H_KEY = 'studio.term.h', OPEN_KEY = 'studio.term.open', NAME_KEY = 'studio.term.names';
+const A_KEY = 'studio.term.split', H_KEY = 'studio.term.h', OPEN_KEY = 'studio.term.open', NAME_KEY = 'studio.term.names';
 const MAX_LIVE = 8, LONG_MS = 20000, SIGINT = 130;
 const PORT_RE = /\bhttps?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0):(\d{2,5})\b/g;
 const read = <T>(k: string, d: T): T => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) as T : d; } catch { return d; } };
@@ -47,6 +48,8 @@ const save = (k: string, v: unknown) => { try { localStorage.setItem(k, JSON.str
 
 let ctx: Ctx | null = null, root: HTMLElement | null = null;
 let pid = '', max = false, height = read<number>(H_KEY, 280), seq = 0;
+/** Part du premier terminal quand deux sont côte à côte (poignée `.tmd-vgrip`). */
+let part = Math.min(0.85, Math.max(0.15, grips.stored(A_KEY, 0.5)));
 const openBy = read<Record<string, boolean>>(OPEN_KEY, {}), names = read<Record<string, string>>(NAME_KEY, {});
 const tabs = new Map<string, Tab>();
 const active = new Map<string, string>(), split = new Map<string, string>(), focused = new Map<string, string>();
@@ -445,9 +448,11 @@ function paint(force = false): void {
     const id = tabs.get(x.t.id) === x ? x.t.id : [...tabs.entries()].find(([, v]) => v === x)?.[0];
     const vis = on && x.t.project === pid && (id === a || id === s);
     if (x.host.hidden === vis) x.host.hidden = !vis;
-    x.host.style.order = id === s ? '2' : '1';
+    x.host.style.order = id === s ? '3' : '1';
+    x.host.style.flex = s && id === a ? `0 0 ${(part * 100).toFixed(2)}%` : '';
   }
   need('.tmd-panes', root).classList.toggle('tmd-split', !!s);
+  need('.tmd-vgrip', root).hidden = !s;
   const tablist = need('.tmd-tabs', root);
   const had = document.activeElement?.closest<HTMLElement>('.tmd-tab')?.dataset.id;
   if (force || !document.activeElement?.matches('.tmd-rename')) paintIfChanged(tablist, list.filter(x => x.t.id).map(x => tabHTML(x, x.t.id === a, x.t.id === s)).join(''));
@@ -549,7 +554,7 @@ export function init(c: Ctx): void {
       <button class="icon-btn" data-tm="max" aria-pressed="false" aria-label="Agrandir le tiroir" title="Agrandir le tiroir">${icon('focus')}</button>
       <button class="icon-btn" data-tm="hide" aria-label="Masquer le tiroir" title="Masquer le tiroir">${icon('chevron')}</button>
     </header>
-    <div class="tmd-body"><div class="tmd-panes"></div><div class="tmd-state" role="status" hidden></div></div>
+    <div class="tmd-body"><div class="tmd-panes"><div class="tmd-vgrip" role="separator" aria-orientation="vertical" aria-label="Partage entre les deux terminaux" title="Glisser pour partager · double-clic : moitié-moitié" tabindex="0" hidden></div></div><div class="tmd-state" role="status" hidden></div></div>
     <footer class="tmd-foot"></footer>
   </section>`);
   need('#main').after(root);
@@ -608,6 +613,13 @@ export function init(c: Ctx): void {
     e.preventDefault(); setH(height + (e.key === 'ArrowUp' ? 24 : -24)); save(H_KEY, height);
   });
   addEventListener('resize', () => { if (shown()) setH(height); });
+  // Partage entre deux terminaux côte à côte.
+  const panes = need<HTMLElement>('.tmd-panes', root);
+  const setPart = (f: number): void => { part = Math.min(0.85, Math.max(0.15, f)); paint(); };
+  grips.grip(need('.tmd-vgrip', root), {
+    axis: 'x', get: () => part * panes.clientWidth, set: px => setPart(px / Math.max(1, panes.clientWidth)),
+    done: () => grips.store(A_KEY, part), reset: () => setPart(0.5),
+  });
   salon.onTerminal((p, wt) => void openIn(p, { where: 'copy', name: wt }));
   follow(c.viewState());
 }

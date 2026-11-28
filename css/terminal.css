@@ -64,8 +64,11 @@
 .tmd-body { flex: 1; min-height: 0; position: relative; background: var(--tm-bg); }
 .tmd-panes { position: absolute; inset: 0; display: flex; }
 .tmd-pane { flex: 1 1 0; min-width: 0; height: 100%; }
-.tmd-split > .tmd-pane:not([hidden]) + .tmd-pane:not([hidden]),
-.tmd-split > .tmd-pane:not([hidden]) ~ .tmd-pane:not([hidden]) { border-left: 1px solid var(--border); }
+/* Entre deux terminaux : la poignée (ui/grip.ts) fait le filet ; ordre 1 | 2 | 3 posé par `paint`. */
+.tmd-vgrip { order: 2; flex: none; position: relative; z-index: 2; width: 1px; background: var(--border); cursor: col-resize; outline: none; }
+.tmd-vgrip[hidden] { display: none; }
+.tmd-vgrip::before { content: ""; position: absolute; top: 0; bottom: 0; left: -4px; right: -4px; }
+.tmd-vgrip:hover, .tmd-vgrip:focus-visible, body.grip-x .tmd-vgrip { background: var(--border-2); box-shadow: 0 0 0 1px var(--border-2); }
 .tmd-state {
   position: absolute; inset: 0; z-index: 1; display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; padding: 16px;
   background: var(--bg); color: var(--text-2); font-size: var(--t-2); text-align: center;

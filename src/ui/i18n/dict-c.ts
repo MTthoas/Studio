@@ -1253,4 +1253,10 @@ export default {
   'SSH introuvable.': 'SSH not found.',
   'Le shell n\'a pas pu démarrer.': 'The shell could not start.',
   'Terminal introuvable.': 'Terminal not found.',
+  'Design à côté de la discussion': 'Design next to the conversation',
+  'Largeur du design': 'Design width',
+  'Largeur de la liste des fils': 'Thread list width',
+  'Glisser pour régler la largeur · double-clic : par défaut': 'Drag to resize · double-click to reset',
+  'Partage entre les deux terminaux': 'Split between the two terminals',
+  'Glisser pour partager · double-clic : moitié-moitié': 'Drag to resize · double-click for half and half',
 } satisfies Record<string, string>;
