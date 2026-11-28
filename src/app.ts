@@ -537,11 +537,11 @@ function mountNote(main: HTMLElement, n: Note, keep: Keep | null): void {
       </div>
     </header>
     ${trashed ? `<div class="banner">${icon('trash')}<span>Cette note est dans la corbeille.</span><button class="btn" data-act="restore">Restaurer</button><button class="btn btn-danger" data-act="destroy">Supprimer définitivement</button></div>` : ''}
-    <div class="note-wrap"><div class="note" data-mode="${mode}">
+    <div class="note-wrap"><div class="note" data-mode="${mode}" style="--note-font:${NOTE_FONTS.find(f => f[0] === noteFont())?.[1] ?? 'var(--font)'}">
       <div class="note-head"><input class="title" placeholder="Sans titre" value="${esc(n.title)}" ${trashed ? 'disabled' : ''} aria-label="Titre" spellcheck="false" autocomplete="off"></div>
       ${locked ? `<div class="lock-pane"><form class="lock-card">${icon('lock')}<h3>Note chiffrée</h3><p>Le contenu est chiffré dans ce navigateur. Saisis le mot de passe pour le lire.</p><input type="password" placeholder="Mot de passe" autocomplete="off" aria-label="Mot de passe"><button class="btn btn-primary">Déverrouiller</button><p class="lock-err" role="alert"></p></form></div>`
       : `<div class="panes">
-          <div class="pane pane-edit"><textarea class="body" placeholder="Écris en Markdown…  [[ pour lier une note, # pour un tag" spellcheck="true" aria-label="Contenu"></textarea></div>
+          <div class="pane pane-edit">${ro ? '' : fmtBar()}<textarea class="body" placeholder="Écris en Markdown…  [[ pour lier une note, # pour un tag" spellcheck="true" aria-label="Contenu"></textarea></div>
           <div class="pane pane-read"><article class="md"></article><section class="backlinks subnotes"></section><section class="backlinks"></section></div>
         </div>`}
     </div><aside class="nai" hidden></aside></div>
@@ -572,6 +572,7 @@ function mountNote(main: HTMLElement, n: Note, keep: Keep | null): void {
   }
   const ta = E.ta, rd = E.read; if (!ta) return;
   caret.attach(ta);
+  bindFmt(main, ta);
   selask.attach(ta, {
     enabled: () => noteai.eligible(n) && noteai.linked(n) && !noteai.opened(), // panneau ouvert : la sélection s'y joint d'elle-même
     locked: () => !ai.notesAllowed(),
@@ -673,6 +674,54 @@ function wrapSelection(ta: HTMLTextAreaElement, mark: string) {
   const { selectionStart: s, selectionEnd: e, value: v } = ta, sel = v.slice(s, e);
   if (v.slice(s - mark.length, s) === mark && v.slice(e, e + mark.length) === mark) { replaceRange(ta, s - mark.length, e + mark.length, sel); ta.setSelectionRange(s - mark.length, e - mark.length); }
   else { replaceRange(ta, s, e, mark + sel + mark); ta.setSelectionRange(s + mark.length, e + mark.length); }
+}
+
+/** Polices proposées pour les notes (réglage d'appareil `studio.noteFont`, appliqué par `--note-font` sur `.note`). */
+const NOTE_FONTS: [string, string][] = [['', 'var(--font)'], ['serif', 'Georgia, "Times New Roman", serif'], ['mono', 'var(--mono)'], ['rounded', 'ui-rounded, "SF Pro Rounded", "Nunito", system-ui, sans-serif'], ['hand', '"Bradley Hand", "Segoe Print", "Comic Sans MS", cursive']];
+const FONT_LABELS: Record<string, string> = { '': 'Police par défaut', serif: 'Serif', mono: 'Monospace', rounded: 'Arrondie', hand: 'Manuscrite' };
+const noteFont = (): string => { try { return localStorage.getItem('studio.noteFont') ?? ''; } catch { return ''; } };
+/** Barre de mise en forme au-dessus de la zone de saisie : insère du Markdown (le soulignement est du `<u>`). */
+const FMT: [string, string, string][] = [['bold', 'bold', 'Gras (⌘B)'], ['italic', 'italic', 'Italique (⌘I)'], ['underline', 'underline', 'Souligné'], ['strike', 'strike', 'Barré'], ['mark', 'highlight', 'Surligné'], ['|', '', ''], ['h', 'heading', 'Titre (change le niveau)'], ['ul', 'ul', 'Liste à puces'], ['ol', 'ol', 'Liste numérotée'], ['task', 'task', 'Tâche'], ['quote', 'quote', 'Citation'], ['|', '', ''], ['code', 'code', 'Code'], ['link', 'link', 'Lien']];
+function fmtBar(): string {
+  return `<div class="fmt" role="toolbar" aria-label="Mise en forme">${FMT.map(([k, ic, t]) => k === '|' ? '<span class="fmt-sep" aria-hidden="true"></span>' : `<button type="button" class="fmt-b" data-fmt="${k}" title="${t}" aria-label="${t}">${icon(ic)}</button>`).join('')}<select class="fmt-font" aria-label="Police des notes" title="Police des notes">${NOTE_FONTS.map(([k]) => `<option value="${k}"${k === noteFont() ? ' selected' : ''}>${FONT_LABELS[k]}</option>`).join('')}</select></div>`;
+}
+function bindFmt(main: HTMLElement, ta: HTMLTextAreaElement): void {
+  const bar = $('.fmt', main); if (!bar) return;
+  bar.addEventListener('mousedown', e => { if ((e.target as HTMLElement).closest('.fmt-b')) e.preventDefault(); }); // garde la sélection du texte
+  bar.addEventListener('click', e => {
+    const b = (e.target as HTMLElement).closest<HTMLElement>('.fmt-b'); if (!b || ta.readOnly) return;
+    ta.focus(); applyFmt(ta, b.dataset.fmt || '');
+  });
+  const sel = need<HTMLSelectElement>('.fmt-font', bar);
+  sel.addEventListener('change', () => {
+    try { localStorage.setItem('studio.noteFont', sel.value); } catch { /* stockage refusé : la police vaut pour cette note seulement */ }
+    need('.note', main).style.setProperty('--note-font', NOTE_FONTS.find(f => f[0] === sel.value)?.[1] ?? 'var(--font)');
+  });
+}
+function applyFmt(ta: HTMLTextAreaElement, k: string): void {
+  const wraps: Record<string, [string, string]> = { bold: ['**', '**'], italic: ['*', '*'], strike: ['~~', '~~'], mark: ['==', '=='], code: ['`', '`'], underline: ['<u>', '</u>'] };
+  const w = wraps[k];
+  if (w) {
+    const { selectionStart: s, selectionEnd: e, value: v } = ta, [a, z] = w;
+    if (v.slice(s - a.length, s) === a && v.slice(e, e + z.length) === z) { replaceRange(ta, s - a.length, e + z.length, v.slice(s, e)); ta.setSelectionRange(s - a.length, e - a.length); }
+    else { replaceRange(ta, s, e, a + v.slice(s, e) + z); ta.setSelectionRange(s + a.length, e + a.length); }
+    return;
+  }
+  if (k === 'link') {
+    const { selectionStart: s, selectionEnd: e, value: v } = ta, label = v.slice(s, e) || 'texte';
+    replaceRange(ta, s, e, `[${label}](https://)`); const u = s + label.length + 3; ta.setSelectionRange(u, u + 8); return;
+  }
+  // Préfixes de ligne, sur toutes les lignes touchées par la sélection.
+  const v = ta.value, [ls] = lineBounds(v, ta.selectionStart), [, le] = lineBounds(v, Math.max(ta.selectionStart, ta.selectionEnd - (ta.selectionEnd > ta.selectionStart && v[ta.selectionEnd - 1] === '\n' ? 1 : 0)));
+  const lines = v.slice(ls, le).split('\n'), strip = (l: string) => l.replace(/^(?:#{1,6}\s+|>\s?|[-*+]\s+\[[ xX]\]\s+|[-*+]\s+|\d+[.)]\s+)/, '');
+  const has = (re: RegExp) => lines.every(l => re.test(l));
+  let out: string[];
+  if (k === 'h') { const m = lines[0].match(/^(#{1,6})\s/), lvl = m ? m[1].length : 0; out = lines.map(l => (lvl >= 3 ? '' : '#'.repeat(lvl + 1) + ' ') + strip(l)); }
+  else if (k === 'ul') out = has(/^[-*+]\s+(?!\[)/) ? lines.map(strip) : lines.map(l => '- ' + strip(l));
+  else if (k === 'task') out = has(/^[-*+]\s+\[[ xX]\]\s/) ? lines.map(strip) : lines.map(l => '- [ ] ' + strip(l));
+  else if (k === 'quote') out = has(/^>/) ? lines.map(strip) : lines.map(l => '> ' + strip(l));
+  else out = has(/^\d+[.)]\s/) ? lines.map(strip) : lines.map((l, i) => `${i + 1}. ${strip(l)}`);
+  const text = out.map((l, i) => lines[i].trim() ? l : lines[i]).join('\n'); replaceRange(ta, ls, le, text); ta.setSelectionRange(ls, ls + text.length);
 }
 const lineBounds = (v: string, pos: number) => { const s = v.lastIndexOf('\n', pos - 1) + 1; let e = v.indexOf('\n', pos); if (e < 0) e = v.length; return [s, e]; };
 

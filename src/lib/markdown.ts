@@ -84,7 +84,8 @@ function inline(text: string, st: RenderState): string {
     .replace(/\*(?!\s)([^*]+?)\*/g, '<em>$1</em>')
     .replace(/(^|[\s(])_(?!\s)([^_]+?)_(?=$|[\s).,;:!?])/g, '$1<em>$2</em>')
     .replace(/~~(.+?)~~/g, '<del>$1</del>')
-    .replace(/==(.+?)==/g, '<mark>$1</mark>');
+    .replace(/==(.+?)==/g, '<mark>$1</mark>')
+    .replace(/&lt;u&gt;(.+?)&lt;\/u&gt;/g, '<u>$1</u>');
   for (let i = 0; i < 4 && s.includes('\u0000'); i++) s = s.replace(/\u0000(\d+)\u0000/g, (_, n) => held[+n]);
   return s;
 }

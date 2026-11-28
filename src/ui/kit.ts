@@ -66,6 +66,16 @@ export function morphIfChanged(node: Element, html: string): boolean {
 export const target = (e: Event): HTMLElement => (e.target instanceof Element ? e.target : document.body) as HTMLElement;
 
 const I: Record<string, string> = {
+  'bold': '<path d="M6 4h8a4 4 0 0 1 0 8H6z"/><path d="M6 12h9a4 4 0 0 1 0 8H6z"/>',
+  'italic': '<line x1="19" y1="4" x2="10" y2="4"/><line x1="14" y1="20" x2="5" y2="20"/><line x1="15" y1="4" x2="9" y2="20"/>',
+  'underline': '<path d="M6 4v6a6 6 0 0 0 12 0V4"/><line x1="4" y1="20" x2="20" y2="20"/>',
+  'strike': '<path d="M16 4H9a3 3 0 0 0-2.8 4"/><path d="M8 20h7a3 3 0 0 0 2.8-4"/><line x1="4" y1="12" x2="20" y2="12"/>',
+  'highlight': '<path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/>',
+  'heading': '<path d="M6 12h12"/><path d="M6 20V4"/><path d="M18 20V4"/>',
+  'ul': '<line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><circle cx="4.5" cy="6" r="1"/><circle cx="4.5" cy="12" r="1"/><circle cx="4.5" cy="18" r="1"/>',
+  'ol': '<line x1="10" y1="6" x2="21" y2="6"/><line x1="10" y1="12" x2="21" y2="12"/><line x1="10" y1="18" x2="21" y2="18"/><path d="M4 6h1v4"/><path d="M4 10h2"/><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/>',
+  'task': '<rect x="3" y="5" width="6" height="6" rx="1"/><path d="m3 17 2 2 4-4"/><line x1="13" y1="6" x2="21" y2="6"/><line x1="13" y1="12" x2="21" y2="12"/><line x1="13" y1="18" x2="21" y2="18"/>',
+  'quote': '<path d="M4 21v-6a4 4 0 0 1 4-4h1"/><path d="M4 11V6h5v5"/><path d="M14 21v-6a4 4 0 0 1 4-4h1"/><path d="M14 11V6h5v5"/>',
   today: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M2.5 12h2M19.5 12h2M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>',
   notes: '<path d="M6 3.5h8.5L19 8v12.5H6z"/><path d="M14 3.5V8.5h5M9.5 13h5.5M9.5 16.5h5.5"/>',
   inbox: '<path d="M3.5 13.5l3-8.5h11l3 8.5v5.5h-17z"/><path d="M3.5 13.5h5l1 2.5h5l1-2.5h5"/>',
