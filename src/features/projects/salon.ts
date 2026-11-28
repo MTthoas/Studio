@@ -29,6 +29,7 @@ import * as catface from '../../ui/catface.ts';
 import * as projIcons from '../../ui/projicons.ts';
 import * as compose from './compose.ts';
 import * as design from './design.ts';
+import type { CodeIn } from './codeview.ts';
 import * as store from '../../core/store.ts';
 import * as model from './model.ts';
 import * as noteseal from '../../integrations/noteseal.ts';
@@ -879,25 +880,43 @@ function techHTML(t: Thread, d: Detail | undefined, crew: Crew): string {
   }).join('');
   return main + subRows + (subs.length > 6 ? `<p class="lv-more">et ${subs.length - 6} autre${subs.length > 7 ? 's' : ''}</p>` : '');
 }
+/** Matière de l'onglet Code (codeview.ts) : copie du fil, contenus écrits (Write, puis Edit appliqués dessus) pour les
+ *  fichiers nouveaux non suivis, fichiers touchés du plus récent au plus ancien, et une signature qui change à chaque écriture. */
+function codeIn(t: Thread, d: Detail, crew: Crew): CodeIn {
+  const writes = new Map<string, string>(), order: string[] = [];
+  let n = 0, at = '';
+  for (const a of d.actions) {
+    if (!a.kind.startsWith('tool:') || !EDIT_TOOL.test(a.kind.slice(5))) continue;
+    const f = a.file || a.text; if (!f) continue;
+    n++; at = a.at;
+    const i = order.indexOf(f); if (i >= 0) order.splice(i, 1); order.unshift(f);
+    if (a.kind === 'tool:Write' && typeof a.new === 'string') writes.set(f, a.new);
+    else if (writes.has(f) && a.old && typeof a.new === 'string') writes.set(f, (writes.get(f) ?? '').replace(a.old, () => a.new ?? ''));
+  }
+  const subs = (d.subagents ?? []).map(s => `${s.id}:${(s.files ?? []).map(f => `${f.path}${f.add}/${f.del}`).join(',')}`).join(';');
+  const wt = d.worktree || t.s.worktree || '';
+  return { wt, sig: `${wt}|${n}|${at}|${subs}`, tech: techHTML(t, d, crew), writes, touched: order, busy: t.group === 'work' };
+}
 /** Squelette de la colonne : la place est tenue (avatars, lignes) le temps que le fil démarre ou que sa lecture arrive. */
 const skelHTML = (k: 'team' | 'tech'): string => k === 'team'
   ? `<div class="sl-skel" aria-busy="true" aria-label="Chargement">${[72, 54].map((w, i) => `<div class="sl-skel-mem" style="--i:${i}"><i class="sl-skel-av"></i><div><i style="width:${w}%"></i><i style="width:${w - 18}%"></i></div></div>`).join('')}</div>`
   : `<div class="sl-skel" aria-busy="true" aria-label="Chargement">${[64, 88, 46].map((w, i) => `<i style="width:${w}%;--i:${i}"></i>`).join('')}</div>`;
-/** Colonne de droite : Équipe en haut, Technique dessous (30 % de la hauteur, défile seule). */
-/** Colonne de droite : Équipe, Technique, puis la consommation en pied, toujours visible (chaque section défile seule). */
-const colHTML = (team: string, tech: string): string => `<section class="sl-team" aria-label="Équipe">${team}</section><section class="sl-tech" aria-label="Technique"><h4>Technique</h4>${tech}</section>`;
+/** Colonne de droite : Équipe, un lien vers l'onglet Code du panneau de droite (l'activité technique et le diff y vivent depuis
+ *  le 28 nov. 2026), puis la consommation en pied, toujours visible. */
+const colHTML = (team: string, link: string): string => `<section class="sl-team" aria-label="Équipe">${team}</section>${link}`;
+const codeLink = (d: Detail | undefined, on: boolean): string => `<button type="button" class="sl-codelink" data-sl="code" aria-pressed="${on}">${icon('code')}<span>Code et activité</span>${d?.lines && (d.lines.add || d.lines.del) ? gain(d.lines.add, d.lines.del) : ''}${icon('chevronRight')}</button>`;
 // Seul le chrono tourne, une fois par seconde : et seulement colonne visible, fenêtre au premier plan, agent au travail.
 let techTimer: ReturnType<typeof setInterval> | undefined;
 function tickClocks(): void {
   if (!root) return;
   const now = Date.now();
-  for (const el of Array.from(root.querySelectorAll<HTMLElement>('[data-sl-now] time[data-t0]'))) {
+  for (const el of Array.from(root.querySelectorAll<HTMLElement>(':is([data-sl-now], [data-sl-design]) time[data-t0]'))) {
     const t0 = Number(el.dataset.t0), t1 = Number(el.dataset.t1) || now, txt = clockText(Math.max(0, Math.round((t1 - t0) / 1000)));
     if (el.textContent !== txt) el.textContent = txt;
   }
 }
 function syncClock(): void {
-  const on = root !== null && root.isConnected && teamShown(root) && !document.hidden && !!root.querySelector('[data-sl-now] time[data-live]');
+  const on = root !== null && root.isConnected && !document.hidden && !!root.querySelector(`${teamShown(root) ? '[data-sl-now] time[data-live], ' : ''}[data-sl-design]:not([hidden]) time[data-live]`);
   if (on && techTimer === undefined) techTimer = setInterval(() => { if (root?.isConnected) tickClocks(); else syncClock(); }, 1000);
   else if (!on && techTimer !== undefined) { clearInterval(techTimer); techTimer = undefined; }
 }
@@ -1049,12 +1068,12 @@ function paint(): void {
   center.classList.toggle('sl-v-design', view === 'design'); center.classList.toggle('sl-v-split', view === 'split');
   const dz = need<HTMLElement>('[data-sl-design]', root); dz.hidden = view === 'chat';
   need('[data-sl-dzgrip]', root).hidden = view !== 'split';
-  if (view !== 'chat') design.paint(dz, p, shots, () => { if (root?.isConnected) paint(); }, `${cur?.id ?? ''}:${cur?.group === 'work' ? 1 : 0}`);
+  if (view !== 'chat') design.paint(dz, p, shots, () => { if (root?.isConnected) paint(); }, `${cur?.id ?? ''}:${cur?.group === 'work' ? 1 : 0}`, cur && d && crew ? codeIn(cur, d, crew) : undefined);
   paintIfChanged(need('[data-sl-cons]', root), cur && crew ? consHTML(cur, d, crew) : '');
   // Colonne de droite : Équipe puis Technique. Squelette tant que le fil démarre ; quand le vrai contenu
   // remplace le squelette, il entre une fois en fondu (pas à chaque mise à jour).
   const col = need<HTMLElement>('[data-sl-now]', root), skel = !(cur && crew), wasSkel = col.dataset.skel === '1';
-  const colH = cur && crew ? colHTML(nowHTML(cur, d, crew, ask), techHTML(cur, d, crew)) : opening?.pid === p.id ? colHTML(skelHTML('team'), skelHTML('tech')) : '';
+  const colH = cur && crew ? colHTML(nowHTML(cur, d, crew, ask), codeLink(d, view !== 'chat' && design.current() === 'code')) : opening?.pid === p.id ? colHTML(skelHTML('team'), '') : '';
   if (morphIfChanged(col, colH) && wasSkel && !skel && !calm()) { col.classList.remove('sl-reveal'); void col.offsetWidth; col.classList.add('sl-reveal'); }
   col.dataset.skel = skel ? '1' : '';
   if (cur && crew) tickClocks();
@@ -1223,7 +1242,7 @@ function bind(r: HTMLElement): void {
     const dz = el.closest<HTMLElement>('[data-sl-design]');
     if (dz && p) {
       const d0 = S.detail.get(curId()), c0 = d0 ? crewOf(d0.subagents ?? [], d0.models ?? []) : null;
-      if (design.click(e, dz, shotsOf(d0, c0), text => { if (view === 'design') view = 'chat'; const ta = need<HTMLTextAreaElement>('.sl-comp textarea', r); if (!ta.value.trim()) ta.value = text; paint(); grow(ta); ta.focus(); ready(); showAuto(); })) { paint(); return; }
+      if (design.click(e, dz, shotsOf(d0, c0), text => { if (view === 'design') view = 'chat'; const ta = need<HTMLTextAreaElement>('.sl-comp textarea', r); if (!ta.value.trim()) ta.value = text; paint(); grow(ta); ta.focus(); ready(); showAuto(); }, p, d0?.worktree || S.sessions.find(x => x.id === curId())?.worktree || '')) { paint(); return; }
     }
     if (!t || !p) return;
     const act = t.dataset.sl, pid = p.id;
@@ -1237,6 +1256,8 @@ function bind(r: HTMLElement): void {
     }
     if (act === 'unprof') { closeProf(); return; }
     if (act === 'routes') { routesMenu(t); return; }
+    // Lien de la colonne Équipe : l'onglet Code du panneau de droite (la discussion reste à côté).
+    if (act === 'code') { design.show('code'); if (view === 'chat') view = 'split'; keepView(); paint(); return; }
     if (act === 'view') { const v = t.dataset.v; view = v === 'design' || v === 'split' ? v : 'chat'; keepView(); paint(); if (view !== 'design') need('.sl-comp textarea', r).focus(); return; }
     if (act === 'copy' || act === 'quote' || act === 'keep') {
       // Le texte du message tel qu'il est lu, sans l'en-tête ni les gestes ; les blocs repliés sont compris.

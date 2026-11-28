@@ -377,14 +377,14 @@ button.sl-pub-chip:hover { color: var(--text); background: var(--hover); }
 .sl-chip:active { scale: var(--mo-press); }
 .sl-chip[style] { border-color: color-mix(in srgb, var(--c) 35%, var(--border)); color: color-mix(in srgb, var(--c) 70%, var(--text)); }
 
-/* ---- Colonne de droite : Équipe en haut, Technique dessous (30 % de la hauteur), chacune défile seule.
-   Vue Technique : styles .lv-* de pulse.css réutilisés. ---- */
-.sl-team { flex: 0 1 auto; min-height: 0; overflow: hidden auto; padding: 12px 14px; }
-/* Technique prend toute la hauteur que l'Équipe laisse (au moins 30 %) : une équipe d'un agent ne laisse plus un grand vide
-   au-dessus d'une liste coupée. `.sl-now .sl-tech h4` : plus fort que `.sl-now h4`, qui annulait marges et retrait du titre. */
-.sl-tech { flex: 1 1 0; min-height: 30%; overflow: hidden auto; padding: 0 14px 12px; border-top: 1px solid var(--border); }
-.sl-now .sl-tech h4 { position: sticky; top: 0; z-index: 1; margin: 0 -14px 6px; padding: 10px 14px 4px; background: var(--bg-list); }
-.sl-box.sl-now-open .sl-tech h4 { background: var(--bg); }
+/* ---- Colonne de droite : Équipe (toute la hauteur), puis le lien vers l'onglet Code du panneau de droite, où vit
+   l'activité technique depuis le 28 nov. 2026 (styles .lv-* de pulse.css réutilisés là-bas). ---- */
+.sl-team { flex: 1 1 auto; min-height: 0; overflow: hidden auto; padding: 12px 14px; }
+.sl-codelink { flex: none; display: flex; align-items: center; gap: 8px; margin: 0 10px 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text-2); font: var(--t-1) var(--font); text-align: left; cursor: pointer; }
+.sl-codelink:hover { color: var(--text); background: var(--hover); }
+.sl-codelink[aria-pressed="true"] { border-color: var(--border-2); color: var(--text); }
+.sl-codelink > span:not(.st-lines) { flex: 1; min-width: 0; }
+.sl-codelink .ic { width: 14px; height: 14px; flex: none; }
 /* Squelette : lignes et avatars qui miroitent pendant que le fil démarre ; le vrai contenu entre ensuite une fois (sl-reveal). */
 .sl-skel { display: flex; flex-direction: column; gap: 10px; }
 .sl-skel i, .sl-skel-av { display: block; height: 9px; border-radius: 5px; background: linear-gradient(90deg, var(--active), var(--hover), var(--active)); background-size: 200% 100%; animation: skel 1.4s ease-in-out infinite; animation-delay: calc(var(--i, 0) * 120ms); }
@@ -392,7 +392,6 @@ button.sl-pub-chip:hover { color: var(--text); background: var(--hover); }
 .sl-skel-mem > div { flex: 1; display: flex; flex-direction: column; gap: 6px; }
 .sl-skel .sl-skel-av { flex: none; width: 34px; height: 34px; border-radius: 50%; }
 .sl-reveal :is(.sl-mem, .sl-set, .sl-quota, .sl-cons, .lv, .st-wait, .lv-more) { animation: sl-in var(--mo-d4) var(--mo-out) both; }
-.sl-reveal .sl-tech :is(.lv, .st-wait, .lv-more) { animation-delay: var(--mo-d2); }
 .sl-now .lv { margin: 0 0 14px; padding: 0 0 12px; border-block-start: 0; }
 .sl-now .lv:last-child { border-bottom: 0; margin-bottom: 0; }
 .st-who { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0; font-size: var(--t-1); font-weight: 600; color: var(--text); }
@@ -770,3 +769,67 @@ button.sl-auto:active { scale: var(--mo-press); }
 .dz-big img { position: absolute; inset: 0; }
 
 .sl-ac { max-height: 286px; overflow-y: auto; }
+
+/* ---- Onglet Code de la vue Design (codeview.ts) : activité des agents, puis le diff de la copie façon GitHub. ---- */
+.cv { flex: 1; min-height: 0; overflow: hidden auto; padding: 12px 14px 16px; display: flex; flex-direction: column; gap: 14px; }
+.cv-tech h4 { margin: 0 0 8px; font-size: var(--t-1); font-weight: 600; color: var(--text-3); text-transform: uppercase; letter-spacing: .04em; }
+.cv-agents { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; }
+.cv-agents .lv { margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.cv-agents .lv[data-state="work"] { border-color: color-mix(in srgb, var(--c-green) 35%, var(--border)); }
+.cv-agents .lv-rest { display: flex; flex-direction: column; gap: 6px; }
+.cv-agents > .lv-more, .cv-agents > .sl-skel { grid-column: 1 / -1; }
+.cv-diff { display: flex; flex-direction: column; gap: 10px; }
+.cv-sum { position: sticky; top: -12px; z-index: 2; min-height: 33px; box-sizing: border-box; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; margin: 0 -14px; padding: 8px 14px; background: var(--bg); border-bottom: 1px solid var(--border); font-size: var(--t-1); color: var(--text-3); }
+.cv-sum b:first-child { color: var(--text); font-weight: 600; }
+.cv-sum .spin { width: 10px; height: 10px; }
+.cv-all { margin-left: auto; padding: 2px 8px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--bg); color: var(--text-2); font: var(--t-1) var(--font); cursor: pointer; }
+.cv-all:hover { color: var(--text); background: var(--hover); }
+.cv-gain { display: inline-flex; gap: 6px; font: var(--t-1) var(--mono); font-variant-numeric: tabular-nums; }
+.cv-gain .add { color: var(--c-green); font-weight: 600; }
+.cv-gain .del { color: var(--c-red); font-weight: 600; }
+.cv-list { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 8px; overflow: clip; }
+.cv-jump { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 5px 10px; border: 0; border-top: 1px solid var(--border); background: none; text-align: left; cursor: pointer; color: var(--text-2); }
+.cv-jump:first-child { border-top: 0; }
+.cv-jump:hover { background: var(--hover); color: var(--text); }
+.cv-jump code { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; font: var(--t-1) var(--mono); }
+.cv-file { border: 1px solid var(--border); border-radius: 8px; overflow: clip; scroll-margin-top: 44px; }
+.cv-file > header { position: sticky; top: 21px; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 4px; background: var(--bg-list); border-bottom: 1px solid var(--border); font-size: var(--t-1); }
+.cv-file.shut > header { border-bottom: 0; }
+.cv-fold { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border: 0; border-radius: 5px; background: none; color: var(--text-3); cursor: pointer; }
+.cv-fold:hover { background: var(--hover); color: var(--text); }
+.cv-fold .ic { width: 12px; height: 12px; transition: rotate var(--mo-d2) var(--mo-out); }
+.cv-file.shut .cv-fold .ic { rotate: -90deg; }
+.cv-file > header > code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--t-1) var(--mono); color: var(--text); font-weight: 600; }
+.cv-file > header > code span { color: var(--text-3); font-weight: 400; }
+.cv-file > header > em { flex: none; padding: 0 6px; border: 1px solid var(--border-2); border-radius: 9px; font-style: normal; color: var(--text-2); }
+.cv-bar { display: inline-flex; gap: 1px; flex: none; }
+.cv-bar i { width: 8px; height: 8px; border-radius: 2px; background: var(--active); }
+.cv-bar i.add { background: var(--c-green); }
+.cv-bar i.del { background: var(--c-red); }
+.cv-code { font: 12px/1.6 var(--mono); overflow-x: auto; }
+.cv-l { display: grid; grid-template-columns: minmax(3.2em, max-content) minmax(3.2em, max-content) 1fr; min-width: 0; }
+.cv-l i { padding: 0 8px; font-style: normal; text-align: right; color: var(--text-3); user-select: none; font-variant-numeric: tabular-nums; background: var(--bg-list); }
+.cv-l code { padding: 0 10px 0 4px; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-2); }
+.cv-l code s { display: inline-block; width: 1.4em; text-decoration: none; color: var(--text-3); user-select: none; }
+.cv-l.add { background: color-mix(in srgb, var(--c-green) 13%, transparent); }
+.cv-l.add i { background: color-mix(in srgb, var(--c-green) 20%, transparent); }
+.cv-l.del { background: color-mix(in srgb, var(--c-red) 12%, transparent); }
+.cv-l.del i { background: color-mix(in srgb, var(--c-red) 18%, transparent); }
+.cv-l:is(.add, .del) code { color: var(--text); }
+.cv-l.add code s { color: var(--c-green); }
+.cv-l.del code s { color: var(--c-red); }
+.cv-l.hunk { background: color-mix(in srgb, var(--c-blue) 9%, transparent); }
+.cv-l.hunk i { background: color-mix(in srgb, var(--c-blue) 14%, transparent); }
+.cv-l.hunk code { color: var(--text-3); padding-block: 2px; }
+.cv-l.cv-new { animation: cv-new 2.4s var(--mo-out) both; }
+@keyframes cv-new { from { background: color-mix(in srgb, var(--c-green) 38%, transparent); } }
+.cv-note { margin: 0; padding: 10px 12px; color: var(--text-3); font-size: var(--t-1); }
+.cv-note.err { color: var(--c-red); }
+.cv-none { display: flex; align-items: center; gap: 10px; padding: 14px; border: 1px dashed var(--border-2); border-radius: 8px; color: var(--text-3); font-size: var(--t-1); }
+.cv-none p { margin: 0; line-height: 1.5; }
+.cv-none .ic { width: 18px; height: 18px; flex: none; }
+@media (prefers-reduced-motion: reduce) { .cv-l.cv-new { animation: none; } }
+.cv-jump em { flex: none; font-style: normal; font-size: var(--t-1); color: var(--text-3); }
+/* Les fichiers de chaque agent sont déjà dans le diff, juste dessous : la carte garde l'étape, le chrono et les outils. */
+.cv-agents .lv-files { display: none; }
+.cv-agents .lv[data-state="done"] .st-acts { display: none; }

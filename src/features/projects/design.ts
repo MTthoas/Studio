@@ -8,17 +8,19 @@
 //     (`frame-src` de index.html : localhost et 127.0.0.1), dans un cadre isolé (`sandbox`). Largeur « duo » (par défaut,
 //     28 nov. 2026, « la visu mobile et web à droite de la lounge ») : deux cadres du même site, écran d'ordinateur et
 //     téléphone, côte à côte ou l'un sous l'autre selon la place (`fitDuo`).
+//   - Code : l'activité des agents et le diff de la copie façon GitHub, relu à chaque écriture (codeview.ts).
 // Le Salon repeint toutes les secondes ou presque : `paint` ne réécrit que ce qui change (le cadre de l'aperçu n'est jamais
 // rechargé par un repeint ; la largeur se règle par un attribut, pas par le HTML).
 import * as native from '../../core/native.ts';
 import * as attach from './attach.ts';
+import * as code from './codeview.ts';
 import { esc } from '../../lib/markdown.ts';
 import { icon, paintIfChanged, rel } from '../../ui/kit.ts';
 import { t as tr } from '../../ui/i18n.ts';
 import type { Project } from './model.ts';
 
 export interface Shot { path: string; at: number; who: string }
-type Tab = 'shots' | 'live';
+type Tab = 'shots' | 'live' | 'code';
 type Size = 'duo' | 'desk' | 'tablet' | 'phone';
 interface Live { url: string; label: string; status: string }
 
@@ -27,7 +29,7 @@ interface Live { url: string; label: string; status: string }
 const TAB = 'studio.design.tab', SIZE = 'studio.design.size';
 const load = (k: string): string => { try { return localStorage.getItem(k) ?? ''; } catch { return ''; } };
 const keep = (k: string, v: string): void => { try { localStorage.setItem(k, v); } catch { /* stockage bloqué */ } };
-let tab: Tab | null = ((v): Tab | null => v === 'shots' || v === 'live' ? v : null)(load(TAB));
+let tab: Tab | null = ((v): Tab | null => v === 'shots' || v === 'live' || v === 'code' ? v : null)(load(TAB));
 let size: Size = ((v): Size => v === 'desk' || v === 'tablet' || v === 'phone' ? v : 'duo')(load(SIZE)), picked = '', shown: Tab = 'shots';
 /** Site local par projet : dernière réponse du Mac, heure de la lecture, lecture en cours. */
 const sites = new Map<string, { live: Live | null; at: number; busy: boolean }>();
@@ -91,16 +93,20 @@ function liveHTML(p: Project): string {
 let lastWork = '';
 /** Dessine la vue dans `box` (rien n'est réécrit si rien n'a changé). `again` : redemander un rendu (état du site lu).
  *  `work` : `<fil>:<1 si l'équipe travaille, sinon 0>`. */
-export function paint(box: HTMLElement, p: Project, shots: Shot[], again: () => void = () => undefined, work = ''): void {
+export function paint(box: HTMLElement, p: Project, shots: Shot[], again: () => void = () => undefined, work = '', cv?: code.CodeIn): void {
   const stopped = lastWork.endsWith(':1') && work === lastWork.slice(0, -1) + '0';
   lastWork = work;
   if (picked && !shots.some(s => s.path === picked)) picked = '';
   readSite(p, again);
   const l = pinned.get(p.id) ?? sites.get(p.id)?.live;
-  shown = tab ?? (l?.url && l.status === 'running' ? 'live' : shots.length ? 'shots' : 'live');
-  const head = `<header class="dz-bar">${seg([['shots', `Captures${shots.length ? `<span>${shots.length}</span>` : ''}`], ['live', 'Aperçu du site']], shown, 'tab')}${shown === 'live' ? `<span class="sl-seg dz-sizes" role="group" aria-label="Largeur de l’aperçu">${SIZES.map(([v, l, ic]) => `<button type="button" data-dz="size" data-v="${v}" aria-pressed="${v === size}" title="${l}" aria-label="${l}">${icon(ic)}</button>`).join('')}</span>` : ''}</header>`;
+  shown = tab ?? (l?.url && l.status === 'running' ? 'live' : shots.length ? 'shots' : cv ? 'code' : 'live');
+  if (shown === 'code' && !cv) shown = 'live';
+  const n = cv ? code.count(p, cv.wt) : -1;
+  const head = `<header class="dz-bar">${seg([['shots', `Captures${shots.length ? `<span>${shots.length}</span>` : ''}`], ['live', 'Aperçu du site'], ...(cv ? [['code', `Code${n > 0 ? `<span>${n}</span>` : ''}`] as [string, string]] : [])], shown, 'tab')}${shown === 'live' ? `<span class="sl-seg dz-sizes" role="group" aria-label="Largeur de l’aperçu">${SIZES.map(([v, l, ic]) => `<button type="button" data-dz="size" data-v="${v}" aria-pressed="${v === size}" title="${l}" aria-label="${l}">${icon(ic)}</button>`).join('')}</span>` : ''}</header>`;
   box.dataset.size = size;
-  if (paintIfChanged(box, head + (shown === 'shots' ? shotsHTML(shots) : liveHTML(p)))) box.querySelector('.dz-thumb.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  if (paintIfChanged(box, head + (shown === 'shots' ? shotsHTML(shots) : shown === 'code' ? '<div class="cv" data-cv></div>' : liveHTML(p)))) box.querySelector('.dz-thumb.on')?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  const cvBox = box.querySelector<HTMLElement>('[data-cv]');
+  if (cvBox && cv) code.paint(cvBox, p, cv, again);
   attach.hydrate(box, p.id);
   watch(box); fit(box);
   if (stopped && shown === 'live') reload(box);
@@ -143,12 +149,13 @@ function watch(box: HTMLElement): void {
 }
 
 /** Clic dans la vue. Rend vrai si le geste est pris (le Salon repeint alors) ; `ask` écrit une demande dans le champ. */
-export function click(e: Event, box: HTMLElement, shots: Shot[], ask: (text: string) => void): boolean {
+export function click(e: Event, box: HTMLElement, shots: Shot[], ask: (text: string) => void, p?: Project, wt = ''): boolean {
   const b = (e.target as HTMLElement).closest<HTMLElement>('[data-dz]'); if (!b) return false;
   const act = b.dataset.dz, i = Math.max(0, shots.findIndex(s => s.path === picked));
+  if (act?.startsWith('cv-')) return p ? code.click(b, box, p, wt) : false;
   // Une vignette de la bande choisit la capture : la visionneuse d'attach.ts (même clic) ne doit pas s'ouvrir.
   if (act === 'pick') { e.stopImmediatePropagation(); picked = b.dataset.path ?? ''; }
-  else if (act === 'tab') { tab = b.dataset.v === 'live' ? 'live' : 'shots'; keep(TAB, tab); }
+  else if (act === 'tab') { show(b.dataset.v === 'live' || b.dataset.v === 'code' ? b.dataset.v : 'shots'); }
   else if (act === 'prev') picked = shots[Math.min(shots.length - 1, i + 1)]?.path ?? picked;
   else if (act === 'next') picked = shots[Math.max(0, i - 1)]?.path ?? picked;
   else if (act === 'ask') ask(tr('Montre-moi une capture d’écran de ce que tu as changé.'));
@@ -164,6 +171,11 @@ export function click(e: Event, box: HTMLElement, shots: Shot[], ask: (text: str
   else if (act === 'reload') { reload(box); return false; }
   return true;
 }
+
+/** Choisit l'onglet (et le retient). */
+export function show(t: Tab): void { tab = t; keep(TAB, t); }
+/** Onglet montré au dernier rendu. */
+export const current = (): Tab => shown;
 
 /** ← → dans la vue Captures. Rend vrai si la touche est prise. */
 export function key(e: KeyboardEvent, shots: Shot[]): boolean {
