@@ -279,6 +279,24 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
             guard let dir = folders.path(pid) else { answer(["id": id, "ok": forgotten > 0, "message": "Choisis d'abord le dossier du projet."]); return }
             // Session d'un agent sur serveur : pas de journal sur ce Mac, l'oublier suffit.
             ClaudeSessions.shared.delete(project: dir, session: sid) { var r = $0; if forgotten > 0 { r["ok"] = true }; r["id"] = id; self.answer(r) }
+        case "term":
+            // Terminaux de projet (Terminals.swift) : shell local, copie d'agent, script ou ssh. Jamais à distance (hors REMOTE_ALLOWED).
+            wireTerminals()
+            let send: ([String: Any]) -> Void = { var r = $0; r["id"] = id; self.answer(r) }
+            let bg: (@escaping () -> [String: Any]) -> Void = { work in DispatchQueue.global(qos: .userInitiated).async { send(work()) } }
+            let tid = body["term"] as? String ?? "", cols = body["cols"] as? Int ?? 80, rows = body["rows"] as? Int ?? 24
+            switch body["op"] as? String ?? "" {
+            case "targets": bg { Terminals.shared.targets(pid) }
+            case "open":
+                let w = body["where"] as? String ?? "project", n = body["name"] as? String ?? "", c = body["cmd"] as? String ?? ""
+                bg { Terminals.shared.open(project: pid, where: w, name: n, cmd: c, cols: cols, rows: rows) }
+            case "list": send(Terminals.shared.terms(pid))
+            case "write": send(Terminals.shared.input(tid, body["data"] as? String ?? ""))
+            case "resize": send(Terminals.shared.resize(tid, cols: cols, rows: rows))
+            case "close": send(Terminals.shared.closeTerm(tid))
+            case "replay": send(Terminals.shared.replay(tid))
+            default: send(["ok": false, "message": "Opération inconnue."])
+            }
         default:
             answer(["id": id, "ok": false, "message": "Action inconnue."])
         }
@@ -398,22 +416,6 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
         case "jobs": send(Orchestrator.shared.list(project: pid))
         case "commits": bg { folders.commits(pid, days: body["days"] as? Int ?? 30) }
         case "run": send(Agents.shared.detail(body["run"] as? String ?? ""))
-        case "term":
-            // Terminaux de projet (Terminals.swift) : shell local, copie d'agent, script ou ssh. Jamais à distance (hors REMOTE_ALLOWED).
-            wireTerminals()
-            let tid = body["term"] as? String ?? "", cols = body["cols"] as? Int ?? 80, rows = body["rows"] as? Int ?? 24
-            switch body["op"] as? String ?? "" {
-            case "targets": bg { Terminals.shared.targets(pid) }
-            case "open":
-                let w = body["where"] as? String ?? "project", n = body["name"] as? String ?? "", c = body["cmd"] as? String ?? ""
-                bg { Terminals.shared.open(project: pid, where: w, name: n, cmd: c, cols: cols, rows: rows) }
-            case "list": send(Terminals.shared.terms(pid))
-            case "write": send(Terminals.shared.input(tid, body["data"] as? String ?? ""))
-            case "resize": send(Terminals.shared.resize(tid, cols: cols, rows: rows))
-            case "close": send(Terminals.shared.closeTerm(tid))
-            case "replay": send(Terminals.shared.replay(tid))
-            default: send(["ok": false, "message": "Opération inconnue."])
-            }
         case "server":
             // Un projet peut avoir plusieurs serveurs : `server` désigne lequel ("" : le premier). `sref` est sa clé de rangement.
             let sid = body["server"] as? String ?? "", sref = Servers.ref(pid, sid)
