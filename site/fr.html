@@ -60,6 +60,23 @@
     <symbol id="s-bolt" viewBox="0 0 24 24"><path d="M13 2.5L5.5 13.5h5.5l-1 8 7.5-11H12z"/></symbol>
     <symbol id="s-list" viewBox="0 0 24 24"><path d="M8.5 7h11M8.5 12h11M8.5 17h11"/><circle cx="4.5" cy="7" r="1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="4.5" cy="17" r="1" fill="currentColor" stroke="none"/></symbol>
     <symbol id="s-board" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="5" height="15" rx="1.5"/><rect x="9.5" y="4.5" width="5" height="10" rx="1.5"/><rect x="15.5" y="4.5" width="5" height="12.5" rx="1.5"/></symbol>
+    <symbol id="s-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7"/></symbol>
+    <!-- Salon (fragment salon) : icônes de src/ui/kit.ts absentes du sprite, puis les chats des profils (src/ui/catface.ts).
+    Les chats sont des <symbol> autonomes : formes et états (yeux mi-clos au travail, yeux fermés à la fin) écrits en attributs,
+    car les règles CSS ne passent pas dans le clone de <use>. Teinte : fill et stroke = pelage, color = fond (yeux, nez). -->
+    <symbol id="s-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2"/></symbol>
+    <symbol id="s-terminal" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="M7 9.5l3 2.5-3 2.5M12.5 15h4.5"/></symbol>
+    <symbol id="s-upload" viewBox="0 0 24 24"><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5M5 19.5h14"/></symbol>
+    <symbol id="s-arrowUp" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+    <symbol id="s-pr" viewBox="0 0 24 24"><circle cx="6.5" cy="5.5" r="2"/><circle cx="6.5" cy="18.5" r="2"/><circle cx="17.5" cy="18.5" r="2"/><path d="M6.5 7.5v9M17.5 16.5V10a3 3 0 00-3-3H11M13 5l-2 2 2 2"/></symbol>
+    <symbol id="s-attach" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="9" cy="10" r="1.8"/><path d="m21 16-5-5-8 8"/></symbol>
+    <symbol id="s-cat-moka" viewBox="0 0 40 40"><g><g fill="none" stroke-width="2.8" stroke-linecap="round"><path d="M28.6 38.6c4.6.4 7.2-1.8 6.8-5.8"/><path d="M35.4 32.8c-.1-2.4-1.3-4-2.9-4.8"/></g><g><path stroke="none" d="M10.6 40c-1.2-7.8 1.4-13.6 6.2-16.4h6.4c4.8 2.8 7.4 8.6 6.2 16.4Z"/><ellipse stroke="none" cx="16" cy="38.4" rx="3" ry="1.6"/><ellipse stroke="none" cx="24" cy="38.4" rx="3" ry="1.6"/><g><g><g><g><path stroke="none" d="M10.6 12.8 L11.4 1.8 L18.6 7.4 Z"/></g></g><g><g><path stroke="none" d="M29.4 12.8L28.6 1.8L21.4 7.4Z"/></g></g><ellipse stroke="none" cx="20" cy="15.6" rx="10.2" ry="8.6"/><g><g transform="translate(15.8 15.6)"><g><g fill="currentColor" stroke="none"><path d="M-2 .7 Q-.5 -2.1 2.1 -.6 Q.5 2.1 -2 .7 Z"/></g></g></g><g transform="translate(24.2 15.6)"><g><g fill="currentColor" stroke="none"><path d="M2 .7 Q.5 -2.1 -2.1 -.6 Q-.5 2.1 2 .7 Z"/></g></g></g><path fill="currentColor" stroke="none" opacity=".55" d="M18.8 19h2.4L20 20.3Z"/><path fill="none" stroke-width=".6" stroke-linecap="round" opacity=".8" d="M12 19 6 18M12 20.6 6.2 22M28 19 34 18M28 20.6 33.8 22"/></g></g></g></g></g></symbol>
+    <symbol id="s-cat-filou" viewBox="0 0 40 40"><g><g fill="none" stroke-width="2.8" stroke-linecap="round"><path d="M28.6 38.6c4.6.4 7.2-1.8 6.8-5.8"/><path d="M35.4 32.8c-.1-2.4-1.3-4-2.9-4.8"/></g><g><path stroke="none" d="M10.6 40c-1.2-7.8 1.4-13.6 6.2-16.4h6.4c4.8 2.8 7.4 8.6 6.2 16.4Z"/><ellipse stroke="none" cx="16" cy="38.4" rx="3" ry="1.6"/><ellipse stroke="none" cx="24" cy="38.4" rx="3" ry="1.6"/><g><g><g><g><path stroke="none" d="M10.6 12.8 L11.4 1.8 L18.6 7.4 Z"/></g></g><g><g><path stroke="none" d="M29.4 12.8L28.6 1.8L21.4 7.4Z"/></g></g><ellipse stroke="none" cx="20" cy="15.6" rx="10.2" ry="8.6"/><g><g transform="translate(15.8 15.6)"><g><g fill="currentColor" stroke="none"><ellipse rx="1.6" ry="1.95"/></g></g></g><g transform="translate(24.2 15.6)"><g><g fill="currentColor" stroke="none"><ellipse rx="1.6" ry="1.95"/></g></g></g><path fill="currentColor" stroke="none" opacity=".55" d="M18.8 19h2.4L20 20.3Z"/><path fill="none" stroke-width=".6" stroke-linecap="round" opacity=".8" d="M12 19 6 18M12 20.6 6.2 22M28 19 34 18M28 20.6 33.8 22"/></g></g></g></g></g></symbol>
+    <symbol id="s-cat-plume" viewBox="0 0 40 40"><g><g fill="none" stroke-width="2.8" stroke-linecap="round"><path d="M28.6 38.6c4.6.4 7.2-1.8 6.8-5.8"/><path d="M35.4 32.8c-.1-2.4-1.3-4-2.9-4.8"/></g><g><path stroke="none" d="M10.6 40c-1.2-7.8 1.4-13.6 6.2-16.4h6.4c4.8 2.8 7.4 8.6 6.2 16.4Z"/><ellipse stroke="none" cx="16" cy="38.4" rx="3" ry="1.6"/><ellipse stroke="none" cx="24" cy="38.4" rx="3" ry="1.6"/><g><g><g><g><path stroke="none" d="M10.6 12.8 L11.4 1.8 L18.6 7.4 Z"/></g></g><g><g><path stroke="none" d="M29.4 12.8L28.6 1.8L21.4 7.4Z"/></g></g><ellipse stroke="none" cx="20" cy="15.6" rx="10.2" ry="8.6"/><g><g transform="translate(15.8 15.6)"><g><g fill="currentColor" stroke="none"><ellipse rx="1.6" ry="1.95"/></g></g></g><g transform="translate(24.2 15.6)"><g><g fill="currentColor" stroke="none"><ellipse rx="1.6" ry="1.95"/></g></g></g><path fill="currentColor" stroke="none" opacity=".55" d="M18.8 19h2.4L20 20.3Z"/><path fill="none" stroke-width=".6" stroke-linecap="round" opacity=".8" d="M12 19.4 6.8 21.2M12.4 20.8 8.2 24M28 19.4 33.2 21.2M27.6 20.8 31.8 24"/></g></g></g></g></g></symbol>
+    <symbol id="s-cat-griffe" viewBox="0 0 40 40"><g><g fill="none" stroke-width="2.8" stroke-linecap="round"><path d="M28.6 38.6c4.6.4 7.2-1.8 6.8-5.8"/><path d="M35.4 32.8c-.1-2.4-1.3-4-2.9-4.8"/></g><g><path stroke="none" d="M10.6 40c-1.2-7.8 1.4-13.6 6.2-16.4h6.4c4.8 2.8 7.4 8.6 6.2 16.4Z"/><ellipse stroke="none" cx="16" cy="38.4" rx="3" ry="1.6"/><ellipse stroke="none" cx="24" cy="38.4" rx="3" ry="1.6"/><g><g><g><g><path stroke="none" d="M10.2 13 C9.2 6.6 10.8 2.6 13.8 2.6 C16.2 2.6 17.8 4.8 18.8 7.6 Z"/></g></g><g><g><path stroke="none" d="M29.8 13C30.8 6.6 29.2 2.6 26.2 2.6C23.8 2.6 22.2 4.8 21.2 7.6Z"/></g></g><ellipse stroke="none" cx="20" cy="15.6" rx="10.2" ry="8.6"/><g><g transform="translate(15.8 15.6)"><g><g fill="currentColor" stroke="none"><path d="M-2 .7 Q-.5 -2.1 2.1 -.6 Q.5 2.1 -2 .7 Z"/></g></g></g><g transform="translate(24.2 15.6)"><g><g fill="currentColor" stroke="none"><path d="M2 .7 Q.5 -2.1 -2.1 -.6 Q-.5 2.1 2 .7 Z"/></g></g></g><path fill="currentColor" stroke="none" opacity=".55" d="M18.8 19h2.4L20 20.3Z"/><path fill="none" stroke-width=".6" stroke-linecap="round" opacity=".8" d="M12 19.4 6.8 21.2M12.4 20.8 8.2 24M28 19.4 33.2 21.2M27.6 20.8 31.8 24"/></g></g></g></g></g></symbol>
+    <symbol id="s-cat-filou-done" viewBox="0 0 40 40"><g><g fill="none" stroke-width="2.8" stroke-linecap="round"><path d="M28.6 38.6c4.6.4 7.2-1.8 6.8-5.8"/><path d="M35.4 32.8c-.1-2.4-1.3-4-2.9-4.8"/></g><g><path stroke="none" d="M10.6 40c-1.2-7.8 1.4-13.6 6.2-16.4h6.4c4.8 2.8 7.4 8.6 6.2 16.4Z"/><ellipse stroke="none" cx="16" cy="38.4" rx="3" ry="1.6"/><ellipse stroke="none" cx="24" cy="38.4" rx="3" ry="1.6"/><g><g><g><g><path stroke="none" d="M10.6 12.8 L11.4 1.8 L18.6 7.4 Z"/></g></g><g><g><path stroke="none" d="M29.4 12.8L28.6 1.8L21.4 7.4Z"/></g></g><ellipse stroke="none" cx="20" cy="15.6" rx="10.2" ry="8.6"/><g><g transform="translate(15.8 15.6)"><g></g><path fill="none" stroke="currentColor" stroke-width=".9" stroke-linecap="round" d="M-2 .7 Q0 -1.7 2 .7"/></g><g transform="translate(24.2 15.6)"><g></g><path fill="none" stroke="currentColor" stroke-width=".9" stroke-linecap="round" d="M-2 .7 Q0 -1.7 2 .7"/></g><path fill="currentColor" stroke="none" opacity=".55" d="M18.8 19h2.4L20 20.3Z"/><path fill="none" stroke-width=".6" stroke-linecap="round" opacity=".8" d="M12 19 6 18M12 20.6 6.2 22M28 19 34 18M28 20.6 33.8 22"/></g></g></g></g></g></symbol>
+    <symbol id="s-cat-plume-work" viewBox="0 0 40 40"><g><g fill="none" stroke-width="2.8" stroke-linecap="round"><path d="M28.6 38.6c4.6.4 7.2-1.8 6.8-5.8"/><path d="M35.4 32.8c-.1-2.4-1.3-4-2.9-4.8"/></g><g><path stroke="none" d="M10.6 40c-1.2-7.8 1.4-13.6 6.2-16.4h6.4c4.8 2.8 7.4 8.6 6.2 16.4Z"/><ellipse stroke="none" cx="16" cy="38.4" rx="3" ry="1.6"/><ellipse stroke="none" cx="24" cy="38.4" rx="3" ry="1.6"/><g><g><g><g><path stroke="none" d="M10.6 12.8 L11.4 1.8 L18.6 7.4 Z"/></g></g><g><g><path stroke="none" d="M29.4 12.8L28.6 1.8L21.4 7.4Z"/></g></g><ellipse stroke="none" cx="20" cy="15.6" rx="10.2" ry="8.6"/><g><g transform="translate(15.8 15.6)"><g transform="scale(1 .6)"><g fill="currentColor" stroke="none"><ellipse rx="1.6" ry="1.95"/></g></g></g><g transform="translate(24.2 15.6)"><g transform="scale(1 .6)"><g fill="currentColor" stroke="none"><ellipse rx="1.6" ry="1.95"/></g></g></g><path fill="currentColor" stroke="none" opacity=".55" d="M18.8 19h2.4L20 20.3Z"/><path fill="none" stroke-width=".6" stroke-linecap="round" opacity=".8" d="M12 19.4 6.8 21.2M12.4 20.8 8.2 24M28 19.4 33.2 21.2M27.6 20.8 31.8 24"/></g></g></g></g></g></symbol>
+    <symbol id="s-cat-griffe-work" viewBox="0 0 40 40"><g><g fill="none" stroke-width="2.8" stroke-linecap="round"><path d="M28.6 38.6c4.6.4 7.2-1.8 6.8-5.8"/><path d="M35.4 32.8c-.1-2.4-1.3-4-2.9-4.8"/></g><g><path stroke="none" d="M10.6 40c-1.2-7.8 1.4-13.6 6.2-16.4h6.4c4.8 2.8 7.4 8.6 6.2 16.4Z"/><ellipse stroke="none" cx="16" cy="38.4" rx="3" ry="1.6"/><ellipse stroke="none" cx="24" cy="38.4" rx="3" ry="1.6"/><g><g><g><g><path stroke="none" d="M10.2 13 C9.2 6.6 10.8 2.6 13.8 2.6 C16.2 2.6 17.8 4.8 18.8 7.6 Z"/></g></g><g><g><path stroke="none" d="M29.8 13C30.8 6.6 29.2 2.6 26.2 2.6C23.8 2.6 22.2 4.8 21.2 7.6Z"/></g></g><ellipse stroke="none" cx="20" cy="15.6" rx="10.2" ry="8.6"/><g><g transform="translate(15.8 15.6)"><g transform="scale(1 .6)"><g fill="currentColor" stroke="none"><path d="M-2 .7 Q-.5 -2.1 2.1 -.6 Q.5 2.1 -2 .7 Z"/></g></g></g><g transform="translate(24.2 15.6)"><g transform="scale(1 .6)"><g fill="currentColor" stroke="none"><path d="M2 .7 Q.5 -2.1 -2.1 -.6 Q-.5 2.1 2 .7 Z"/></g></g></g><path fill="currentColor" stroke="none" opacity=".55" d="M18.8 19h2.4L20 20.3Z"/><path fill="none" stroke-width=".6" stroke-linecap="round" opacity=".8" d="M12 19.4 6.8 21.2M12.4 20.8 8.2 24M28 19.4 33.2 21.2M27.6 20.8 31.8 24"/></g></g></g></g></g></symbol>
   </svg>
 
   <a class="skip" href="#ecrire">Aller au contenu</a>
@@ -93,7 +110,7 @@
       <div class="hero">
         <div class="hero-txt">
           <h1><span class="ln"><span>Des notes qui passent</span></span> <span class="ln"><span>à l’action<i class="caret" aria-hidden="true"></i></span></span></h1>
-          <p class="lead">Studio est un carnet Markdown où l’IA travaille avec toi. Elle lit ce que tu écris, range tes captures, exécute tes routines et confie le code à Claude Code. Tout est chiffré et reste sur tes appareils.</p>
+          <p class="lead">Studio est un carnet Markdown où l’IA travaille avec toi. Elle lit ce que tu écris, range tes captures, exécute tes routines et confie le code à une équipe d’agents Claude Code. Tout est chiffré et reste sur tes appareils.</p>
           <p class="acts">
             <a class="go" href="https://github.com/MTthoas/Studio/releases/latest" rel="noopener">Télécharger pour Mac</a>
             <a class="wl" href="https://github.com/MTthoas/Studio" rel="noopener">Voir le code</a>
@@ -109,100 +126,66 @@
         <div><dt>Plateformes</dt><dd>Mac, iPhone, iPad, web</dd></div>
       </dl>
 
-      <!-- Maquette fidèle de l'app (maquette.css) : l'Accueil, tel que src/features/home.ts le dessine.
+      <!-- Maquette fidèle de l'app (maquette.css + hero.css) : l'Accueil, tel que src/features/home.ts le dessine, avec le rail
+           de src/app.ts (renderRail). Sur l'Accueil la seconde barre est masquée (body.side-none) : rail 52px + contenu.
            Penchée en arrière à l'ouverture, elle se redresse au défilement (site.js, [data-unfold]). -->
       <figure class="shot shot-hero" data-unfold>
         <div class="studio-fit" data-fit>
-          <div class="studio dark" role="img" aria-label="L’accueil de Studio : la date, une phrase de situation, la capture rapide, puis les tâches à faire, les notes à reprendre, les nouveautés Linear et GitHub, les automatisations et les connexions">
-            <div class="sidebar">
-              <div class="side-head">
-                <span class="ws"><svg class="logo" viewBox="0 0 20 20"><circle cx="4.2" cy="10" r="2.7" fill="currentColor"/><rect x="10" y="1" width="2.4" height="18" rx="1.2" fill="#F04A23"/></svg><span>Studio</span><svg class="ic"><use href="#s-chevron"/></svg></span>
-                <span class="icon-btn"><svg class="ic"><use href="#s-search"/></svg></span>
-                <span class="icon-btn"><svg class="ic"><use href="#s-compose"/></svg></span>
+          <div class="studio dark railed" role="img" aria-label="L’accueil de Studio : le rail d’icônes à gauche, puis la date, une phrase de situation, la capture rapide, les notes à reprendre, les nouveautés Linear et GitHub et les connexions">
+            <div class="rail">
+              <span class="rail-logo"><svg class="logo" viewBox="0 0 20 20"><circle cx="4.2" cy="10" r="2.7" fill="currentColor"/><rect x="10" y="1" width="2.4" height="18" rx="1.2" fill="#F04A23"/></svg></span>
+              <span class="rail-btn"><svg class="ic"><use href="#s-search"/></svg></span>
+              <div class="rail-zones">
+                <span class="rail-btn"><svg class="ic"><use href="#s-notes"/></svg></span>
+                <span class="rail-btn"><svg class="ic"><use href="#s-sparkle"/></svg><i class="rail-dot live"></i></span>
               </div>
-              <div class="side-scroll">
-                <div class="side-group">
-                  <span class="side-item sel h-gray"><svg class="ic"><use href="#s-home"/></svg><span>Accueil</span></span>
-                </div>
-                <div class="side-group"><span class="side-label">Notes</span>
-                  <span class="side-item h-blue"><svg class="ic"><use href="#s-inbox"/></svg><span>Boîte de réception</span><span class="side-count">3</span></span>
-                  <span class="side-item h-amber"><svg class="ic"><use href="#s-today"/></svg><span>Aujourd’hui</span></span>
-                  <span class="side-item h-pink"><svg class="ic"><use href="#s-journal"/></svg><span>Journal</span></span>
-                  <span class="side-item h-gray"><svg class="ic"><use href="#s-notes"/></svg><span>Toutes les notes</span></span>
-                </div>
-                <div class="side-group"><span class="side-label">Organisation</span>
-                  <span class="side-item h-orange"><svg class="ic"><use href="#s-folder"/></svg><span>Projets</span></span>
-                  <span class="side-item side-sub h-blue"><i class="tag-dot"></i><span>Atlas</span></span>
-                  <span class="side-item side-sub h-teal"><i class="tag-dot"></i><span>Site perso</span></span>
-                  <span class="side-item h-green"><svg class="ic"><use href="#s-check"/></svg><span>Tâches</span><span class="side-count">6</span></span>
-                  <span class="side-item h-violet"><svg class="ic"><use href="#s-bot"/></svg><span>Automatisations</span></span>
-                </div>
-                <div class="side-group"><span class="side-label">Connexions</span>
-                  <span class="side-item h-indigo"><svg class="ic"><use href="#s-linear"/></svg><span>Linear</span><span class="side-count">2</span></span>
-                  <span class="side-item h-gray"><svg class="ic"><use href="#s-github"/></svg><span>GitHub</span><span class="side-count">4</span></span>
-                </div>
-                <div class="side-group"><span class="side-label">Tags<svg class="ic"><use href="#s-chevronRight"/></svg></span></div>
-                <div class="side-group"><span class="side-label">Explorer</span>
-                  <span class="side-item h-teal"><svg class="ic"><use href="#s-graph"/></svg><span>Graphe</span></span>
-                  <span class="side-item h-gray"><svg class="ic"><use href="#s-trash"/></svg><span>Corbeille</span></span>
-                  <span class="side-item h-blue"><svg class="ic"><use href="#s-help"/></svg><span>Aide</span></span>
-                </div>
+              <div class="rail-zones rail-rest">
+                <span class="rail-btn sel"><svg class="ic"><use href="#s-home"/></svg></span>
+                <span class="rail-btn"><svg class="ic"><use href="#s-more"/></svg><i class="rail-dot"></i></span>
               </div>
-              <div class="side-foot"><svg class="ic"><use href="#s-shield"/></svg><span>Chiffré de bout en bout</span><span class="side-count"><svg class="ic"><use href="#s-devices"/></svg>2</span></div>
+              <div class="rail-foot">
+                <span class="rail-btn"><svg class="ic"><use href="#s-shield"/></svg></span>
+                <span class="rail-btn"><svg class="ic"><use href="#s-gear"/></svg></span>
+              </div>
             </div>
             <div class="main">
               <div class="toolbar">
                 <div class="tb-side"><span class="icon-btn"><svg class="ic"><use href="#s-sidebar"/></svg></span></div>
-                <div class="crumb"><span class="crumb-cur">Accueil</span></div>
+                <div class="crumb"><span class="crumb-cur">Accueil</span><span class="crumb-cat"><svg viewBox="0 0 36 32" width="30" height="27"><g class="cat-tail"><path d="M21 30.6c5.6.6 8.6-1.6 8.4-6"/><path d="M29.4 24.6c-.1-2.6-1.6-4.3-3.4-5"/></g><path d="M9 32c-1-6.4.6-11.6 4.6-14.6h4.8c4 3 5.6 8.2 4.6 14.6Z"/><ellipse cx="13.4" cy="31" rx="2.4" ry="1.4"/><ellipse cx="18.6" cy="31" rx="2.4" ry="1.4"/><path d="M9.8 11.4 10.4 3.8 14.6 8.4Z"/><path d="M22.2 11.4 21.6 3.8 17.4 8.4Z"/><ellipse cx="16" cy="12.6" rx="6.8" ry="5.8"/><g class="cat-eyes"><ellipse cx="13.3" cy="12.2" rx=".95" ry="1.25"/><ellipse cx="18.7" cy="12.2" rx=".95" ry="1.25"/></g><path class="cat-nose" d="M15.2 14.6h1.6L16 15.5Z"/><path class="cat-whisk" d="M10 14.4 5.8 13.8M10 15.6 6 16.6M22 14.4 26.2 13.8M22 15.6 26 16.6"/></svg></span></div>
                 <div class="tb-side tb-right">
-                  <span class="btn btn-ghost"><svg class="ic"><use href="#s-help"/></svg><span>Aide</span></span>
                   <span class="btn btn-ghost"><svg class="ic"><use href="#s-sparkle"/></svg><span>Demander</span></span>
                 </div>
               </div>
               <div class="home"><div class="home-in">
                 <p class="hm-date">jeudi 12 novembre</p>
                 <p class="hm-hello">Bonjour.</p>
-                <p class="hm-sum"><span class="late">1 tâche en retard</span><i>·</i><span>2 pour aujourd’hui</span><i>·</i><span>2 notifications Linear</span><i>·</i><span>4 nouveautés GitHub</span></p>
-                <div class="hm-capture"><span>Note une idée ou une tâche… (#todo pour une tâche, #tag pour ranger)</span><span class="icon-btn"><svg class="ic"><use href="#s-mic"/></svg></span><kbd>↵</kbd></div>
+                <p class="hm-sum"><span>2 notifications Linear</span><i>·</i><span>4 nouveautés GitHub</span></p>
+                <div class="hm-capture"><span>Note une idée…</span><span class="icon-btn"><svg class="ic"><use href="#s-mic"/></svg></span><kbd>↵</kbd></div>
                 <div class="hm-grid">
                   <div class="hm-col">
-                    <div class="hm-sec">
-                      <header><span class="hm-h h-green">À faire</span></header>
-                      <div class="hm-task"><i class="cb"></i><span>Relancer Paul pour le devis</span><em class="td-due late">hier</em></div>
-                      <div class="hm-task"><i class="cb"></i><span>Écrire l’annonce de la bêta</span><em>1/3</em><em class="td-due today">aujourd’hui</em></div>
-                      <div class="hm-task"><i class="cb"></i><span>Export CSV des écritures</span><em class="hm-ticket">ATL-42</em><em class="td-due today">aujourd’hui</em></div>
-                      <div class="hm-task"><i class="cb"></i><span>Relire le schéma de la base</span><em>Lancement Atlas</em></div>
-                      <div class="hm-task"><i class="cb"></i><span>Réserver le train pour Lyon</span><em class="td-due">lundi</em></div>
-                      <span class="hm-more">1 de plus</span>
-                    </div>
-                    <div class="hm-sec">
-                      <header><span class="hm-h">Reprendre</span></header>
+                    <section class="hm-sec">
+                      <header><span class="hm-h">Reprendre<svg class="ic"><use href="#s-chevronRight"/></svg></span></header>
                       <div class="hm-notes">
                         <div class="hm-note"><strong><svg class="ic"><use href="#s-pin"/></svg>Lancement Atlas</strong><p>Décidé avec Paul : la bêta sort le 26. Reste l’export CSV et l’annonce à écrire.</p><span>il y a 2 min</span></div>
                         <div class="hm-note"><strong>Revue du 9 novembre</strong><p>Trois sujets : la pagination des comptes, le thème sombre, le site.</p><span>hier</span></div>
-                        <div class="hm-note"><strong>Idées d’annonce</strong><p>Une vidéo de trente secondes, puis un billet plus long sur le chiffrement.</p><span>mardi</span></div>
+                        <div class="hm-note"><strong>Idées d’annonce</strong><p>Une vidéo de trente secondes, puis un billet plus long sur le chiffrement.</p><span>10 nov.</span></div>
                         <div class="hm-note"><strong>Paul Martin</strong><p>Responsable produit. Préfère un message court à un appel.</p><span>5 nov.</span></div>
                       </div>
-                    </div>
+                    </section>
                   </div>
                   <div class="hm-col">
-                    <div class="hm-sec">
+                    <section class="hm-sec">
                       <header><span class="hm-h">Quoi de neuf</span></header>
                       <div class="hm-feed"><svg class="ic"><use href="#s-linear"/></svg><span>Paul t’a assigné ATL-51 : Revoir la page des tarifs</span><em>il y a 20 min</em></div>
-                      <div class="hm-feed read"><svg class="ic"><use href="#s-github"/></svg><span>paul-m a ouvert la pull request #45 <small>atlas</small></span><em>il y a 1 h</em></div>
+                      <div class="hm-feed read"><svg class="ic"><use href="#s-github"/></svg><span>paul-m a ouvert la pull request #45 <small>atlas</small></span><em>08:30</em></div>
                       <div class="hm-feed read"><svg class="ic"><use href="#s-linear"/></svg><span>ATL-39 est passé à « En cours »</span><em>hier</em></div>
-                    </div>
-                    <div class="hm-sec">
-                      <header><span class="hm-h">Automatisations</span></header>
-                      <div class="hm-agent"><i class="st ok"></i><span>Revue du matin</span><em>jours ouvrés 8h30</em><span class="icon-btn"><svg class="ic"><use href="#s-play"/></svg></span></div>
-                      <div class="hm-agent"><i class="st ok"></i><span>Tri des captures</span><em>hier</em><span class="icon-btn"><svg class="ic"><use href="#s-play"/></svg></span></div>
-                    </div>
-                    <div class="hm-sec">
-                      <header><span class="hm-h">Connexions</span><span class="hm-meta">Synchroniser</span></header>
+                    </section>
+                    <section class="hm-sec">
+                      <header><span class="hm-h">Connexions</span><span class="hm-meta"><span class="hm-link">Synchroniser</span></span></header>
                       <div class="hm-conn"><svg class="ic"><use href="#s-linear"/></svg><div><strong>Linear</strong><span>Tickets, projets, notifications</span></div><i class="st ok"></i></div>
                       <div class="hm-conn"><svg class="ic"><use href="#s-github"/></svg><div><strong>GitHub</strong><span>Actualité de tes dépôts</span></div><i class="st ok"></i></div>
                       <div class="hm-conn"><svg class="ic"><use href="#s-phone"/></svg><div><strong>Téléphone</strong><span>iPhone</span></div><i class="st ok"></i></div>
-                    </div>
+                    </section>
                   </div>
                 </div>
               </div></div>
@@ -381,15 +364,15 @@ Pause : [timer 25m]</textarea></div>
         <div class="rail">
           <p class="rail-k"><i>##</i>Déléguer</p>
           <ol class="flow" data-stages>
-            <li><b>Consigne</b><p>Écris ce que tu veux, joins une note ou une tâche. Choisis Modifier ou Analyser.</p></li>
-            <li><b>Copie isolée</b><p>Un worktree Git dédié. Outils listés un à un, aucune commande sans ta case cochée.</p></li>
-            <li><b>Revue</b><p>Fichiers modifiés, tokens consommés, revue IA du diff, en direct.</p></li>
-            <li><b>Pull request</b><p>Mise à jour, résolution des conflits, commit conventionnel, push, PR. Seul.</p></li>
+            <li><b>Consigne</b><p>Ouvre un fil dans le Salon du projet. Écris ce que tu veux, lie une note avec <code>[[</code>, laisse le modèle sur Auto.</p></li>
+            <li><b>Équipe</b><p>Moka, la cheffe d’équipe, confie des parties à un explorateur, un testeur, un relecteur. Le tout dans un worktree Git dédié, dans une bulle macOS.</p></li>
+            <li><b>Revue</b><p>Le plan de l’équipe, les fichiers touchés et une capture de chaque changement visible, dans le fil.</p></li>
+            <li><b>Pull request</b><p>Mise à jour, résolution des conflits, commit conventionnel, push, PR : depuis la carte du fil, à ton clic.</p></li>
           </ol>
         </div>
         <div>
           <h2 data-reveal>Ton dossier n’est jamais touché.</h2>
-          <p class="lead" data-reveal>L’agent Claude Code travaille dans une copie isolée du dépôt, et rien n’est publié sans ton clic.</p>
+          <p class="lead" data-reveal>Une équipe d’agents Claude Code travaille dans une copie isolée du dépôt, et rien n’est publié sans ton clic.</p>
           <figure class="block" data-reveal>
             <div class="wt" role="img" aria-label="Schéma en trois plans. Au fond, ton dossier sur la branche main : aucun fichier modifié. Devant, la copie isolée où l’agent a créé un fichier et en a modifié deux. Au premier plan, la pull request ouverte vers main.">
             <div class="wt-world">
@@ -424,54 +407,77 @@ Pause : [timer 25m]</textarea></div>
             <figcaption class="cap">Ton dossier au fond, intact. Devant, la copie isolée où l’agent travaille. Au premier plan, la pull request.</figcaption>
           </figure>
 
-          <!-- Maquette fidèle : un projet, onglet Claude Code, une conversation (src/features/projects/sessions.ts) -->
+          <!-- Maquette fidèle : le Salon d’un projet, un fil confié à une équipe (src/features/projects/salon.ts, vue Discussion). -->
           <figure class="shot block" data-reveal>
-            <div class="studio-fit" data-fit="920" data-seq data-loop>
-              <div class="studio dark solo tall" role="img" aria-label="Une conversation Claude Code dans le projet Atlas : la consigne, les actions de l’agent dans sa copie isolée, sa réponse, puis la zone pour lui répondre">
-                <div class="main">
-                  <div class="toolbar">
-                    <div class="tb-side"><span class="icon-btn"><svg class="ic"><use href="#s-sidebar"/></svg></span></div>
-                    <div class="crumb"><span>Projets</span><svg class="ic"><use href="#s-chevronRight"/></svg><span class="crumb-cur">Atlas</span></div>
+            <div class="studio-fit" data-fit="1040" data-seq data-loop>
+              <div class="studio dark lounge tall" role="img" aria-label="Le Salon du projet Atlas : à gauche la liste des fils, au centre un fil où Moka répartit l’export CSV entre Filou, Plume et Griffe, suit leur plan, puis rend une pull request à relire">
+                <aside class="sl-side">
+                  <div class="sl-side-h"><span class="sl-proj"><i class="pi h-violet"></i><span>Atlas</span><svg class="ic"><use href="#s-chevron"/></svg></span><span class="sl-n">11</span></div>
+                  <span class="sl-add"><i><svg class="ic"><use href="#s-plus"/></svg></i>Nouveau fil</span>
+                  <span class="sl-q"><svg class="ic"><use href="#s-search"/></svg><span>Chercher un fil…</span><kbd>/</kbd></span>
+                  <div class="sl-filt"><span class="sl-chip on">Tous</span><span class="sl-chip">En cours<span>1</span></span><span class="sl-chip">À toi<span>1</span></span><span class="sl-chip">Terminés<span>9</span></span><span class="sl-chip">Codex<span>3</span></span></div>
+                  <div class="sl-list">
+                    <section class="sl-grp"><h4><i class="ls-w">En cours</i><i class="ls-r">Prêts à publier</i><i class="ls-d">À toi</i><span>1</span></h4>
+                      <div class="sl-row two cur"><span class="sl-pick"><i class="sl-dot ask"></i><span class="sl-row-b"><span class="sl-row-t">Exporter les entrées en CSV</span><small class="sl-row-s" data-pill data-s="4">PR ouverte</small></span><time><i class="ls-w">à l’instant</i><i class="ls-f">14:10</i></time></span></div>
+                    </section>
+                    <section class="sl-grp"><h4>Terminés<span>9</span></h4>
+                      <div class="sl-row"><span class="sl-pick"><i class="sl-dot"></i><span class="sl-row-t">Brancher la synchro bancaire</span><time>15:39</time></span></div>
+                      <div class="sl-row"><span class="sl-pick"><i class="sl-dot"></i><span class="sl-row-t">Corriger l’arrondi des totaux</span><em class="sl-tag">Codex</em><time>il y a 40 min</time></span></div>
+                      <div class="sl-row"><span class="sl-pick"><i class="sl-dot"></i><span class="sl-row-t">Mettre à jour les dépendances</span><time>hier</time></span></div>
+                      <div class="sl-row"><span class="sl-pick"><i class="sl-dot"></i><span class="sl-row-t">Écrire la page d’aide de l’import</span><time>hier</time></span></div>
+                      <div class="sl-row"><span class="sl-pick"><i class="sl-dot"></i><span class="sl-row-t">Accélérer la recherche des entrées</span><em class="sl-tag">Codex</em><time>26 nov.</time></span></div>
+                      <div class="sl-row"><span class="sl-pick"><i class="sl-dot"></i><span class="sl-row-t">Ajouter le thème sombre aux graphiques</span><time>25 nov.</time></span></div>
+                      <div class="sl-row"><span class="sl-pick"><i class="sl-dot"></i><span class="sl-row-t">Relire les messages d’erreur</span><em class="sl-tag">Codex</em><time>16 nov.</time></span></div>
+                      <div class="sl-row"><span class="sl-pick"><i class="sl-dot"></i><span class="sl-row-t">Nettoyer les vieilles migrations</span><time>12 nov.</time></span></div>
+                      <span class="sl-more">1 de plus</span>
+                    </section>
+                    <div class="sl-foot"><span class="sl-more"><svg class="ic"><use href="#s-inbox"/></svg>Archiver les fils de plus de 7 jours (4)</span><span class="sl-more"><svg class="ic"><use href="#s-trash"/></svg>Supprimer des fils…</span></div>
                   </div>
-                  <div class="projets"><div class="pj-in">
-                    <div class="pj-head h-blue">
-                      <span class="lv-back"><svg class="ic"><use href="#s-back"/></svg>Projets</span>
-                      <div class="pj-title"><span class="pj-dot"></span><p class="pj-h1">Atlas</p><span class="btn"><svg class="ic"><use href="#s-notes"/></svg>Note du projet</span><span class="btn"><svg class="ic"><use href="#s-sparkle"/></svg>Claude</span></div>
-                      <div class="pj-links"><span class="lv-chip"><svg class="ic"><use href="#s-github"/></svg>atlas-app/atlas</span><span class="lv-chip"><svg class="ic"><use href="#s-linear"/></svg>Atlas</span><span class="lv-chip">#atlas</span></div>
-                      <div class="lv-tabs pj-tabs"><span>Vue d’ensemble</span><span class="sel">Claude Code</span><span>Code</span><span>Flux</span><span>Serveur</span><span>Tâches</span><span>Notes</span><span>Site</span></div>
+                  <div class="sl-side-cons"><div class="sl-cons"><h4>Consommation</h4><details class="sl-use"><summary><span>Ce fil</span><b>32,9 k écrits</b><svg class="ic"><use href="#s-chevron"/></svg></summary></details></div></div>
+                </aside>
+                <section class="sl-center">
+                  <header class="sl-top">
+                    <div class="tb-side"><span class="icon-btn"><svg class="ic"><use href="#s-sidebar"/></svg></span></div>
+                    <div class="sl-head"><h2><i class="sl-dot ask"></i><span>Exporter les entrées en CSV</span></h2><i class="sl-grow"></i>
+                      <span class="btn btn-ghost ls-w"><svg class="ic"><use href="#s-stop"/></svg><span>Arrêter</span></span>
+                      <span class="sl-seg"><span class="on">Discussion</span><span>Design</span><span class="sl-seg-ic"><svg class="ic"><use href="#s-split"/></svg></span></span>
+                      <span class="btn btn-ghost sl-nowbtn"><span class="sl-stack"><i class="sl-av h-orange" aria-hidden="true"><svg class="cf cf-t1" viewBox="0 0 40 40" aria-hidden="true"><use href="#s-cat-moka"/></svg></i><i class="sl-av h-teal" aria-hidden="true"><svg class="cf" viewBox="0 0 40 40" aria-hidden="true"><use href="#s-cat-filou"/></svg></i><i class="sl-av h-green" aria-hidden="true"><svg class="cf cf-t1" viewBox="0 0 40 40" aria-hidden="true"><use href="#s-cat-plume"/></svg></i><i class="sl-av h-pink" aria-hidden="true"><svg class="cf" viewBox="0 0 40 40" aria-hidden="true"><use href="#s-cat-griffe"/></svg></i></span></span>
+                      <span class="btn btn-ghost sl-ic"><svg class="ic"><use href="#s-terminal"/></svg></span><span class="btn btn-ghost sl-ic"><svg class="ic"><use href="#s-more"/></svg></span>
                     </div>
-                    <div class="ss-dhead"><i class="ss-live on"></i><p class="ss-h2">Export CSV des écritures</p><span class="ag-pill" data-pill>Au travail</span><span class="icon-btn"><svg class="ic"><use href="#s-trash"/></svg></span></div>
-                    <p class="ss-meta"><svg class="ic"><use href="#s-pencil"/></svg>copie isolée <code>worktree-export-csv</code> · 4 min · 1 demande</p>
-                    <div class="ss-feed">
-                      <div class="ss-msg user" data-step="700" data-stage="1"><header><strong>Toi</strong><time>14:02</time></header><p data-step="200" data-type>Ajoute un export CSV des écritures, avec les tests.</p></div>
-                      <div class="ss-tools" data-step="900" data-stage="2">
-                        <div class="sum"><svg class="ic"><use href="#s-bolt"/></svg><strong>5 actions</strong><span>Read 1 · Grep 1 · Write 1</span><svg class="ic"><use href="#s-chevron"/></svg></div>
-                        <ul>
-                          <li data-step="500"><b>Read</b><span>src/export/index.ts</span></li>
-                          <li data-step="650"><b>Grep</b><span>toCents</span></li>
-                          <li data-step="900"><b>Write</b><span>src/export/csv.ts</span></li>
-                          <li data-step="800"><b>Edit</b><span>src/export/index.ts</span></li>
-                          <li data-step="1100"><b>Bash</b><span>npm test</span></li>
-                        </ul>
-                      </div>
-                      <div class="ss-msg ai" data-step="900" data-stage="3"><header><strong>Claude</strong><time>14:06</time></header><div class="md"><p>L’export est prêt dans <code>src/export/csv.ts</code> : séparateur configurable, montants en centimes. J’ai ajouté six tests, ils passent tous. Rien n’est publié : relis le changement, puis publie-le quand tu veux.</p></div></div>
-                      <i hidden data-step="2400" data-stage="4"></i>
-                    </div>
-                    <div class="ag-compose ag-continue">
-                      <p>Réponds à Claude : précise, corrige, tranche, demande la suite…</p>
-                      <div class="ag-opts"><span class="ag-hint"><svg class="ic"><use href="#s-history"/></svg>Reprend la conversation là où elle s’est arrêtée, dans le même dossier.</span><span class="field">Modèle par défaut<svg class="ic"><use href="#s-chevron"/></svg></span><span class="field">Effort par défaut<svg class="ic"><use href="#s-chevron"/></svg></span><span class="btn btn-primary"><svg class="ic"><use href="#s-play"/></svg>Envoyer<kbd>⌘↩</kbd></span></div>
-                      <div class="ag-lims">Afficher ce qu’il reste de mon abonnement</div>
-                    </div>
-                  </div></div>
-                </div>
+                  </header>
+                  <i class="sl-live on"></i>
+                  <div class="sl-feed">
+                    <article class="sl-msg me" data-step="600" data-stage="1"><i class="sl-av" aria-hidden="true">T</i><div class="sl-bd"><header><b class="sl-who">Toi</b><time>14:02</time></header><div class="sl-bub"><p class="sl-plain" data-step="200" data-type>Ajoute un export CSV des entrées, montants en centimes, avec des tests.</p></div></div></article>
+                    <article class="sl-msg" data-step="1800" data-stage="2"><i class="sl-av h-orange" aria-hidden="true"><svg class="cf cf-t1" viewBox="0 0 40 40" aria-hidden="true"><use href="#s-cat-moka"/></svg></i><div class="sl-bd"><header><span class="sl-who h-orange">Moka</span><span class="sl-role">cheffe d’équipe</span><em class="sl-model">opus</em><time>14:02</time></header><div class="sl-bub"><div class="md"><p>Je répartis : Filou repère le code d’export existant, Plume écrit <code>src/export/csv.ts</code>, Griffe écrit les tests. Je relis à la fin.</p></div></div></div></article>
+                    <details class="sl-note" data-step="700"><summary><span><i class="sl-av mini h-orange" aria-hidden="true"><svg class="cf cf-t1" viewBox="0 0 40 40" aria-hidden="true"><use href="#s-cat-moka"/></svg></i><span class="sl-who h-orange">Moka</span> a confié « Cartographier le code d’export » à <i class="sl-av mini h-teal" aria-hidden="true"><svg class="cf" viewBox="0 0 40 40" aria-hidden="true"><use href="#s-cat-filou"/></svg></i><span class="sl-who sl-nm h-teal">Filou</span></span><time>14:03</time><svg class="ic"><use href="#s-chevron"/></svg></summary><div class="sl-brief">Repère dans src/export comment les entrées sont lues et où passer les montants en centimes. Ne modifie rien.</div></details>
+                    <details class="sl-note" data-step="500"><summary><span><i class="sl-av mini h-orange" aria-hidden="true"><svg class="cf cf-t1" viewBox="0 0 40 40" aria-hidden="true"><use href="#s-cat-moka"/></svg></i><span class="sl-who h-orange">Moka</span> a confié « Écrire src/export/csv.ts » à <i class="sl-av mini h-green" aria-hidden="true"><svg class="cf cf-t1" viewBox="0 0 40 40" aria-hidden="true"><use href="#s-cat-plume"/></svg></i><span class="sl-who sl-nm h-green">Plume</span></span><time>14:03</time><svg class="ic"><use href="#s-chevron"/></svg></summary><div class="sl-brief">Écris toCsv(entries, { sep }) : une ligne d’en-tête, montants en centimes, séparateur configurable (virgule par défaut).</div></details>
+                    <details class="sl-note" data-step="500"><summary><span><i class="sl-av mini h-orange" aria-hidden="true"><svg class="cf cf-t1" viewBox="0 0 40 40" aria-hidden="true"><use href="#s-cat-moka"/></svg></i><span class="sl-who h-orange">Moka</span> a confié « Écrire les tests du CSV » à <i class="sl-av mini h-pink" aria-hidden="true"><svg class="cf" viewBox="0 0 40 40" aria-hidden="true"><use href="#s-cat-griffe"/></svg></i><span class="sl-who sl-nm h-pink">Griffe</span></span><time>14:03</time><svg class="ic"><use href="#s-chevron"/></svg></summary><div class="sl-brief">Écris src/export/csv.test.ts : en-tête, centimes, séparateur, guillemets, entrée vide, gros volume.</div></details>
+                    <article class="sl-msg" data-step="2600"><i class="sl-av h-pink" aria-hidden="true"><svg class="cf" viewBox="0 0 40 40" aria-hidden="true"><use href="#s-cat-griffe"/></svg></i><div class="sl-bd"><header><span class="sl-who h-pink">Griffe</span><span class="sl-role">testeur</span><em class="sl-model">sonnet</em><time>14:09</time></header><div class="sl-bub"><div class="md"><p><span class="sl-to h-orange">@Moka</span> les six tests passent, y compris les guillemets et le séparateur point-virgule.</p></div></div></div></article>
+                    <article class="sl-msg" data-step="1200" data-stage="3"><i class="sl-av h-orange" aria-hidden="true"><svg class="cf cf-t1" viewBox="0 0 40 40" aria-hidden="true"><use href="#s-cat-moka"/></svg></i><div class="sl-bd"><header><span class="sl-who h-orange">Moka</span><span class="sl-role">cheffe d’équipe</span><em class="sl-model">opus</em><time>14:10</time></header><div class="sl-bub"><div class="md"><p>L’export est prêt dans <code>src/export/csv.ts</code> : séparateur configurable, montants en centimes. Les six tests de Griffe passent. Rien n’est publié : relis le changement, puis publie-le quand tu veux.</p></div></div></div></article>
+                    <section class="sl-plan" aria-label="Plan de l’équipe"><header><b>Plan de l’équipe</b><span><i class="ls-w">1 / 3</i><i class="ls-f">3 / 3</i></span></header><i class="sl-prog" aria-hidden="true"><i></i></i>
+                      <span class="sl-step"><i class="sl-step-i" aria-hidden="true"><svg class="ic"><use href="#s-check"/></svg></i><span class="sl-step-b"><span class="sl-step-t">Cartographier le code d’export</span><small>a fini</small></span><span class="sl-step-w"><i class="sl-av mini h-teal" aria-hidden="true"><svg class="cf" viewBox="0 0 40 40" aria-hidden="true"><use href="#s-cat-filou-done"/></svg></i><span>Filou</span></span><time>2 min</time></span>
+                      <span class="sl-step"><i class="sl-step-i" aria-hidden="true"><i class="spin ls-w"></i><span class="ls-f"><svg class="ic"><use href="#s-check"/></svg></span></i><span class="sl-step-b"><span class="sl-step-t">Écrire src/export/csv.ts</span><small><i class="ls-w">écrit csv.ts</i><i class="ls-f">1 fichier touché</i></small></span><span class="sl-step-w"><span class="ls-w"><i class="sl-av mini h-green" aria-hidden="true"><svg class="cf cf-t1" viewBox="0 0 40 40" aria-hidden="true"><use href="#s-cat-plume-work"/></svg></i></span><span class="ls-f"><i class="sl-av mini h-green" aria-hidden="true"><svg class="cf cf-t1" viewBox="0 0 40 40" aria-hidden="true"><use href="#s-cat-plume"/></svg></i></span><span>Plume</span></span><time class="ls-f">5 min</time></span>
+                      <span class="sl-step"><i class="sl-step-i" aria-hidden="true"><i class="spin ls-w"></i><span class="ls-f"><svg class="ic"><use href="#s-check"/></svg></span></i><span class="sl-step-b"><span class="sl-step-t">Écrire les tests du CSV</span><small><i class="ls-w">écrit csv.test.ts</i><i class="ls-f">1 fichier touché</i></small></span><span class="sl-step-w"><span class="ls-w"><i class="sl-av mini h-pink" aria-hidden="true"><svg class="cf" viewBox="0 0 40 40" aria-hidden="true"><use href="#s-cat-griffe-work"/></svg></i></span><span class="ls-f"><i class="sl-av mini h-pink" aria-hidden="true"><svg class="cf" viewBox="0 0 40 40" aria-hidden="true"><use href="#s-cat-griffe"/></svg></i></span><span>Griffe</span></span><time class="ls-f">6 min</time></span>
+                    </section>
+                    <div class="sl-typing ls-2"><span class="sl-stack"><i class="sl-av h-green" aria-hidden="true"><svg class="cf cf-t1" viewBox="0 0 40 40" aria-hidden="true"><use href="#s-cat-plume-work"/></svg></i><i class="sl-av h-pink" aria-hidden="true"><svg class="cf" viewBox="0 0 40 40" aria-hidden="true"><use href="#s-cat-griffe-work"/></svg></i></span><span class="sl-dots" aria-hidden="true"><i></i><i></i><i></i></span><small>Plume et Griffe travaillent…</small></div>
+                    <div class="sl-card res ls-r"><span class="sl-pill h-green">prêt à publier</span><div class="sl-card-t"><b>Exporter les entrées en CSV</b><small>2 fichiers · +142 −3 · claude/export-csv</small><details class="sl-files"><summary><svg class="ic"><use href="#s-chevron"/></svg><span>Fichiers</span></summary></details></div><div class="sl-card-a"><span class="btn btn-ghost"><svg class="ic"><use href="#s-terminal"/></svg>Terminal dans sa copie</span><span class="btn">Relire</span><span class="btn btn-primary"><svg class="ic"><use href="#s-upload"/></svg>Publier la PR</span></div></div>
+                    <div class="sl-card res" data-step="2400" data-stage="4"><span class="sl-pill h-blue">PR ouverte</span><div class="sl-card-t"><b>Exporter les entrées en CSV</b><small>En attente de fusion · 2 fichiers · +142 −3 · claude/export-csv</small></div><div class="sl-card-a"><span class="btn btn-ghost"><svg class="ic"><use href="#s-terminal"/></svg>Terminal dans sa copie</span><span class="btn"><svg class="ic"><use href="#s-pr"/></svg>Voir la PR</span></div></div>
+                  </div>
+                  <div class="sl-comp">
+                    <p>Écris à Moka…</p>
+                    <div class="sl-comp-row"><span class="sl-sel">Modèle par défaut<svg class="ic"><use href="#s-chevron"/></svg></span><span class="sl-sel">Effort par défaut<svg class="ic"><use href="#s-chevron"/></svg></span><span class="sl-hint ls-w">Ton message part en attente : l’agent le lit à la fin de son tour.</span><span class="icon-btn at-add"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="#s-attach"/></svg></span><span class="btn btn-primary sl-send"><svg class="ic"><use href="#s-arrowUp"/></svg><span>Envoyer</span></span></div>
+                  </div>
+                </section>
               </div>
             </div>
-            <figcaption class="cap">Une conversation Claude Code dans un projet. La séquence est rejouée, l’écran est celui de l’app.</figcaption>
+            <figcaption class="cap">Le Salon d’un projet : tu confies un fil, une équipe d’agents se le répartit, et tu reprends la main sur la pull request. La séquence est rejouée ; l’écran est celui de l’app.</figcaption>
           </figure>
 
           <ul class="guards" data-reveal>
             <li><span><code>--restricted</code> : fichiers confinés au dossier de travail</span></li>
             <li><span><code>dontAsk</code> : tout ce qui n’est pas listé est refusé</span></li>
+            <li>Bulle macOS : un agent n’écrit que dans sa copie</li>
+            <li>Il ne peut lire ni tes notes ni tes autres projets</li>
             <li>Huit agents et 90 minutes au plus</li>
             <li>Ni hooks ni serveurs MCP de l’utilisateur</li>
           </ul>
@@ -517,7 +523,7 @@ Prépare ma revue du matin sur ce projet : les tâches en retard et celles du jo
               <h3>Capture en une ligne</h3>
               <p>Une idée, une tâche, une note vocale transcrite sur l’iPhone : tout part de la même ligne.</p>
               <div class="piece"><div class="studio dark frag" role="img" aria-label="La ligne de capture de l’accueil">
-                <div class="hm-capture"><span>Note une idée ou une tâche… (#todo pour une tâche, #tag pour ranger)</span><span class="icon-btn"><svg class="ic"><use href="#s-mic"/></svg></span><kbd>↵</kbd></div>
+                <div class="hm-capture"><span>Note une idée…</span><span class="icon-btn"><svg class="ic"><use href="#s-mic"/></svg></span><kbd>↵</kbd></div>
               </div></div>
             </article>
             <article class="cell" data-reveal>
@@ -544,6 +550,36 @@ Prépare ma revue du matin sur ce projet : les tâches en retard et celles du jo
                 <div class="hm-task"><i class="cb"></i><span>Écrire l’annonce de la bêta</span><em class="td-due today">aujourd’hui</em></div>
                 <div class="hm-task"><i class="cb"></i><span>Réserver le train pour Lyon</span><em class="td-due">lundi</em></div>
               </div></div>
+            </article>
+            <article class="cell c3" data-reveal>
+              <h3>Un terminal sous le projet</h3>
+              <p>Sur Mac, des shells locaux s’ouvrent dans un tiroir sous le projet. Un port local est détecté et s’aperçoit dans le Salon, et une commande en échec peut partir chez Moka.</p>
+              <div class="piece"><pre class="code" aria-label="Un terminal dans le dossier d’Atlas : npm run dev sert le site sur un port local"><i>~/code/atlas</i> <b>main</b>
+$ npm run dev
+<b>  ➜  Local:</b>   http://localhost:5173/
+<b>  ➜  ready in 412 ms</b></pre></div>
+            </article>
+            <article class="cell c3" data-reveal>
+              <h3>Ta boutique à côté de tes notes</h3>
+              <p>Relie une boutique Shopify : ventes, commandes, stock et publicités Meta sont dans le projet. Un bloc <code>shopify</code> affiche les chiffres dans une note.</p>
+              <div class="piece"><pre class="code" aria-label="Un bloc shopify dans une note : ventes sur 30 jours, commandes à expédier, stock bas et objectif"><i>```shopify</i>
+ventes 30j par jour
+commandes à expédier
+stock &lt; 5
+objectif 5000
+<i>```</i></pre></div>
+            </article>
+            <article class="cell" data-reveal>
+              <h3>Vue Design</h3>
+              <p>Les agents capturent chaque changement visible. La vue Design montre les captures en grand à côté de la conversation, et ton site local à la largeur d’un ordinateur, d’une tablette ou d’un téléphone.</p>
+            </article>
+            <article class="cell" data-reveal>
+              <h3>Lance-la sur un simulateur</h3>
+              <p>Sur Mac, l’onglet Mobile trouve l’app dans ton projet (Expo, React Native, Flutter, Xcode, Gradle), la lance sur un simulateur iOS ou un émulateur Android et montre l’écran de l’appareil.</p>
+            </article>
+            <article class="cell" data-reveal>
+              <h3>Modèles locaux, en un clic</h3>
+              <p>Qwen, Llama, Mistral, Gemma, DeepSeek : Studio les installe avec Ollama, sur ton Mac ou ton serveur, et te dit quelles tailles tourneront bien sur ta machine.</p>
             </article>
             <article class="cell c6 duo" data-reveal>
               <div class="cell-txt">
@@ -605,7 +641,7 @@ Prépare ma revue du matin sur ce projet : les tâches en retard et celles du jo
           <h2 data-reveal>Gratuit. Libre. Partout.</h2>
           <p class="price lead" data-reveal><span class="o-calc"><code>= 12 × 0</code><b>0 €</b></span>Toutes les fonctions, sur tous tes appareils, sans palier ni compte.</p>
           <ul class="plats block" data-reveal>
-            <li><h3>Mac</h3><p>Binaire universel d’environ 1 Mo, Apple Silicon et Intel. Touch ID, agents Claude Code, mises à jour automatiques.</p><span class="cmd"><code>curl -fsSL https://mtthoas.github.io/Studio/install.sh | sh</code><button type="button" data-copy>Copier</button></span><a class="go sm" href="https://github.com/MTthoas/Studio/releases/latest" rel="noopener">Télécharger</a></li>
+            <li><h3>Mac</h3><p>Binaire universel d’environ 1 Mo, Apple Silicon et Intel. Touch ID, agents Claude Code, terminal de projet, modèles locaux, mises à jour automatiques.</p><span class="cmd"><code>curl -fsSL https://mtthoas.github.io/Studio/install.sh | sh</code><button type="button" data-copy>Copier</button></span><a class="go sm" href="https://github.com/MTthoas/Studio/releases/latest" rel="noopener">Télécharger</a></li>
             <li><h3>iPhone et iPad</h3><p>Face ID, notes vocales transcrites sur l’appareil, pilotage à distance des agents de ton Mac.</p><span class="cmd"><code>./native/iphone.sh</code><button type="button" data-copy>Copier</button></span><a class="go quiet sm" href="https://github.com/MTthoas/Studio#iphone--ipad" rel="noopener">Depuis les sources</a></li>
             <li><h3>Web</h3><p>S’installe comme une application, fonctionne hors ligne, se pose sur n’importe quel hébergement statique.</p><span class="cmd"><code>npm install &amp;&amp; npm run serve</code><button type="button" data-copy>Copier</button></span><a class="go quiet sm" href="https://github.com/MTthoas/Studio#web" rel="noopener">Lancer en local</a></li>
           </ul>
@@ -622,8 +658,10 @@ Prépare ma revue du matin sur ce projet : les tâches en retard et celles du jo
         <div class="qa">
           <div data-reveal><h3>Où sont stockées mes notes ?</h3><p>Sur tes appareils, dans la base locale de l’app. Avec le coffre activé, chaque enregistrement est chiffré en AES-GCM par une clé qui ne quitte jamais l’appareil. Un export JSON chiffré sert de sauvegarde.</p></div>
           <div data-reveal><h3>Que voit l’IA de mes notes ?</h3><p>Seulement celles du projet où tu travailles, et uniquement quand tu la sollicites. Les notes chiffrées et celles taguées <code>#privé</code> ne sont jamais envoyées. Les appels partent directement de l’app vers le fournisseur que tu as choisi.</p></div>
-          <div data-reveal><h3>Faut-il une clé d’API pour utiliser l’IA ?</h3><p>Non. Sur Mac, Studio peut passer par le Claude Code déjà installé sur ta machine, avec ton abonnement. Tu peux aussi brancher Claude, OpenAI ou un modèle local avec ta propre clé.</p></div>
+          <div data-reveal><h3>Faut-il une clé d’API pour utiliser l’IA ?</h3><p>Non. Sur Mac, Studio peut passer par le Claude Code déjà installé sur ta machine, avec ton abonnement. Tu peux aussi brancher Claude ou OpenAI avec ta propre clé, ou un modèle local installé depuis Studio avec Ollama : sans clé, et rien ne quitte la machine.</p></div>
           <div data-reveal><h3>Un agent peut-il casser mon dépôt ?</h3><p>En mode Modifier, il travaille dans une copie isolée : ton dossier n’est jamais touché, et rien n’est publié sans ton clic. Aucune commande ne s’exécute tant que tu ne l’as pas autorisée.</p></div>
+          <div data-reveal><h3>Les agents peuvent-ils tourner sur un modèle local ?</h3><p>Oui. Avec le modèle sur Auto, Studio range chaque consigne dans un niveau (léger, courant, profond, interface), et tu choisis le modèle de chaque niveau : Claude, ou un modèle local installé avec Ollama.</p></div>
+          <div data-reveal><h3>Les agents peuvent-ils travailler en mon absence ?</h3><p>Oui. Une consigne peut partir à une heure donnée, à intervalle régulier, ou à la réouverture de la fenêtre de 5 heures de ton abonnement. Depuis ton iPhone, tu suis les agents de ton Mac et tu leur réponds.</p></div>
           <div data-reveal><h3>Comment mes appareils se synchronisent-ils sans serveur ?</h3><p>Ils se parlent en direct (WebRTC), après une courte poignée de main chiffrée. Sans réseau, un paquet chiffré s’envoie par AirDrop ou Messages.</p></div>
           <div data-reveal><h3>Puis-je en faire un produit fermé ?</h3><p>Non, c’est le sens de l’AGPL : toute version modifiée ou proposée comme service doit publier son code. Une double licence est possible sur demande.</p></div>
         </div>
