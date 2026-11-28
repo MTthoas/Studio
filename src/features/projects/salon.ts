@@ -15,6 +15,7 @@ import * as quota from '../../integrations/quota.ts';
 import * as usage from '../../integrations/usage.ts';
 import { syncFeed, nameOf, live, working, copyStage, copyAct, answerHTML, modelName, modelOptions, EFFORTS, cleanUp, sideMenu, machineOptions, keepMachine } from './sessions.ts';
 import * as infra from './infra.ts';
+import * as pub from './pubcard.ts';
 import * as archived from './archive.ts';
 import { fold } from '../../lib/fuzzy.ts';
 import * as saved from './drafts.ts';
@@ -496,12 +497,16 @@ function itemsOf(d: Detail, crew: Crew, board: BoardMsg[]): { items: Item[]; ask
 
 /** Carte « résultat » d'après l'état de la copie de l'agent : à publier, PR ouverte, fusionné.
  *  L'agent attend une réponse (`ask`) : son travail n'est pas fini, on ne propose pas encore de publier. */
-function resultHTML(t: Thread, d: Detail, ask: boolean): string {
+function resultHTML(t: Thread, d: Detail, ask: boolean, agent: string): string {
   const wt = d.worktree || t.s.worktree, w = wt ? S.trees.find(x => x.name === wt) : undefined;
-  if (!w || t.group === 'work') return '';
+  if (!w) return '';
   const st = copyStage(w), n = (d.files ?? t.s.files).length, lines = d.lines ?? t.s.lines;
   const title = w.subject || (t.s.firstPrompt ? oneLine(t.s.firstPrompt, 80) : '') || 'Le travail de l’équipe';
-  const meta = [n ? `${n} fichier${n > 1 ? 's' : ''}` : '', lines && (lines.add || lines.del) ? `+${lines.add} −${lines.del}` : '', w.branch].filter(Boolean).map(esc).join(' · ');
+  const counts = [n ? `${n} fichier${n > 1 ? 's' : ''}` : '', lines && (lines.add || lines.del) ? `+${lines.add} −${lines.del}` : ''].filter(Boolean);
+  // « Publier la PR » ouvre la carte de publication à la place de celle-ci (pubcard.ts), même si l'équipe s'est remise au travail.
+  if (p && pub.shown(p.id, w.name, st === 'merged')) return pub.html(p.id, w.name, { title, meta: counts.map(esc).join(' · '), files: d.files ?? t.s.files, agent });
+  if (t.group === 'work') return '';
+  const meta = [...counts, w.branch].filter(Boolean).map(esc).join(' · ');
   const a = esc(w.name);
   const all = d.files ?? t.s.files, fl = all.length ? `<details class="sl-files"><summary>${icon('chevron')}<span>Fichiers</span></summary><div>${all.slice(0, 14).map(f => `<code title="${esc(f)}">${esc(shortPath(f))}</code>`).join('')}${all.length > 14 ? `<small>+${all.length - 14}</small>` : ''}</div></details>` : '';
   if (st === 'review' && ask) return '';
@@ -585,7 +590,7 @@ function blocksOf(t: Thread, d: Detail | undefined, crew: Crew): { blocks: Block
     blocks.push({ key: `q|${q.id}`, html: msgHTML(crew.me, ms(q.at), plain(q.text) + attach.galleryHTML(q.images), { cls: 'queued', tag: `${icon('history')}en attente` }) });
   blocks.push(...pending(id, [...d.actions.filter(a => a.kind === 'prompt').slice(-5), ...queued], crew));
   if (work) blocks.push({ key: 'working', html: typing(crew, d) });
-  const res = resultHTML(t, d, ask);
+  const res = resultHTML(t, d, ask, crew.main.name);
   if (res) blocks.push({ key: 'result', html: res });
   return { blocks, ask };
 }
@@ -951,7 +956,7 @@ const pin = (f: HTMLElement | null | undefined): void => {
   f.addEventListener('scroll', () => bottomed.set(f, f.scrollHeight - f.scrollTop - f.clientHeight < 60), { passive: true });
 };
 /** Le bouton d'envoi s'allume dès qu'il y a quelque chose à envoyer. */
-const ready = (): void => { const f = root?.querySelector('.sl-comp'); f?.classList.toggle('sl-ready', !!root?.querySelector('textarea')?.value.trim() || attach.count(f as Element) > 0); };
+const ready = (): void => { const f = root?.querySelector('.sl-comp'); f?.classList.toggle('sl-ready', !!root?.querySelector<HTMLTextAreaElement>('.sl-comp textarea')?.value.trim() || attach.count(f as Element) > 0); };
 /** Place de chaque fil dans la liste, avant qu'elle soit redessinée. */
 const rowTops = (list: HTMLElement): Map<string, number> => new Map(Array.from(list.querySelectorAll<HTMLElement>('.sl-row'), x => [x.dataset.id ?? '', x.getBoundingClientRect().top]));
 /** Liste redessinée : un fil qui change de place y glisse (il remonte quand il se remet au travail), un nouveau apparaît. */
@@ -971,7 +976,7 @@ function paint(): void {
   const th = threads(), id = curId(th), cur = th.find(t => t.id === id), d = id ? S.detail.get(id) : undefined;
   // Choix automatique : on s'y tient (en mémoire seulement), sinon la vue saute vers chaque fil qui se met à bouger.
   if (id && S.loaded && !chosen.has(p.id)) chosen.set(p.id, id);
-  const feed = need('[data-sl-feed]', root), ta = need<HTMLTextAreaElement>('textarea', root), key = `${p.id}/${id}`; pin(feed);
+  const feed = need('[data-sl-feed]', root), ta = need<HTMLTextAreaElement>('.sl-comp textarea', root), key = `${p.id}/${id}`; pin(feed);
   // Un fil lu n'est plus « à toi » (sauf s'il y a une copie à publier, voir `threads`).
   if (cur && cur.group !== 'work' && (seen[cur.id] ?? 0) < cur.act) { seen[cur.id] = cur.act; keepSeen(); }
   // Autre fil : le brouillon du précédent est gardé, celui-ci est repris, le fil repart du bas.
@@ -996,6 +1001,7 @@ function paint(): void {
   const end = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 60 || performance.now() < glideEnd;
   const before = switched ? null : new Set(Array.from(feed.children, x => (x as HTMLElement).dataset.k));
   const changed = syncFeed(feed, blocks);
+  pub.after(feed);
   attach.hydrate(feed, p.id);
   // Seuls les blocs vraiment nouveaux s'animent (un bloc redessiné garde sa place sans rejouer son entrée).
   // Un message « envoi… » remplacé par sa version écrite par le Mac n'est pas du neuf : il ne rejoue pas son entrée.
@@ -1071,7 +1077,7 @@ function resolved(text: string, isReply: boolean): saved.Choice {
   return { model: a.model, effort: c.effort || a.effort };
 }
 function showAuto(): void {
-  const box = root?.querySelector<HTMLElement>('[data-sl-auto]'), text = root?.querySelector('textarea')?.value.trim() ?? ''; if (!box) return;
+  const box = root?.querySelector<HTMLElement>('[data-sl-auto]'), text = root?.querySelector<HTMLTextAreaElement>('.sl-comp textarea')?.value.trim() ?? ''; if (!box) return;
   const on = picked().model === AUTO && !!text, id = curId();
   let t = ''; if (on) { const a = pickFor(text, { read: sel('mode')?.value === 'read', reply: !!id }), l = autoLabel(a); t = `${l.model}${picked().effort ? '' : ` · ${l.effort}`}`; box.title = `Auto : ${a.why}`; }
   if (box.textContent !== tr(t)) box.textContent = t;
@@ -1098,7 +1104,7 @@ async function send(quick = ''): Promise<void> {
   if (!root || !p || busy) return;
   const form = need<HTMLFormElement>('.sl-comp', root), n = quick ? 0 : attach.count(form);
   if (n) { const why = attach.blocked(form); if (why) { toast(why); return; } }
-  const ta = need<HTMLTextAreaElement>('textarea', root), text = quick || ta.value.trim() || (n ? attach.DEFAULT_PROMPT : ''); if (!text) return;
+  const ta = need<HTMLTextAreaElement>('.sl-comp textarea', root), text = quick || ta.value.trim() || (n ? attach.DEFAULT_PROMPT : ''); if (!text) return;
   const id = curId(), btn = need<HTMLButtonElement>('[data-sl-send]', root), pid = p.id, key = `${pid}/${id}`;
   if (id.startsWith('run:')) { toast('L’équipe démarre : réessaie dans un instant.'); return; }
   // Notes citées `[[Titre]]` : leur contenu part scellé, la consigne n'en garde que les titres (comme l'onglet Claude Code).
@@ -1141,7 +1147,7 @@ async function send(quick = ''): Promise<void> {
     if (!ok && id) { const l = (pend.get(id) ?? []).filter(x => x !== mine); if (l.length) pend.set(id, l); else pend.delete(id); }
     if (!ok && !quick) {
       // Échec : le texte revient, mais seulement si le champ est encore celui de ce fil et qu'il est vide.
-      const cur = root?.isConnected ? root.querySelector('textarea') : null;
+      const cur = root?.isConnected ? root.querySelector<HTMLTextAreaElement>('.sl-comp textarea') : null;
       if (cur && shown === key && !cur.value) { cur.value = text; drafts.set(key, text); grow(cur); ready(); }
       else if (!drafts.get(key)) drafts.set(key, text);
     }
@@ -1192,10 +1198,11 @@ function bind(r: HTMLElement): void {
     const dz = el.closest<HTMLElement>('[data-sl-design]');
     if (dz && p) {
       const d0 = S.detail.get(curId()), c0 = d0 ? crewOf(d0.subagents ?? [], d0.models ?? []) : null;
-      if (design.click(e, dz, shotsOf(d0, c0), text => { view = 'chat'; const ta = need<HTMLTextAreaElement>('textarea', r); if (!ta.value.trim()) ta.value = text; paint(); grow(ta); ta.focus(); ready(); showAuto(); })) { paint(); return; }
+      if (design.click(e, dz, shotsOf(d0, c0), text => { view = 'chat'; const ta = need<HTMLTextAreaElement>('.sl-comp textarea', r); if (!ta.value.trim()) ta.value = text; paint(); grow(ta); ta.focus(); ready(); showAuto(); })) { paint(); return; }
     }
     if (!t || !p) return;
     const act = t.dataset.sl, pid = p.id;
+    if (pub.click(t, p)) return;
     if (act === 'who') {
       e.preventDefault(); // dans un <summary>, n'ouvre pas la passation
       const w = t.dataset.who ?? '';
@@ -1205,7 +1212,7 @@ function bind(r: HTMLElement): void {
     }
     if (act === 'unprof') { closeProf(); return; }
     if (act === 'routes') { routesMenu(t); return; }
-    if (act === 'view') { view = t.dataset.v === 'design' ? 'design' : 'chat'; paint(); if (view === 'chat') need('textarea', r).focus(); return; }
+    if (act === 'view') { view = t.dataset.v === 'design' ? 'design' : 'chat'; paint(); if (view === 'chat') need('.sl-comp textarea', r).focus(); return; }
     if (act === 'copy' || act === 'quote' || act === 'keep') {
       // Le texte du message tel qu'il est lu, sans l'en-tête ni les gestes ; les blocs repliés sont compris.
       const bd = t.closest('.sl-msg')?.querySelector('.sl-bd'); if (!bd) return;
@@ -1213,7 +1220,7 @@ function bind(r: HTMLElement): void {
       if (!text) return;
       if (act === 'copy') { void navigator.clipboard?.writeText(text).then(() => toast('Message copié'), () => toast('Copie impossible.')); return; }
       if (act === 'quote') {
-        const ta = need<HTMLTextAreaElement>('textarea', r), q = `${oneLine(text, 240).replace(/^/, '> ')}\n\n`;
+        const ta = need<HTMLTextAreaElement>('.sl-comp textarea', r), q = `${oneLine(text, 240).replace(/^/, '> ')}\n\n`;
         ta.value = q + ta.value.replace(/^(> .*\n\n)+/, ''); grow(ta); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); drafts.set(shown, ta.value); ready(); showAuto(); return;
       }
       // Garder en note : une note du projet (son tag), ouverte d'un clic depuis le message de confirmation.
@@ -1224,7 +1231,7 @@ function bind(r: HTMLElement): void {
     if (act === 'rename') { const base = t.dataset.base ?? ''; closeProf(); if (base) renameAgent(base); return; }
     if (act === 'down') { const f = need('[data-sl-feed]', r); f.scrollTo({ top: f.scrollHeight, behavior: calm() ? 'auto' : 'smooth' }); t.hidden = true; return; }
     if (act === 'mention') {
-      const ta = need<HTMLTextAreaElement>('textarea', r), at = `@${t.dataset.name ?? ''} `;
+      const ta = need<HTMLTextAreaElement>('.sl-comp textarea', r), at = `@${t.dataset.name ?? ''} `;
       if (!ta.value.startsWith(at)) ta.value = at + ta.value;
       closeProf(); grow(ta); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); drafts.set(shown, ta.value); ready(); showAuto(); return;
     }
@@ -1245,12 +1252,12 @@ function bind(r: HTMLElement): void {
     }
     if (act === 'suggest') {
       // Jamais par-dessus ce qui est déjà tapé : la suggestion ne remplit qu'un champ vide.
-      const ta = need<HTMLTextAreaElement>('textarea', r), m = sel('mode'); if (ta.value.trim()) { ta.focus(); return; }
+      const ta = need<HTMLTextAreaElement>('.sl-comp textarea', r), m = sel('mode'); if (ta.value.trim()) { ta.focus(); return; }
       ta.value = t.dataset.text ?? ''; if (m) m.value = t.dataset.mode ?? 'edit';
       grow(ta); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); drafts.set(shown, ta.value); ready(); showAuto(); return;
     }
     if (act === 'pick') { const id = t.dataset.id ?? ''; choose(pid, id); paint(); fetchThread(pid, id); void refresh(); }
-    else if (act === 'new') { choose(pid, ''); paint(); need('textarea', r).focus(); }
+    else if (act === 'new') { choose(pid, ''); paint(); need('.sl-comp textarea', r).focus(); }
     else if (act === 'more') { moreOpen = !moreOpen; paint(); }
     else if (act === 'filt') { filt = (t.dataset.f ?? 'all') as Filt; moreOpen = false; paint(); }
     else if (act === 'arch' || act === 'unarch') {
@@ -1271,10 +1278,11 @@ function bind(r: HTMLElement): void {
     else if (act === 'limits') { t.setAttribute('disabled', ''); void quota.limits('enable').then(paint); }
     else if (act === 'tech') openTech(t.dataset.id ?? '');
     else if (act === 'codex') { t.setAttribute('disabled', ''); void bridge.call('project', 'codexOpen', { project: pid, session: t.dataset.id ?? '', app: t.dataset.app ?? 'terminal' }, 15000).then(x => { t.removeAttribute('disabled'); if (!x.ok) toast(x.message ?? 'Reprise impossible.'); }); }
-    else if (act === 'reply') need('textarea', r).focus();
+    else if (act === 'reply') need('.sl-comp textarea', r).focus();
     else if (act === 'now') toggleTeam(r);
     else if (act === 'stop') void bridge.call('agent', 'stop', { run: t.dataset.run ?? '' }, 10000).then(x => { toast(x.ok ? 'Équipe arrêtée' : x.message ?? 'Arrêt impossible.'); void refresh(); });
-    else if (act === 'publish' || act === 'review' || act === 'pr') void gesture(act, t.dataset.wt ?? '', t as HTMLButtonElement);
+    else if (act === 'publish') pub.open(p, t.dataset.wt ?? '');
+    else if (act === 'review' || act === 'pr') void gesture(act, t.dataset.wt ?? '', t as HTMLButtonElement);
   });
   r.addEventListener('submit', e => { e.preventDefault(); void send(); });
   // Survol d'un fil pas encore lu : sa conversation est lue d'avance, le clic l'affiche sans attente.
@@ -1290,7 +1298,7 @@ function bind(r: HTMLElement): void {
     sideMenu({ x: e.clientX, y: e.clientY }, p, id, '', () => { choose(pid, id); paint(); fetchThread(pid, id); });
   });
   r.addEventListener('input', e => { const q = target(e); if (q instanceof HTMLInputElement && q.matches('[data-sl-q]')) { query = q.value; paint(); return; } });
-  r.addEventListener('input', e => { const t = target(e); if (t instanceof HTMLTextAreaElement) { grow(t); showAuto(); ready(); if (p) drafts.set(shown || `${p.id}/${curId()}`, t.value); } });
+  r.addEventListener('input', e => { const t = target(e); if (p && pub.input(t, p.id)) return; if (t instanceof HTMLTextAreaElement) { grow(t); showAuto(); ready(); if (p) drafts.set(shown || `${p.id}/${curId()}`, t.value); } });
   // Revenu en bas du fil à la main : l'invitation « Nouveaux messages » n'a plus lieu d'être.
   r.addEventListener('scroll', e => {
     const f = target(e); if (!f.matches('[data-sl-feed]') || f.scrollHeight - f.scrollTop - f.clientHeight >= 60) return;
@@ -1303,6 +1311,7 @@ function bind(r: HTMLElement): void {
     showAuto();
   });
   r.addEventListener('keydown', e => {
+    if (p && pub.key(e, p)) return; // carte de publication : ⌘⏎, Échap, et Entrée qui n'envoie pas de message
     if (e.key === 'Escape' && (prof || r.classList.contains('sl-now-open'))) { e.preventDefault(); closeProf(); r.classList.remove('sl-now-open'); paint(); return; }
     if (target(e) instanceof HTMLTextAreaElement && e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); void send(); }
     // ↑ dans un champ vide : reprend le dernier message envoyé dans ce fil, pour le corriger ou le renvoyer.
@@ -1325,7 +1334,7 @@ function bind(r: HTMLElement): void {
     if (e.key === '/' && !typing && !e.altKey) { e.preventDefault(); r.querySelector<HTMLInputElement>('[data-sl-q]')?.focus(); return; }
     if (view === 'design' && !typing && !e.altKey) { const d0 = S.detail.get(curId()), c0 = d0 ? crewOf(d0.subagents ?? [], d0.models ?? []) : null; if (design.key(e, shotsOf(d0, c0))) { e.preventDefault(); paint(); return; } }
     if (!e.altKey) return;
-    if (e.code === 'KeyN') { e.preventDefault(); choose(p.id, ''); paint(); need('textarea', r).focus(); return; }
+    if (e.code === 'KeyN') { e.preventDefault(); choose(p.id, ''); paint(); need('.sl-comp textarea', r).focus(); return; }
     if (typing || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
     const rows = [...r.querySelectorAll<HTMLElement>('[data-sl-list] .sl-pick')], i = rows.findIndex(x => x.getAttribute('aria-current') === 'true');
     const next = rows[e.key === 'ArrowUp' ? Math.max(0, i - 1) : Math.min(rows.length - 1, i + 1)];
@@ -1370,8 +1379,9 @@ export function mount(box: HTMLElement, proj: Project, o: { openTech: (session: 
     box.dataset.slBound = '1'; bind(box);
     box.addEventListener('toggle', e => { const el = e.target; if (el instanceof HTMLDetailsElement && el.matches('[data-sl-use]')) useOpen = el.open; }, true);
   }
+  pub.onChange(() => { if (root?.isConnected) paint(); }, () => p ? loadTrees(p.id) : Promise.resolve());
   attach.bind(box); // coller, déposer ou choisir des images : par fil (`data-at-key`, posé par paint)
-  const ta = need<HTMLTextAreaElement>('textarea', box);
+  const ta = need<HTMLTextAreaElement>('.sl-comp textarea', box);
   compose.bind(need('.sl-comp', box), ta, composeSource, () => { grow(ta); drafts.set(shown, ta.value); ready(); showAuto(); });
   // La jauge se met à jour seule ; l'abonnement n'est pris qu'une fois (il repeint le Salon monté à ce moment-là).
   if (!quotaHooked) { quotaHooked = true; quota.onChange(() => { if (root?.isConnected) paint(); }); archived.onChange(() => { if (root?.isConnected) paint(); }); }

@@ -1273,13 +1273,122 @@ async function workRepo(p: Project): Promise<string | undefined> {
   return p.repos[0];
 }
 
-async function publish(p: Project, wt: string, root: HTMLElement | null): Promise<void> {
+// ---------- Publication (moteur partagé : fenêtre `publish` ailleurs, carte en ligne dans le Salon `pubcard.ts`) ----------
+export { KINDS, retype, TYPES };
+/** Ce qu'il faut savoir d'une copie avant de la publier : lu une fois à l'ouverture (fenêtre ou carte). */
+export interface PubPrep {
+  repo: string | null; canPR: boolean;
+  /** Dépôts où le travail sera publié : celui des agents et chaque copie sœur qui a du travail (même branche partout). */
+  targets: string[];
+  /** Branche déjà poussée et pas encore fusionnée : publier la met à jour (et sa PR). */
+  pushedBranch: string;
+  run: AgentRun | undefined; working: Promise<Diff>; prCtx: Promise<PRContext> | null;
+  /** Description de la PR (en anglais), écrite au premier clic où une PR est demandée, gardée pour « Réessayer ». */
+  description: Promise<string> | null;
+}
+/** Une publication finie, dans l'ordre où la fenêtre et la carte la racontent. */
+export type PubOutcome =
+  | { kind: 'error'; message: string; log: string[] }
+  | { kind: 'blocked'; conflicts: string[]; log: string[] }
+  | { kind: 'none'; step: string; log: string[] }
+  | { kind: 'pushed'; branches: { repo: string; branch: string }[]; log: string[] }
+  | { kind: 'pr'; opened: { repo: string; number: number; url: string; updated: boolean }[]; failed: { repo: string; branch: string; url: string; text: string }[]; perm: boolean; desc: string; log: string[] };
+export interface PubAsk { message: string; branch: string; title: string; wantPR: (repo: string) => boolean }
+
+/** Nom de branche refusé par l'orchestrateur : minuscules, chiffres, - _ . / (ex. feat/export-pdf). */
+export const badBranch = (b: string): boolean => !/^[a-z0-9][a-z0-9._/-]{0,89}$/.test(b) || b.includes('..') || b.endsWith('/');
+
+/** Lit ce que la publication de la copie demande. Appel venu d'une autre vue (Salon) : copies et lancements du projet
+ *  sont relus s'ils sont d'un autre projet ; des copies déjà en mémoire suffisent (rafraîchies en arrière-plan). */
+export async function publishPrep(p: Project, wt: string, box: HTMLElement | null = null): Promise<PubPrep> {
+  const reads: Promise<unknown>[] = [];
+  if (treesFor !== p.id || !box) {
+    restoreTrees(p.id);
+    const rf = refreshTrees(p).catch(() => undefined);
+    if (!trees.length) reads.push(rf);
+  }
+  if (cur?.p.id !== p.id) reads.push(bridge.call('agent', 'list', { project: p.id }, 10000).then(l => { if (l.ok) runs = l.runs as AgentRun[]; }));
+  await Promise.all(reads);
   // La première demande faite dans cette copie (les suivantes sont souvent « continue », « résous le conflit »…).
-  const mine = runs.filter(r => r.worktree === wt), run = mine[mine.length - 1], repo = await workRepo(p);
-  const canPR = !!repo && github.connected();
-  // Dépôts où le travail sera publié : celui des agents et chaque copie sœur qui a du travail (même branche partout).
+  const mine = runs.filter(r => r.worktree === wt), run = mine[mine.length - 1], repo = (await workRepo(p)) ?? null;
   const t0 = trees.find(t => t.name === wt), sisWork = (t0?.sisters ?? []).filter(hasWork).map(s => s.repo);
   const targets = [...(!t0 || hasWork(t0) || !sisWork.length ? [repo ?? ''] : []), ...sisWork].filter(Boolean);
+  // Un seul diff de la copie, partagé par le message de commit et la description de la PR ; lus dès l'ouverture (avant
+  // que la publication ne touche la copie). L'IA n'écrit la description qu'au clic, et seulement si une PR est demandée.
+  const working = readDiff(p, wt, 'working');
+  return { repo, canPR: !!repo && github.connected(), targets, pushedBranch: t0?.pushed && !t0.merged ? t0.branch : '', run, working, prCtx: repo ? prContext(p, wt, working) : null, description: null };
+}
+/** Message proposé : celui de l'agent, sinon tiré des fichiers ; `ai` rédige d'après le diff quand une IA est connectée. */
+export const publishSuggest = (p: Project, wt: string, prep: PubPrep, forceAI = false) => suggestMessage(p, wt, prep.run, forceAI, forceAI ? undefined : prep.working);
+
+/** Lance la publication (remise sur main, un commit, push) et ouvre les PR demandées. `onLog` reçoit chaque étape de la
+ *  tâche ; `alive` faux arrête le suivi (la tâche continue côté Mac) et rend null. `onTrees` suit chaque relecture des copies. */
+export async function publishRun(p: Project, wt: string, prep: PubPrep, ask: PubAsk, hooks: { onLog?: (log: string[], running: boolean) => void; alive?: () => boolean; onTrees?: () => void } = {}): Promise<PubOutcome | null> {
+  const alive = hooks.alive ?? (() => true), { repo, canPR } = prep;
+  const anyPR = !!repo && (prep.targets.length ? prep.targets : [repo]).some(ask.wantPR);
+  if (anyPR && prep.prCtx) prep.description ??= prep.prCtx.then(writePR); // « Réessayer » ne la fait pas réécrire
+  const started = await native.call('agent', 'publish', { project: p.id, worktree: wt, message: ask.message, branch: ask.branch, author: await github.author() }, 30000);
+  if (!started.ok) return { kind: 'error', message: started.message ?? 'Échec.', log: [] };
+  const trees0 = () => void refreshTrees(p).then(() => hooks.onTrees?.(), () => undefined);
+  trees0();
+  let j: Job | null = null;
+  for (;;) {
+    const r = await native.call('agent', 'job', { job: String(started.job) }, 10000) as unknown as Job & { ok: boolean };
+    if (!alive()) return null;
+    if (!r.ok) { trees0(); return { kind: 'error', message: 'Tâche perdue.', log: j?.log ?? [] }; }
+    j = r; hooks.onLog?.(j.log, j.status === 'running');
+    if (j.status !== 'running') break;
+    await new Promise(res => setTimeout(res, 1500));
+  }
+  trees0();
+  const log = j.log;
+  if (j.status === 'blocked') return { kind: 'blocked', conflicts: j.conflicts, log };
+  if (j.status !== 'done') return { kind: 'error', message: j.step || 'La publication a échoué.', log };
+  // Une branche par dépôt modifié (copies sœurs) ; une app Mac ancienne ne donne que celle du dépôt des agents.
+  const pushed = (j.pushed?.length ? j.pushed : j.branch ? [{ repo: '', branch: j.branch }] : []).map(x => ({ repo: x.repo || repo || '', branch: x.branch }));
+  // Rien n'a été poussé : le travail était déjà fusionné dans la branche principale.
+  if (!pushed.length) return { kind: 'none', step: j.step, log };
+  const names = pushed.map(x => x.repo).filter(r => r && ask.wantPR(r));
+  if (!repo || !names.length) return { kind: 'pushed', branches: pushed, log };
+  hooks.onLog?.([...log, names.length > 1 ? `Description de la PR (en anglais), puis ouverture de ${names.length} pull requests` : 'Description de la PR (en anglais), puis ouverture de la pull request'], true);
+  const desc = await (prep.description ?? '');
+  // Les PR de plusieurs dépôts se citent entre elles : elles se relisent et se fusionnent ensemble.
+  const linked = (me: string) => names.length > 1 ? names.filter(n => n !== me).map(n => `${n}@${pushed.find(x => x.repo === n)?.branch ?? ''}`).join(', ') : '';
+  const opened: { repo: string; number: number; url: string; updated: boolean }[] = [], failed: { repo: string; branch: string; url: string; text: string }[] = [];
+  let perm = !canPR;
+  for (const { repo: r, branch } of pushed) {
+    if (!r || !names.includes(r)) continue;
+    let base = 'main';
+    const bodyFor = prBody(desc, linked(r));
+    try {
+      if (!canPR) throw new Error('GitHub n’est pas connecté dans Studio');
+      base = (await github.project(r)).info.default_branch;
+      const pr = await github.createPull(r, { head: branch, base, title: ask.title, body: bodyFor });
+      opened.push({ repo: r, number: pr.number, url: pr.html_url, updated: false });
+    } catch (e) {
+      const why = errMsg(e).replace(/\.$/, ''), status = e instanceof github.GitHubError ? e.status : 0;
+      if (/already exists/i.test(why)) { // branche déjà proposée : ses commits sont à jour, sa description aussi désormais
+        try {
+          const n = (await github.branchPulls(r, { fresh: true })).get(branch);
+          if (n?.state === 'open') { await github.updatePull(r, n.number, { body: bodyFor }); opened.push({ repo: r, number: n.number, url: n.url, updated: true }); }
+        } catch { /* la description d'avant reste */ }
+        continue;
+      }
+      // Le push vient de réussir (identifiants Git du Mac) : un 404 ici veut dire que le jeton de Studio ne voit pas ce dépôt.
+      if (status === 403 || status === 404 || /not accessible/i.test(why)) perm = true;
+      const text = status === 404 ? `Le dépôt ${r} existe (la branche vient d’y être poussée), mais ton jeton GitHub n’y a pas accès : un jeton à accès précis ne voit que les dépôts choisis à sa création. Ajoute ${r} dans « Repository access » du jeton sur GitHub (avec « Pull requests : lecture et écriture »), ou remplace-le dans Réglages → GitHub.`
+        : status === 403 ? `Ton jeton GitHub voit ${r} mais n’a pas le droit d’y ouvrir une pull request (permission « Pull requests : lecture et écriture »).`
+        : `La pull request de ${r} n’a pas pu être ouverte d’ici : ${why}.`;
+      failed.push({ repo: r, branch, url: compareURL(r, base, branch, ask.title, bodyFor), text });
+    }
+  }
+  trees0();
+  return { kind: 'pr', opened, failed, perm: perm && failed.length > 0, desc, log };
+}
+
+/** Fenêtre de publication (Espace agents, onglet Claude Code) ; le Salon publie dans le fil, voir `pubcard.ts`. */
+async function publish(p: Project, wt: string, root: HTMLElement | null): Promise<void> {
+  const prep = await publishPrep(p, wt, root), { repo, targets } = prep;
   const m = modal({ cls: 'ag-pub', title: 'Publier le travail de l’agent', html: `
     <div class="pub-type"><span>Type</span><div class="ag-seg" role="radiogroup" aria-label="Type de changement">${KINDS.map(([k, l]) => `<label title="${esc(l)}"><input type="radio" name="ctype" value="${k}"><span>${k}</span></label>`).join('')}</div></div>
     <label class="pj-field"><span class="ag-msg-h">Message de commit<em class="ag-sug" hidden>${icon('sparkle')}proposé par l’IA</em></span><textarea class="field ag-msg" name="msg" rows="3" spellcheck="false" required></textarea></label>
@@ -1295,10 +1404,9 @@ async function publish(p: Project, wt: string, root: HTMLElement | null): Promis
   const branchIn = need<HTMLInputElement>('[name=branch]', m.node);
   let editedMsg = false, editedTitle = false, editedBranch = false;
   // Branche déjà poussée et pas encore fusionnée : publier la met à jour (et sa PR) ; un autre nom crée une branche à part.
-  const tree = trees.find(t => t.name === wt);
-  if (tree?.pushed && !tree.merged && tree.branch) {
-    branchIn.value = tree.branch; editedBranch = true;
-    branchIn.closest('.pj-field')?.insertAdjacentHTML('beforeend', `<em class="modal-hint">${esc(tree.branch)} est déjà poussée : publier met à jour sa PR. Un autre nom crée une nouvelle branche (qui contiendra aussi ce travail déjà poussé).</em>`);
+  if (prep.pushedBranch) {
+    branchIn.value = prep.pushedBranch; editedBranch = true;
+    branchIn.closest('.pj-field')?.insertAdjacentHTML('beforeend', `<em class="modal-hint">${esc(prep.pushedBranch)} est déjà poussée : publier met à jour sa PR. Un autre nom crée une nouvelle branche (qui contiendra aussi ce travail déjà poussé).</em>`);
   }
   const subject = () => msg.value.split('\n')[0]?.trim() ?? '';
   const typeOf = () => new RegExp(`^(${TYPES})`).exec(subject())?.[1] ?? '';
@@ -1322,7 +1430,7 @@ async function publish(p: Project, wt: string, root: HTMLElement | null): Promis
   const propose = async (forceAI = false) => {
     resug.hidden = true; drafting = true; ready(); sugSt.innerHTML = '<span class="spin"></span>Lecture des changements…';
     try {
-      const s = await suggestMessage(p, wt, run, forceAI, forceAI ? undefined : working);
+      const s = await publishSuggest(p, wt, prep, forceAI);
       if (!m.node.isConnected) return;
       if (!editedMsg) { msg.value = s.draft; sync(); }
       if (!s.ai) {
@@ -1338,89 +1446,39 @@ async function publish(p: Project, wt: string, root: HTMLElement | null): Promis
     resug.hidden = !ai.ready();
   };
   resug.onclick = () => { editedMsg = false; void propose(true); };
-  // Un seul diff de la copie, partagé par le message de commit et la description de la PR.
-  const working = readDiff(p, wt, 'working');
   void propose();
-  // Diffs lus dès l'ouverture (avant que la publication ne touche la copie) ; l'IA n'écrit la description qu'au clic,
-  // et seulement si une PR est demandée : annuler ou pousser sans PR ne coûte aucun jeton.
-  const prCtx = repo ? prContext(p, wt, working) : null;
-  let description: Promise<string> | null = null;
   need('[data-x]', m.node).onclick = m.close;
-
-  /** Suit la tâche de l'orchestrateur jusqu'à sa fin (elle continue côté Mac si la fenêtre est fermée). */
-  const follow = async (id: string): Promise<Job | null> => {
-    for (;;) {
-      const j = await native.call('agent', 'job', { job: id }, 10000) as unknown as Job & { ok: boolean };
-      if (!m.node.isConnected) return null;
-      if (!j.ok) { st.innerHTML = '<p class="rv-status err">Tâche perdue.</p>'; return null; }
-      st.innerHTML = `<ol class="ag-steps">${j.log.map((l, i) => `<li${i === j.log.length - 1 && j.status === 'running' ? ' class="on"' : ''}>${i === j.log.length - 1 && j.status === 'running' ? '<span class="spin"></span>' : ''}${esc(l)}</li>`).join('')}</ol>`;
-      if (j.status !== 'running') return j;
-      await new Promise(r => setTimeout(r, 1500));
-    }
-  };
+  const steps = (log: string[], running: boolean) => `<ol class="ag-steps">${log.map((l, i) => `<li${i === log.length - 1 && running ? ' class="on"' : ''}>${i === log.length - 1 && running ? '<span class="spin"></span>' : ''}${esc(l)}</li>`).join('')}</ol>`;
 
   go.onclick = async () => {
     const wantPR = !!repo && !!m.node.querySelector<HTMLInputElement>('[name=pr]')?.checked;
     const message = msg.value.trim(); if (!message) { msg.focus(); return; }
-    const prTitle = title?.value.trim() || subject();
     const wanted = branchIn.value.trim();
-    if (!/^[a-z0-9][a-z0-9._/-]{0,89}$/.test(wanted) || wanted.includes('..') || wanted.endsWith('/')) { st.innerHTML = '<p class="rv-status err">Nom de branche invalide : minuscules, chiffres, - _ . / (ex. feat/export-pdf).</p>'; branchIn.focus(); return; }
+    if (badBranch(wanted)) { st.innerHTML = '<p class="rv-status err">Nom de branche invalide : minuscules, chiffres, - _ . / (ex. feat/export-pdf).</p>'; branchIn.focus(); return; }
     go.disabled = true; st.innerHTML = '<p class="rv-status"><span class="spin"></span>Démarrage…</p>';
-    if (wantPR && prCtx) description ??= prCtx.then(writePR); // « Réessayer » ne la fait pas réécrire
-    const started = await native.call('agent', 'publish', { project: p.id, worktree: wt, message, branch: wanted, author: await github.author() }, 30000);
-    if (!started.ok) { st.innerHTML = `<p class="rv-status err">${esc(started.message ?? 'Échec.')}</p>`; go.disabled = false; return; }
-    void refreshTrees(p).then(() => root ? paint(root, p) : undefined);
-    const j = await follow(String(started.job));
-    void refreshTrees(p).then(() => root ? paint(root, p) : undefined);
-    if (!j) return;
-    if (j.status === 'blocked') {
-      st.insertAdjacentHTML('beforeend', `<div class="ag-prfail"><p class="err">L’agent n’a pas pu résoudre ces conflits : ${j.conflicts.map(f => `<code>${esc(f)}</code>`).join(', ')}.</p><p>Retire les marqueurs <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</code> / <code>&gt;&gt;&gt;&gt;&gt;&gt;&gt;</code> dans VS Code, ou réponds à l’agent dans sa session, puis publie à nouveau.</p><div class="ag-prfail-act"><button class="btn" data-ag-open>${icon('code')}Ouvrir dans VS Code</button></div></div>`);
+    const o = await publishRun(p, wt, prep, { message, branch: wanted, title: title?.value.trim() || subject(), wantPR: () => wantPR }, {
+      onLog: (log, running) => { st.innerHTML = steps(log, running); },
+      alive: () => m.node.isConnected,
+      onTrees: () => root ? paint(root, p) : undefined,
+    });
+    if (!o) return;
+    if (o.kind === 'error') { st.innerHTML = o.log.length ? steps(o.log, false) : `<p class="rv-status err">${esc(o.message)}</p>`; go.disabled = false; return; }
+    if (o.kind === 'blocked') {
+      st.insertAdjacentHTML('beforeend', `<div class="ag-prfail"><p class="err">L’agent n’a pas pu résoudre ces conflits : ${o.conflicts.map(f => `<code>${esc(f)}</code>`).join(', ')}.</p><p>Retire les marqueurs <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</code> / <code>&gt;&gt;&gt;&gt;&gt;&gt;&gt;</code> dans VS Code, ou réponds à l’agent dans sa session, puis publie à nouveau.</p><div class="ag-prfail-act"><button class="btn" data-ag-open>${icon('code')}Ouvrir dans VS Code</button></div></div>`);
       st.querySelector<HTMLElement>('[data-ag-open]')!.onclick = async () => { const r = await native.call('project', 'open', { project: p.id, app: 'vscode', worktree: wt }, 15000); if (!r.ok) toast(r.message ?? 'Impossible d’ouvrir.'); };
       go.disabled = false; go.innerHTML = `${icon('upload')}Réessayer`; return;
     }
-    if (j.status !== 'done') { go.disabled = false; return; }
-    // Une branche par dépôt modifié (copies sœurs) ; une app Mac ancienne ne donne que celle du dépôt des agents.
-    const pushed = (j.pushed?.length ? j.pushed : j.branch ? [{ repo: '', branch: j.branch }] : []).map(x => ({ repo: x.repo || repo || '', branch: x.branch }));
-    // Rien n'a été poussé : le travail était déjà fusionné dans la branche principale.
-    if (!pushed.length) { m.close(); toast(j.step); return; }
-    const names = pushed.map(x => x.repo).filter(Boolean);
-    if (!wantPR || !names.length) { m.close(); toast(`Branche ${pushed[0]!.branch} poussée${names.length > 1 ? ` dans ${names.join(', ')}` : ''}`); return; }
-    st.insertAdjacentHTML('beforeend', `<p class="rv-status"><span class="spin"></span>Description de la PR (en anglais), puis ouverture de ${names.length > 1 ? `${names.length} pull requests` : 'la pull request'}…</p>`);
-    const desc = await (description ?? '');
-    // Les PR de plusieurs dépôts se citent entre elles : elles se relisent et se fusionnent ensemble.
-    const linked = (me: string) => names.length > 1 ? names.filter(n => n !== me).map(n => `${n}@${pushed.find(x => x.repo === n)?.branch ?? ''}`).join(', ') : '';
-    const opened: { repo: string; number: number; url: string }[] = [], failed: string[] = [];
-    let perm = !canPR;
-    for (const { repo: r, branch } of pushed) {
-      if (!r) continue;
-      let base = 'main';
-      const bodyFor = prBody(desc, linked(r));
-      try {
-        if (!canPR) throw new Error('GitHub n’est pas connecté dans Studio');
-        base = (await github.project(r)).info.default_branch;
-        const pr = await github.createPull(r, { head: branch, base, title: prTitle, body: bodyFor });
-        opened.push({ repo: r, number: pr.number, url: pr.html_url });
-      } catch (e) {
-        const why = errMsg(e).replace(/\.$/, ''), status = e instanceof github.GitHubError ? e.status : 0;
-        if (/already exists/i.test(why)) { // branche déjà proposée : ses commits sont à jour, sa description aussi désormais
-          try { const n = (await github.branchPulls(r, { fresh: true })).get(branch); if (n?.state === 'open') await github.updatePull(r, n.number, { body: bodyFor }); } catch { /* la description d'avant reste */ }
-          continue;
-        }
-        // Le push vient de réussir (identifiants Git du Mac) : un 404 ici veut dire que le jeton de Studio ne voit pas ce dépôt.
-        if (status === 403 || status === 404 || /not accessible/i.test(why)) perm = true;
-        const text = status === 404 ? `Le dépôt ${r} existe (la branche vient d’y être poussée), mais ton jeton GitHub n’y a pas accès : un jeton à accès précis ne voit que les dépôts choisis à sa création. Ajoute ${r} dans « Repository access » du jeton sur GitHub (avec « Pull requests : lecture et écriture »), ou remplace-le dans Réglages → GitHub.`
-          : status === 403 ? `Ton jeton GitHub voit ${r} mais n’a pas le droit d’y ouvrir une pull request (permission « Pull requests : lecture et écriture »).`
-          : `La pull request de ${r} n’a pas pu être ouverte d’ici : ${why}.`;
-        failed.push(`<p>${icon('check')}Branche <code>${esc(branch)}</code> poussée sur ${esc(r)}.</p><p class="err">${esc(text)}</p><div class="ag-prfail-act"><a class="btn btn-primary" href="${esc(compareURL(r, base, branch, prTitle, bodyFor))}" target="_blank" rel="noopener">${icon('github')}Ouvrir la PR de ${esc(r.split('/')[1] ?? r)} sur GitHub</a></div>`);
-      }
-    }
-    if (!failed.length) {
+    if (o.kind === 'none') { m.close(); toast(o.step); return; }
+    if (o.kind === 'pushed') { const names = o.branches.map(x => x.repo).filter(Boolean); m.close(); toast(`Branche ${o.branches[0]!.branch} poussée${names.length > 1 ? ` dans ${names.join(', ')}` : ''}`); return; }
+    const many = new Set(o.opened.map(x => x.repo)).size + o.failed.length > 1;
+    if (!o.failed.length) {
       m.close();
-      toast(opened.length ? opened.map(o => `PR #${o.number}${names.length > 1 ? ` (${o.repo.split('/')[1] ?? o.repo})` : ''}`).join(', ') + (opened.length > 1 ? ' ouvertes' : ' ouverte') : 'Branche poussée : sa pull request est à jour.');
-      for (const o of opened) window.open(o.url, '_blank', 'noopener');
+      const fresh = o.opened.filter(x => !x.updated);
+      toast(fresh.length ? fresh.map(x => `PR #${x.number}${many ? ` (${x.repo.split('/')[1] ?? x.repo})` : ''}`).join(', ') + (fresh.length > 1 ? ' ouvertes' : ' ouverte') : 'Branche poussée : sa pull request est à jour.');
+      for (const x of fresh) window.open(x.url, '_blank', 'noopener');
       return;
     }
-    st.innerHTML = `<div class="ag-prfail">${opened.map(o => `<p>${icon('check')}<a href="${esc(o.url)}" target="_blank" rel="noopener">PR #${o.number}</a> ouverte sur ${esc(o.repo)}.</p>`).join('')}${failed.join('')}${perm ? '<div class="ag-prfail-act"><button class="btn" data-open-conn="github">Régler le jeton</button></div>' : ''}</div>`;
+    st.innerHTML = `<div class="ag-prfail">${o.opened.map(x => `<p>${icon('check')}<a href="${esc(x.url)}" target="_blank" rel="noopener">PR #${x.number}</a> ouverte sur ${esc(x.repo)}.</p>`).join('')}${o.failed.map(f => `<p>${icon('check')}Branche <code>${esc(f.branch)}</code> poussée sur ${esc(f.repo)}.</p><p class="err">${esc(f.text)}</p><div class="ag-prfail-act"><a class="btn btn-primary" href="${esc(f.url)}" target="_blank" rel="noopener">${icon('github')}Ouvrir la PR de ${esc(f.repo.split('/')[1] ?? f.repo)} sur GitHub</a></div>`).join('')}${o.perm ? '<div class="ag-prfail-act"><button class="btn" data-open-conn="github">Régler le jeton</button></div>' : ''}</div>`;
     go.hidden = true; need('[data-x]', m.node).textContent = 'Fermer';
   };
 }
@@ -1530,20 +1588,19 @@ export const COPY_ACTS = new Set(['push', 'sync', 'pr', 'mergechild', 'newbranch
 /** Mène une action sur la copie `wt` du projet `p`, depuis n'importe quelle vue ; `box` : onglet Claude Code à redessiner.
  *  Rend `true` quand l'état de la copie a changé (à relire), `false` si rien n'a été fait ou si l'action suit seule son cours. */
 export async function copyAct(p: Project, act: string, wt: string, box: HTMLElement | null = null): Promise<boolean> {
+  // Publier lit lui-même ce qu'il lui faut (`publishPrep`) : la fenêtre s'ouvre sans attendre la relecture des copies.
+  if (act === 'push') { await publish(p, wt, box); return false; }
   // Appel venu d'une autre vue : l'état des copies et des agents est celui d'un autre projet, ou trop ancien.
-  // Les deux lectures partent ensemble. Pour publier, des copies déjà en mémoire suffisent à ouvrir la fenêtre
-  // (git status de toutes les copies peut prendre des secondes) : on les rafraîchit en arrière-plan.
   const reads: Promise<unknown>[] = [];
   if (treesFor !== p.id || !box) {
     restoreTrees(p.id);
     const rf = refreshTrees(p).catch(() => undefined);
-    if (act === 'push' && trees.length) void rf; else reads.push(rf);
+    reads.push(rf);
   }
   if (cur?.p.id !== p.id) reads.push(bridge.call('agent', 'list', { project: p.id }, 10000).then(l => { if (l.ok) runs = l.runs as AgentRun[]; }));
   await Promise.all(reads);
   if (act === 'review') { await review.review(p, 'working', wt); return false; }
   if (act === 'vscode') { const r = await native.call('project', 'open', { project: p.id, app: 'vscode', worktree: wt }, 15000); if (!r.ok) toast(r.message ?? 'Impossible d’ouvrir.'); return false; }
-  if (act === 'push') { await publish(p, wt, box); return false; }
   if (act === 'pr') { const w = trees.find(x => x.name === wt); if (w) await openPR(p, w); else toast('Copie introuvable.'); return false; }
   if (act === 'sync') {
     const r = await native.call('agent', 'sync', { project: p.id, worktree: wt, author: await github.author() }, 30000);
