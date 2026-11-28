@@ -26,6 +26,15 @@ const sites = new Map<string, { live: Live | null; at: number; busy: boolean }>(
 const SIZES: [Size, string, string][] = [['desk', 'Ordinateur', 'devices'], ['tablet', 'Tablette', 'frame'], ['phone', 'Téléphone', 'phone']];
 /** Seule une adresse locale annoncée par le Mac est chargée dans le cadre. */
 const localURL = (u: unknown): string => (typeof u === 'string' && /^https?:\/\/(localhost|127\.0\.0\.1):\d{2,5}\/$/.test(u) ? u : '');
+/** Adresse épinglée depuis le tiroir de terminaux (un port vu dans la sortie) : prime sur le site annoncé par le Mac. */
+const pinned = new Map<string, Live>();
+/** Montre `url` (http://localhost:N, 127.0.0.1 ou 0.0.0.0, ramené à localhost) dans l'onglet « Aperçu du site » du projet. */
+export function preview(pid: string, url: string): boolean {
+  const m = /^(https?):\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):(\d{2,5})/.exec(url), u = m ? localURL(`${m[1]}://localhost:${m[2]}/`) : '';
+  if (!u) return false;
+  pinned.set(pid, { url: u, label: 'Terminal', status: 'running' }); tab = 'live';
+  return true;
+}
 
 /** Relit l'état du site local (au plus toutes les 6 s, une lecture à la fois), puis demande un repeint si quelque chose a changé. */
 function readSite(p: Project, again: () => void): void {
@@ -54,7 +63,7 @@ function shotsHTML(shots: Shot[]): string {
 
 function liveHTML(p: Project): string {
   if (!native.available()) return emptyHTML('devices', 'L’aperçu se lance depuis l’app Mac', 'Ouvre ce projet dans Studio pour Mac : il y sert le site du dossier en local, et l’affiche ici.');
-  const s = sites.get(p.id), l = s?.live;
+  const s = sites.get(p.id), l = pinned.get(p.id) ?? s?.live;
   if (!s?.at && !l) return '<div class="dz-empty"><span class="spin"></span><p>Recherche du site local…</p></div>';
   if (!l?.url || l.status !== 'running') return emptyHTML('play', l ? 'Le site démarre…' : 'Le site n’est pas lancé',
     l ? 'L’aperçu s’affiche dès que le serveur local répond.' : 'Lance le site du projet sur ce Mac : il s’affiche ici, à la largeur de ton choix.',

@@ -13,6 +13,10 @@ interface Window {
     agentItems?(): void;
     /** L'app Mac : un agent attend (ou n'attend plus) une confirmation avant de supprimer ou d'installer (features/projects/guard.ts). */
     agentGuard?(): void;
+    /** L'app Mac : sortie, fin ou état d'un terminal du tiroir (features/terminal.ts). */
+    term?(payload: unknown): void;
+    /** L'app Mac, ⌘W : ferme le terminal qui a le focus ; true s'il y en avait un (la fenêtre reste ouverte). */
+    termClose?(): boolean;
   };
 }
 

@@ -43,6 +43,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Avant de quitter : on laisse la page enregistrer ce qui est en cours de frappe.
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Des terminaux du tiroir font encore tourner quelque chose (serveur, script…) : on demande avant de les arrêter.
+        let busy = Terminals.shared.running()
+        if !busy.isEmpty {
+            let fr = UserDefaults.standard.string(forKey: "studio.lang") == "fr"
+            let list = busy.prefix(5).joined(separator: ", ") + (busy.count > 5 ? "…" : "")
+            let alert = NSAlert()
+            alert.messageText = fr ? "\(busy.count) terminal\(busy.count > 1 ? "x tournent" : " tourne") encore (\(list)). Les arrêter ?"
+                                   : "\(busy.count) terminal\(busy.count > 1 ? "s are" : " is") still running (\(list)). Stop \(busy.count > 1 ? "them" : "it")?"
+            alert.addButton(withTitle: fr ? "Quitter et arrêter" : "Quit and stop")
+            alert.addButton(withTitle: fr ? "Annuler" : "Cancel")
+            if alert.runModal() != .alertFirstButtonReturn { return .terminateCancel }
+        }
         shell.flush { NSApp.reply(toApplicationShouldTerminate: true) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { NSApp.reply(toApplicationShouldTerminate: true) }
         return .terminateLater
@@ -50,9 +62,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // Une mise à jour téléchargée et vérifiée en arrière-plan s'installe ici : la prochaine ouverture est à jour.
     // Les sites lancés en local (onglet Site) s'arrêtent avec l'app.
-    func applicationWillTerminate(_ notification: Notification) { Sites.shared.stopAll(); Mobile.shared.stopAll(); Stack.shared.stopAll(); Updater.shared.applyOnQuit() }
+    func applicationWillTerminate(_ notification: Notification) { Terminals.shared.stopAll(); Sites.shared.stopAll(); Mobile.shared.stopAll(); Stack.shared.stopAll(); Updater.shared.applyOnQuit() }
 
     @objc private func openSettings() { web.evaluateJavaScript("window.carnet?.settings?.()") }
+    // ⌘W : un terminal du tiroir qui a le focus se ferme d'abord (contrat D : window.carnet.termClose() rend true) ; sinon la fenêtre.
+    @objc private func closeTermOrWindow() {
+        web.evaluateJavaScript("window.carnet && window.carnet.termClose && window.carnet.termClose()") { [weak self] r, _ in
+            if r as? Bool != true { self?.window.performClose(nil) }
+        }
+    }
     @objc private func reload() { web.reload() }
 
     private func buildMenu() {
@@ -94,7 +112,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ])
         submenu(L("Fenêtre", "Window"), [
             item(L("Réduire", "Minimize"), #selector(NSWindow.performMiniaturize(_:)), "m"),
-            item(L("Fermer", "Close"), #selector(NSWindow.performClose(_:)), "w"),
+            item(L("Fermer", "Close"), #selector(closeTermOrWindow), "w", target: self),
         ])
         NSApp.mainMenu = main
     }

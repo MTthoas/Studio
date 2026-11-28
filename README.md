@@ -435,6 +435,7 @@ src/                               TypeScript strict
     tasks.ts          tâches, sous-tâches, échéances, tickets Linear
     board.ts          Kanban générique (glisser-déposer, clavier, tactile)
     voice.ts          notes vocales (transcription sur l'appareil)
+    terminal.ts       tiroir de terminaux du projet (onglets, scinder, ports, « Envoyer à Moka », échec → Moka)
     commands.ts       bloc ```commandes (commandes enregistrées à copier) et leur recherche dans la palette
     hub.ts            réglages, coffre, agents, blocs spéciaux, liaison d'appareils
     projects/         model.ts (bloc ```projet, tags), page.ts (cockpit), flux.ts,
@@ -455,11 +456,12 @@ src/                               TypeScript strict
     remote.ts         pont vers les agents Claude Code, sur le Mac ou via un Mac lié
     linear/           api.ts (GraphQL typé), page.ts, render.ts, notifications.ts
     github/           api.ts (actualité des dépôts), page.ts
-  lib/              outils sans état : markdown, calc, schema, graph, qr, fuzzy, diff, zip
+  lib/              outils sans état : markdown, calc, schema, graph, qr, fuzzy, diff, zip, vt (émulateur de terminal)
   plugins/          registre d'extensions, plugins maison (GitHub, Linear) et optionnels (Spotify, n8n, Figma)
   ui/               kit.ts (icônes, menus, fenêtres), caret.ts (curseur), chart.ts (graphiques),
                     sky.ts (ciel du fond), motion.ts (transitions et animations d'interface),
-                    projicons.ts (icônes des projets, animées, et leur sélecteur)
+                    projicons.ts (icônes des projets, animées, et leur sélecteur),
+                    termview.ts (écran de terminal : rendu de lib/vt.ts, clavier, sélection)
   sw/sw.ts          service worker (compilé avec les types « worker »)
 native/             apps Mac et iPhone (Swift) et leurs scripts de build
   Shared/
@@ -475,6 +477,7 @@ native/             apps Mac et iPhone (Swift) et leurs scripts de build
     Orchestrator.swift  publication : mise à jour, conflits, commit, push
     Sessions.swift      lecture des sessions Claude Code locales
     Servers.swift       serveurs joints en SSH : options, port, empreinte de l'hôte
+    Terminals.swift     terminaux de projet : shell local ou SSH dans un pty, intégration shell, reprise
     SSHKeys.swift       clés SSH de Studio : trousseau, agent SSH privé
     ServerExtensions.swift  extensions du serveur : Docker, Kubernetes
     Sites.swift         site d'un projet en local : détection, serveur de fichiers, script dev, builds notifiés

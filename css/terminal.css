@@ -1,0 +1,109 @@
+/* Tiroir de terminaux (src/features/terminal.ts), app Mac seulement. Préfixe tmd- (tm- est déjà pris par team.css).
+   Le tiroir est un enfant de #app, en ligne 2 de la grille, colonne du contenu : #main garde la ligne 1, le rail, la barre
+   et la liste couvrent les deux lignes. Hauteur réglable (--tmd-h, posée par le script) ; agrandi, il prend toute la colonne. */
+:root body.tmd-on #app { grid-template-rows: minmax(0, 1fr) auto; }
+:root body.tmd-on :is(#rail, #sidebar, #list) { grid-row: 1 / span 2; }
+:root body.tmd-on #main { grid-row: 1; }
+:root body.tmd-on #tmd { grid-column: 4; grid-row: 2; }
+:root body.tmd-on.tmd-max #app { grid-template-rows: 0 minmax(0, 1fr); }
+:root body.tmd-on.tmd-max #main { visibility: hidden; border: 0; }
+:root body.tmd-on.tmd-max #tmd { height: auto; margin-top: 0; }
+
+.tmd {
+  --tmd-h: 280px;
+  height: var(--tmd-h); min-height: 0; min-width: 0; margin-top: 6px; display: flex; flex-direction: column; position: relative;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--bg); overflow: hidden;
+}
+.tmd.tmd-enter { animation: tmd-in var(--mo-d3, .2s) var(--mo-out, ease-out) backwards; }
+@keyframes tmd-in { from { opacity: 0; transform: translateY(calc(12px * var(--mo-k, 1))); } }
+.tmd.tmd-drag, .tmd.tmd-drag * { cursor: row-resize; user-select: none; -webkit-user-select: none; }
+
+/* Poignée : une bande de 6px sur le bord haut, un trait discret au survol et au focus. */
+.tmd-grip { position: absolute; z-index: 2; left: 0; right: 0; top: 0; height: 6px; cursor: row-resize; outline: none; }
+.tmd-grip::after { content: ""; position: absolute; left: 50%; top: 2px; width: 36px; height: 3px; margin-left: -18px; border-radius: 2px; background: var(--border-2); opacity: 0; transition: opacity .12s; }
+.tmd-grip:hover::after, .tmd-drag .tmd-grip::after { opacity: 1; }
+.tmd-grip:focus-visible::after { opacity: 1; background: color-mix(in srgb, var(--text) 55%, transparent); }
+
+/* ---------- En-tête : onglets, +, scinder, agrandir, masquer ---------- */
+.tmd-head { flex: none; display: flex; align-items: center; gap: 2px; height: 34px; padding: 4px 6px 0 6px; border-bottom: 1px solid var(--border); }
+.tmd-head .icon-btn { width: 26px; height: 26px; }
+.tmd-head .icon-btn .ic { width: 14px; height: 14px; }
+.tmd-head .icon-btn:focus-visible { outline: 2px solid color-mix(in srgb, var(--text) 55%, transparent); outline-offset: -2px; }
+.tmd-head .icon-btn[aria-pressed="true"] { background: var(--active); color: var(--text); }
+.tmd-sp { flex: 1; min-width: 4px; }
+.tmd-tabs { display: flex; align-items: center; gap: 2px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.tmd-tabs::-webkit-scrollbar { display: none; }
+.tmd-tab {
+  flex: none; display: inline-flex; align-items: center; gap: 6px; height: 26px; max-width: 220px; padding: 0 2px 0 9px; border-radius: var(--r);
+  color: var(--text-2); font-size: var(--t-1); cursor: pointer; outline: none; transition: background .12s, color .12s;
+}
+.tmd-tab:hover { background: var(--hover); color: var(--text); }
+.tmd-tab.sel, .tmd-tab.side { background: var(--sel); color: var(--text); }
+.tmd-tab.side:not(.sel) { background: color-mix(in srgb, var(--sel) 55%, transparent); }
+.tmd-tab:focus-visible { outline: 2px solid color-mix(in srgb, var(--text) 55%, transparent); outline-offset: -2px; }
+.tmd-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tmd-rename { width: 14ch; height: 20px; padding: 0 4px; border: 1px solid var(--border-2); border-radius: 4px; background: var(--surface); color: var(--text); font: inherit; outline: none; }
+.tmd-rename:focus { border-color: var(--accent); }
+/* Pastille d'état : gris au repos, vert qui bat pendant une commande, rouge sur un échec, plein quand fini. */
+.tmd-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--c-gray); opacity: .55; }
+.tmd-dot.tmd-st-run { background: var(--c-green); opacity: 1; animation: vc-pulse 1.4s ease-in-out infinite; }
+.tmd-dot.tmd-st-ok { background: var(--c-green); opacity: .8; }
+.tmd-dot.tmd-st-err { background: var(--c-red); opacity: 1; }
+.tmd-port {
+  flex: none; height: 16px; padding: 0 5px; border: 0; border-radius: 4px; font: 500 10px/16px var(--mono); color: var(--c-blue);
+  background: color-mix(in srgb, var(--c-blue) 14%, transparent); cursor: pointer;
+}
+.tmd-port:hover { background: color-mix(in srgb, var(--c-blue) 24%, transparent); }
+.tmd-port:focus-visible { outline: 2px solid color-mix(in srgb, var(--text) 55%, transparent); outline-offset: 1px; }
+.tmd-x { flex: none; width: 18px; height: 18px; display: inline-grid; place-items: center; padding: 0; border: 0; border-radius: 4px; background: none; color: var(--text-3); opacity: 0; cursor: pointer; }
+.tmd-x .ic { width: 11px; height: 11px; }
+.tmd-tab:is(:hover, .sel, :focus-visible) .tmd-x { opacity: 1; }
+.tmd-x:hover { background: var(--active); color: var(--text); }
+
+/* ---------- Corps : un ou deux terminaux, et l'état (chargement, erreur, vide) par-dessus ---------- */
+.tmd-body { flex: 1; min-height: 0; position: relative; background: var(--tm-bg); }
+.tmd-panes { position: absolute; inset: 0; display: flex; }
+.tmd-pane { flex: 1 1 0; min-width: 0; height: 100%; }
+.tmd-split > .tmd-pane:not([hidden]) + .tmd-pane:not([hidden]),
+.tmd-split > .tmd-pane:not([hidden]) ~ .tmd-pane:not([hidden]) { border-left: 1px solid var(--border); }
+.tmd-state {
+  position: absolute; inset: 0; z-index: 1; display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap; padding: 16px;
+  background: var(--bg); color: var(--text-2); font-size: var(--t-2); text-align: center;
+}
+.tmd-state .tmd-err { color: var(--danger); max-width: 52ch; }
+
+/* ---------- Pied : dossier courant, commande, actions vers Moka ---------- */
+.tmd-foot { flex: none; display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 2px 6px 2px 10px; border-top: 1px solid var(--border); font-size: var(--t-1); color: var(--text-3); }
+.tmd-foot:empty { display: none; }
+.tmd-cwd { min-width: 0; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: var(--t-1); direction: rtl; text-align: left; }
+.tmd-info { display: inline-flex; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; }
+.tmd-info > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-family: var(--mono); }
+.tmd-info .tmd-st-err { color: var(--danger); }
+.tmd-info .tmd-st-ok { color: var(--ok); }
+.tmd-fbtn { height: 24px; font-size: var(--t-1); flex: none; }
+.tmd-fbtn .ic { width: 13px; height: 13px; }
+.tmd-fbtn:focus-visible { outline: 2px solid color-mix(in srgb, var(--text) 55%, transparent); outline-offset: 0; }
+.tmd-fix { background: var(--accent-soft); color: var(--accent-text); }
+.tmd-fix:hover { background: color-mix(in srgb, var(--accent) 26%, transparent); }
+
+/* ---------- Barre latérale : une ligne par terminal sous son projet ---------- */
+:root #sidebar .side-term > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:root #sidebar .side-term > .ss-live { width: 7px; height: 7px; margin: 0 2.5px; }
+.ss-live.tmd-bad { background: var(--c-red); opacity: 1; }
+.side-stage.tmd-sport { color: var(--c-blue); background: color-mix(in srgb, var(--c-blue) 14%, transparent); font-family: var(--mono); }
+
+/* Fenêtre étroite : les libellés des boutons du pied cèdent la place, le dossier se raccourcit. */
+@media (max-width: 900px) {
+  .tmd-cwd { max-width: 30%; }
+  .tmd-tab { max-width: 160px; }
+}
+@media (max-width: 640px) {
+  :root body.tmd-on #tmd { margin-top: 0; border-radius: 0; border-width: 1px 0 0; }
+  .tmd-fbtn { font-size: 0; gap: 0; padding: 0 6px; }
+  .tmd-fbtn .ic { width: 14px; height: 14px; }
+  .tmd-info > span:first-child { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tmd.tmd-enter, .tmd-dot.tmd-st-run { animation: none; }
+  .tmd-tab, .tmd-grip::after { transition: none; }
+}

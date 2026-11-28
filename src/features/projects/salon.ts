@@ -495,6 +495,8 @@ function itemsOf(d: Detail, crew: Crew, board: BoardMsg[]): { items: Item[]; ask
   return { items: out, ask: lastText >= 0 && lastText === d.actions.length - 1 && asks(d.actions[lastText]?.text ?? '') };
 }
 
+/** « Terminal dans sa copie » : seulement si le tiroir de terminaux est branché (app Mac, voir `onTerminal`). */
+const termBtn = (wt: string): string => termHook ? `<button class="btn btn-ghost" data-sl="term" data-wt="${wt}" title="Ouvre un terminal dans la copie de l’agent">${icon('terminal')}Terminal dans sa copie</button>` : '';
 /** Carte « résultat » d'après l'état de la copie de l'agent : à publier, PR ouverte, fusionné.
  *  L'agent attend une réponse (`ask`) : son travail n'est pas fini, on ne propose pas encore de publier. */
 function resultHTML(t: Thread, d: Detail, ask: boolean, agent: string): string {
@@ -510,8 +512,8 @@ function resultHTML(t: Thread, d: Detail, ask: boolean, agent: string): string {
   const a = esc(w.name);
   const all = d.files ?? t.s.files, fl = all.length ? `<details class="sl-files"><summary>${icon('chevron')}<span>Fichiers</span></summary><div>${all.slice(0, 14).map(f => `<code title="${esc(f)}">${esc(shortPath(f))}</code>`).join('')}${all.length > 14 ? `<small>+${all.length - 14}</small>` : ''}</div></details>` : '';
   if (st === 'review' && ask) return '';
-  if (st === 'review') return `<div class="sl-card res"><span class="sl-pill" style="--c:var(--c-green)">prêt à publier</span><div class="sl-card-t"><b>${esc(title)}</b>${meta ? `<small>${meta}</small>` : ''}${fl}</div><div class="sl-card-a"><button class="btn" data-sl="review" data-wt="${a}">Relire</button><button class="btn btn-primary" data-sl="publish" data-wt="${a}">${icon('upload')}Publier la PR</button></div></div>`;
-  if (st === 'pr') return `<div class="sl-card res"><span class="sl-pill" style="--c:var(--c-blue)">PR ouverte</span><div class="sl-card-t"><b>${esc(title)}</b><small>En attente de fusion${meta ? ` · ${meta}` : ''}</small></div><div class="sl-card-a"><button class="btn" data-sl="pr" data-wt="${a}">${icon('pr')}Voir la PR</button></div></div>`;
+  if (st === 'review') return `<div class="sl-card res"><span class="sl-pill" style="--c:var(--c-green)">prêt à publier</span><div class="sl-card-t"><b>${esc(title)}</b>${meta ? `<small>${meta}</small>` : ''}${fl}</div><div class="sl-card-a">${termBtn(a)}<button class="btn" data-sl="review" data-wt="${a}">Relire</button><button class="btn btn-primary" data-sl="publish" data-wt="${a}">${icon('upload')}Publier la PR</button></div></div>`;
+  if (st === 'pr') return `<div class="sl-card res"><span class="sl-pill" style="--c:var(--c-blue)">PR ouverte</span><div class="sl-card-t"><b>${esc(title)}</b><small>En attente de fusion${meta ? ` · ${meta}` : ''}</small></div><div class="sl-card-a">${termBtn(a)}<button class="btn" data-sl="pr" data-wt="${a}">${icon('pr')}Voir la PR</button></div></div>`;
   // Fusionné : la carte suit la livraison en direct (vérifications sur la branche principale, release), voir `flux.deliveryHTML`.
   if (st === 'merged') {
     const live = flux.deliveryHTML({ repo: p?.stack[0]?.name ?? '', repos: p?.stack.map(x => x.name), branch: w.pr?.branch ?? w.history?.find(h => h.merged)?.branch ?? w.branch, title, meta, pr: w.pr ? { number: w.pr.number, url: w.pr.url } : undefined });
@@ -1281,6 +1283,7 @@ function bind(r: HTMLElement): void {
     else if (act === 'reply') need('.sl-comp textarea', r).focus();
     else if (act === 'now') toggleTeam(r);
     else if (act === 'stop') void bridge.call('agent', 'stop', { run: t.dataset.run ?? '' }, 10000).then(x => { toast(x.ok ? 'Équipe arrêtée' : x.message ?? 'Arrêt impossible.'); void refresh(); });
+    else if (act === 'term') termHook?.(pid, t.dataset.wt ?? '');
     else if (act === 'publish') pub.open(p, t.dataset.wt ?? '');
     else if (act === 'review' || act === 'pr') void gesture(act, t.dataset.wt ?? '', t as HTMLButtonElement);
   });
@@ -1344,6 +1347,9 @@ function bind(r: HTMLElement): void {
 
 /** Navigation vers un onglet de projet, fournie par la fiche projet (`init`) : le Salon n'a pas accès à la coquille de l'app. */
 let go: (pid: string, tab: string) => Promise<void> = () => Promise.resolve();
+let termHook: ((pid: string, wt: string) => void) | null = null;
+/** Branche le tiroir de terminaux (features/terminal.ts) : bouton « Terminal dans sa copie » des cartes de résultat. */
+export function onTerminal(fn: (pid: string, wt: string) => void): void { termHook = fn; }
 /** À appeler une fois au démarrage (page.ts) avec `(pid, tab) => app.setView({ type: 'projets', project: pid, tab })`. */
 export function init(open: (pid: string, tab: string) => Promise<void>): void { go = open; flux.onDelivery(() => { if (root?.isConnected) paint(); }); }
 /** Ouvre le fil `session` du projet `pid` dans le Salon : le choisit (retenu dans `studio.salon.chosen`), puis ouvre l'onglet salon. */
@@ -1353,6 +1359,37 @@ export function openThread(pid: string, session: string): void {
   choose(pid, session);
   if (root?.isConnected && p?.id === pid) { paint(); fetchThread(pid, session); void refresh(); } // Salon déjà à l'écran : il suit tout de suite
   void go(pid, 'salon');
+}
+
+// ---------- Depuis le tiroir de terminaux ----------
+/** Fil de l'agent qui travaille dans la copie `wt` (le plus récent), '' si aucun. */
+export function threadOfCopy(pid: string, wt: string): string {
+  const st = S.pid === pid ? S : states.get(pid) ?? fromDisk(pid);
+  if (!st || !wt) return '';
+  const hit = st.sessions.filter(s => s.worktree === wt).sort((a, b) => ms(b.active || b.updated) - ms(a.active || a.updated))[0];
+  return hit?.id ?? st.runs.find(r => r.worktree === wt && r.session)?.session ?? '';
+}
+/** Fil ouvert dans le Salon du projet ('' = nouvelle consigne). */
+export const openThreadOf = (pid: string): string => S.pid === pid && S.loaded ? curId() : chosen.get(pid) ?? '';
+/** Ajoute `text` au champ du fil `thread` (brouillon gardé), ouvre le Salon sur ce fil et place le curseur à la fin. */
+export async function prefill(pid: string, thread: string, text: string): Promise<void> {
+  const key = `${pid}/${thread}`, join = (a: string): string => a.trim() ? `${a.replace(/\s+$/, '')}\n\n${text}` : text;
+  const ta = root?.isConnected && p?.id === pid ? root.querySelector<HTMLTextAreaElement>('.sl-comp textarea') : null;
+  if (ta && shown === key) { ta.value = join(ta.value); drafts.set(key, ta.value); }
+  else { if (ta && shown) drafts.set(shown, ta.value); drafts.set(key, join(drafts.get(key))); }
+  choose(pid, thread); view = 'chat';
+  await go(pid, 'salon');
+  if (!root?.isConnected || p?.id !== pid) return;
+  paint();
+  const box = root.querySelector<HTMLTextAreaElement>('.sl-comp textarea'); if (!box) return;
+  grow(box); box.focus(); box.setSelectionRange(box.value.length, box.value.length); box.scrollTop = box.scrollHeight; ready(); showAuto();
+}
+/** Montre `url` (un port local vu dans un terminal) dans la vue Design du Salon. Faux si l'adresse n'est pas locale. */
+export function showPreview(pid: string, url: string): boolean {
+  if (!design.preview(pid, url)) return false;
+  view = 'design';
+  if (root?.isConnected && p?.id === pid) paint(); else void go(pid, 'salon');
+  return true;
 }
 
 /** Monte le Salon du projet `proj` dans `box`. `o.openTech` ouvre une conversation dans l'onglet Claude Code. */

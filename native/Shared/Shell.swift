@@ -329,6 +329,19 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
         #endif
     }
 
+    #if os(macOS)
+    private var terminalsWired = false
+    /// Branche une fois l'envoi des terminaux vers la page (window.carnet.term), au premier besoin.
+    private func wireTerminals() {
+        guard !terminalsWired else { return }
+        terminalsWired = true
+        Terminals.shared.emit = { [weak self] payload in
+            guard let data = try? JSONSerialization.data(withJSONObject: payload), let json = String(data: data, encoding: .utf8) else { return }
+            DispatchQueue.main.async { self?.web?.evaluateJavaScript("window.carnet && window.carnet.term && window.carnet.term(\(json))", completionHandler: nil) }
+        }
+    }
+    #endif
+
     /// Agents Claude Code d'un projet (voir Agents.swift) et leurs copies isolées.
     private func agent(_ action: String, id: Int, body: [String: Any]) {
         #if os(macOS)
@@ -385,6 +398,22 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
         case "jobs": send(Orchestrator.shared.list(project: pid))
         case "commits": bg { folders.commits(pid, days: body["days"] as? Int ?? 30) }
         case "run": send(Agents.shared.detail(body["run"] as? String ?? ""))
+        case "term":
+            // Terminaux de projet (Terminals.swift) : shell local, copie d'agent, script ou ssh. Jamais à distance (hors REMOTE_ALLOWED).
+            wireTerminals()
+            let tid = body["term"] as? String ?? "", cols = body["cols"] as? Int ?? 80, rows = body["rows"] as? Int ?? 24
+            switch body["op"] as? String ?? "" {
+            case "targets": bg { Terminals.shared.targets(pid) }
+            case "open":
+                let w = body["where"] as? String ?? "project", n = body["name"] as? String ?? "", c = body["cmd"] as? String ?? ""
+                bg { Terminals.shared.open(project: pid, where: w, name: n, cmd: c, cols: cols, rows: rows) }
+            case "list": send(Terminals.shared.terms(pid))
+            case "write": send(Terminals.shared.input(tid, body["data"] as? String ?? ""))
+            case "resize": send(Terminals.shared.resize(tid, cols: cols, rows: rows))
+            case "close": send(Terminals.shared.closeTerm(tid))
+            case "replay": send(Terminals.shared.replay(tid))
+            default: send(["ok": false, "message": "Opération inconnue."])
+            }
         case "server":
             // Un projet peut avoir plusieurs serveurs : `server` désigne lequel ("" : le premier). `sref` est sa clé de rangement.
             let sid = body["server"] as? String ?? "", sref = Servers.ref(pid, sid)
@@ -415,10 +444,7 @@ final class ShellCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKDo
             // Fiche de la machine (emplacement, puissance, capacités) ; `geo` : localisation par ipinfo.io, sur demande.
             case "specs": bg { Servers.shared.specs(sref, geo: body["geo"] as? Bool == true) }
             case "term-open":
-                Terminals.shared.emit = { [weak self] payload in
-                    guard let data = try? JSONSerialization.data(withJSONObject: payload), let json = String(data: data, encoding: .utf8) else { return }
-                    DispatchQueue.main.async { self?.web?.evaluateJavaScript("window.carnet && window.carnet.term && window.carnet.term(\(json))", completionHandler: nil) }
-                }
+                wireTerminals()
                 bg { Terminals.shared.open(sref, cols: body["cols"] as? Int ?? 80, rows: body["rows"] as? Int ?? 24) }
             case "term-write": send(Terminals.shared.input(body["term"] as? String ?? "", body["data"] as? String ?? ""))
             case "term-resize": send(Terminals.shared.resize(body["term"] as? String ?? "", cols: body["cols"] as? Int ?? 80, rows: body["rows"] as? Int ?? 24))
