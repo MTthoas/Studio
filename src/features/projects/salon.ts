@@ -29,6 +29,7 @@ import * as catface from '../../ui/catface.ts';
 import * as projIcons from '../../ui/projicons.ts';
 import * as compose from './compose.ts';
 import * as design from './design.ts';
+import type { CodeIn } from './codeview.ts';
 import * as store from '../../core/store.ts';
 import * as model from './model.ts';
 import * as noteseal from '../../integrations/noteseal.ts';
@@ -182,8 +183,11 @@ let last = { sessions: 0, trees: 0, detail: 0, board: 0 };
 const fetching = new Set<string>();
 let openTech: (session: string) => void = () => undefined, openNote: (id: string) => void = () => undefined, openSkills: () => void = () => undefined;
 /** Vue du centre : la discussion, « Design » (captures des agents et aperçu du site, design.ts), ou les deux côte à côte
- *  (`split`, largeur du design réglable). Gardée d'un fil à l'autre. */
-let view: 'chat' | 'design' | 'split' = 'chat';
+ *  (`split`, largeur du design réglable). Gardée d'un fil à l'autre, et d'une ouverture à l'autre (`VIEW`, choix au clic). */
+type View = 'chat' | 'design' | 'split';
+const VIEW = 'studio.salon.view';
+let view: View = ((): View => { try { const v = localStorage.getItem(VIEW); return v === 'design' || v === 'split' ? v : 'chat'; } catch { return 'chat'; } })();
+const keepView = (): void => { try { localStorage.setItem(VIEW, view); } catch { /* stockage bloqué */ } };
 /** Largeur du design côte à côte (fraction de la colonne du fil) et de la liste des fils (px) : réglées à la poignée, gardées. */
 const DZ_W = 'studio.salon.dzw', SIDE_W = 'studio.salon.sidew', DZ_DEF = 0.36, SIDE_DEF = 248;
 const clampDz = (f: number): number => Math.min(0.75, Math.max(0.2, f));
@@ -337,6 +341,9 @@ const asks = (t: string): boolean => {
   const q = choices.parse(t); // des questions à choix (blocs studio-question) valent une question
   return q.questions.length > 0 || (q.text.trim().split(/\n{2,}/).pop() ?? '').includes('?');
 };
+/** La réponse finit par la ligne « Commit: … » (voir `agentMessage` de sessions.ts) : le travail est livré.
+ *  Une question en fin de compte rendu (bloc studio-question compris) n'empêche alors pas de proposer la publication. */
+const ships = (t: string): boolean => /^[\s>*-]*`*commit\s*:/im.test(t);
 const TESTS = /\b(npm (run )?test|npm run (typecheck|e2e)|vitest|jest|pytest|go test|cargo test|swift test|xcodebuild test|phpunit|rspec)\b/;
 const VERB: Record<string, string> = { Read: 'lit', Grep: 'cherche dans', Glob: 'cherche', Edit: 'modifie', MultiEdit: 'modifie', Write: 'écrit', NotebookEdit: 'modifie', Bash: 'lance une commande', Agent: 'confie une tâche', Task: 'confie une tâche', WebSearch: 'cherche sur le web', WebFetch: 'lit une page' };
 /** Ce que fait un agent, en clair : « lit app.ts » (jamais la commande ni le chemin complet). */
@@ -504,7 +511,7 @@ function itemsOf(d: Detail, crew: Crew, board: BoardMsg[]): { items: Item[]; ask
 /** « Terminal dans sa copie » : seulement si le tiroir de terminaux est branché (app Mac, voir `onTerminal`). */
 const termBtn = (wt: string): string => termHook ? `<button class="btn btn-ghost" data-sl="term" data-wt="${wt}" title="Ouvre un terminal dans la copie de l’agent">${icon('terminal')}Terminal dans sa copie</button>` : '';
 /** Carte « résultat » d'après l'état de la copie de l'agent : à publier, PR ouverte, fusionné.
- *  L'agent attend une réponse (`ask`) : son travail n'est pas fini, on ne propose pas encore de publier. */
+ *  L'agent attend une réponse (`ask`) sans avoir écrit sa ligne « Commit: » (`ships`) : on ne propose pas encore de publier. */
 function resultHTML(t: Thread, d: Detail, ask: boolean, agent: string): string {
   const wt = d.worktree || t.s.worktree, w = wt ? S.trees.find(x => x.name === wt) : undefined;
   if (!w) return '';
@@ -517,7 +524,7 @@ function resultHTML(t: Thread, d: Detail, ask: boolean, agent: string): string {
   const meta = [...counts, w.branch].filter(Boolean).map(esc).join(' · ');
   const a = esc(w.name);
   const all = d.files ?? t.s.files, fl = all.length ? `<details class="sl-files"><summary>${icon('chevron')}<span>Fichiers</span></summary><div>${all.slice(0, 14).map(f => `<code title="${esc(f)}">${esc(shortPath(f))}</code>`).join('')}${all.length > 14 ? `<small>+${all.length - 14}</small>` : ''}</div></details>` : '';
-  if (st === 'review' && ask) return '';
+  if (st === 'review' && ask && !ships(d.actions[d.actions.length - 1]?.text ?? '')) return '';
   if (st === 'review') return `<div class="sl-card res"><span class="sl-pill" style="--c:var(--c-green)">prêt à publier</span><div class="sl-card-t"><b>${esc(title)}</b>${meta ? `<small>${meta}</small>` : ''}${fl}</div><div class="sl-card-a">${termBtn(a)}<button class="btn" data-sl="review" data-wt="${a}">Relire</button><button class="btn btn-primary" data-sl="publish" data-wt="${a}">${icon('upload')}Publier la PR</button></div></div>`;
   if (st === 'pr') return `<div class="sl-card res"><span class="sl-pill" style="--c:var(--c-blue)">PR ouverte</span><div class="sl-card-t"><b>${esc(title)}</b><small>En attente de fusion${meta ? ` · ${meta}` : ''}</small></div><div class="sl-card-a">${termBtn(a)}<button class="btn" data-sl="pr" data-wt="${a}">${icon('pr')}Voir la PR</button></div></div>`;
   // Fusionné : la carte suit la livraison en direct (vérifications sur la branche principale, release), voir `flux.deliveryHTML`.
@@ -705,7 +712,7 @@ function laneOf(t: Thread): Lane {
 /** La dernière réponse de l'agent pose une question : le fil attend l'utilisateur, même si sa copie a déjà des changements. */
 function waits(t: Thread): boolean {
   const d = S.detail.get(t.id), last = d?.actions[d.actions.length - 1];
-  return !!last && last.kind !== 'prompt' && !last.kind.startsWith('tool:') && asks(last.text);
+  return !!last && last.kind !== 'prompt' && !last.kind.startsWith('tool:') && asks(last.text) && !ships(last.text);
 }
 /** Seconde ligne d'un fil : ce que l'agent fait à l'instant, ou ce qu'il attend de toi. Rien pour un fil fini. */
 function subLine(t: Thread, lane: Lane): string {
@@ -741,7 +748,7 @@ type Mood = 'work' | 'ask' | 'ready' | 'done';
 const MOOD: Record<Mood, [string, string]> = { work: ['au travail', 'amber'], ask: ['attend ta réponse', 'orange'], ready: ['prêt à publier', 'green'], done: ['terminé', 'gray'] };
 function moodOf(t: Thread, ask: boolean): Mood {
   if (t.group === 'work') return 'work';
-  if (ask) return 'ask';
+  if (ask && waits(t)) return 'ask';
   const w = t.s.worktree ? S.trees.find(x => x.name === t.s.worktree) : undefined;
   return w && copyStage(w) === 'review' ? 'ready' : 'done';
 }
@@ -843,55 +850,55 @@ function stepHTML(working: boolean, last: { kind: string; text: string } | undef
   const tg = working && last && tool ? targetOf(last.kind, last.text) : '';
   return `<span class="lv-now"><i class="lv-dot"></i><b>${esc(verb)}</b>${tg ? `<code title="${esc(tg)}">${esc(tg)}</code>` : ''}</span>`;
 }
-function techHTML(t: Thread, d: Detail | undefined, crew: Crew): string {
-  if (!d) return skelHTML('tech');
+/** Matière de l'onglet Code (codeview.ts) : copie du fil, contenus écrits (Write, puis Edit appliqués dessus) pour les
+ *  fichiers nouveaux non suivis, fichiers touchés du plus récent au plus ancien, et une signature qui change à chaque écriture. */
+function codeIn(t: Thread, d: Detail, crew: Crew): CodeIn {
+  const writes = new Map<string, string>(), order: string[] = [];
+  let n = 0, at = '';
+  for (const a of d.actions) {
+    if (!a.kind.startsWith('tool:') || !EDIT_TOOL.test(a.kind.slice(5))) continue;
+    const f = a.file || a.text; if (!f) continue;
+    n++; at = a.at;
+    const i = order.indexOf(f); if (i >= 0) order.splice(i, 1); order.unshift(f);
+    if (a.kind === 'tool:Write' && typeof a.new === 'string') writes.set(f, a.new);
+    else if (writes.has(f) && a.old && typeof a.new === 'string') writes.set(f, (writes.get(f) ?? '').replace(a.old, () => a.new ?? ''));
+  }
+  const subs = (d.subagents ?? []).map(s => `${s.id}:${(s.files ?? []).map(f => `${f.path}${f.add}/${f.del}`).join(',')}`).join(';');
+  const wt = d.worktree || t.s.worktree || '', work = t.group === 'work';
+  // Fichiers en cours d'écriture : le dernier du principal tant qu'il travaille, et ceux des sous-agents encore actifs.
+  const live = [...(work && order[0] ? [order[0]] : []), ...(d.subagents ?? []).filter(s => s.live).flatMap(s => (s.files ?? []).map(f => f.path))];
+  return { wt, sig: `${wt}|${n}|${at}|${subs}`, tech: stripHTML(t, d, crew), writes, touched: order, live, busy: work };
+}
+/** Bande d'activité de l'onglet Code : une puce par agent (chat, nom, étape, chrono), ceux qui travaillent d'abord. */
+function stripHTML(t: Thread, d: Detail, crew: Crew): string {
   const work = t.group === 'work', acts = d.actions, lp = acts.map(a => a.kind).lastIndexOf('prompt'), last = acts[acts.length - 1];
   const t0 = ms(acts[lp]?.at) || ms(t.s.started), t1 = work ? 0 : ms(last?.at) || t0;
-  // Dernières actions (outil + cible), les plus récentes d'abord ; celle en cours est déjà dite dans l'étape.
-  const tools = acts.filter(a => a.kind.startsWith('tool:') && a.text), recent = tools.slice(work ? -7 : -6, work ? -1 : undefined).reverse();
-  const list = recent.map(a => `<div class="st-act"><span>${esc(a.kind.slice(5))}</span><code title="${esc(a.text)}">${esc(targetOf(a.kind, a.text))}</code></div>`).join('');
-  // Fichiers touchés : les plus récents d'abord, lignes +/− cumulées.
-  const per = new Map<string, { add: number; del: number; at: number }>();
-  for (const a of acts) {
-    if (!EDIT_TOOL.test(a.kind.slice(5)) || !a.text) continue;
-    const f = per.get(a.text) ?? { add: 0, del: 0, at: 0 };
-    f.add += amount(a.add); f.del += amount(a.del); f.at = Math.max(f.at, ms(a.at)); per.set(a.text, f);
-  }
-  const rows = [...per].sort((a, b) => b[1].at - a[1].at), shownRows = rows.slice(0, 5);
-  const files = shownRows.map(([f, v]) => `<div class="lv-file"><code title="${esc(f)}">${esc(shortPath(f))}</code>${gain(v.add, v.del)}</div>`).join('')
-    + (rows.length > shownRows.length ? `<p class="lv-more">et ${rows.length - shownRows.length} autre${rows.length - shownRows.length > 1 ? 's' : ''}</p>` : '');
-  const total = d.lines && (d.lines.add || d.lines.del) ? gain(d.lines.add, d.lines.del) : '';
-  const main = `<section class="lv st-agent" data-state="${work ? 'work' : acts.length ? 'done' : 'idle'}"><h5 class="st-who">${esc(crew.main.name)}${total ? ` ${total}` : ''}</h5>
-    <div class="lv-head">${stepHTML(work, last, acts.length ? 'Terminé' : 'Prêt')}${clockHTML(t0, t1)}</div>${list || files ? `<div class="lv-rest">${list ? `<div class="st-acts">${list}</div>` : ''}${files ? `<div class="lv-files">${files}</div>` : ''}</div>` : ''}</section>`;
-  // Sous-agents : ceux qui travaillent d'abord, une ligne chacun (étape, chrono, fichiers).
+  const chip = (w: Who, on: boolean, step: string, clock: string): string => `<div class="lv cv-who" data-state="${on ? 'work' : 'done'}">${face(w, on ? 'work' : 'done')}<b>${esc(w.name)}</b>${step}${clock}</div>`;
   const subs = [...(d.subagents ?? [])].sort((a, b) => Number(b.live) - Number(a.live) || ms(b.updated) - ms(a.updated));
-  const subRows = subs.slice(0, 6).map(s => {
-    const w = crew.subs.get(s.id); if (!w) return '';
-    const s0 = ms(s.started), s1 = s.live ? 0 : ms(s.updated) || s0, fl = (s.files ?? []).slice(0, 3).map(f => `<div class="lv-file"><code title="${esc(f.path)}">${esc(shortPath(f.path))}</code>${gain(amount(f.add), amount(f.del))}</div>`).join('');
-    return `<section class="lv st-agent" data-state="${s.live ? 'work' : 'done'}"><h5 class="st-who">${esc(w.name)}</h5>
-      <div class="lv-head">${stepHTML(s.live, s.last, 'Terminé')}${clockHTML(s0, s1)}</div>${fl ? `<div class="lv-rest"><div class="lv-files">${fl}</div></div>` : ''}</section>`;
-  }).join('');
-  return main + subRows + (subs.length > 6 ? `<p class="lv-more">et ${subs.length - 6} autre${subs.length > 7 ? 's' : ''}</p>` : '');
+  const rows = [{ on: work, html: chip(crew.main, work, stepHTML(work, last, acts.length ? 'Terminé' : 'Prêt'), clockHTML(t0, t1)) },
+    ...subs.map(s => { const w = crew.subs.get(s.id), s0 = ms(s.started); return { on: s.live, html: w ? chip(w, s.live, stepHTML(s.live, s.last, 'Terminé'), clockHTML(s0, s.live ? 0 : ms(s.updated) || s0)) : '' }; })];
+  return rows.filter(r => r.on).concat(rows.filter(r => !r.on)).map(r => r.html).join('');
 }
 /** Squelette de la colonne : la place est tenue (avatars, lignes) le temps que le fil démarre ou que sa lecture arrive. */
 const skelHTML = (k: 'team' | 'tech'): string => k === 'team'
   ? `<div class="sl-skel" aria-busy="true" aria-label="Chargement">${[72, 54].map((w, i) => `<div class="sl-skel-mem" style="--i:${i}"><i class="sl-skel-av"></i><div><i style="width:${w}%"></i><i style="width:${w - 18}%"></i></div></div>`).join('')}</div>`
   : `<div class="sl-skel" aria-busy="true" aria-label="Chargement">${[64, 88, 46].map((w, i) => `<i style="width:${w}%;--i:${i}"></i>`).join('')}</div>`;
-/** Colonne de droite : Équipe en haut, Technique dessous (30 % de la hauteur, défile seule). */
-/** Colonne de droite : Équipe, Technique, puis la consommation en pied, toujours visible (chaque section défile seule). */
-const colHTML = (team: string, tech: string): string => `<section class="sl-team" aria-label="Équipe">${team}</section><section class="sl-tech" aria-label="Technique"><h4>Technique</h4>${tech}</section>`;
+/** Colonne de droite : Équipe, un lien vers l'onglet Code du panneau de droite (l'activité technique et le diff y vivent depuis
+ *  le 28 nov. 2026), puis la consommation en pied, toujours visible. */
+const colHTML = (team: string, link: string): string => `<section class="sl-team" aria-label="Équipe">${team}</section>${link}`;
+const codeLink = (d: Detail | undefined, on: boolean): string => `<button type="button" class="sl-codelink" data-sl="code" aria-pressed="${on}">${icon('code')}<span>Code et activité</span>${d?.lines && (d.lines.add || d.lines.del) ? gain(d.lines.add, d.lines.del) : ''}${icon('chevronRight')}</button>`;
 // Seul le chrono tourne, une fois par seconde : et seulement colonne visible, fenêtre au premier plan, agent au travail.
 let techTimer: ReturnType<typeof setInterval> | undefined;
 function tickClocks(): void {
   if (!root) return;
   const now = Date.now();
-  for (const el of Array.from(root.querySelectorAll<HTMLElement>('[data-sl-now] time[data-t0]'))) {
+  for (const el of Array.from(root.querySelectorAll<HTMLElement>(':is([data-sl-now], [data-sl-design]) time[data-t0]'))) {
     const t0 = Number(el.dataset.t0), t1 = Number(el.dataset.t1) || now, txt = clockText(Math.max(0, Math.round((t1 - t0) / 1000)));
     if (el.textContent !== txt) el.textContent = txt;
   }
 }
 function syncClock(): void {
-  const on = root !== null && root.isConnected && teamShown(root) && !document.hidden && !!root.querySelector('[data-sl-now] time[data-live]');
+  const on = root !== null && root.isConnected && !document.hidden && !!root.querySelector(`${teamShown(root) ? '[data-sl-now] time[data-live], ' : ''}[data-sl-design]:not([hidden]) time[data-live]`);
   if (on && techTimer === undefined) techTimer = setInterval(() => { if (root?.isConnected) tickClocks(); else syncClock(); }, 1000);
   else if (!on && techTimer !== undefined) { clearInterval(techTimer); techTimer = undefined; }
 }
@@ -980,6 +987,8 @@ function glide(list: HTMLElement, tops: Map<string, number>): void {
 }
 /** Fin du dernier défilement doux vers le bas du fil (performance.now()). */
 let glideEnd = 0;
+/** État de la carte de résultat au dernier rendu (voir `paint`) : son apparition ou son changement d'état la fait défiler à l'écran. */
+let resSig = '';
 function paint(): void {
   if (!root || !p) return;
   const th = threads(), id = curId(th), cur = th.find(t => t.id === id), d = id ? S.detail.get(id) : undefined;
@@ -1024,6 +1033,12 @@ function paint(): void {
   else if (changed && end) { feed.scrollTo({ top: feed.scrollHeight, behavior: calm() ? 'auto' : 'smooth' }); glideEnd = performance.now() + 700; }
   else if (fresh && !end) need('[data-sl-down]', root).hidden = false;
   if (switched) need('[data-sl-down]', root).hidden = true;
+  // Carte de résultat qui apparaît ou change d'état (prêt à publier → publication → PR ouverte) : on la montre en entier même si
+  // le fil n'était pas tout en bas, sans quoi elle reste sous le champ, comme cachée derrière.
+  const rk = feed.querySelector<HTMLElement>('[data-k="result"]');
+  const sig = rk ? `${key}|${rk.querySelector('.sl-pill')?.textContent ?? ''}|${rk.querySelector('.sl-pub') ? 1 : 0}` : '';
+  if (rk && sig !== resSig && !switched) { rk.scrollIntoView({ block: 'nearest', behavior: calm() ? 'auto' : 'smooth' }); glideEnd = performance.now() + 700; need('[data-sl-down]', root).hidden = true; }
+  resSig = sig;
   // Captures citées dans le fil (messages de l'agent principal et comptes rendus) : la matière de la vue Design.
   const shots = shotsOf(d, crew);
   const head = need('[data-sl-head]', root);
@@ -1035,12 +1050,12 @@ function paint(): void {
   center.classList.toggle('sl-v-design', view === 'design'); center.classList.toggle('sl-v-split', view === 'split');
   const dz = need<HTMLElement>('[data-sl-design]', root); dz.hidden = view === 'chat';
   need('[data-sl-dzgrip]', root).hidden = view !== 'split';
-  if (view !== 'chat') design.paint(dz, p, shots, () => { if (root?.isConnected) paint(); });
+  if (view !== 'chat') design.paint(dz, p, shots, () => { if (root?.isConnected) paint(); }, `${cur?.id ?? ''}:${cur?.group === 'work' ? 1 : 0}`, cur && d && crew ? codeIn(cur, d, crew) : undefined);
   paintIfChanged(need('[data-sl-cons]', root), cur && crew ? consHTML(cur, d, crew) : '');
   // Colonne de droite : Équipe puis Technique. Squelette tant que le fil démarre ; quand le vrai contenu
   // remplace le squelette, il entre une fois en fondu (pas à chaque mise à jour).
   const col = need<HTMLElement>('[data-sl-now]', root), skel = !(cur && crew), wasSkel = col.dataset.skel === '1';
-  const colH = cur && crew ? colHTML(nowHTML(cur, d, crew, ask), techHTML(cur, d, crew)) : opening?.pid === p.id ? colHTML(skelHTML('team'), skelHTML('tech')) : '';
+  const colH = cur && crew ? colHTML(nowHTML(cur, d, crew, ask), codeLink(d, view !== 'chat' && design.current() === 'code')) : opening?.pid === p.id ? colHTML(skelHTML('team'), '') : '';
   if (morphIfChanged(col, colH) && wasSkel && !skel && !calm()) { col.classList.remove('sl-reveal'); void col.offsetWidth; col.classList.add('sl-reveal'); }
   col.dataset.skel = skel ? '1' : '';
   if (cur && crew) tickClocks();
@@ -1209,7 +1224,7 @@ function bind(r: HTMLElement): void {
     const dz = el.closest<HTMLElement>('[data-sl-design]');
     if (dz && p) {
       const d0 = S.detail.get(curId()), c0 = d0 ? crewOf(d0.subagents ?? [], d0.models ?? []) : null;
-      if (design.click(e, dz, shotsOf(d0, c0), text => { if (view === 'design') view = 'chat'; const ta = need<HTMLTextAreaElement>('.sl-comp textarea', r); if (!ta.value.trim()) ta.value = text; paint(); grow(ta); ta.focus(); ready(); showAuto(); })) { paint(); return; }
+      if (design.click(e, dz, shotsOf(d0, c0), text => { if (view === 'design') view = 'chat'; const ta = need<HTMLTextAreaElement>('.sl-comp textarea', r); if (!ta.value.trim()) ta.value = text; paint(); grow(ta); ta.focus(); ready(); showAuto(); }, p, d0?.worktree || S.sessions.find(x => x.id === curId())?.worktree || '')) { paint(); return; }
     }
     if (!t || !p) return;
     const act = t.dataset.sl, pid = p.id;
@@ -1223,7 +1238,9 @@ function bind(r: HTMLElement): void {
     }
     if (act === 'unprof') { closeProf(); return; }
     if (act === 'routes') { routesMenu(t); return; }
-    if (act === 'view') { const v = t.dataset.v; view = v === 'design' || v === 'split' ? v : 'chat'; paint(); if (view !== 'design') need('.sl-comp textarea', r).focus(); return; }
+    // Lien de la colonne Équipe : l'onglet Code du panneau de droite (la discussion reste à côté).
+    if (act === 'code') { design.show('code'); if (view === 'chat') view = 'split'; keepView(); paint(); return; }
+    if (act === 'view') { const v = t.dataset.v; view = v === 'design' || v === 'split' ? v : 'chat'; keepView(); paint(); if (view !== 'design') need('.sl-comp textarea', r).focus(); return; }
     if (act === 'copy' || act === 'quote' || act === 'keep') {
       // Le texte du message tel qu'il est lu, sans l'en-tête ni les gestes ; les blocs repliés sont compris.
       const bd = t.closest('.sl-msg')?.querySelector('.sl-bd'); if (!bd) return;
@@ -1386,7 +1403,7 @@ export async function prefill(pid: string, thread: string, text: string): Promis
   const ta = root?.isConnected && p?.id === pid ? root.querySelector<HTMLTextAreaElement>('.sl-comp textarea') : null;
   if (ta && shown === key) { ta.value = join(ta.value); drafts.set(key, ta.value); }
   else { if (ta && shown) drafts.set(shown, ta.value); drafts.set(key, join(drafts.get(key))); }
-  choose(pid, thread); view = 'chat';
+  choose(pid, thread); if (view === 'design') view = 'chat';
   await go(pid, 'salon');
   if (!root?.isConnected || p?.id !== pid) return;
   paint();

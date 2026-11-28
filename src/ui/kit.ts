@@ -134,6 +134,7 @@ const I: Record<string, string> = {
   shield: '<path d="M12 3.5l7 2.8v5.4c0 4.4-3 7.6-7 8.8-4-1.2-7-4.4-7-8.8V6.3z"/><path d="M9 12l2.2 2.2L15.5 10"/>',
   key: '<circle cx="8" cy="15" r="3.8"/><path d="M10.7 12.3L19 4M16 7l2.5 2.5M14 9l2 2"/>',
   phone: '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M10.5 18.5h3"/>',
+  desktop: '<rect x="2.5" y="4" width="19" height="12.5" rx="1.8"/><path d="M9 20.5h6M12 16.5v4"/>',
   devices: '<rect x="2.5" y="5" width="13" height="9.5" rx="1.5"/><path d="M1.5 18h15"/><rect x="17" y="8" width="5.5" height="11" rx="1.3"/>',
   play: '<path d="M8 5.5v13l10.5-6.5z"/>',
   stop: '<rect x="7" y="7" width="10" height="10" rx="2"/>',

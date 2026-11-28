@@ -94,7 +94,7 @@ body.no-side .sl-sidegrip { display: none; }
   .sl-box.sl-now-off { grid-template-columns: var(--sl-l, 248px) minmax(0, 1fr) 0px; }
   .sl-box.sl-now-off .sl-now { padding-inline: 0; border-left-color: transparent; opacity: 0; visibility: hidden; }
 }
-.sl-feed { flex: 1; min-height: 0; overflow: auto; padding: 14px 16px 8px; display: flex; flex-direction: column; gap: 14px; }
+.sl-feed { flex: 1; min-height: 0; overflow: auto; padding: 14px 16px 16px; scroll-padding-block: 14px 16px; display: flex; flex-direction: column; gap: 14px; }
 /* Un message ne rétrécit jamais pour tenir dans le fil (sinon `.sl-msg`, en overflow hidden, coupe sa fin : questions, boutons) : c'est le fil qui défile. */
 .sl-feed > * { flex-shrink: 0; }
 
@@ -377,14 +377,14 @@ button.sl-pub-chip:hover { color: var(--text); background: var(--hover); }
 .sl-chip:active { scale: var(--mo-press); }
 .sl-chip[style] { border-color: color-mix(in srgb, var(--c) 35%, var(--border)); color: color-mix(in srgb, var(--c) 70%, var(--text)); }
 
-/* ---- Colonne de droite : Équipe en haut, Technique dessous (30 % de la hauteur), chacune défile seule.
-   Vue Technique : styles .lv-* de pulse.css réutilisés. ---- */
-.sl-team { flex: 0 1 auto; min-height: 0; overflow: hidden auto; padding: 12px 14px; }
-/* Technique prend toute la hauteur que l'Équipe laisse (au moins 30 %) : une équipe d'un agent ne laisse plus un grand vide
-   au-dessus d'une liste coupée. `.sl-now .sl-tech h4` : plus fort que `.sl-now h4`, qui annulait marges et retrait du titre. */
-.sl-tech { flex: 1 1 0; min-height: 30%; overflow: hidden auto; padding: 0 14px 12px; border-top: 1px solid var(--border); }
-.sl-now .sl-tech h4 { position: sticky; top: 0; z-index: 1; margin: 0 -14px 6px; padding: 10px 14px 4px; background: var(--bg-list); }
-.sl-box.sl-now-open .sl-tech h4 { background: var(--bg); }
+/* ---- Colonne de droite : Équipe (toute la hauteur), puis le lien vers l'onglet Code du panneau de droite, où vit
+   l'activité technique depuis le 28 nov. 2026 (styles .lv-* de pulse.css réutilisés là-bas). ---- */
+.sl-team { flex: 1 1 auto; min-height: 0; overflow: hidden auto; padding: 12px 14px; }
+.sl-codelink { flex: none; display: flex; align-items: center; gap: 8px; margin: 0 10px 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--text-2); font: var(--t-1) var(--font); text-align: left; cursor: pointer; }
+.sl-codelink:hover { color: var(--text); background: var(--hover); }
+.sl-codelink[aria-pressed="true"] { border-color: var(--border-2); color: var(--text); }
+.sl-codelink > span:not(.st-lines) { flex: 1; min-width: 0; }
+.sl-codelink .ic { width: 14px; height: 14px; flex: none; }
 /* Squelette : lignes et avatars qui miroitent pendant que le fil démarre ; le vrai contenu entre ensuite une fois (sl-reveal). */
 .sl-skel { display: flex; flex-direction: column; gap: 10px; }
 .sl-skel i, .sl-skel-av { display: block; height: 9px; border-radius: 5px; background: linear-gradient(90deg, var(--active), var(--hover), var(--active)); background-size: 200% 100%; animation: skel 1.4s ease-in-out infinite; animation-delay: calc(var(--i, 0) * 120ms); }
@@ -392,7 +392,6 @@ button.sl-pub-chip:hover { color: var(--text); background: var(--hover); }
 .sl-skel-mem > div { flex: 1; display: flex; flex-direction: column; gap: 6px; }
 .sl-skel .sl-skel-av { flex: none; width: 34px; height: 34px; border-radius: 50%; }
 .sl-reveal :is(.sl-mem, .sl-set, .sl-quota, .sl-cons, .lv, .st-wait, .lv-more) { animation: sl-in var(--mo-d4) var(--mo-out) both; }
-.sl-reveal .sl-tech :is(.lv, .st-wait, .lv-more) { animation-delay: var(--mo-d2); }
 .sl-now .lv { margin: 0 0 14px; padding: 0 0 12px; border-block-start: 0; }
 .sl-now .lv:last-child { border-bottom: 0; margin-bottom: 0; }
 .st-who { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 0; font-size: var(--t-1); font-weight: 600; color: var(--text); }
@@ -714,9 +713,16 @@ body.grip-x .dz-device { transition: none; }
 /* Tablette et téléphone : écran logique fixe (--dz-sw × --dz-sh, posé par fit() dans design.ts), réduit d'un bloc par --dz-k
    pour tenir entier ; .dz-fit occupe la taille réduite pour que la scène le centre. */
 .dz-fit { width: 100%; height: 100%; display: grid; place-items: center; }
-.sl-design:is([data-size="tablet"], [data-size="phone"]) .dz-fit { display: block; width: calc(var(--dz-sw, 390px) * var(--dz-k, 1)); height: calc(var(--dz-sh, 844px) * var(--dz-k, 1)); }
+.sl-design:is([data-size="tablet"], [data-size="phone"]) .dz-fit { display: block; justify-items: start; width: calc(var(--dz-sw, 390px) * var(--dz-k, 1)); height: calc(var(--dz-sh, 844px) * var(--dz-k, 1)); }
 .sl-design:is([data-size="tablet"], [data-size="phone"]) .dz-device { width: var(--dz-sw, 390px); max-width: none; height: var(--dz-sh, 844px); transform: scale(var(--dz-k, 1)); transform-origin: 0 0; transition: none; }
 .sl-design[data-size="phone"] .dz-device { border-radius: calc(28px / var(--dz-k, 1)); }
+/* Duo (design.ts, fitDuo) : ordinateur et téléphone dans la même scène, côte à côte (`data-dir="row"`) ou empilés ; chaque
+   .dz-fit porte sa propre échelle. */
+.dz-live.dz-duo { display: flex; align-items: center; justify-content: center; gap: 12px; }
+.dz-duo[data-dir="col"] { flex-direction: column; }
+.sl-design[data-size="duo"] .dz-fit { display: block; justify-items: start; flex: none; width: calc(var(--dz-sw, 1280px) * var(--dz-k, 0)); height: calc(var(--dz-sh, 800px) * var(--dz-k, 0)); }
+.sl-design[data-size="duo"] .dz-device { width: var(--dz-sw, 1280px); max-width: none; height: var(--dz-sh, 800px); transform: scale(var(--dz-k, 0)); transform-origin: 0 0; transition: none; border-radius: calc(10px / max(var(--dz-k, 1), .01)); }
+.sl-design[data-size="duo"] [data-dev="phone"] .dz-device { border-radius: calc(28px / max(var(--dz-k, 1), .01)); }
 
 :root[data-motion="off"] .sl-live.on::after { animation: none; }
 @media (prefers-reduced-motion: reduce) { .sl-live.on::after { animation: none; } .dz-device { transition: none; } }
@@ -763,3 +769,88 @@ button.sl-auto:active { scale: var(--mo-press); }
 .dz-big img { position: absolute; inset: 0; }
 
 .sl-ac { max-height: 286px; overflow-y: auto; }
+
+/* ---- Onglet Code de la vue Design (codeview.ts) : activité des agents, puis le diff de la copie façon GitHub. ---- */
+.cv { flex: 1; min-height: 0; display: flex; flex-direction: column; container: cv / inline-size; }
+/* Bande d'activité : une puce par agent, défile en largeur si l'équipe est nombreuse. */
+.cv-strip { flex: none; display: flex; gap: 6px; padding: 8px 14px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--border); }
+.cv-strip::-webkit-scrollbar { display: none; }
+.cv-who { flex: none; display: flex; align-items: center; gap: 7px; max-width: 340px; margin: 0; padding: 3px 10px 3px 3px; border: 1px solid var(--border); border-radius: 99px; font-size: var(--t-1); }
+.cv-who[data-state="work"] { border-color: color-mix(in srgb, var(--c-green) 40%, var(--border)); background: color-mix(in srgb, var(--c-green) 6%, transparent); }
+.cv-who[data-state="done"] { color: var(--text-3); }
+.cv-who > .sl-av { width: 22px; height: 22px; }
+.cv-who > b { flex: none; font-weight: 600; color: var(--text); }
+.cv-who .lv-now { flex: 1 1 auto; align-items: center; gap: 6px; }
+.cv-who .lv-now b { font-size: var(--t-1); font-weight: 500; color: var(--text-2); }
+.cv-who .lv-now code { max-width: 160px; }
+.cv-who[data-state="done"] .lv-now, .cv-who[data-state="done"] .lv-dot { display: none; }
+.cv-who .lv-clock { flex: none; font: var(--t-1) var(--mono); color: var(--text-3); font-variant-numeric: tabular-nums; }
+.cv-diff { display: flex; flex-direction: column; gap: 10px; min-width: 0; min-height: 0; overflow: hidden auto; padding: 12px 14px 16px; }
+.cv-sum { flex: none; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; padding: 7px 14px; border-bottom: 1px solid var(--border); font-size: var(--t-1); color: var(--text-3); }
+.cv-sum b:first-child { color: var(--text); font-weight: 600; }
+.cv-sum .spin { width: 10px; height: 10px; }
+.cv-all { margin-left: auto; padding: 2px 8px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--bg); color: var(--text-2); font: var(--t-1) var(--font); cursor: pointer; }
+.cv-all:hover { color: var(--text); background: var(--hover); }
+/* Corps : arbre à gauche, diff à droite, chacun son défilement. */
+.cv-body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(180px, 26%) 1fr; }
+.cv-body.solo { grid-template-columns: 1fr; }
+.cv-tree { min-height: 0; overflow: auto; padding: 8px 6px 16px; border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+.cv-dir { display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px calc(8px + var(--d) * 12px); font: var(--t-1) var(--mono); color: var(--text-3); min-width: 0; }
+.cv-dir .ic { width: 13px; height: 13px; flex: none; }
+.cv-dir span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cv-jump { display: flex; align-items: center; gap: 6px; padding: 4px 8px 4px calc(27px + var(--d) * 12px); border: 0; border-radius: 6px; background: none; text-align: left; cursor: pointer; color: var(--text-2); min-width: 0; }
+.cv-jump:hover { background: var(--hover); color: var(--text); }
+.cv-jump.on { background: color-mix(in srgb, var(--c-blue) 12%, transparent); color: var(--text); }
+.cv-jump code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--t-1) var(--mono); }
+.cv-jump .cv-gain { gap: 4px; font-size: 11px; }
+.cv-jump em { flex: none; width: 14px; text-align: center; font: 600 11px var(--mono); font-style: normal; color: var(--c-orange, var(--text-3)); }
+.cv-jump em.st-A { color: var(--c-green); }
+.cv-jump em.st-D { color: var(--c-red); }
+.cv-live { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--c-green); animation: lv-blink 1.8s ease-in-out infinite; }
+/* Volet étroit : l'arbre passe au-dessus du diff, en liste repliée à hauteur limitée. */
+@container cv (max-width: 720px) {
+  .cv-body { display: flex; flex-direction: column; }
+  .cv-tree { flex: none; max-height: 30%; border-right: 0; border-bottom: 1px solid var(--border); }
+  .cv-diff { flex: 1; }
+}
+.cv-gain { display: inline-flex; gap: 6px; font: var(--t-1) var(--mono); font-variant-numeric: tabular-nums; }
+.cv-gain .add { color: var(--c-green); font-weight: 600; }
+.cv-gain .del { color: var(--c-red); font-weight: 600; }
+.cv-file { border: 1px solid var(--border); border-radius: 8px; overflow: clip; scroll-margin-top: 0; }
+.cv-file > header { position: sticky; top: -12px; z-index: 1; display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 4px; background: var(--bg-list); border-bottom: 1px solid var(--border); font-size: var(--t-1); }
+.cv-file.shut > header { border-bottom: 0; }
+.cv-fold { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border: 0; border-radius: 5px; background: none; color: var(--text-3); cursor: pointer; }
+.cv-fold:hover { background: var(--hover); color: var(--text); }
+.cv-fold .ic { width: 12px; height: 12px; transition: rotate var(--mo-d2) var(--mo-out); }
+.cv-file.shut .cv-fold .ic { rotate: -90deg; }
+.cv-file > header > code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: var(--t-1) var(--mono); color: var(--text); font-weight: 600; }
+.cv-file > header > code span { color: var(--text-3); font-weight: 400; }
+.cv-file > header > em { flex: none; padding: 0 6px; border: 1px solid var(--border-2); border-radius: 9px; font-style: normal; color: var(--text-2); }
+.cv-bar { display: inline-flex; gap: 1px; flex: none; }
+.cv-bar i { width: 8px; height: 8px; border-radius: 2px; background: var(--active); }
+.cv-bar i.add { background: var(--c-green); }
+.cv-bar i.del { background: var(--c-red); }
+.cv-code { font: 12px/1.6 var(--mono); overflow-x: auto; }
+.cv-l { display: grid; grid-template-columns: minmax(3.2em, max-content) minmax(3.2em, max-content) 1fr; min-width: 0; }
+.cv-l i { padding: 0 8px; font-style: normal; text-align: right; color: var(--text-3); user-select: none; font-variant-numeric: tabular-nums; background: var(--bg-list); }
+.cv-l code { padding: 0 10px 0 4px; font: inherit; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-2); }
+.cv-l code s { display: inline-block; width: 1.4em; text-decoration: none; color: var(--text-3); user-select: none; }
+.cv-l.add { background: color-mix(in srgb, var(--c-green) 13%, transparent); }
+.cv-l.add i { background: color-mix(in srgb, var(--c-green) 20%, transparent); }
+.cv-l.del { background: color-mix(in srgb, var(--c-red) 12%, transparent); }
+.cv-l.del i { background: color-mix(in srgb, var(--c-red) 18%, transparent); }
+.cv-l:is(.add, .del) code { color: var(--text); }
+.cv-l.add code s { color: var(--c-green); }
+.cv-l.del code s { color: var(--c-red); }
+.cv-l.hunk { background: color-mix(in srgb, var(--c-blue) 9%, transparent); }
+.cv-l.hunk i { background: color-mix(in srgb, var(--c-blue) 14%, transparent); }
+.cv-l.hunk code { color: var(--text-3); padding-block: 2px; }
+.cv-l.cv-new { animation: cv-new 2.4s var(--mo-out) both; }
+@keyframes cv-new { from { background: color-mix(in srgb, var(--c-green) 38%, transparent); } }
+.cv-note { margin: 0; padding: 10px 12px; color: var(--text-3); font-size: var(--t-1); }
+.cv-note.err { color: var(--c-red); }
+.cv-none { display: flex; align-items: center; gap: 10px; padding: 14px; border: 1px dashed var(--border-2); border-radius: 8px; color: var(--text-3); font-size: var(--t-1); }
+.cv-none p { margin: 0; line-height: 1.5; }
+.cv-none .ic { width: 18px; height: 18px; flex: none; }
+@media (prefers-reduced-motion: reduce) { .cv-l.cv-new { animation: none; } }
+/* Les fichiers de chaque agent sont déjà dans le diff, juste dessous : la carte garde l'étape, le chrono et les outils. */

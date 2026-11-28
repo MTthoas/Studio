@@ -61,7 +61,7 @@ const NEWS: Item[] = [
     lead: 'Le Salon occupe tout l’écran : le projet se choisit en tête de la liste des fils, rangés par urgence.',
     bits: [
       ['list', 'Fils par urgence', 'ceux qui attendent une réponse d’abord, puis au travail, prêts à publier, terminés'],
-      ['frame', 'Vue Design', 'les captures des agents en grand, et l’aperçu du site local en trois largeurs'],
+      ['frame', 'Vue Design', 'l’aperçu du site local sur ordinateur et téléphone à la fois, à côté de la discussion, rechargé quand l’équipe termine'],
       ['keyboard', 'Champ', '`@` écrit à un agent, `[[` lie une note, `/` lance une commande ou insère un skill'],
       ['cpu', 'Choix du modèle', 'un modèle par niveau de tâche ; une interface complexe part sur le modèle requis'],
     ],
