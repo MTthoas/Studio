@@ -850,36 +850,6 @@ function stepHTML(working: boolean, last: { kind: string; text: string } | undef
   const tg = working && last && tool ? targetOf(last.kind, last.text) : '';
   return `<span class="lv-now"><i class="lv-dot"></i><b>${esc(verb)}</b>${tg ? `<code title="${esc(tg)}">${esc(tg)}</code>` : ''}</span>`;
 }
-function techHTML(t: Thread, d: Detail | undefined, crew: Crew): string {
-  if (!d) return skelHTML('tech');
-  const work = t.group === 'work', acts = d.actions, lp = acts.map(a => a.kind).lastIndexOf('prompt'), last = acts[acts.length - 1];
-  const t0 = ms(acts[lp]?.at) || ms(t.s.started), t1 = work ? 0 : ms(last?.at) || t0;
-  // Dernières actions (outil + cible), les plus récentes d'abord ; celle en cours est déjà dite dans l'étape.
-  const tools = acts.filter(a => a.kind.startsWith('tool:') && a.text), recent = tools.slice(work ? -7 : -6, work ? -1 : undefined).reverse();
-  const list = recent.map(a => `<div class="st-act"><span>${esc(a.kind.slice(5))}</span><code title="${esc(a.text)}">${esc(targetOf(a.kind, a.text))}</code></div>`).join('');
-  // Fichiers touchés : les plus récents d'abord, lignes +/− cumulées.
-  const per = new Map<string, { add: number; del: number; at: number }>();
-  for (const a of acts) {
-    if (!EDIT_TOOL.test(a.kind.slice(5)) || !a.text) continue;
-    const f = per.get(a.text) ?? { add: 0, del: 0, at: 0 };
-    f.add += amount(a.add); f.del += amount(a.del); f.at = Math.max(f.at, ms(a.at)); per.set(a.text, f);
-  }
-  const rows = [...per].sort((a, b) => b[1].at - a[1].at), shownRows = rows.slice(0, 5);
-  const files = shownRows.map(([f, v]) => `<div class="lv-file"><code title="${esc(f)}">${esc(shortPath(f))}</code>${gain(v.add, v.del)}</div>`).join('')
-    + (rows.length > shownRows.length ? `<p class="lv-more">et ${rows.length - shownRows.length} autre${rows.length - shownRows.length > 1 ? 's' : ''}</p>` : '');
-  const total = d.lines && (d.lines.add || d.lines.del) ? gain(d.lines.add, d.lines.del) : '';
-  const main = `<section class="lv st-agent" data-state="${work ? 'work' : acts.length ? 'done' : 'idle'}"><h5 class="st-who">${esc(crew.main.name)}${total ? ` ${total}` : ''}</h5>
-    <div class="lv-head">${stepHTML(work, last, acts.length ? 'Terminé' : 'Prêt')}${clockHTML(t0, t1)}</div>${list || files ? `<div class="lv-rest">${list ? `<div class="st-acts">${list}</div>` : ''}${files ? `<div class="lv-files">${files}</div>` : ''}</div>` : ''}</section>`;
-  // Sous-agents : ceux qui travaillent d'abord, une ligne chacun (étape, chrono, fichiers).
-  const subs = [...(d.subagents ?? [])].sort((a, b) => Number(b.live) - Number(a.live) || ms(b.updated) - ms(a.updated));
-  const subRows = subs.slice(0, 6).map(s => {
-    const w = crew.subs.get(s.id); if (!w) return '';
-    const s0 = ms(s.started), s1 = s.live ? 0 : ms(s.updated) || s0, fl = (s.files ?? []).slice(0, 3).map(f => `<div class="lv-file"><code title="${esc(f.path)}">${esc(shortPath(f.path))}</code>${gain(amount(f.add), amount(f.del))}</div>`).join('');
-    return `<section class="lv st-agent" data-state="${s.live ? 'work' : 'done'}"><h5 class="st-who">${esc(w.name)}</h5>
-      <div class="lv-head">${stepHTML(s.live, s.last, 'Terminé')}${clockHTML(s0, s1)}</div>${fl ? `<div class="lv-rest"><div class="lv-files">${fl}</div></div>` : ''}</section>`;
-  }).join('');
-  return main + subRows + (subs.length > 6 ? `<p class="lv-more">et ${subs.length - 6} autre${subs.length > 7 ? 's' : ''}</p>` : '');
-}
 /** Matière de l'onglet Code (codeview.ts) : copie du fil, contenus écrits (Write, puis Edit appliqués dessus) pour les
  *  fichiers nouveaux non suivis, fichiers touchés du plus récent au plus ancien, et une signature qui change à chaque écriture. */
 function codeIn(t: Thread, d: Detail, crew: Crew): CodeIn {
@@ -894,8 +864,20 @@ function codeIn(t: Thread, d: Detail, crew: Crew): CodeIn {
     else if (writes.has(f) && a.old && typeof a.new === 'string') writes.set(f, (writes.get(f) ?? '').replace(a.old, () => a.new ?? ''));
   }
   const subs = (d.subagents ?? []).map(s => `${s.id}:${(s.files ?? []).map(f => `${f.path}${f.add}/${f.del}`).join(',')}`).join(';');
-  const wt = d.worktree || t.s.worktree || '';
-  return { wt, sig: `${wt}|${n}|${at}|${subs}`, tech: techHTML(t, d, crew), writes, touched: order, busy: t.group === 'work' };
+  const wt = d.worktree || t.s.worktree || '', work = t.group === 'work';
+  // Fichiers en cours d'écriture : le dernier du principal tant qu'il travaille, et ceux des sous-agents encore actifs.
+  const live = [...(work && order[0] ? [order[0]] : []), ...(d.subagents ?? []).filter(s => s.live).flatMap(s => (s.files ?? []).map(f => f.path))];
+  return { wt, sig: `${wt}|${n}|${at}|${subs}`, tech: stripHTML(t, d, crew), writes, touched: order, live, busy: work };
+}
+/** Bande d'activité de l'onglet Code : une puce par agent (chat, nom, étape, chrono), ceux qui travaillent d'abord. */
+function stripHTML(t: Thread, d: Detail, crew: Crew): string {
+  const work = t.group === 'work', acts = d.actions, lp = acts.map(a => a.kind).lastIndexOf('prompt'), last = acts[acts.length - 1];
+  const t0 = ms(acts[lp]?.at) || ms(t.s.started), t1 = work ? 0 : ms(last?.at) || t0;
+  const chip = (w: Who, on: boolean, step: string, clock: string): string => `<div class="lv cv-who" data-state="${on ? 'work' : 'done'}">${face(w, on ? 'work' : 'done')}<b>${esc(w.name)}</b>${step}${clock}</div>`;
+  const subs = [...(d.subagents ?? [])].sort((a, b) => Number(b.live) - Number(a.live) || ms(b.updated) - ms(a.updated));
+  const rows = [{ on: work, html: chip(crew.main, work, stepHTML(work, last, acts.length ? 'Terminé' : 'Prêt'), clockHTML(t0, t1)) },
+    ...subs.map(s => { const w = crew.subs.get(s.id), s0 = ms(s.started); return { on: s.live, html: w ? chip(w, s.live, stepHTML(s.live, s.last, 'Terminé'), clockHTML(s0, s.live ? 0 : ms(s.updated) || s0)) : '' }; })];
+  return rows.filter(r => r.on).concat(rows.filter(r => !r.on)).map(r => r.html).join('');
 }
 /** Squelette de la colonne : la place est tenue (avatars, lignes) le temps que le fil démarre ou que sa lecture arrive. */
 const skelHTML = (k: 'team' | 'tech'): string => k === 'team'

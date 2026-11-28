@@ -1,7 +1,9 @@
-// Onglet « Code » de la vue Design du Salon (28 nov. 2026, « voir les modifs de code in realtime à la github ») : l'activité
-// technique des agents (étape, chrono, outils, fichiers ; ce qui était la section Technique de la colonne Équipe), puis le
-// diff de la copie du fil façon GitHub : un bloc par fichier (chemin, +n −n, repliable), numéros de ligne ancien/nouveau,
-// lignes ajoutées en vert, retirées en rouge, en-têtes `@@`. Styles `cv-` dans css/salon.css.
+// Onglet « Code » de la vue Design du Salon (28 nov. 2026, « voir les modifs de code in realtime à la github », design B
+// choisi) : en haut une bande d'activité (une puce par agent : étape, chrono) ; dessous, comme les « Files changed » de
+// GitHub, l'arbre des fichiers modifiés à gauche (+n −n, point vert sur ceux en cours d'écriture, clic = aller au fichier)
+// et le diff à droite : un bloc par fichier (chemin, +n −n, repliable), numéros de ligne ancien/nouveau, lignes ajoutées en
+// vert, retirées en rouge, en-têtes `@@`. Volet étroit (< 720 px, requête de conteneur) : l'arbre passe au-dessus du diff.
+// Styles `cv-` dans css/salon.css.
 //   - Le diff vient du Mac (`project diff`, scope `working` de la copie ; `branch` quand il n'y a plus rien de non commité,
 //     après une publication). Il est relu quand `sig` change (une écriture d'un agent), au plus toutes les 1,5 s, et toutes
 //     les 8 s tant que l'équipe travaille (sous-agents dont on ne voit pas les actions).
@@ -14,9 +16,9 @@ import { esc } from '../../lib/markdown.ts';
 import { icon, morphIfChanged } from '../../ui/kit.ts';
 import type { Project } from './model.ts';
 
-/** Ce que le Salon donne à l'onglet : copie du fil, signature des écritures, activité (HTML), contenus écrits par chemin
- *  absolu, fichiers touchés du plus récent au plus ancien, équipe au travail. */
-export interface CodeIn { wt: string; sig: string; tech: string; writes: Map<string, string>; touched: string[]; busy: boolean }
+/** Ce que le Salon donne à l'onglet : copie du fil, signature des écritures, bande d'activité (HTML), contenus écrits par
+ *  chemin absolu, fichiers touchés du plus récent au plus ancien, fichiers en cours d'écriture, équipe au travail. */
+export interface CodeIn { wt: string; sig: string; tech: string; writes: Map<string, string>; touched: string[]; live: string[]; busy: boolean }
 interface Line { t: '+' | '-' | ' ' | '@'; s: string; a: number; b: number }
 interface File { path: string; add: number; del: number; lines: Line[]; isNew: boolean; gone: boolean; bin: boolean; more: number }
 interface Read { sig: string; at: number; busy: boolean; files: File[] | null; err: string; scope: string; base: string; truncated: boolean; fresh: Set<string>; seen: Set<string> | null }
@@ -25,6 +27,8 @@ const reads = new Map<string, Read>();
 /** Repli choisi à la main, par chemin (sinon : replié s'il est supprimé, binaire ou très long). */
 const fold = new Map<string, boolean>();
 const MAX = 400;
+/** Fichier choisi dans l'arbre, par copie. */
+const picked = new Map<string, string>();
 
 /** Patch unifié → fichiers et lignes numérotées. */
 function parse(patch: string): File[] {
@@ -104,21 +108,47 @@ function fileHTML(f: File, r: Read): string {
   return `<article class="cv-file${shut ? ' shut' : ''}" data-cv-path="${esc(f.path)}"><header><button type="button" class="cv-fold" data-dz="cv-fold" data-path="${esc(f.path)}" aria-expanded="${!shut}" aria-label="${shut ? 'Déplier' : 'Replier'} ${esc(f.path)}">${icon('chevron')}</button><code title="${esc(f.path)}"><span>${esc(dir)}</span>${esc(name)}</code>${tag ? `<em>${tag}</em>` : ''}${blind(f) ? '' : gain(f.add, f.del) + bar(f.add, f.del)}</header>${shut ? '' : body}</article>`;
 }
 
+const match = (list: string[], path: string): boolean => list.some(t => t === path || t.endsWith('/' + path));
+
+/** Arbre des fichiers : dossiers imbriqués, ceux à un seul enfant fusionnés (`src/features/`), dossiers avant fichiers. */
+interface Dir { dirs: Map<string, Dir>; files: File[] }
+function treeHTML(r: Read, c: CodeIn, on: string): string {
+  const root: Dir = { dirs: new Map(), files: [] };
+  for (const f of r.files ?? []) {
+    let d = root; const parts = f.path.split('/'); parts.pop();
+    for (const x of parts) { if (!d.dirs.has(x)) d.dirs.set(x, { dirs: new Map(), files: [] }); d = d.dirs.get(x) as Dir; }
+    d.files.push(f);
+  }
+  const walk = (d: Dir, depth: number): string => [...d.dirs].sort((x, y) => x[0].localeCompare(y[0])).map(([n, sub]) => {
+    let name = n, x = sub;
+    while (!x.files.length && x.dirs.size === 1) { const [k, v] = [...x.dirs][0]; name += '/' + k; x = v; }
+    return `<div class="cv-dir" style="--d:${depth}">${icon('folder')}<span>${esc(name)}</span></div>${walk(x, depth + 1)}`;
+  }).join('') + [...d.files].sort((x, y) => x.path.localeCompare(y.path)).map(f => {
+    const st = f.isNew ? ['A', 'Ajouté'] : f.gone ? ['D', 'Supprimé'] : ['M', 'Modifié'], live = c.busy && match(c.live, f.path);
+    return `<button type="button" class="cv-jump${f.path === on ? ' on' : ''}${live ? ' live' : ''}" style="--d:${depth}" data-dz="cv-go" data-path="${esc(f.path)}" title="${esc(f.path)}${live ? ' · en cours d’écriture' : ''}"><code>${esc(f.path.slice(f.path.lastIndexOf('/') + 1))}</code>${live ? '<i class="cv-live" aria-label="en cours"></i>' : ''}${blind(f) ? '' : gain(f.add, f.del)}<em class="st-${st[0]}" title="${st[1]}">${st[0]}</em></button>`;
+  }).join('');
+  return walk(root, 0);
+}
+
+function sumHTML(r: Read): string {
+  if (!r.files?.length) return '';
+  const add = r.files.reduce((n, f) => n + f.add, 0), del = r.files.reduce((n, f) => n + f.del, 0);
+  return `<div class="cv-sum"><b>${r.files.length} fichier${r.files.length > 1 ? 's' : ''}</b>${gain(add, del)}<span>${r.scope === 'branch' ? `branche, par rapport à ${esc(r.base || 'main')}` : 'non commités'}${r.truncated ? ' · tronqué' : ''}</span>${r.busy ? '<span class="spin"></span>' : ''}<button type="button" class="cv-all" data-dz="cv-all">${r.files.every(f => fold.get(f.path)) ? 'Tout déplier' : 'Tout replier'}</button></div>`;
+}
+
 function diffHTML(r: Read): string {
   if (!native.available()) return `<p class="cv-note">Le diff se lit depuis l’app Studio pour Mac.</p>`;
   if (r.err) return `<p class="cv-note err">${esc(r.err)}</p>`;
   if (!r.files) return '<p class="cv-note"><span class="spin"></span> Lecture des changements…</p>';
   if (!r.files.length) return `<div class="cv-none">${icon('code')}<p>Aucun changement dans la copie pour l’instant. Les modifications des agents s’affichent ici au fil de l’eau.</p></div>`;
-  const add = r.files.reduce((n, f) => n + f.add, 0), del = r.files.reduce((n, f) => n + f.del, 0);
-  const list = r.files.map(f => `<button type="button" class="cv-jump" data-dz="cv-go" data-path="${esc(f.path)}" title="${esc(f.path)}"><code>${esc(f.path)}</code>${blind(f) ? '<em>nouveau</em>' : gain(f.add, f.del)}</button>`).join('');
-  return `<div class="cv-sum"><b>${r.files.length} fichier${r.files.length > 1 ? 's' : ''}</b>${gain(add, del)}<span>${r.scope === 'branch' ? `branche, par rapport à ${esc(r.base || 'main')}` : 'non commités'}${r.truncated ? ' · tronqué' : ''}</span>${r.busy ? '<span class="spin"></span>' : ''}<button type="button" class="cv-all" data-dz="cv-all">${r.files.every(f => fold.get(f.path)) ? 'Tout déplier' : 'Tout replier'}</button></div>
-    ${r.files.length > 1 ? `<nav class="cv-list" aria-label="Fichiers modifiés">${list}</nav>` : ''}${r.files.map(f => fileHTML(f, r)).join('')}`;
+  return r.files.map(f => fileHTML(f, r)).join('');
 }
 
 /** Peint l'onglet dans `box` (`[data-cv]`, posé une fois par design.ts). */
 export function paint(box: HTMLElement, p: Project, c: CodeIn, again: () => void): void {
-  const r = read(p, c, again);
-  morphIfChanged(box, `<section class="cv-tech" aria-label="Activité des agents"><h4>Activité</h4><div class="cv-agents">${c.tech}</div></section><section class="cv-diff" aria-label="Changements de code">${diffHTML(r)}</section>`);
+  const r = read(p, c, again), many = (r.files?.length ?? 0) > 1;
+  morphIfChanged(box, `${c.tech ? `<div class="cv-strip" aria-label="Activité des agents">${c.tech}</div>` : ''}${sumHTML(r)}
+    <div class="cv-body${many ? '' : ' solo'}">${many ? `<nav class="cv-tree" aria-label="Fichiers modifiés">${treeHTML(r, c, picked.get(c.wt) ?? '')}</nav>` : ''}<section class="cv-diff" aria-label="Changements de code">${diffHTML(r)}</section></div>`);
 }
 
 /** Clic dans l'onglet (`data-dz="cv-…"`). Rend vrai s'il faut repeindre. */
@@ -127,9 +157,10 @@ export function click(b: HTMLElement, box: HTMLElement, p: Project, wt: string):
   if (act === 'cv-fold') { const el = b.closest('.cv-file'); fold.set(path, !el?.classList.contains('shut')); return true; }
   if (act === 'cv-all') { const fs = reads.get(`${p.id}|${wt}`)?.files ?? [], shut = !fs.every(f => fold.get(f.path)); for (const f of fs) fold.set(f.path, shut); return true; }
   if (act === 'cv-go') {
+    picked.set(wt, path);
     const el = [...box.querySelectorAll<HTMLElement>('.cv-file')].find(x => x.dataset.cvPath === path);
     if (el?.classList.contains('shut')) { fold.set(path, false); requestAnimationFrame(() => [...box.querySelectorAll<HTMLElement>('.cv-file')].find(x => x.dataset.cvPath === path)?.scrollIntoView({ block: 'start' })); return true; }
-    el?.scrollIntoView({ block: 'start', behavior: 'smooth' }); return false;
+    el?.scrollIntoView({ block: 'start', behavior: 'smooth' }); return true;
   }
   return false;
 }
