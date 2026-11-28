@@ -340,6 +340,9 @@ const asks = (t: string): boolean => {
   const q = choices.parse(t); // des questions à choix (blocs studio-question) valent une question
   return q.questions.length > 0 || (q.text.trim().split(/\n{2,}/).pop() ?? '').includes('?');
 };
+/** La réponse finit par la ligne « Commit: … » (voir `agentMessage` de sessions.ts) : le travail est livré.
+ *  Une question en fin de compte rendu (bloc studio-question compris) n'empêche alors pas de proposer la publication. */
+const ships = (t: string): boolean => /^[\s>*-]*`*commit\s*:/im.test(t);
 const TESTS = /\b(npm (run )?test|npm run (typecheck|e2e)|vitest|jest|pytest|go test|cargo test|swift test|xcodebuild test|phpunit|rspec)\b/;
 const VERB: Record<string, string> = { Read: 'lit', Grep: 'cherche dans', Glob: 'cherche', Edit: 'modifie', MultiEdit: 'modifie', Write: 'écrit', NotebookEdit: 'modifie', Bash: 'lance une commande', Agent: 'confie une tâche', Task: 'confie une tâche', WebSearch: 'cherche sur le web', WebFetch: 'lit une page' };
 /** Ce que fait un agent, en clair : « lit app.ts » (jamais la commande ni le chemin complet). */
@@ -507,7 +510,7 @@ function itemsOf(d: Detail, crew: Crew, board: BoardMsg[]): { items: Item[]; ask
 /** « Terminal dans sa copie » : seulement si le tiroir de terminaux est branché (app Mac, voir `onTerminal`). */
 const termBtn = (wt: string): string => termHook ? `<button class="btn btn-ghost" data-sl="term" data-wt="${wt}" title="Ouvre un terminal dans la copie de l’agent">${icon('terminal')}Terminal dans sa copie</button>` : '';
 /** Carte « résultat » d'après l'état de la copie de l'agent : à publier, PR ouverte, fusionné.
- *  L'agent attend une réponse (`ask`) : son travail n'est pas fini, on ne propose pas encore de publier. */
+ *  L'agent attend une réponse (`ask`) sans avoir écrit sa ligne « Commit: » (`ships`) : on ne propose pas encore de publier. */
 function resultHTML(t: Thread, d: Detail, ask: boolean, agent: string): string {
   const wt = d.worktree || t.s.worktree, w = wt ? S.trees.find(x => x.name === wt) : undefined;
   if (!w) return '';
@@ -520,7 +523,7 @@ function resultHTML(t: Thread, d: Detail, ask: boolean, agent: string): string {
   const meta = [...counts, w.branch].filter(Boolean).map(esc).join(' · ');
   const a = esc(w.name);
   const all = d.files ?? t.s.files, fl = all.length ? `<details class="sl-files"><summary>${icon('chevron')}<span>Fichiers</span></summary><div>${all.slice(0, 14).map(f => `<code title="${esc(f)}">${esc(shortPath(f))}</code>`).join('')}${all.length > 14 ? `<small>+${all.length - 14}</small>` : ''}</div></details>` : '';
-  if (st === 'review' && ask) return '';
+  if (st === 'review' && ask && !ships(d.actions[d.actions.length - 1]?.text ?? '')) return '';
   if (st === 'review') return `<div class="sl-card res"><span class="sl-pill" style="--c:var(--c-green)">prêt à publier</span><div class="sl-card-t"><b>${esc(title)}</b>${meta ? `<small>${meta}</small>` : ''}${fl}</div><div class="sl-card-a">${termBtn(a)}<button class="btn" data-sl="review" data-wt="${a}">Relire</button><button class="btn btn-primary" data-sl="publish" data-wt="${a}">${icon('upload')}Publier la PR</button></div></div>`;
   if (st === 'pr') return `<div class="sl-card res"><span class="sl-pill" style="--c:var(--c-blue)">PR ouverte</span><div class="sl-card-t"><b>${esc(title)}</b><small>En attente de fusion${meta ? ` · ${meta}` : ''}</small></div><div class="sl-card-a">${termBtn(a)}<button class="btn" data-sl="pr" data-wt="${a}">${icon('pr')}Voir la PR</button></div></div>`;
   // Fusionné : la carte suit la livraison en direct (vérifications sur la branche principale, release), voir `flux.deliveryHTML`.
@@ -708,7 +711,7 @@ function laneOf(t: Thread): Lane {
 /** La dernière réponse de l'agent pose une question : le fil attend l'utilisateur, même si sa copie a déjà des changements. */
 function waits(t: Thread): boolean {
   const d = S.detail.get(t.id), last = d?.actions[d.actions.length - 1];
-  return !!last && last.kind !== 'prompt' && !last.kind.startsWith('tool:') && asks(last.text);
+  return !!last && last.kind !== 'prompt' && !last.kind.startsWith('tool:') && asks(last.text) && !ships(last.text);
 }
 /** Seconde ligne d'un fil : ce que l'agent fait à l'instant, ou ce qu'il attend de toi. Rien pour un fil fini. */
 function subLine(t: Thread, lane: Lane): string {
@@ -744,7 +747,7 @@ type Mood = 'work' | 'ask' | 'ready' | 'done';
 const MOOD: Record<Mood, [string, string]> = { work: ['au travail', 'amber'], ask: ['attend ta réponse', 'orange'], ready: ['prêt à publier', 'green'], done: ['terminé', 'gray'] };
 function moodOf(t: Thread, ask: boolean): Mood {
   if (t.group === 'work') return 'work';
-  if (ask) return 'ask';
+  if (ask && waits(t)) return 'ask';
   const w = t.s.worktree ? S.trees.find(x => x.name === t.s.worktree) : undefined;
   return w && copyStage(w) === 'review' ? 'ready' : 'done';
 }
@@ -983,6 +986,8 @@ function glide(list: HTMLElement, tops: Map<string, number>): void {
 }
 /** Fin du dernier défilement doux vers le bas du fil (performance.now()). */
 let glideEnd = 0;
+/** État de la carte de résultat au dernier rendu (voir `paint`) : son apparition ou son changement d'état la fait défiler à l'écran. */
+let resSig = '';
 function paint(): void {
   if (!root || !p) return;
   const th = threads(), id = curId(th), cur = th.find(t => t.id === id), d = id ? S.detail.get(id) : undefined;
@@ -1027,6 +1032,12 @@ function paint(): void {
   else if (changed && end) { feed.scrollTo({ top: feed.scrollHeight, behavior: calm() ? 'auto' : 'smooth' }); glideEnd = performance.now() + 700; }
   else if (fresh && !end) need('[data-sl-down]', root).hidden = false;
   if (switched) need('[data-sl-down]', root).hidden = true;
+  // Carte de résultat qui apparaît ou change d'état (prêt à publier → publication → PR ouverte) : on la montre en entier même si
+  // le fil n'était pas tout en bas, sans quoi elle reste sous le champ, comme cachée derrière.
+  const rk = feed.querySelector<HTMLElement>('[data-k="result"]');
+  const sig = rk ? `${key}|${rk.querySelector('.sl-pill')?.textContent ?? ''}|${rk.querySelector('.sl-pub') ? 1 : 0}` : '';
+  if (rk && sig !== resSig && !switched) { rk.scrollIntoView({ block: 'nearest', behavior: calm() ? 'auto' : 'smooth' }); glideEnd = performance.now() + 700; need('[data-sl-down]', root).hidden = true; }
+  resSig = sig;
   // Captures citées dans le fil (messages de l'agent principal et comptes rendus) : la matière de la vue Design.
   const shots = shotsOf(d, crew);
   const head = need('[data-sl-head]', root);

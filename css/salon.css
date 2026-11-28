@@ -94,7 +94,7 @@ body.no-side .sl-sidegrip { display: none; }
   .sl-box.sl-now-off { grid-template-columns: var(--sl-l, 248px) minmax(0, 1fr) 0px; }
   .sl-box.sl-now-off .sl-now { padding-inline: 0; border-left-color: transparent; opacity: 0; visibility: hidden; }
 }
-.sl-feed { flex: 1; min-height: 0; overflow: auto; padding: 14px 16px 8px; display: flex; flex-direction: column; gap: 14px; }
+.sl-feed { flex: 1; min-height: 0; overflow: auto; padding: 14px 16px 16px; scroll-padding-block: 14px 16px; display: flex; flex-direction: column; gap: 14px; }
 /* Un message ne rétrécit jamais pour tenir dans le fil (sinon `.sl-msg`, en overflow hidden, coupe sa fin : questions, boutons) : c'est le fil qui défile. */
 .sl-feed > * { flex-shrink: 0; }
 
