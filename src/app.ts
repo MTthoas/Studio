@@ -31,6 +31,7 @@ import * as news from './features/news.ts';
 import * as savedCommands from './features/commands.ts';
 import * as projectsPage from './features/projects/page.ts';
 import * as salon from './features/projects/salon.ts';
+import * as terminal from './features/terminal.ts';
 import * as projectsModel from './features/projects/model.ts';
 import * as projIcons from './ui/projicons.ts';
 import * as agentItems from './features/projects/items.ts';
@@ -300,7 +301,9 @@ function renderSidebar() {
         // Rangés dans `.side-kids`, qui trace l'arborescence (trait vertical, coude par ligne : css/rail.css).
         + kids((salonOn ? talks.map(s => `<button class="side-item side-sub2 side-talk${s.id === pick ? ' sel' : ''}${!s.live && s.stage ? ` ${s.stage.cls}` : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="salon" data-pj-session="${esc(s.id)}" data-pj-salon="1" title="${esc(s.title)}${s.live ? ' · en cours' : s.stage ? ` · ${esc(s.stage.label)}` : ''}"><i class="ss-live${s.live ? ' on' : s.stage ? ` ${s.stage.cls}` : ''}"></i><span>${esc(s.title)}</span>${!s.live && s.stage?.cls === 'st-review' ? `<em class="side-stage">${esc(s.stage.label)}</em>` : ''}<i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('') : '')
         + (open ? projectsPage.tabsOf(p, tab ?? '').slice(1).filter(([k]) => k !== 'salon' && (k === tab || (k === 'server' && servers.length > 0))).map(([k, l, ic]) => `<button class="side-item side-sub2${tab === k && !(k === 'server' && serving) ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="${k}">${icon(ic)}<span>${esc(l)}</span></button>`
-          + (k === 'server' ? servers.map(s => `<button class="side-item side-sub3${tab === 'server' && s.sel ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="server" data-pj-server="${esc(s.id)}" title="${esc(s.dest)}">${icon('server')}<span>${esc(s.name)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('') : '')).join('') : ''));
+          + (k === 'server' ? servers.map(s => `<button class="side-item side-sub3${tab === 'server' && s.sel ? ' sel' : ''}" data-pj-open="${esc(p.id)}" data-pj-tab="server" data-pj-server="${esc(s.id)}" title="${esc(s.dest)}">${icon('server')}<span>${esc(s.name)}</span><i class="side-more" data-side-more role="button" aria-label="Actions">${icon('more')}</i></button>`).join('') : '')).join('') : '')
+        // Les terminaux du projet (app Mac) : pastille d'état et port ; un clic ouvre le tiroir sur l'onglet.
+        + terminal.sideHTML(p.id));
   });
   // Double barre : le rail (zones, recherche, réglages) est toujours là ; la barre de droite ne montre que la zone ouverte,
   // et disparaît quand la zone n'a rien à lister (Accueil, Réglages) : l'espace va au contenu.
@@ -371,7 +374,7 @@ function setFold(f: HTMLElement, open: boolean) {
 }
 /** Lignes de projet (projet, onglets, conversations, serveurs, sous-agents) : clé stable pour repérer les nouvelles. */
 const SIDE_ROWS = '.side-sub, .side-sub2, .side-sub3, .side-sub4';
-const rowKey = (el: HTMLElement) => ['pjOpen', 'pjTab', 'pjSession', 'pjServer', 'pjSub', 'pjSalon'].map(k => el.dataset[k] ?? '').join('/');
+const rowKey = (el: HTMLElement) => ['pjOpen', 'pjTab', 'pjSession', 'pjServer', 'pjSub', 'pjSalon', 'pjTerm'].map(k => el.dataset[k] ?? '').join('/');
 /** Identité d'un bouton de la barre, pour rendre le focus clavier après un repeint. */
 const focusKey = (el: HTMLElement) => { const k = [el.dataset.act, el.dataset.view, el.dataset.tag, el.dataset.openNote, el.dataset.openConn, rowKey(el).replace(/\//g, '')].filter(Boolean); return el.matches('#sidebar button') && k.length ? [...k, rowKey(el)].join('|') : ''; };
 
@@ -395,6 +398,7 @@ function treeHTML(live: Note[]): string {
 
 /** Clic sur une ligne de projet de la barre latérale (projet, onglet, conversation, sous-agent, serveur). */
 async function openSideRow(d: Record<string, string | undefined>): Promise<void> {
+  if (d.pjOpen && d.pjTerm) { await terminal.show(d.pjOpen, d.pjTerm); return; } // le tiroir s'ouvre sur ce terminal
   if (d.pjOpen && d.pjSalon && d.pjSession) { salon.openThread(d.pjOpen, d.pjSession); return; } // le fil s'ouvre dans le Salon (qui ouvre l'onglet)
   if (d.pjOpen && d.pjSession !== undefined) projectsPage.openSession(d.pjOpen, d.pjSession || null, d.pjSub || null);
   if (d.pjOpen && d.pjServer !== undefined) projectsPage.openServer(d.pjOpen, d.pjServer);
@@ -405,6 +409,7 @@ function sideRowMenu(row: HTMLElement, anchor: Element | { x: number; y: number 
   const d = { ...row.dataset }, p = projectsModel.byId(d.pjOpen ?? ''); if (!p) return;
   const go = () => void openSideRow(d);
   if (d.pjSession) return projectsPage.sideMenu(anchor, p, d.pjSession, d.pjSub ?? '', go);
+  if (d.pjTerm) return terminal.sideMenu(anchor, p.id, d.pjTerm);
   if (d.pjServer) {
     const s = projectsPage.sideServers(p.id).find(x => x.id === d.pjServer);
     menu(anchor, [
@@ -418,6 +423,7 @@ function sideRowMenu(row: HTMLElement, anchor: Element | { x: number; y: number 
     { label: p.name },
     ...projectsPage.tabsOf(p).map(([k, l, ic]) => ({ label: l, icon: ic, run: open(k) })),
     ...(projectsPage.claudeAvailable() ? ['-' as const, { label: 'Nouvelle conversation', icon: 'compose', run: () => { projectsPage.openSession(p.id, null); open('sessions')(); } }] : []),
+    ...(terminal.available() ? [{ label: 'Nouveau terminal', icon: 'terminal', run: () => terminal.openIn(p.id) }] : []),
   ]);
 }
 
@@ -1128,6 +1134,10 @@ function commands() {
     ...(commerce.available() ? [c('Boutiques', 'shop', () => setView({ type: 'commerce' }), '', 'shopify boutique e-commerce ventes commandes produits stock chiffres publicité meta facebook marketplace marketing')] : []),
     ...(models.available() ? [c('Modèles locaux', 'cpu', () => setView({ type: 'models' }), '', 'modèle local ollama llama qwen mistral gemma installer télécharger serveur déployer open source')] : []),
     c('Nouveau projet', 'plus', () => projectsPage.createDialog(), '', 'créer projet dossier dépôt'),
+    ...(terminal.project() ? [
+      c('Terminal : nouveau', 'terminal', () => terminal.newTerm(), '', 'terminal shell console zsh bash commande tiroir'),
+      c('Terminal : ouvrir dans…', 'terminal', () => terminal.openMenu(), '', 'terminal shell dépôt copie worktree serveur ssh script npm lancer'),
+    ] : []),
     ...(open && n ? [c('Ranger la note dans un projet…', 'folder', () => { const a = $('[data-act=project]'); if (a) menu(a, projectsPage.projectMenuItems(n)); }, '', 'projet déplacer tag')] : []),
     ...projectsModel.projects().map(p => c(`Projet : ${p.name}`, 'folder', () => setView({ type: 'projets', project: p.id }), '', 'projet ouvrir ' + p.repos.join(' '))),
     c('Tâches', 'check', () => setView({ type: 'tasks' }), SC.tasks, 'todo liste à faire'),
@@ -1274,7 +1284,8 @@ function openPalette(prefill = ''): void {
 
 /** Tous les raccourcis, pour la page d'aide. */
 function shortcutRows(): [string, string][] {
-  return [['Palette de commandes', SC.palette], ['Capture rapide', SC.capture], ['Nouvelle note', SC.newNote], ['Aujourd’hui', SC.today], ['Changer de mode (écrire, côte à côte, lire)', SC.mode], ['Mode focus', SC.focus], ['Graphe', SC.graph], ['Historique', SC.history], ['Verrouiller la note chiffrée', SC.lock], ['Barre latérale', SC.sidebar], ['Réglages', SC.settings], ['Tâches', SC.tasks], ['Linear', SC.notifs], ['Demander à l’IA', SC.ask], ['Créer ou cocher une tâche', SC.task], ['Gras / italique', SC.bold], ['Indenter / désindenter', 'tab'], ['Aide et raccourcis', '?']];
+  return [['Palette de commandes', SC.palette], ['Capture rapide', SC.capture], ['Nouvelle note', SC.newNote], ['Aujourd’hui', SC.today], ['Changer de mode (écrire, côte à côte, lire)', SC.mode], ['Mode focus', SC.focus], ['Graphe', SC.graph], ['Historique', SC.history], ['Verrouiller la note chiffrée', SC.lock], ['Barre latérale', SC.sidebar], ['Réglages', SC.settings], ['Tâches', SC.tasks], ['Linear', SC.notifs], ['Demander à l’IA', SC.ask], ['Créer ou cocher une tâche', SC.task], ['Gras / italique', SC.bold], ['Indenter / désindenter', 'tab'], ['Aide et raccourcis', '?'],
+    ...(terminal.available() ? [['Terminaux du projet (dans un projet)', 'mod+j'], ['Agrandir le tiroir de terminaux', 'mod+shift+j']] as [string, string][] : [])];
 }
 function openHelp(): void { void setView({ type: 'help' }); }
 
@@ -1336,6 +1347,7 @@ function render() {
   document.body.dataset.v = ui.view.type;
   document.body.classList.toggle('no-list', WIDE.has(ui.view.type));
   renderSidebar(); renderList(); renderMain();
+  terminal.follow(ui.view);
   motion.view(need('#main'), ui.view.type, ui.view.type === 'projets' ? (ui.view.project ?? '') : '');
 }
 
@@ -1436,6 +1448,8 @@ document.addEventListener('contextmenu', e => {
 });
 
 document.addEventListener('keydown', e => {
+  // Le tiroir de terminaux d'abord : ⌘J dans un projet, ⌘⇧J, ⌘T, ⌘D, ⌘1…9, et les touches déjà envoyées au shell (Ctrl+K, Échap).
+  if (terminal.key(e)) return;
   if (e.key === 'Escape') {
     if (closeAc()) return e.preventDefault();
     if (closeTop()) return e.preventDefault();
@@ -1570,7 +1584,8 @@ Les notes chiffrées et celles taguées \`#privé\` ne sont jamais envoyées à 
 ];
 
 // Points d'entrée pour l'app native (menu Réglages, enregistrement avant de quitter).
-window.carnet = { flush: async () => { await flushAll(); }, settings: () => hub.openConnections('coffre'), voice: (p: unknown) => voice.onNative(p), bio: (p: unknown) => biometric.onNative(p as biometric.BioReply), reply: (p: unknown) => native.onReply(p) };
+window.carnet = { flush: async () => { await flushAll(); }, settings: () => hub.openConnections('coffre'), voice: (p: unknown) => voice.onNative(p), bio: (p: unknown) => biometric.onNative(p as biometric.BioReply), reply: (p: unknown) => native.onReply(p),
+  term: (p: unknown) => terminal.onNative(p), termClose: () => terminal.closeFocused() };
 
 async function start() {
   i18n.init(); i18n.guard(k => store.findByTitle(k)?.title.trim() === k); applyTheme(); motion.init(); cat.init();
@@ -1583,6 +1598,7 @@ async function start() {
   registerBuiltins();
   usagebar.init(); planner.init(); planner.onChange(renderSidebar); // jauge d'usage de la barre latérale, file d'attente des agents planifiés
   home.init(shared); journal.init(shared); chat.init({ ...shared, refreshNote }); automations.init(shared); projectsPage.init(shared); help.init({ ...shared, shortcuts: shortcutRows }); models.init(shared); commerce.init(shared); voice.init(shared); linearView.init(shared); githubPage.init(shared);
+  terminal.init({ ...shared, salonOn: projectsPage.claudeAvailable });
 
   noteai.init({
     editor: () => (ed && $('.nai') && !ed.note.deletedAt && !store.isLocked(ed.note) ? { note: ed.note, ta: ed.ta } : null),
@@ -1635,4 +1651,4 @@ async function start() {
 start().catch(e => { console.error(e); document.body.insertAdjacentHTML('beforeend', `<div class="fatal">Studio n’a pas pu démarrer : ${esc(e.message)}.<br>Le stockage local du navigateur est peut-être désactivé (navigation privée ?).</div>`); });
 
 // Build de test uniquement (retiré du build normal) : accès direct aux modules pour les tests automatisés.
-if (__TEST__) Object.assign(window, { __studio: { store, vault, todo, notifs, hub, github, linear, link, biometric, usage, ai, agentGuard, news, app: { setView } } });
+if (__TEST__) Object.assign(window, { __studio: { store, vault, todo, notifs, hub, github, linear, link, biometric, usage, ai, agentGuard, news, terminal, app: { setView } } });

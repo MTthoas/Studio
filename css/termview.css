@@ -1,0 +1,53 @@
+/* Terminal (src/ui/termview.ts). Préfixe tv-, palette --tm-* (clair par défaut, sombre sous data-theme="dark"). */
+:root {
+  --tm-fg: #2b2b2b; --tm-bg: #fbfaf7; --tm-cursor: #2b2b2b; --tm-sel: rgba(60, 120, 220, .28);
+  --tm-0: #3b3b3b; --tm-1: #c0392b; --tm-2: #2e8b57; --tm-3: #a67c00; --tm-4: #2a62c4; --tm-5: #9b3fa5; --tm-6: #1f8a95; --tm-7: #cfcfcf;
+  --tm-8: #6e6e6e; --tm-9: #e0523f; --tm-10: #3fae6e; --tm-11: #c99a10; --tm-12: #4a82e6; --tm-13: #b85cc4; --tm-14: #34a8b4; --tm-15: #f4f4f4;
+}
+:root[data-theme="dark"] {
+  --tm-fg: #d8d8d4; --tm-bg: #161618; --tm-cursor: #e8e8e4; --tm-sel: rgba(110, 160, 255, .32);
+  --tm-0: #2a2a2e; --tm-1: #e5695a; --tm-2: #5fc98a; --tm-3: #d9b44a; --tm-4: #6c9cf0; --tm-5: #c58bd0; --tm-6: #5cc4cf; --tm-7: #c8c8c4;
+  --tm-8: #6a6a70; --tm-9: #f08577; --tm-10: #7fdda3; --tm-11: #ecca6a; --tm-12: #8db3f7; --tm-13: #d7a6e0; --tm-14: #7dd6df; --tm-15: #f4f4f0;
+}
+
+.tv {
+  position: relative; box-sizing: border-box; width: 100%; height: 100%; min-height: 0; overflow: hidden; padding: 6px 8px;
+  background: var(--tm-bg); color: var(--tm-fg); font: 12px/18px var(--mono, ui-monospace, Menlo, monospace);
+  font-variant-ligatures: none; cursor: text; user-select: none; -webkit-user-select: none; outline: none;
+}
+.tv-rows { position: relative; }
+.tv-r { height: 18px; white-space: pre; overflow: hidden; }
+.tv-probe { position: absolute; visibility: hidden; pointer-events: none; white-space: pre; left: 0; top: 0; height: 18px; }
+.tv-in {
+  position: absolute; left: 0; top: 0; width: 1px; height: 18px; padding: 0; margin: 0; border: 0; outline: 0; resize: none;
+  opacity: 0; overflow: hidden; background: transparent; color: transparent; caret-color: transparent; font: inherit; z-index: -1;
+}
+
+.tv-b { font-weight: 700; }
+.tv-d { opacity: .6; }
+.tv-i { font-style: italic; }
+.tv-u { text-decoration: underline; }
+.tv-s { text-decoration: line-through; }
+.tv-u.tv-s { text-decoration: underline line-through; }
+.tv-lk, .tv-url { text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 2px; }
+.tv-hot .tv-lk, .tv-hot .tv-url { cursor: pointer; text-decoration-color: currentColor; }
+.tv-w { display: inline-block; width: calc(var(--tv-cw, 7.2px) * 2); overflow: hidden; vertical-align: top; }
+.tv-sel { background: var(--tm-sel); }
+
+/* Curseur : cellule habillée. Bloc plein au focus, contour sinon. */
+.tv-cur { position: relative; }
+.tv-cur-block .tv-cur { outline: 1px solid var(--tm-cursor); outline-offset: -1px; }
+.tv-cur-block.tv-focus .tv-cur { background: var(--tm-cursor); color: var(--tm-bg); outline: 0; }
+.tv-cur-under .tv-cur { box-shadow: inset 0 -2px 0 var(--tm-cursor); }
+.tv-cur-bar .tv-cur { box-shadow: inset 2px 0 0 var(--tm-cursor); }
+.tv-cur-under:not(.tv-focus) .tv-cur, .tv-cur-bar:not(.tv-focus) .tv-cur { box-shadow: none; outline: 1px solid var(--tm-cursor); outline-offset: -1px; }
+.tv-cur-block.tv-focus.tv-blink .tv-cur, .tv-cur-under.tv-focus.tv-blink .tv-cur, .tv-cur-bar.tv-focus.tv-blink .tv-cur { animation: tv-blink 1.1s steps(1) infinite; }
+@keyframes tv-blink { 50% { background-color: transparent; color: inherit; box-shadow: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .tv-cur-block.tv-focus.tv-blink .tv-cur, .tv-cur-under.tv-focus.tv-blink .tv-cur, .tv-cur-bar.tv-focus.tv-blink .tv-cur { animation: none; }
+}
+
+/* Indicateur de défilement dans l'historique. */
+.tv-bar { position: absolute; right: 2px; width: 4px; border-radius: 2px; background: var(--tm-8); opacity: 0; transition: opacity .15s; pointer-events: none; }
+.tv-bar.on { opacity: .55; }
+.tv.tv-hot { cursor: pointer; }

@@ -187,6 +187,41 @@
         agent: a, actions: subActions[a.id], subagents: subs };
     }
     if (action === 'repos') return { repos: [], found: [], missing: [] };
+    if (action === 'term') {
+      // Tiroir de terminaux (features/terminal.ts, contrat A) : trois terminaux déjà ouverts, un serveur de dev qui tourne,
+      // un shell où `pnpm test` vient d'échouer (marques OSC 133, D;1), un shell au repos dans la copie de l'agent.
+      const T = (window.__term = window.__term || { seq: 3, extra: [] });
+      const at = Math.floor(now / 1000);
+      const b = (s) => btoa(unescape(encodeURIComponent(s)));
+      const cwd = (p) => '\x1b]7;file://mac' + p + '\x07';
+      const ps1 = (p, dir) => '\x1b]133;A\x07' + cwd(p) + '\x1b[1;34m' + dir + '\x1b[0m \x1b[2m%\x1b[0m \x1b]133;B\x07';
+      const run = (cmd) => cmd + '\r\n\x1b]133;C;' + b(cmd) + '\x07';
+      const web = home + '/apps/web', api = home + '/apps/api', wt = home + '/.claude/worktrees/' + WT;
+      const terms = [
+        { id: 't1', project: msg.project, where: 'repo', name: 'atelier-lumiere', title: 'pnpm dev', cwd: web, cmd: 'pnpm dev', started: at - 1260, alive: true, busy: true, fg: 'node', exit: null },
+        { id: 't2', project: msg.project, where: 'project', name: '', title: '', cwd: api, cmd: '', started: at - 600, alive: true, busy: false, fg: 'zsh', exit: null },
+        { id: 't3', project: msg.project, where: 'copy', name: WT, title: '', cwd: wt, cmd: '', started: at - 120, alive: true, busy: false, fg: 'zsh', exit: null },
+        ...T.extra,
+      ];
+      const out = {
+        t1: cwd(web) + '\r\n> @atelier/web@0.4.0 dev /Users/demo/projets/atelier-lumiere/apps/web\r\n> next dev\r\n\r\n  \x1b[1;35m▲ Next.js 15.1.0\x1b[0m\r\n  - Local:        http://localhost:3000\r\n  - Network:      http://192.168.1.24:3000\r\n\r\n \x1b[32m✓\x1b[0m Starting...\r\n \x1b[32m✓\x1b[0m Ready in 1.8s\r\n \x1b[2m○\x1b[0m Compiling / ...\r\n \x1b[32m✓\x1b[0m Compiled / in 2.4s (812 modules)\r\n GET / \x1b[32m200\x1b[0m in 2671ms\r\n GET /panier \x1b[32m200\x1b[0m in 143ms\r\n',
+        t2: ps1(api, '~/projets/atelier-lumiere/apps/api') + run('pnpm test') + '\r\n> @atelier/api@1.0.0 test\r\n> vitest run\r\n\r\n \x1b[7;36m RUN \x1b[0m \x1b[36mv1.6.0\x1b[0m /Users/demo/projets/atelier-lumiere/apps/api\r\n\r\n \x1b[32m✓\x1b[0m src/routes/products.test.ts \x1b[2m(6)\x1b[0m\r\n \x1b[32m✓\x1b[0m src/lib/prix.test.ts \x1b[2m(4)\x1b[0m\r\n \x1b[33m❯\x1b[0m src/routes/orders.test.ts \x1b[2m(5 | \x1b[0m\x1b[31m1 failed\x1b[0m\x1b[2m)\x1b[0m\r\n   \x1b[31m×\x1b[0m refuse une commande vide\r\n     \x1b[31m→ expected 201 to be 400\x1b[0m\r\n\r\n\x1b[41;97m FAIL \x1b[0m src/routes/orders.test.ts > refuse une commande vide\r\n\x1b[31mAssertionError: expected 201 to be 400\x1b[0m\r\n \x1b[36m❯\x1b[0m src/routes/orders.test.ts:42:24\r\n\r\n\x1b[2m Test Files \x1b[0m \x1b[1;31m1 failed\x1b[0m | \x1b[1;32m2 passed\x1b[0m\x1b[2m (3)\x1b[0m\r\n\x1b[2m      Tests \x1b[0m \x1b[1;31m1 failed\x1b[0m | \x1b[1;32m14 passed\x1b[0m\x1b[2m (15)\x1b[0m\r\n\x1b]133;D;1\x07' + ps1(api, '~/projets/atelier-lumiere/apps/api'),
+        t3: ps1(wt, '~/…/' + WT) + run('git status -sb') + '\x1b[32m## claude/panier-express\x1b[0m\r\n \x1b[31mM\x1b[0m apps/web/app/panier/page.tsx\r\n \x1b[31mM\x1b[0m apps/api/src/routes/orders.ts\r\n\x1b[31m??\x1b[0m apps/web/app/panier/resume.tsx\r\n\x1b]133;D;0\x07' + ps1(wt, '~/…/' + WT),
+      };
+      if (msg.op === 'targets') return { home, repos: [{ name: 'atelier-lumiere', dir: home }], copies: worktrees.map((w) => ({ name: w.name, branch: w.branch, dir: home + '/.claude/worktrees/' + w.name })), servers: [], scripts: [{ repo: 'atelier-lumiere', name: 'dev', cmd: 'pnpm run dev' }, { repo: 'atelier-lumiere', name: 'test', cmd: 'pnpm run test' }, { repo: 'atelier-lumiere', name: 'build', cmd: 'pnpm run build' }] };
+      if (msg.op === 'list') return globalThis.__termListFail ? { ok: false, message: 'Dossier introuvable.' } : { terms: globalThis.__termNone ? T.extra : terms };
+      if (msg.op === 'replay') return { data: out[msg.term] ? b(out[msg.term]) : '' };
+      if (msg.op === 'open') {
+        if (globalThis.__termFail) return { ok: false, message: "Le shell n'a pas pu démarrer." };
+        const id = 't' + ++T.seq, p = msg.where === 'copy' ? home + '/.claude/worktrees/' + msg.name : home;
+        const term = { id, project: msg.project, where: msg.where || 'project', name: msg.name || '', title: '', cwd: p, cmd: msg.cmd || '', started: Math.floor(Date.now() / 1000), alive: true, busy: !!msg.cmd, fg: msg.cmd ? 'node' : 'zsh', exit: null };
+        T.extra.push(term);
+        setTimeout(() => window.carnet && window.carnet.term({ term: id, data: b(ps1(p, '~/projets/atelier-lumiere')) }), 60);
+        return { term };
+      }
+      if (msg.op === 'close') { T.extra = T.extra.filter((x) => x.id !== msg.term); return {}; }
+      return {};
+    }
     if (action === 'mobile') {
       // Onglet Mobile : une app Expo, deux simulateurs dont un démarré, un émulateur Android éteint ; l'écran n'est pas simulé.
       if (msg.op === 'probe') return { folder: true, count: 1 };
