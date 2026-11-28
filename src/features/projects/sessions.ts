@@ -286,7 +286,7 @@ export function handoff(p: Project, { notes = [] as string[], prompt = '', fan =
 // Bandeau au pied de la consigne : part restante de la session de 5 heures et de la semaine, comme « /usage » dans
 // Claude Code. Les chiffres viennent du Mac (voir ClaudeUsage.swift), si l'utilisateur a accepté leur lecture.
 // À défaut, on affiche l'état de la limite que Claude Code note lui-même quand elle approche ou est atteinte.
-const LIMS: Record<string, [string, string]> = { five_hour: ['Session 5 h', 'Session de 5 heures'], seven_day: ['Semaine', 'Semaine, tous les modèles'], seven_day_opus: ['Semaine · Opus', 'Semaine, modèle Opus'], seven_day_sonnet: ['Semaine · Sonnet', 'Semaine, modèle Sonnet'], extra: ['Crédit supp.', 'Crédit supplémentaire'] };
+const LIMS: Record<string, [string, string]> = { five_hour: ['Session 5 h', 'Session de 5 heures'], seven_day: ['Semaine', 'Semaine, tous les modèles'], seven_day_opus: ['Semaine · Opus', 'Semaine, modèle Opus'], seven_day_sonnet: ['Semaine · Sonnet', 'Semaine, modèle Sonnet'], seven_day_fable: ['Semaine · Fable', 'Semaine, modèle Fable'], extra: ['Crédit supp.', 'Crédit supplémentaire'] };
 let limits: ai.CcLimits | null = null, limitsAt = 0, limitsBusy = false, limitsWait = false, quota: Quota | null = null;
 
 /** Délai avant une réinitialisation : « dans 2 h 14 », ou le jour et l'heure au-delà d'une journée. */

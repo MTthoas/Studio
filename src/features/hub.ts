@@ -694,7 +694,7 @@ function ccRefresh(force = false): void {
 }
 
 // Utilisation de l'abonnement Claude : limites (session de 5 heures, semaine) et tokens consommés par Claude Code sur ce Mac.
-const CC_WINDOWS: Record<string, string> = { five_hour: 'Session en cours · 5 heures', seven_day: 'Semaine · tous les modèles', seven_day_opus: 'Semaine · Opus', seven_day_sonnet: 'Semaine · Sonnet', extra: 'Crédit supplémentaire' };
+const CC_WINDOWS: Record<string, string> = { five_hour: 'Session en cours · 5 heures', seven_day: 'Semaine · tous les modèles', seven_day_opus: 'Semaine · Opus', seven_day_sonnet: 'Semaine · Sonnet', seven_day_fable: 'Semaine · Fable', extra: 'Crédit supplémentaire' };
 function ccUsageHTML(): string {
   const l = ai.cc.limits, u = ai.cc.local;
   if (!l && !u && ai.cc.usageError) return `<h5>Utilisation de ton abonnement</h5><p class="modal-hint">${esc(ai.cc.usageError)}</p>`;
