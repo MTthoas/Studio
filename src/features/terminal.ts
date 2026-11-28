@@ -58,7 +58,10 @@ let opening = 0;
 
 /** Seulement dans l'app Mac : le pont des terminaux n'existe pas ailleurs. */
 export const available = (): boolean => native.available() && document.documentElement.dataset.native === 'mac';
-const call = (op: string, extra: Record<string, unknown> = {}, project = pid, timeout = 20000) => native.call('project', 'term', { project, op, ...extra }, timeout);
+/** App Mac compilée avant les terminaux : son pont ne connaît pas « project.term » et répond « Action inconnue. ». */
+const OLD_APP = 'Mets à jour l’app Studio pour Mac pour ouvrir un terminal.';
+const call = (op: string, extra: Record<string, unknown> = {}, project = pid, timeout = 20000) =>
+  native.call('project', 'term', { project, op, ...extra }, timeout).then(r => r.message === 'Action inconnue.' ? { ...r, message: OLD_APP } : r);
 const b64 = (s: string): Uint8Array => { const bin = atob(s); const u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; };
 const of = (p: string) => [...tabs.values()].filter(x => x.t.project === p);
 const isOpen = (p: string) => !!p && !!openBy[p];

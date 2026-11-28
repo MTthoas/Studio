@@ -1235,6 +1235,7 @@ export default {
   'Huit terminaux au plus : ferme-en un pour en ouvrir un autre.': 'Eight terminals at most: close one to open another.',
   'Rien à envoyer : le terminal est vide.': 'Nothing to send: the terminal is empty.',
   'Le terminal n’a pas pu s’ouvrir.': 'The terminal could not open.',
+  'Mets à jour l’app Studio pour Mac pour ouvrir un terminal.': 'Update the Studio Mac app to open a terminal.',
   'Liste des terminaux indisponible.': 'Terminal list unavailable.',
   'Sortie de `{0}` ({1}) :': 'Output of `{0}` ({1}):',
   'La commande `{0}` a échoué (code {1}) dans {2}. Trouve la cause et corrige-la.': 'The command `{0}` failed (code {1}) in {2}. Find the cause and fix it.',
