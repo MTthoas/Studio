@@ -820,6 +820,7 @@ export default {
   '. Vérifie que': '. Check that',
   'fonctionne dans le Terminal : sinon, la bonne clé n’est pas dans': 'works in the Terminal: otherwise, the right key isn’t in',
   'de cet utilisateur, ou ce n’est pas le bon utilisateur (Modifier → Utilisateur).': 'of that user, or it’s not the right user (Edit → User).',
+  'Ta clé a une phrase de passe ? Studio ne peut pas la taper à ta place : importe la clé dans Studio (Modifier → Importer), qui te demandera sa phrase une fois, ou charge-la dans l’agent SSH du Mac (': 'Does your key have a passphrase? Studio can’t type it for you: import the key into Studio (Edit → Import), which will ask for its passphrase once, or load it into the Mac’s SSH agent (',
   'Vérifie l’hôte, le port et que le serveur accepte SSH.': 'Check the host, the port and that the server accepts SSH.',
   'Vérifie que': 'Check that',
   'fonctionne dans le Terminal sans mot de passe (clé chargée dans l’agent SSH), ou choisis une clé gardée par Studio (Modifier).': 'works in the Terminal without a password (key loaded in the SSH agent), or choose a key kept by Studio (Edit).',

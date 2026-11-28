@@ -6,6 +6,9 @@
 // écrite au format OpenSSH en mémoire) ou importée d'un fichier choisi dans le Finder, elle est chargée à la première
 // connexion dans un agent SSH privé à Studio (socket dans le dossier temporaire de l'utilisateur, 0700), le temps que
 // l'app est ouverte et au plus 12 h. Les autres clés de l'utilisateur ne sont jamais proposées au serveur (IdentitiesOnly).
+// Clé importée avec une phrase de passe : demandée une fois dans une fenêtre du Mac (jamais par la page), vérifiée,
+// puis gardée à côté de la clé (restée chiffrée) dans le trousseau, compte `<id>.pass` ; `prepare` écrit la clé chiffrée
+// le temps d'un `ssh-add` dans le dossier privé de l'agent et lui donne la phrase sur l'entrée standard.
 //
 // Piège : l'app est signée ad hoc, donc chaque reconstruction fait redemander au trousseau l'accès à la clé
 // (« Toujours autoriser »), une fois par clé.
@@ -100,23 +103,64 @@ final class SSHKeys {
             return ["ok": false, "message": "Ce fichier n’est pas une clé SSH privée."]
         }
         // La clé publique se déduit de la privée ; -P "" échoue au lieu de demander une phrase de passe.
-        let r = Servers.exec("/usr/bin/ssh-keygen", ["-y", "-P", "", "-f", url.path])
-        let pub = r.out.trimmingCharacters(in: .whitespacesAndNewlines)
+        var r = Servers.exec("/usr/bin/ssh-keygen", ["-y", "-P", "", "-f", url.path])
+        var pass: Data?
+        defer { pass?.resetBytes(in: 0..<(pass?.count ?? 0)) }
+        if r.status != 0, r.out.lowercased().contains("passphrase") {
+            // Clé protégée : la phrase est tapée dans une fenêtre du Mac et passée à ssh-keygen sur l'entrée standard.
+            var hint = ""
+            while true {
+                guard let p = Self.askPassphrase(file: url.lastPathComponent, hint: hint) else { return ["ok": false, "cancelled": true] }
+                pass?.resetBytes(in: 0..<(pass?.count ?? 0)); pass = p
+                r = Servers.exec("/usr/bin/ssh-keygen", ["-y", "-f", url.path], input: p + Data("\n".utf8),
+                                 env: ["PATH": "/usr/bin:/bin", "HOME": NSHomeDirectory(), "SSH_ASKPASS_REQUIRE": "never"])
+                if r.status == 0 || !r.out.lowercased().contains("passphrase") { break }
+                hint = "Phrase de passe incorrecte, réessaie."
+            }
+        }
+        // ssh-keygen écrit son invite (« Enter passphrase… ») avant la clé : on ne garde que la dernière ligne.
+        let words = (r.out.split(separator: "\n").last ?? "").split(separator: " ")
+        let pub = words.firstIndex { $0.hasPrefix("ssh-") || $0.hasPrefix("ecdsa-") }.map { words[$0...].joined(separator: " ") } ?? ""
         guard r.status == 0, pub.hasPrefix("ssh-") || pub.hasPrefix("ecdsa-") else {
-            if r.out.lowercased().contains("passphrase") { return ["ok": false, "message": "Cette clé est protégée par une phrase de passe : Studio ne la garde pas ainsi. Crée plutôt une clé dans Studio, ou garde celle-ci dans ton agent SSH (« Ma configuration SSH »)."] }
             return ["ok": false, "message": "Clé illisible : " + String(r.out.split(separator: "\n").last ?? "format inconnu").prefix(160)]
         }
         let parts = pub.split(separator: " ")
         let type = parts[0].hasPrefix("ssh-ed25519") ? "ED25519" : parts[0].hasPrefix("ssh-rsa") ? "RSA" : parts[0].hasPrefix("ecdsa") ? "ECDSA" : String(parts[0])
         let line = parts.prefix(2).joined(separator: " ") + " studio-" + String(name.lowercased().map { $0.isASCII && ($0.isLetter || $0.isNumber) ? $0 : "-" })
-        return save(name: name, type: type, pub: line, secret: data)
+        return save(name: name, type: type, pub: line, secret: data, pass: pass)
     }
 
-    private func save(name: String, type: String, pub: String, secret: Data) -> [String: Any] {
+    /// Fenêtre du Mac qui demande la phrase de passe d'une clé importée ; nil si l'utilisateur annule.
+    private static func askPassphrase(file: String, hint: String) -> Data? {
+        var out: Data?
+        let ask = {
+            let alert = NSAlert()
+            alert.messageText = "Phrase de passe de la clé « \(file) »"
+            alert.informativeText = (hint.isEmpty ? "" : hint + "\n\n") + "Studio la garde dans le trousseau de ce Mac, avec la clé, pour se connecter sans te la redemander."
+            alert.addButton(withTitle: "Importer"); alert.addButton(withTitle: "Annuler")
+            let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
+            alert.accessoryView = field
+            alert.window.initialFirstResponder = field
+            NSApp.activate(ignoringOtherApps: true)
+            if alert.runModal() == .alertFirstButtonReturn, !field.stringValue.isEmpty { out = Data(field.stringValue.utf8) }
+            field.stringValue = ""
+        }
+        if Thread.isMainThread { ask() } else { DispatchQueue.main.sync(execute: ask) }
+        return out
+    }
+
+    private func save(name: String, type: String, pub: String, secret: Data, pass: Data? = nil) -> [String: Any] {
         guard let fp = Self.fingerprint(pub) else { return ["ok": false, "message": "Clé publique illisible."] }
-        if let same = meta.first(where: { $0["fingerprint"] as? String == fp }) { return ["ok": true, "key": same, "existing": true] }
+        if let same = meta.first(where: { $0["fingerprint"] as? String == fp }) {
+            // Même clé déjà gardée : on remet la clé et sa phrase à jour (une ancienne version de Studio la refusait chiffrée).
+            if let id = same["id"] as? String {
+                lock.lock(); loaded[id] = nil; lock.unlock()
+                _ = store(id, secret); _ = store(id + ".pass", pass)
+            }
+            return ["ok": true, "key": same, "existing": true]
+        }
         let id = "k-" + UUID().uuidString.lowercased().prefix(8)
-        guard store(id, secret) else { return ["ok": false, "message": "Le trousseau a refusé d’enregistrer la clé."] }
+        guard store(id, secret), store(id + ".pass", pass) else { SecItemDelete(item(id)); return ["ok": false, "message": "Le trousseau a refusé d’enregistrer la clé."] }
         let k: [String: Any] = ["id": id, "name": name, "type": type, "fingerprint": fp, "public": pub, "created": Date().timeIntervalSince1970 * 1000]
         meta = meta + [k]
         return ["ok": true, "key": k]
@@ -132,7 +176,7 @@ final class SSHKeys {
         }
         loaded[id] = nil
         try? FileManager.default.removeItem(atPath: pubPath(id))
-        SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: id] as CFDictionary)
+        SecItemDelete(item(id)); SecItemDelete(item(id + ".pass"))
         meta = meta.filter { $0["id"] as? String != id }
         return ["ok": true]
     }
@@ -158,8 +202,25 @@ final class SSHKeys {
         }
         guard var secret = read(id) else { return .failure(Failure("Studio n’a pas pu lire la clé « \(k["name"] as? String ?? id) » dans le trousseau (accès refusé ?).")) }
         defer { secret.resetBytes(in: 0..<secret.count) }
-        let r = Servers.exec("/usr/bin/ssh-add", ["-q", "-t", String(Self.life), "-"], input: secret,
-                             env: ["SSH_AUTH_SOCK": socket, "PATH": "/usr/bin:/bin", "HOME": NSHomeDirectory(), "SSH_ASKPASS_REQUIRE": "never"])
+        let env = ["SSH_AUTH_SOCK": socket, "PATH": "/usr/bin:/bin", "HOME": NSHomeDirectory(), "SSH_ASKPASS_REQUIRE": "never"]
+        let r: (status: Int32, out: String, ms: Int)
+        if var pass = read(id + ".pass") {
+            // Clé chiffrée : ssh-add lit la clé dans un fichier (l'entrée standard sert à la phrase de passe).
+            // Le fichier reste chiffré par sa phrase, dans le dossier privé de l'agent, et il est effacé aussitôt.
+            defer { pass.resetBytes(in: 0..<pass.count) }
+            let file = dir + "/" + id + ".key"
+            unlink(file)
+            guard FileManager.default.createFile(atPath: file, contents: secret, attributes: [.posixPermissions: 0o600]) else {
+                return .failure(Failure("Impossible de préparer la clé chiffrée."))
+            }
+            r = Servers.exec("/usr/bin/ssh-add", ["-q", "-t", String(Self.life), file], input: pass + Data("\n".utf8), env: env)
+            unlink(file)
+            if r.status != 0, r.out.lowercased().contains("passphrase") {
+                return .failure(Failure("La phrase de passe gardée pour la clé « \(k["name"] as? String ?? id) » ne l’ouvre plus : importe-la de nouveau (Modifier → Importer)."))
+            }
+        } else {
+            r = Servers.exec("/usr/bin/ssh-add", ["-q", "-t", String(Self.life), "-"], input: secret, env: env)
+        }
         guard r.status == 0 else { return .failure(Failure("L’agent SSH de Studio a refusé la clé : " + String(r.out.split(separator: "\n").last ?? "").prefix(160))) }
         loaded[id] = Date()
         return .success((pubPath(id), socket))
@@ -201,13 +262,19 @@ final class SSHKeys {
 
     // MARK: Trousseau
 
-    private func store(_ id: String, _ secret: Data) -> Bool {
-        let base: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: id]
+    private func item(_ account: String) -> CFDictionary {
+        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account] as CFDictionary
+    }
+    /// Range `secret` sous `account` (le remplace) ; nil efface l'entrée et réussit.
+    private func store(_ account: String, _ secret: Data?) -> Bool {
+        let base: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
         SecItemDelete(base as CFDictionary)
+        guard let secret else { return true }
         var add = base
         add[kSecValueData as String] = secret
-        add[kSecAttrLabel as String] = "Studio : clé SSH"
-        add[kSecAttrDescription as String] = "Clé privée SSH gardée par Studio"
+        let isPass = account.hasSuffix(".pass")
+        add[kSecAttrLabel as String] = isPass ? "Studio : phrase de passe SSH" : "Studio : clé SSH"
+        add[kSecAttrDescription as String] = isPass ? "Phrase de passe d’une clé SSH gardée par Studio" : "Clé privée SSH gardée par Studio"
         add[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
         return SecItemAdd(add as CFDictionary, nil) == errSecSuccess
     }
