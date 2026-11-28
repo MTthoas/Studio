@@ -321,3 +321,302 @@
   .w10 { width: 10%; } .w20 { width: 20%; } .w30 { width: 30%; } .w40 { width: 40%; } .w50 { width: 50%; }
   .w60 { width: 60%; } .w70 { width: 70%; } .w80 { width: 80%; } .w90 { width: 90%; }
 }
+
+/* Héros : l'Accueil d'aujourd'hui. Rail d'icônes (css/rail.css, src/app.ts renderRail) puis le contenu ; sur l'Accueil la
+   seconde barre est masquée (body.side-none), d'où une grille rail + contenu posée par la classe racine .railed, pour ne pas
+   toucher la grille des autres répliques. Valeurs recopiées de css/rail.css, css/cat.css et css/app.css (règles .hm-*).
+   Différences assumées : le chat est figé (pas de cat.ts ni d'animation), les contrôles sont des span. */
+:is(.studio, #studio-scope) {
+  &.railed { grid-template-columns: 52px minmax(0, 1fr); }
+
+  /* ---------- Rail ---------- */
+  /* site.css a déjà une .rail (colonne collante des sections) : on en neutralise la position et l'alignement. */
+  .rail { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px 0 6px; overflow: hidden;
+    position: static; top: auto; align-self: stretch; font-size: var(--t-2); color: var(--text); }
+  .rail > * { flex: none; }
+  .rail-logo { display: grid; place-items: center; width: 36px; height: 36px; margin-bottom: 2px; border-radius: 6px; }
+  .rail-logo .logo { width: 22px; height: 22px; }
+  .rail-zones { display: flex; flex-direction: column; gap: 4px; margin-top: 10px; }
+  .rail-rest { margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--border); }
+  .rail-foot { margin-top: auto; display: flex; flex-direction: column; gap: 2px; }
+  .rail-btn { position: relative; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 9px; color: var(--text-3); }
+  .rail-btn .ic { width: 18px; height: 18px; }
+  .rail-foot .rail-btn { height: 32px; }
+  .rail-foot .rail-btn .ic { width: 16px; height: 16px; }
+  .rail-btn.sel { background: var(--active); color: var(--text); }
+  .rail-dot { position: absolute; top: 7px; right: 7px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--frame); }
+  .rail-dot.live { background: var(--c-green); }
+
+  /* ---------- Barre d'outils : sans filet, titre gras, le chat assis à droite ---------- */
+  &.railed .toolbar { position: relative; padding-left: 12px; padding-right: 48px; border-bottom-color: transparent; }
+  &.railed .crumb-cur { font-weight: 600; }
+  .crumb-cat { position: absolute; right: 8px; bottom: 0; color: var(--text-3); line-height: 0; }
+  .crumb-cat svg { display: block; overflow: visible; fill: currentColor; }
+  .cat-tail { fill: none; stroke: currentColor; stroke-width: 2.6; stroke-linecap: round; }
+  .cat-eyes { fill: var(--bg); }
+  .cat-nose { fill: var(--bg); opacity: .55; }
+  .cat-whisk { fill: none; stroke: currentColor; stroke-width: .55; stroke-linecap: round; opacity: .8; }
+
+  /* ---------- Accueil : écarts de maquette.css avec css/app.css ---------- */
+  &.railed .home-in { max-width: 1120px; }
+  .hm-date { margin-bottom: 6px; }
+  .hm-date::first-letter { text-transform: uppercase; }
+  .hm-hello { margin-top: 0; line-height: 1.15; }
+  .hm-hello + .hm-capture { margin-top: 24px; }
+  .hm-capture { gap: 10px; background: var(--bg); }
+  .hm-grid { align-items: start; }
+  .hm-one { grid-template-columns: minmax(0, 1fr); }
+  .hm-h { gap: 2px; }
+  .hm-h .ic { width: 12px; height: 12px; color: var(--text-3); opacity: 0; }
+  .hm-h::before { background: var(--dot, var(--c-gray)); }
+  .hm-sec:nth-of-type(1) .hm-h { --dot: var(--c-green); }
+  .hm-link { color: var(--text-3); font-size: var(--t-1); }
+  .hm-note { gap: 6px; }
+  .hm-note strong { gap: 6px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .hm-note strong .ic { flex: none; }
+  .hm-conn .btn { height: 26px; }
+}
+
+/* Salon : un fil du projet, vue Discussion (src/features/projects/salon.ts, body.lounge + .pj-lounge, colonne « Maintenant » fermée).
+   La racine .lounge tient lieu de .sl-box : liste des fils (248 px, --sl-lw par défaut) puis le fil. Valeurs recopiées de
+   css/salon.css (règles .sl-* et leurs reprises .pj-lounge), css/catface.css (.cf), css/projicons.css (.pi), css/app.css (.spin)
+   et des jetons de mouvement de l'app (--mo-*).
+   Différences assumées :
+   - pas de style="" (CSP) : teintes par .h-*, jauge du plan par règle (33 % au travail, 100 % à la fin) ;
+   - contrôles en span/i : pas de champ, de select ni de bouton réels ; le select du composeur porte un chevron dessiné ;
+   - l'état du fil suit la pastille [data-pill] (le sous-titre de la ligne courante, que site.js réécrit) : data-s 0-2 = au travail,
+     3 = prêt à publier, 4 = PR ouverte (état statique, celui qu'on voit sans script). Les éléments propres à un état portent
+     .ls-w (au travail), .ls-2 (étape 2 seulement), .ls-r (prêt à publier), .ls-d (PR ouverte) ou .ls-f (fini : 3 et 4) ;
+     ces classes sont celles de la réplique, pas de l'app. Sans :has(), tout s'affiche ;
+   - une étape pas encore jouée sort du fil (display: none) au lieu de garder sa place : le fil se remplit par le bas comme dans
+     l'app, et son entrée reprend les animations .sl-new de l'app ;
+   - chats figés (pas de regard ni de saut) ; Plume et Griffe gardent leur visage au repos à la fin du plan (l'app les endort). */
+:is(.studio, #studio-scope) {
+  &.lounge {
+    --mo-k: 1; --mo-out: cubic-bezier(.2, .8, .2, 1); --mo-in-out: cubic-bezier(.45, 0, .2, 1); --mo-spring: cubic-bezier(.3, 1.25, .5, 1);
+    --mo-d3: calc(200ms * var(--mo-k)); --mo-d4: calc(300ms * var(--mo-k)); --mo-d5: calc(420ms * var(--mo-k));
+    --mo-dy: 8px; --mo-s: .96;
+    grid-template-columns: 248px minmax(0, 1fr); width: 1040px;
+  }
+
+  /* ---------- Chats, icônes de projet, roue ---------- */
+  .cf { width: 100%; height: 100%; display: block; overflow: visible; --cf-c: var(--c, var(--c-gray));
+    --cf-fur: color-mix(in srgb, var(--cf-c) 88%, var(--text)); fill: var(--cf-fur); stroke: var(--cf-fur); color: var(--bg); }
+  .cf.cf-t1 { --cf-fur: color-mix(in srgb, var(--cf-c) 70%, var(--text)); }
+  .pi { --pi: 20px; flex: none; display: inline-grid; place-items: center; width: var(--pi); height: var(--pi); }
+  .pi::before { content: ''; width: calc(var(--pi) * .45); height: calc(var(--pi) * .45); border-radius: 30%; background: var(--c, var(--c-gray)); }
+  .spin { display: inline-block; flex: none; width: 12px; height: 12px; margin-right: 6px; vertical-align: -2px; border-radius: 50%;
+    border: 1.6px solid var(--border-2); border-top-color: var(--accent); animation: spin .7s linear infinite; }
+
+  /* ---------- Liste des fils ---------- */
+  .sl-side { --bg-list: var(--frame); display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 0 8px 0 2px; overflow: hidden; }
+  .sl-side-h { display: flex; align-items: center; justify-content: space-between; gap: 4px; height: 48px; padding: 0 8px 0 6px; }
+  .sl-proj { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; height: 32px; padding: 0 8px; border-radius: 8px; font: 600 var(--t-3) var(--font); color: var(--text); }
+  .sl-proj > span { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sl-proj > .ic { width: 11px; height: 11px; color: var(--text-2); }
+  .sl-n { flex: none; font-size: var(--t-1); color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .sl-add { display: flex; align-items: center; gap: 10px; flex: none; height: 34px; margin: 0 6px 8px; padding: 0 8px; border-radius: 8px; color: var(--text-2); font: 500 var(--t-2) var(--font); }
+  .sl-add > i { flex: none; width: 20px; height: 20px; display: grid; place-items: center; border: 1px solid var(--border-2); border-radius: 6px; color: var(--text-3); }
+  .sl-add .ic { width: 12px; height: 12px; }
+  .sl-q { display: flex; align-items: center; gap: 6px; flex: none; margin: 2px 10px 6px; padding: 0 8px; height: 28px; border: 1px solid var(--border); border-radius: 7px; background: var(--bg); color: var(--text-3); }
+  .sl-q .ic { width: 14px; height: 14px; }
+  .sl-q > span { flex: 1; min-width: 0; font-size: var(--t-2); }
+  .sl-q kbd { flex: none; font: 11px var(--font); padding: 0 5px; border: 1px solid var(--border); border-radius: 4px; color: var(--text-3); }
+  .sl-filt { display: flex; flex-wrap: wrap; gap: 4px; flex: none; padding: 0 10px 4px; }
+  .sl-chip { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 10px; border: 1px solid var(--border-2); border-radius: 13px; background: var(--bg); color: var(--text-2); font: var(--t-1) var(--font); }
+  .sl-chip span { font-variant-numeric: tabular-nums; color: var(--text-3); }
+  .sl-chip.on { border-color: transparent; background: var(--active); color: var(--text); font-weight: 500; }
+  .sl-list { flex: 1; min-height: 0; overflow: hidden; padding: 0 6px 12px; }
+  .sl-grp h4 { display: flex; align-items: center; gap: 6px; margin: 12px 8px 3px; font-size: var(--t-1); font-weight: 500; color: var(--text-3); }
+  .sl-grp h4 span { margin-left: auto; font-variant-numeric: tabular-nums; opacity: .7; }
+  .sl-row { position: relative; display: flex; align-items: center; min-height: 32px; border-radius: 7px; }
+  .sl-row:hover { background: var(--hover); }
+  .sl-row.cur { background: var(--active); }
+  .sl-row.two { min-height: 46px; }
+  .sl-pick { flex: 1; min-width: 0; align-self: stretch; display: flex; align-items: center; gap: 8px; padding: 0 8px; border-radius: inherit; color: var(--text); font: var(--t-2) var(--font); }
+  .sl-row-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sl-row-b { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .sl-row-b .sl-row-t { flex: none; }
+  .sl-row-s { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-1); line-height: 1.35; color: var(--text-3); }
+  .sl-row:has(.sl-dot.ask) .sl-row-s { color: color-mix(in srgb, var(--c-orange) 70%, var(--text)); }
+  .sl-row time { flex: none; font-size: var(--t-1); color: var(--text-3); }
+  .sl-tag { flex: none; padding: 0 5px; border-radius: 4px; background: color-mix(in srgb, var(--c-green) 14%, transparent); color: color-mix(in srgb, var(--c-green) 70%, var(--text)); font-size: 10px; font-weight: 600; line-height: 16px; letter-spacing: .02em; }
+  .sl-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--border-2); }
+  .sl-dot.work { background: var(--c-amber); animation: sl-live 1.8s var(--mo-in-out) infinite; }
+  .sl-dot.ask { background: var(--c-orange); }
+  .sl-dot.ready { background: var(--c-green); }
+  .sl-more { display: block; margin: 2px 8px; padding: 2px 0; color: var(--text-3); font: var(--t-1) var(--font); }
+  .sl-foot { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; margin: 14px 0 0; padding-top: 8px; border-top: 1px solid var(--border); }
+  .sl-foot .sl-more { display: inline-flex; align-items: center; gap: 6px; }
+  .sl-foot .ic { width: 13px; height: 13px; }
+  .sl-side-cons { flex: none; border-top: 1px solid var(--border); margin: 0 6px; }
+  .sl-cons { padding: 10px 8px 6px; }
+  .sl-cons h4 { margin: 0 0 8px; font-size: 11.5px; font-weight: 500; color: var(--text-3); }
+  .sl-use { font-size: var(--t-1); color: var(--text-3); }
+  .sl-use summary { display: flex; align-items: baseline; gap: 8px; list-style: none; }
+  .sl-use summary::-webkit-details-marker { display: none; }
+  .sl-use summary > span { white-space: nowrap; }
+  .sl-use summary b { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; color: var(--text-2); font-variant-numeric: tabular-nums; }
+  .sl-use summary .ic { width: 11px; height: 11px; align-self: center; transform: rotate(-90deg); }
+
+  /* ---------- Le fil : barre, filet d'activité ---------- */
+  .sl-center { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden;
+    background: var(--bg); border: 1px solid var(--border); border-radius: 10px; }
+  .sl-top { display: flex; align-items: center; gap: 6px; flex: none; min-height: 48px; padding: 0 10px 0 8px; }
+  .sl-top .tb-side { flex: none; }
+  .sl-head { display: flex; align-items: center; flex: 1; min-width: 0; gap: 6px; padding: 0 0 0 4px; }
+  .sl-head h2 { display: flex; align-items: center; gap: 9px; flex: 0 1 auto; min-width: 48px; overflow: hidden; font-size: var(--t-3); font-weight: 600; }
+  .sl-head h2 > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sl-grow { flex: 1 1 0; min-width: 0; }
+  .sl-ic { width: 30px; height: 28px; padding: 0; flex: none; justify-content: center; }
+  .sl-head .btn-ghost { height: 28px; }
+  .sl-seg { display: inline-flex; flex: none; gap: 2px; }
+  .sl-seg > span { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 7px; font: 500 var(--t-1) var(--font); color: var(--text-2); box-shadow: inset 0 0 0 1px transparent; }
+  .sl-seg > span.on { color: var(--text); box-shadow: inset 0 0 0 1px var(--border-2); }
+  .sl-seg > .sl-seg-ic { padding: 0 7px; }
+  .sl-seg .ic { width: 14px; height: 14px; }
+  .sl-nowbtn { display: inline-flex; align-items: center; gap: 6px; }
+  .sl-top .sl-nowbtn { height: 28px; padding: 0 6px; flex: none; }
+  .sl-stack { display: inline-flex; flex: none; }
+  .sl-stack > .sl-av { width: 20px; height: 20px; margin-left: -3px; }
+  .sl-stack > .sl-av:first-child { margin-left: 0; }
+  .sl-live { display: block; flex: none; position: relative; height: 1px; overflow: hidden; background: var(--border); }
+  .sl-live.on::after { content: ""; position: absolute; top: 0; bottom: 0; left: 0; width: 22%; background: linear-gradient(90deg, transparent, var(--c-amber), transparent); animation: sl-sweep 1.6s var(--mo-in-out) infinite; }
+
+  /* ---------- Messages ---------- */
+  .sl-feed { flex: 1; min-height: 0; overflow: hidden; padding: 14px 16px 8px; display: flex; flex-direction: column; gap: 14px; }
+  .sl-feed > * { flex-shrink: 0; }
+  .sl-av { flex: none; display: inline-grid; place-items: center; width: 30px; height: 30px; overflow: hidden; border-radius: 50%; font-size: var(--t-1); font-weight: 600;
+    background: color-mix(in srgb, var(--c, var(--c-gray)) 20%, var(--bg)); color: color-mix(in srgb, var(--c, var(--c-gray)) 70%, var(--text)); }
+  .sl-av > .cf { grid-area: 1 / 1; }
+  .sl-av:has(> .cf) { overflow: visible; border-radius: 6px; background: none; }
+  .sl-av.mini { width: 18px; height: 18px; margin: 0 4px 0 2px; vertical-align: -4px; }
+  .sl-who { font-weight: 600; border-radius: 3px; }
+  .sl-msg { display: flex; gap: 10px; align-items: flex-start; }
+  .sl-bd { position: relative; min-width: 0; flex: 1 1 auto; max-width: none; }
+  .sl-msg header { display: flex; align-items: baseline; gap: 6px; margin-bottom: 2px; font-size: var(--t-2); }
+  .sl-role, .sl-msg time, .sl-note time { font-size: var(--t-1); color: var(--text-3); }
+  .sl-msg time { margin-left: 2px; }
+  .sl-model { color: var(--text-3); font-size: 11px; line-height: 16px; }
+  .sl-bd p { margin: 0 0 4px; line-height: 1.5; }
+  .sl-plain { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .sl-bd .md { overflow-wrap: anywhere; font-size: var(--t-2); line-height: 1.5; }
+  .sl-bd .md > :first-child { margin-top: 0; }
+  .sl-bd .md > :last-child { margin-bottom: 0; }
+  .sl-bub { width: auto; max-width: 100%; }
+  .sl-msg.me > .sl-av { display: none; }
+  .sl-msg.me header { justify-content: flex-start; }
+  .sl-msg.me header :is(.sl-who, .sl-role) { display: none; }
+  .sl-msg.me .sl-bd > :not(header) { width: auto; margin-left: 0; padding: 9px 12px; border-radius: 12px; background: color-mix(in srgb, var(--c-indigo) 16%, var(--bg)); }
+  .sl-to { font-weight: 600; color: color-mix(in srgb, var(--c, var(--accent)) 70%, var(--text)); }
+  .sl-note { align-self: center; max-width: 90%; display: block; text-align: center; font-size: var(--t-1); color: var(--text-3); }
+  .sl-note > summary { display: inline-flex; align-items: center; gap: 6px; list-style: none; }
+  .sl-note > summary::-webkit-details-marker { display: none; }
+  .sl-note .sl-nm { color: color-mix(in srgb, var(--c, var(--text-2)) 70%, var(--text)); }
+  .sl-note time { margin-left: 6px; }
+  .sl-note > summary .ic { width: 12px; height: 12px; }
+  .sl-brief { margin: 6px auto 0; max-width: 64ch; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; color: var(--text-2); text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+  /* Plan de l'équipe */
+  .sl-plan { flex: none; align-self: stretch; margin-left: 40px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .sl-plan header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px 8px; }
+  .sl-plan header b { font-size: var(--t-2); font-weight: 600; }
+  .sl-plan header span { font-size: var(--t-1); color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .sl-prog { display: block; height: 2px; background: var(--border); }
+  .sl-prog > i { display: block; width: 100%; height: 100%; background: var(--c-green); transition: width var(--mo-d5) var(--mo-out); }
+  .sl-step { display: flex; align-items: flex-start; gap: 10px; width: 100%; padding: 8px 12px; color: var(--text); }
+  .sl-step:hover { background: var(--hover); }
+  .sl-step + .sl-step { border-top: 1px solid var(--border); }
+  .sl-step-i { flex: none; width: 16px; height: 18px; display: grid; place-items: center; color: var(--c-green); }
+  .sl-step-i .ic { width: 13px; height: 13px; }
+  .sl-step-i .spin { width: 11px; height: 11px; margin: 0; border-top-color: var(--c-amber); }
+  .sl-step-b { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  .sl-step-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+  .sl-step small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-1); color: var(--text-3); }
+  .sl-step-w { flex: none; display: inline-flex; align-items: center; font-size: var(--t-1); color: var(--text-2); }
+  .sl-step time { flex: none; min-width: 3.2em; text-align: right; font-size: var(--t-1); color: var(--text-3); font-variant-numeric: tabular-nums; }
+
+  /* « Plume et Griffe travaillent… » */
+  .sl-typing { display: flex; align-items: center; gap: 10px; color: var(--text-3); font-size: var(--t-1); }
+  .sl-typing .sl-stack > .sl-av { width: 30px; height: 30px; }
+  .sl-typing .sl-stack > .sl-av:not(:first-child) { margin-left: -4px; }
+  .sl-dots { display: inline-flex; gap: 4px; padding: 6px 0; }
+  .sl-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); animation: sl-dot 1.2s ease-in-out infinite; }
+  .sl-dots i:nth-child(2) { animation-delay: .15s; }
+  .sl-dots i:nth-child(3) { animation-delay: .3s; }
+
+  /* Carte du résultat (prêt à publier, PR ouverte) */
+  .sl-card { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--border-2); border-radius: 10px; background: var(--surface, var(--bg)); }
+  .sl-card-t { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .sl-card-t b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  .sl-card-t small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-1); color: var(--text-3); }
+  .sl-card-a { display: flex; flex: none; gap: 6px; }
+  .sl-pill { flex: none; display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: 10px; font-size: var(--t-1); font-weight: 500; white-space: nowrap;
+    background: color-mix(in srgb, var(--c, var(--c-gray)) 16%, transparent); color: color-mix(in srgb, var(--c, var(--c-gray)) 65%, var(--text)); }
+  .sl-files { margin-top: 3px; font-size: var(--t-1); }
+  .sl-files summary { display: inline-flex; align-items: center; gap: 4px; list-style: none; color: var(--text-3); }
+  .sl-files summary::-webkit-details-marker { display: none; }
+  .sl-files summary .ic { width: 11px; height: 11px; transform: rotate(-90deg); }
+
+  /* ---------- Composeur ---------- */
+  .sl-comp { position: relative; flex: none; margin: 0 14px 12px; padding: 10px 10px 8px 12px; border: 1px solid var(--border-2); border-radius: 14px; background: var(--bg);
+    box-shadow: 0 1px 2px color-mix(in srgb, var(--text) 5%, transparent); }
+  .sl-comp > p { min-height: 24px; font: var(--t-3)/1.5 var(--font); color: var(--text-3); }
+  .sl-comp-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
+  .sl-sel { display: inline-flex; align-items: center; gap: 4px; flex: none; height: 26px; padding: 0 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text-2); font: var(--t-1) var(--font); }
+  .sl-sel .ic { width: 11px; height: 11px; }
+  .sl-hint { flex: 1 1 140px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t-1); color: var(--text-3); }
+  .at-add { width: 32px; height: 32px; border-radius: 8px; color: var(--text-3); }
+  .at-add:hover { background: var(--surface-2); color: var(--text); }
+  .sl-comp-row .at-add { margin-left: auto; }
+  .sl-comp-row .btn { height: 30px; flex: none; }
+  .sl-send { display: inline-flex; align-items: center; gap: 5px; padding-inline: 10px 12px; border-radius: 9px; overflow: hidden; opacity: .45; scale: .96; }
+  .sl-send .ic { width: 14px; height: 14px; }
+
+  /* ---------- États du fil, lus sur la pastille ---------- */
+  /* Au travail (data-s 0, 1, 2) : point ambré qui bat, Arrêter, filet qui balaie, plan en cours. */
+  &.lounge:not(:has([data-pill]:is([data-s="0"], [data-s="1"], [data-s="2"]))) {
+    .ls-w, .sl-live.on::after { display: none; }
+  }
+  &.lounge:not(:has([data-pill][data-s="2"])) .ls-2 { display: none; }
+  &.lounge:not(:has([data-pill][data-s="3"])) .ls-r { display: none; }
+  &.lounge:not(:has([data-pill][data-s="4"])) .ls-d { display: none; }
+  &.lounge:has([data-pill]:is([data-s="0"], [data-s="1"], [data-s="2"])) {
+    .ls-f { display: none; }
+    :is(.sl-head h2, .sl-row.cur) .sl-dot { background: var(--c-amber); animation: sl-live 1.8s var(--mo-in-out) infinite; }
+    .sl-row.cur .sl-row-s { color: color-mix(in srgb, var(--c-amber) 62%, var(--text-2)); }
+    .sl-prog > i { width: 33%; background: var(--c-amber); }
+    .sl-step:has(.spin) .sl-step-t { color: var(--text); }
+    .sl-step:has(.spin) small { color: color-mix(in srgb, var(--c-amber) 62%, var(--text-2)); }
+  }
+  &.lounge:has([data-pill]:is([data-s="0"], [data-s="1"])) .sl-plan { display: none; }
+  &.lounge:has([data-pill][data-s="3"]) {
+    :is(.sl-head h2, .sl-row.cur) .sl-dot { background: var(--c-green); }
+    .sl-row.cur .sl-row-s { color: var(--text-3); }
+  }
+  /* Séquence (site.js) : une étape pas encore jouée ne garde pas sa place, son entrée reprend .sl-new de l'app. */
+  .js:not(.calm) &.lounge {
+    .sl-feed > [data-step]:not(.show) { display: none; }
+    &:not(:has(.sl-feed > details:nth-of-type(3).show)) .sl-plan { display: none; }
+    .sl-feed > .show { animation: sl-in var(--mo-d3) var(--mo-out) both; }
+    .sl-feed > .sl-msg.show:not(.me) .sl-bub { animation: sl-left var(--mo-d4) var(--mo-spring) both; }
+    .sl-feed > .sl-msg.me.show { animation: sl-right var(--mo-d4) var(--mo-spring) both; transform-origin: right bottom; }
+    .sl-feed > .sl-card.show, .sl-feed > .ls-r, .sl-plan { animation: sl-card var(--mo-d5) var(--mo-spring) both; }
+  }
+}
+
+@keyframes sl-live { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--c-amber) 55%, transparent); } 70%, 100% { box-shadow: 0 0 0 5px transparent; } }
+@keyframes sl-sweep { from { translate: -100% 0; } to { translate: 480% 0; } }
+@keyframes sl-dot { 0%, 60%, 100% { translate: 0 0; opacity: .45; } 30% { translate: 0 -4px; opacity: 1; } }
+@keyframes sl-in { from { opacity: 0; translate: 0 var(--mo-dy); } }
+@keyframes sl-left { from { opacity: 0; translate: -10px 4px; scale: .97; } }
+@keyframes sl-right { from { opacity: 0; translate: 0 22px; scale: .9; } }
+@keyframes sl-card { from { opacity: 0; scale: var(--mo-s); translate: 0 var(--mo-dy); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  :is(.studio, #studio-scope) {
+    .sl-dot, .sl-dots i, .sl-live.on::after, .spin, .sl-feed > *, .sl-bub, .sl-plan { animation: none !important; }
+    .sl-prog > i { transition: none; }
+  }
+}
