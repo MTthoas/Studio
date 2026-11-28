@@ -199,11 +199,16 @@ final class ClaudeUsage {
             return fail("Anthropic n'a pas donné les limites (réponse \(box.code)).")
         }
         var windows: [[String: Any]] = []
+        // Fable : nom de la clé non documenté. `seven_day_fable` si Anthropic l'envoie, sinon le compteur hebdomadaire
+        // `seven_day_overage_included` (présent, non nul, pour les seuls abonnements qui ont droit à Fable).
+        var src = j
+        if !(src["seven_day_fable"] is [String: Any]), let oi = src["seven_day_overage_included"] as? [String: Any] { src["seven_day_fable"] = oi }
         for key in ["five_hour", "seven_day", "seven_day_opus", "seven_day_sonnet", "seven_day_fable"] {
-            guard let w = j[key] as? [String: Any], let pct = (w["utilization"] as? NSNumber)?.doubleValue else { continue }
+            guard let w = src[key] as? [String: Any], let pct = (w["utilization"] as? NSNumber)?.doubleValue else { continue }
             let reset = (w["resets_at"] as? String).flatMap(Self.date)
-            // Les limites par modèle ne sont affichées que si elles sont entamées.
-            if key.hasPrefix("seven_day_") && pct <= 0 && reset == nil { continue }
+            // Les limites par modèle ne sont affichées que si elles sont entamées, sauf Fable : Anthropic ne la renvoie
+            // qu'aux abonnements qui y ont droit, on la montre donc dès qu'elle est là, même à 0 %.
+            if key.hasPrefix("seven_day_") && key != "seven_day_fable" && pct <= 0 && reset == nil { continue }
             var row: [String: Any] = ["key": key, "pct": max(0, min(100, pct))]
             if let reset { row["resetsAt"] = reset.timeIntervalSince1970 }
             windows.append(row)

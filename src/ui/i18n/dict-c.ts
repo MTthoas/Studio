@@ -71,6 +71,7 @@ export default {
   'Projet Linear « {0} » introuvable (nom exact attendu dans le champ « linear: » du projet).': 'Linear project “{0}” not found (exact name expected in the project’s “linear:” field).',
   'Linear n’est pas accessible dans ce périmètre.': 'Linear is not accessible in this scope.',
   'Semaine · Fable': 'Week · Fable',
+  'Semaine, modèle Fable': 'Week, Fable model',
   'Tokens des 5 dernières heures': 'Tokens in the last 5 hours',
   'Tokens des 7 derniers jours': 'Tokens in the last 7 days',
   'Tokens du mois': 'Tokens this month',
