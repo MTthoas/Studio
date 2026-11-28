@@ -182,8 +182,11 @@ let last = { sessions: 0, trees: 0, detail: 0, board: 0 };
 const fetching = new Set<string>();
 let openTech: (session: string) => void = () => undefined, openNote: (id: string) => void = () => undefined, openSkills: () => void = () => undefined;
 /** Vue du centre : la discussion, « Design » (captures des agents et aperçu du site, design.ts), ou les deux côte à côte
- *  (`split`, largeur du design réglable). Gardée d'un fil à l'autre. */
-let view: 'chat' | 'design' | 'split' = 'chat';
+ *  (`split`, largeur du design réglable). Gardée d'un fil à l'autre, et d'une ouverture à l'autre (`VIEW`, choix au clic). */
+type View = 'chat' | 'design' | 'split';
+const VIEW = 'studio.salon.view';
+let view: View = ((): View => { try { const v = localStorage.getItem(VIEW); return v === 'design' || v === 'split' ? v : 'chat'; } catch { return 'chat'; } })();
+const keepView = (): void => { try { localStorage.setItem(VIEW, view); } catch { /* stockage bloqué */ } };
 /** Largeur du design côte à côte (fraction de la colonne du fil) et de la liste des fils (px) : réglées à la poignée, gardées. */
 const DZ_W = 'studio.salon.dzw', SIDE_W = 'studio.salon.sidew', DZ_DEF = 0.36, SIDE_DEF = 248;
 const clampDz = (f: number): number => Math.min(0.75, Math.max(0.2, f));
@@ -1035,7 +1038,7 @@ function paint(): void {
   center.classList.toggle('sl-v-design', view === 'design'); center.classList.toggle('sl-v-split', view === 'split');
   const dz = need<HTMLElement>('[data-sl-design]', root); dz.hidden = view === 'chat';
   need('[data-sl-dzgrip]', root).hidden = view !== 'split';
-  if (view !== 'chat') design.paint(dz, p, shots, () => { if (root?.isConnected) paint(); });
+  if (view !== 'chat') design.paint(dz, p, shots, () => { if (root?.isConnected) paint(); }, `${cur?.id ?? ''}:${cur?.group === 'work' ? 1 : 0}`);
   paintIfChanged(need('[data-sl-cons]', root), cur && crew ? consHTML(cur, d, crew) : '');
   // Colonne de droite : Équipe puis Technique. Squelette tant que le fil démarre ; quand le vrai contenu
   // remplace le squelette, il entre une fois en fondu (pas à chaque mise à jour).
@@ -1223,7 +1226,7 @@ function bind(r: HTMLElement): void {
     }
     if (act === 'unprof') { closeProf(); return; }
     if (act === 'routes') { routesMenu(t); return; }
-    if (act === 'view') { const v = t.dataset.v; view = v === 'design' || v === 'split' ? v : 'chat'; paint(); if (view !== 'design') need('.sl-comp textarea', r).focus(); return; }
+    if (act === 'view') { const v = t.dataset.v; view = v === 'design' || v === 'split' ? v : 'chat'; keepView(); paint(); if (view !== 'design') need('.sl-comp textarea', r).focus(); return; }
     if (act === 'copy' || act === 'quote' || act === 'keep') {
       // Le texte du message tel qu'il est lu, sans l'en-tête ni les gestes ; les blocs repliés sont compris.
       const bd = t.closest('.sl-msg')?.querySelector('.sl-bd'); if (!bd) return;
@@ -1386,7 +1389,7 @@ export async function prefill(pid: string, thread: string, text: string): Promis
   const ta = root?.isConnected && p?.id === pid ? root.querySelector<HTMLTextAreaElement>('.sl-comp textarea') : null;
   if (ta && shown === key) { ta.value = join(ta.value); drafts.set(key, ta.value); }
   else { if (ta && shown) drafts.set(shown, ta.value); drafts.set(key, join(drafts.get(key))); }
-  choose(pid, thread); view = 'chat';
+  choose(pid, thread); if (view === 'design') view = 'chat';
   await go(pid, 'salon');
   if (!root?.isConnected || p?.id !== pid) return;
   paint();
